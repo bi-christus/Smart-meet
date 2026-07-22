@@ -62,6 +62,27 @@ export function subscribeCards(
   );
 }
 
+/** Assina os cards de vários setores (para Dashboard/Cronograma). */
+export function subscribeCardsForSectors(
+  sectors: string[],
+  onData: (cards: Card[]) => void,
+  onError?: (e: Error) => void,
+): () => void {
+  if (sectors.length === 0) {
+    onData([]);
+    return () => {};
+  }
+  return onSnapshot(
+    query(collection(db, "cards"), where("sector", "in", sectors.slice(0, 30))),
+    (snap) => {
+      onData(
+        snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Card, "id">) })),
+      );
+    },
+    (e) => onError?.(e),
+  );
+}
+
 export async function createCard(
   sector: string,
   input: CardInput,

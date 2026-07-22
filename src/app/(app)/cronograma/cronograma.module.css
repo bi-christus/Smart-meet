@@ -1,0 +1,127 @@
+.page {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 32px 24px 60px;
+}
+.head h1 {
+  font-family: var(--font-serif), Georgia, serif;
+  font-weight: 600;
+  font-size: 30px;
+}
+.head p {
+  color: var(--tx-2);
+  font-size: 14px;
+  margin-top: 4px;
+}
+
+.groups {
+  margin-top: 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+}
+.groupHead {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  margin-bottom: 12px;
+}
+.groupTitle {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--tx-2);
+}
+.groupTitleWarn {
+  color: #ff9b8a;
+}
+.groupCount {
+  font-size: 11px;
+  color: var(--tx-3);
+}
+.items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 11px 14px;
+  background: var(--card);
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+}
+.date {
+  flex: none;
+  width: 46px;
+  text-align: center;
+}
+.dateDay {
+  font-family: var(--font-serif), Georgia, serif;
+  font-weight: 600;
+  font-size: 20px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.dateMon {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--tx-3);
+  margin-top: 3px;
+}
+.overdueDay {
+  color: #ff9b8a;
+}
+.itemMain {
+  flex: 1;
+  min-width: 0;
+}
+.itemTitle {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--tx);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.itemMeta {
+  display: flex;
+  gap: 8px;
+  margin-top: 5px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.sector {
+  font-size: 10.5px;
+  color: var(--tx-2);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--line-soft);
+  padding: 2px 8px;
+  border-radius: 20px;
+}
+.colDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+.colName {
+  font-size: 11.5px;
+  color: var(--tx-3);
+}
+.assignee {
+  font-size: 11.5px;
+  color: var(--tx-3);
+  margin-left: auto;
+  white-space: nowrap;
+}
+.empty {
+  color: var(--tx-3);
+  font-size: 14px;
+  text-align: center;
+  padding: 70px 20px;
+  line-height: 1.6;
+}
