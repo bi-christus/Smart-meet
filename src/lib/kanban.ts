@@ -17,10 +17,20 @@ export type KanbanColumn = { id: string; title: string; color: string };
 export const DEFAULT_COLUMNS: KanbanColumn[] = [
   { id: "backlog", title: "A fazer", color: "#78776f" },
   { id: "andamento", title: "Em andamento", color: "#54b8ff" },
-  { id: "aguardando", title: "Aguardando", color: "#f59e0b" },
-  { id: "validacao", title: "Validação", color: "#c77dff" },
-  { id: "concluido", title: "Concluído", color: "#37d39b" },
+  { id: "aguardando", title: "Aguardando", color: "#f5b13d" },
+  { id: "validacao", title: "Validação", color: "#c084fc" },
+  { id: "concluido", title: "Concluído", color: "#34d399" },
 ];
+
+export type Priority = "alta" | "media" | "baixa";
+
+export const PRIORITY_LABEL: Record<Priority, string> = {
+  alta: "Alta",
+  media: "Média",
+  baixa: "Baixa",
+};
+
+export type ChecklistItem = { text: string; done: boolean };
 
 export type Card = {
   id: string;
@@ -30,7 +40,10 @@ export type Card = {
   description?: string;
   assignee?: string | null; // e-mail do responsável
   due?: string | null; // yyyy-mm-dd
+  priority?: Priority;
+  checklist?: ChecklistItem[];
   order: number;
+  enteredAt?: number; // ms — quando entrou na coluna atual (aging)
   createdBy?: string;
 };
 
@@ -40,6 +53,8 @@ export type CardInput = {
   columnId: string;
   assignee: string | null;
   due: string | null;
+  priority: Priority;
+  checklist: ChecklistItem[];
 };
 
 /** Assina os cards de um setor em tempo real. */
@@ -88,6 +103,7 @@ export async function createCard(
   input: CardInput,
   createdBy: string,
 ): Promise<void> {
+  const now = Date.now();
   await addDoc(collection(db, "cards"), {
     sector,
     columnId: input.columnId,
@@ -95,7 +111,10 @@ export async function createCard(
     description: input.description.trim(),
     assignee: input.assignee || null,
     due: input.due || null,
-    order: Date.now(),
+    priority: input.priority,
+    checklist: input.checklist,
+    order: now,
+    enteredAt: now,
     createdAt: serverTimestamp(),
     createdBy,
   });
@@ -112,7 +131,12 @@ export async function deleteCardById(id: string): Promise<void> {
   await deleteDoc(doc(db, "cards", id));
 }
 
-/** Move um card para outra coluna (mantém-no no topo da coluna destino). */
+/** Move um card para outra coluna (reinicia o aging e vai para o topo). */
 export async function moveCard(id: string, columnId: string): Promise<void> {
-  await updateDoc(doc(db, "cards", id), { columnId, order: Date.now() });
+  const now = Date.now();
+  await updateDoc(doc(db, "cards", id), {
+    columnId,
+    order: now,
+    enteredAt: now,
+  });
 }

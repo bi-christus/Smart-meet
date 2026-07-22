@@ -2,6 +2,12 @@
   position: relative;
   min-height: 100vh;
   overflow: hidden;
+  background: radial-gradient(
+      1300px 820px at 10% -6%,
+      rgba(255, 106, 43, 0.2),
+      transparent 58%
+    ),
+    var(--bg);
 }
 
 .fx {

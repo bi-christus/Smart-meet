@@ -1,15 +1,61 @@
 :root {
+  /* marca — laranja queimado */
+  --brand: #ff6a2b;
+  --brand-hover: #ff824d;
+  --brand-soft: rgba(255, 106, 43, 0.16);
+  --brand-line: rgba(255, 106, 43, 0.42);
+  --accent: #ff8a54;
+  --accent-2: #ffb089;
+  --accent-3: #ff6a2b;
+
+  /* superfícies — rampa de pretos (neutro quente) */
   --bg: #0d0d0f;
-  --card: rgba(24, 24, 27, 0.72);
-  --field: #0f0f11;
+  --s1: #151517;
+  --s2: #1c1c1f;
+  --s3: #26262a;
+  --s4: #323238;
   --line: #2b2b30;
   --line-soft: #202024;
+
+  /* texto */
   --tx: #f3f2ef;
   --tx-2: #b2b1ab;
   --tx-3: #78776f;
-  --brand: #ff6a2b;
-  --brand-hover: #ff824d;
-  --accent-2: #ffb089;
+
+  /* topbar */
+  --topbar-bg: #151517;
+  --topbar-line: #2b2b30;
+  --topbar-fg: #b2b1ab;
+  --topbar-fg-strong: #ffffff;
+
+  /* semânticas */
+  --ok: #34d399;
+  --ok-bg: rgba(52, 211, 153, 0.15);
+  --ok-tx: #5fe0b0;
+  --warn: #f5b13d;
+  --warn-bg: rgba(245, 177, 61, 0.15);
+  --warn-tx: #f7c46b;
+  --danger: #fb7185;
+  --danger-bg: rgba(251, 113, 133, 0.15);
+  --danger-tx: #ff9d9d;
+  --info: #54b8ff;
+  --info-bg: rgba(84, 184, 255, 0.14);
+  --info-tx: #bfe3ff;
+  --susp: #c084fc;
+  --susp-bg: rgba(192, 132, 252, 0.16);
+  --susp-tx: #e5c8ff;
+
+  --scroll: #33333a;
+  --scroll-hover: #45454e;
+  --overlay: rgba(0, 0, 0, 0.66);
+  --r: 10px;
+  --r-lg: 14px;
+  --r-sm: 7px;
+  --shadow: 0 12px 34px rgba(0, 0, 0, 0.55);
+
+  /* aliases usados pelos componentes */
+  --card: #1c1c1f;
+  --field: #151517;
 }
 
 * {
@@ -21,28 +67,48 @@
 html {
   color-scheme: dark;
 }
-
 html,
 body {
   max-width: 100vw;
-  overflow-x: hidden;
 }
 
 body {
   min-height: 100vh;
   color: var(--tx);
-  background: radial-gradient(
-      1300px 820px at 10% -6%,
-      rgba(255, 106, 43, 0.2),
-      transparent 58%
-    ),
-    var(--bg);
-  font-family: var(--font-sans), "Segoe UI", system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  font-family: var(--font-sans), "IBM Plex Sans", "Segoe UI", system-ui,
+    -apple-system, sans-serif;
+  font-size: 14px;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
 a {
-  color: inherit;
+  color: var(--accent);
   text-decoration: none;
+}
+a:hover {
+  color: var(--accent-2);
+}
+
+::selection {
+  background: rgba(255, 106, 43, 0.28);
+}
+
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--scroll);
+  border-radius: 9px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scroll-hover);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
 }

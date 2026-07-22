@@ -1,45 +1,58 @@
 .shell {
-  min-height: 100vh;
+  height: 100vh;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .topbar {
-  height: 56px;
   flex: none;
+  height: 56px;
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 0 16px;
-  border-bottom: 1px solid var(--line-soft);
-  background: rgba(13, 13, 15, 0.82);
-  backdrop-filter: blur(10px);
-  position: sticky;
-  top: 0;
+  gap: 6px;
+  padding: 0 18px;
+  background: var(--topbar-bg);
+  border-bottom: 1px solid var(--topbar-line);
   z-index: 40;
 }
 
 .brand {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 11px;
+  margin-right: 12px;
+  user-select: none;
+  text-decoration: none;
   flex: none;
 }
 .brand img {
-  height: 26px;
+  height: 34px;
   width: auto;
+  display: block;
 }
-.brand b {
-  font-family: var(--font-serif), Georgia, serif;
-  font-weight: 600;
-  font-size: 16px;
+.wm {
+  line-height: 1.05;
+}
+.wm b {
+  display: block;
+  font-size: 14.5px;
+  font-weight: 700;
   letter-spacing: 0.2px;
+  color: var(--topbar-fg-strong);
+}
+.wm span {
+  font-size: 10px;
+  color: var(--tx-3);
+  font-weight: 500;
+  letter-spacing: 0.3px;
 }
 
 .nav {
   display: flex;
   align-items: center;
   gap: 2px;
+  height: 100%;
   flex: 1;
   overflow-x: auto;
   scrollbar-width: none;
@@ -48,35 +61,37 @@
   display: none;
 }
 .navBtn {
+  height: 100%;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  height: 36px;
-  padding: 0 13px;
-  border: none;
+  gap: 7px;
+  padding: 0 14px;
   background: none;
-  color: var(--tx-2);
+  border: none;
+  color: var(--topbar-fg);
   font-family: inherit;
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 500;
-  border-radius: 9px;
   cursor: pointer;
+  border-bottom: 2px solid transparent;
   white-space: nowrap;
   text-decoration: none;
-  transition: background 0.12s, color 0.12s;
 }
 .navBtn svg {
-  width: 16px;
-  height: 16px;
-  flex: none;
+  width: 15px;
+  height: 15px;
+  opacity: 0.85;
 }
 .navBtn:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--tx);
+  color: var(--topbar-fg-strong);
 }
 .navBtn.on {
-  background: rgba(255, 106, 43, 0.14);
-  color: var(--accent-2);
+  color: var(--topbar-fg-strong);
+  border-bottom-color: var(--brand);
+}
+.navBtn.on svg {
+  color: var(--accent);
+  opacity: 1;
 }
 
 .user {
@@ -84,19 +99,18 @@
   flex: none;
 }
 .userBtn {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 9px;
-  height: 40px;
-  padding: 0 10px 0 6px;
-  border: none;
+  gap: 8px;
+  height: 38px;
+  padding: 0 8px 0 5px;
   background: none;
+  border: none;
+  border-radius: 9px;
   cursor: pointer;
-  border-radius: 10px;
-  transition: background 0.12s;
 }
 .userBtn:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--s2);
 }
 .uAvatar,
 .uAvatarFallback {
@@ -109,68 +123,71 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--brand);
   color: #fff;
   font-weight: 700;
   font-size: 12px;
 }
+.uMeta {
+  text-align: left;
+  line-height: 1.15;
+}
 .uName {
+  display: block;
   font-size: 13px;
   font-weight: 600;
   color: var(--tx);
-  line-height: 1.1;
 }
 .uRole {
-  font-size: 10.5px;
+  display: block;
+  font-size: 10px;
   color: var(--tx-3);
-  line-height: 1.1;
-  margin-top: 1px;
-}
-.uMeta {
-  text-align: left;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
 }
 
 .pop {
   position: absolute;
   right: 0;
   top: 48px;
-  width: 250px;
-  background: var(--card);
+  width: 244px;
+  background: var(--s2);
   border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 8px;
-  box-shadow: 0 24px 55px rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(16px);
+  border-radius: var(--r);
+  box-shadow: var(--shadow);
   z-index: 60;
+  padding: 6px;
 }
 .popHead {
-  padding: 12px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 10px 12px;
   border-bottom: 1px solid var(--line-soft);
-  margin-bottom: 6px;
+  margin-bottom: 5px;
 }
 .popName {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 13.5px;
+  font-weight: 700;
   color: var(--tx);
 }
 .popEmail {
-  font-family: var(--font-mono), monospace;
-  font-size: 11.5px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
   color: var(--tx-3);
   margin-top: 3px;
   word-break: break-all;
 }
 .popRole {
-  display: inline-block;
+  align-self: flex-start;
   margin-top: 9px;
-  font-family: var(--font-mono), monospace;
+  font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 10px;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.4px;
   text-transform: uppercase;
   color: var(--accent-2);
-  background: rgba(255, 106, 43, 0.14);
-  border: 1px solid rgba(255, 106, 43, 0.3);
+  background: var(--brand-soft);
+  border: 1px solid var(--brand-line);
   padding: 2px 9px;
   border-radius: 20px;
 }
@@ -179,32 +196,32 @@
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 9px 12px;
+  padding: 9px 10px;
   border: none;
   background: none;
-  color: var(--tx-2);
+  border-radius: 7px;
+  color: var(--tx);
   font-family: inherit;
   font-size: 13px;
-  border-radius: 9px;
-  cursor: pointer;
   text-align: left;
+  cursor: pointer;
 }
 .popItem:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--tx);
+  background: var(--s3);
 }
 .popItem svg {
   width: 15px;
   height: 15px;
+  color: var(--tx-2);
 }
 
 .content {
   flex: 1;
-  min-height: 0;
+  overflow: auto;
+  position: relative;
 }
-
 .loader {
-  min-height: 100vh;
+  height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -216,7 +233,7 @@
   .uMeta {
     display: none;
   }
-  .brand b {
+  .wm span {
     display: none;
   }
 }

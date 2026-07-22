@@ -58,7 +58,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <Link href="/" className={styles.brand}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logo-uh-white.png" alt="Smart Meeting" />
-          <b>Smart Meeting</b>
+          <span className={styles.wm}>
+            <b>Smart Meeting</b>
+            <span>Rede Christus</span>
+          </span>
         </Link>
 
         <nav className={styles.nav}>

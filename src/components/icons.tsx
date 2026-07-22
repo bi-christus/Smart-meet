@@ -68,6 +68,18 @@ const PATHS: Record<string, ReactNode> = {
     </>
   ),
   shield: <path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z" />,
+  clock: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </>
+  ),
+  calendar: (
+    <>
+      <rect x="3" y="4" width="18" height="17" rx="2" />
+      <path d="M3 9h18M8 2v4M16 2v4" />
+    </>
+  ),
 };
 
 export function Icon({ name, size = 24 }: { name: string; size?: number }) {
