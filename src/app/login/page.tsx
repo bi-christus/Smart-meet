@@ -52,7 +52,9 @@ export default function LoginPage() {
       await signInWithGoogle();
       // O redirect é tratado pelo onAuthStateChanged + useEffect acima.
     } catch (e: unknown) {
-      const code = (e as { code?: string })?.code ?? "";
+      const err = e as { code?: string; message?: string };
+      const code = err?.code ?? "";
+      console.error("Falha no login com Google:", code, err?.message, e);
       if (
         code === "auth/popup-closed-by-user" ||
         code === "auth/cancelled-popup-request"
@@ -60,14 +62,23 @@ export default function LoginPage() {
         // Usuário fechou o popup — ignorar silenciosamente.
       } else if (code === "auth/unauthorized-domain") {
         setError(
-          "Este domínio ainda não foi autorizado no Firebase (configuração pendente).",
+          "Domínio não autorizado no Firebase. Adicione este endereço em Authentication → Settings → Authorized domains.",
         );
-      } else if (code === "auth/operation-not-allowed") {
+      } else if (
+        code === "auth/operation-not-allowed" ||
+        code === "auth/configuration-not-found"
+      ) {
         setError(
-          "O login com Google ainda não foi ativado no Firebase (configuração pendente).",
+          "Login com Google ainda não ativado no Firebase. Ative em Authentication → Sign-in method → Google e salve.",
+        );
+      } else if (code === "auth/popup-blocked") {
+        setError(
+          "O navegador bloqueou a janela de login. Permita popups para este site e tente novamente.",
         );
       } else {
-        setError("Não foi possível entrar. Tente novamente.");
+        setError(
+          "Não foi possível entrar. [" + (code || err?.message || "erro") + "]",
+        );
       }
     } finally {
       setBusy(false);
