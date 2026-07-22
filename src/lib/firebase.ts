@@ -1,5 +1,6 @@
 import { initializeApp, getApps, getApp, type FirebaseApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
+import { getFirestore } from "firebase/firestore";
 
 /**
  * Configuração do Firebase (app web "Smart Meeting Web").
@@ -33,6 +34,8 @@ export const firebaseApp: FirebaseApp = getApps().length
   : initializeApp(firebaseConfig);
 
 export const auth = getAuth(firebaseApp);
+
+export const db = getFirestore(firebaseApp);
 
 export const googleProvider = new GoogleAuthProvider();
 // Sempre deixa o usuário escolher a conta (evita login silencioso na conta errada).

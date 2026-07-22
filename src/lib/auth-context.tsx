@@ -14,11 +14,16 @@ import {
   type User,
 } from "firebase/auth";
 import { auth, googleProvider } from "./firebase";
+import { ensureUserProfile, type UserProfile } from "./users";
 
 type AuthContextValue = {
   user: User | null;
-  /** true enquanto o estado inicial de autenticação ainda está sendo resolvido */
+  /** Perfil no Firestore (null se não autorizado). */
+  profile: UserProfile | null;
+  /** true enquanto o estado de auth + perfil ainda está sendo resolvido */
   loading: boolean;
+  /** true quando o usuário tem perfil ativo (pode usar o app) */
+  authorized: boolean;
   signInWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
 };
@@ -27,11 +32,23 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
+      if (currentUser) {
+        try {
+          const p = await ensureUserProfile(currentUser);
+          setProfile(p);
+        } catch (e) {
+          console.error("Erro ao carregar o perfil do usuário:", e);
+          setProfile(null);
+        }
+      } else {
+        setProfile(null);
+      }
       setLoading(false);
     });
     return () => unsubscribe();
@@ -46,7 +63,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, signInWithGoogle, logout }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        profile,
+        loading,
+        authorized: !!profile,
+        signInWithGoogle,
+        logout,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

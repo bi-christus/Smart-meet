@@ -1,0 +1,115 @@
+rules_version = '2';
+
+// ============================================================================
+// Smart Meeting — Regras de segurança do Firestore
+//
+// Modelo de acesso:
+//  - Usuários são identificados pelo e-mail (doc id = e-mail em minúsculas).
+//  - Só quem tem doc em /users com active == true (ou o super admin) usa o app.
+//  - Papéis: admin > gestor > operador.
+//  - O super admin (bootstrap) pode sempre gerenciar — cria o próprio doc no
+//    primeiro acesso, resolvendo o problema do "primeiro admin".
+//  - Regras por setor/funcionalidade serão refinadas na Fase 3.
+// ============================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function userEmail() {
+      return request.auth.token.email;
+    }
+    // E-mail super admin (bootstrap). Trocar aqui se mudar o dono do sistema.
+    function isSuperAdmin() {
+      return isSignedIn() && userEmail() == 'setorbiunichristus@gmail.com';
+    }
+    function userPath() {
+      return /databases/$(database)/documents/users/$(userEmail());
+    }
+    function hasProfile() {
+      return isSignedIn() && exists(userPath());
+    }
+    function profile() {
+      return get(userPath()).data;
+    }
+    function isActive() {
+      return hasProfile() && profile().active == true;
+    }
+    function myRole() {
+      return hasProfile() ? profile().role : 'none';
+    }
+    function isAdmin() {
+      return isSuperAdmin() || (isActive() && myRole() == 'admin');
+    }
+    function isGestorOrAdmin() {
+      return isAdmin() || (isActive() && myRole() == 'gestor');
+    }
+    // Autorizado a usar o sistema.
+    function isAuthorized() {
+      return isSuperAdmin() || isActive();
+    }
+
+    // ---- usuários ----
+    match /users/{userId} {
+      allow read: if isSignedIn() && (userId == userEmail() || isAdmin());
+
+      // Super admin cria o próprio doc (bootstrap); admin cria qualquer um.
+      allow create: if isAdmin()
+        || (isSuperAdmin() && userId == userEmail());
+
+      // Admin edita todos; super admin edita o próprio; o dono pode atualizar
+      // apenas campos de sessão (uid / lastLogin) do próprio doc.
+      allow update: if isAdmin()
+        || (isSuperAdmin() && userId == userEmail())
+        || (userId == userEmail() && isActive()
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['uid', 'lastLogin']));
+
+      allow delete: if isAdmin();
+    }
+
+    // ---- setores ----
+    match /sectors/{doc} {
+      allow read: if isAuthorized();
+      allow write: if isAdmin();
+    }
+
+    // ---- colunas do kanban (por setor) ----
+    match /columns/{doc} {
+      allow read: if isAuthorized();
+      allow write: if isGestorOrAdmin();
+    }
+
+    // ---- cards / demandas ----
+    match /cards/{doc} {
+      allow read: if isAuthorized();
+      allow write: if isAuthorized();
+    }
+
+    // ---- reuniões ----
+    match /meetings/{doc} {
+      allow read: if isAuthorized();
+      allow write: if isAuthorized();
+    }
+
+    // ---- relatórios (atas) ----
+    match /reports/{doc} {
+      allow read: if isAuthorized();
+      allow write: if isAuthorized();
+    }
+
+    // ---- trilha de auditoria ----
+    match /logs/{doc} {
+      allow read: if isGestorOrAdmin();
+      allow create: if isAuthorized();
+      allow update, delete: if false;
+    }
+
+    // Nega qualquer outro caminho não previsto.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
