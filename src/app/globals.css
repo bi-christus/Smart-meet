@@ -1,5 +1,5 @@
-:root {
-  /* marca — laranja queimado */
+:root,
+[data-theme="dark"] {
   --brand: #ff6a2b;
   --brand-hover: #ff824d;
   --brand-soft: rgba(255, 106, 43, 0.16);
@@ -8,7 +8,6 @@
   --accent-2: #ffb089;
   --accent-3: #ff6a2b;
 
-  /* superfícies — rampa de pretos (neutro quente) */
   --bg: #0d0d0f;
   --s1: #151517;
   --s2: #1c1c1f;
@@ -17,18 +16,15 @@
   --line: #2b2b30;
   --line-soft: #202024;
 
-  /* texto */
   --tx: #f3f2ef;
   --tx-2: #b2b1ab;
   --tx-3: #78776f;
 
-  /* topbar */
   --topbar-bg: #151517;
   --topbar-line: #2b2b30;
   --topbar-fg: #b2b1ab;
   --topbar-fg-strong: #ffffff;
 
-  /* semânticas */
   --ok: #34d399;
   --ok-bg: rgba(52, 211, 153, 0.15);
   --ok-tx: #5fe0b0;
@@ -53,9 +49,139 @@
   --r-sm: 7px;
   --shadow: 0 12px 34px rgba(0, 0, 0, 0.55);
 
-  /* aliases usados pelos componentes */
   --card: #1c1c1f;
   --field: #151517;
+  color-scheme: dark;
+}
+
+[data-theme="light"] {
+  --brand: #d24e12;
+  --brand-hover: #b23f0c;
+  --brand-soft: rgba(210, 78, 18, 0.1);
+  --brand-line: rgba(210, 78, 18, 0.3);
+  --accent: #c2410c;
+  --accent-2: #9a3412;
+  --accent-3: #d24e12;
+
+  --bg: #f1f0ec;
+  --s1: #f6f5f1;
+  --s2: #ffffff;
+  --s3: #efeee9;
+  --s4: #e5e3db;
+  --line: #e5e3db;
+  --line-soft: #edece6;
+
+  --tx: #1a1a17;
+  --tx-2: #57564e;
+  --tx-3: #9a988e;
+
+  --topbar-bg: #ffffff;
+  --topbar-line: #e6e5df;
+  --topbar-fg: #6b6a62;
+  --topbar-fg-strong: #1a1a17;
+
+  --ok: #16a34a;
+  --ok-bg: rgba(22, 163, 74, 0.12);
+  --ok-tx: #15803d;
+  --warn: #d97706;
+  --warn-bg: rgba(217, 119, 6, 0.13);
+  --warn-tx: #b45309;
+  --danger: #dc2626;
+  --danger-bg: rgba(220, 38, 38, 0.1);
+  --danger-tx: #b91c1c;
+  --info: #2563eb;
+  --info-bg: rgba(37, 99, 235, 0.1);
+  --info-tx: #1d4ed8;
+  --susp: #7c3aed;
+  --susp-bg: rgba(124, 58, 237, 0.1);
+  --susp-tx: #6d28d9;
+
+  --scroll: #d5d3cb;
+  --scroll-hover: #b3b1a7;
+  --overlay: rgba(26, 26, 23, 0.4);
+  --shadow: 0 10px 30px rgba(26, 26, 23, 0.12);
+
+  --card: #ffffff;
+  --field: #f6f5f1;
+  color-scheme: light;
+}
+
+/* acento AZUL — troca as cores da marca */
+[data-accent="azul"] {
+  --brand: #2b7fff;
+  --brand-hover: #4d94ff;
+  --brand-soft: rgba(43, 127, 255, 0.16);
+  --brand-line: rgba(43, 127, 255, 0.44);
+  --accent: #3d8bff;
+  --accent-2: #8fc2ff;
+  --accent-3: #2b7fff;
+}
+[data-accent="azul"][data-theme="light"] {
+  --brand: #1565d8;
+  --brand-hover: #0f52b3;
+  --brand-soft: rgba(21, 101, 216, 0.1);
+  --brand-line: rgba(21, 101, 216, 0.32);
+  --accent: #1565d8;
+  --accent-2: #3d8bff;
+  --accent-3: #1565d8;
+}
+
+/* acento CAFÉ — paleta própria em bege e marrom */
+[data-accent="cafe"][data-theme="dark"] {
+  --brand: #c98a4b;
+  --brand-hover: #d99e63;
+  --brand-soft: rgba(201, 138, 75, 0.17);
+  --brand-line: rgba(201, 138, 75, 0.45);
+  --accent: #d29a5e;
+  --accent-2: #e7c69f;
+  --accent-3: #c98a4b;
+  --bg: #17110d;
+  --s1: #1f1712;
+  --s2: #271e17;
+  --s3: #33281f;
+  --s4: #3f3227;
+  --line: #392d22;
+  --line-soft: #28201a;
+  --tx: #f4ece1;
+  --tx-2: #c6b4a0;
+  --tx-3: #8c7a67;
+  --topbar-bg: #1f1712;
+  --topbar-line: #392d22;
+  --topbar-fg: #c6b4a0;
+  --topbar-fg-strong: #fff8f0;
+  --scroll: #3f3327;
+  --scroll-hover: #544535;
+  --overlay: rgba(20, 12, 6, 0.68);
+  --card: #271e17;
+  --field: #1f1712;
+}
+[data-accent="cafe"][data-theme="light"] {
+  --brand: #8a5a2b;
+  --brand-hover: #754a22;
+  --brand-soft: rgba(138, 90, 43, 0.12);
+  --brand-line: rgba(138, 90, 43, 0.32);
+  --accent: #8a5a2b;
+  --accent-2: #6f4620;
+  --accent-3: #8a5a2b;
+  --bg: #efe5d5;
+  --s1: #f5ecdf;
+  --s2: #fdf8ef;
+  --s3: #ece0cd;
+  --s4: #e0d1b8;
+  --line: #e2d4bd;
+  --line-soft: #ebdfcb;
+  --tx: #241a11;
+  --tx-2: #5f4c39;
+  --tx-3: #9c8a73;
+  --topbar-bg: #fdf8ef;
+  --topbar-line: #e5d7c1;
+  --topbar-fg: #6f5c47;
+  --topbar-fg-strong: #241a11;
+  --scroll: #d8c8ad;
+  --scroll-hover: #bda781;
+  --overlay: rgba(36, 26, 17, 0.42);
+  --card: #fdf8ef;
+  --field: #f5ecdf;
 }
 
 * {
@@ -64,9 +190,6 @@
   margin: 0;
 }
 
-html {
-  color-scheme: dark;
-}
 html,
 body {
   max-width: 100vw;
@@ -81,6 +204,7 @@ body {
   font-size: 14px;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  transition: background 0.2s, color 0.2s;
 }
 
 a {
@@ -92,7 +216,7 @@ a:hover {
 }
 
 ::selection {
-  background: rgba(255, 106, 43, 0.28);
+  background: var(--brand-soft);
 }
 
 ::-webkit-scrollbar {

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Sans, IBM_Plex_Serif, IBM_Plex_Mono } from "next/font/google";
 import { AuthProvider } from "@/lib/auth-context";
+import { ThemeProvider } from "@/lib/theme";
 import "./globals.css";
 
 const plexSans = IBM_Plex_Sans({
@@ -36,9 +37,18 @@ export default function RootLayout({
     <html
       lang="pt-BR"
       className={`${plexSans.variable} ${plexSerif.variable} ${plexMono.variable}`}
+      suppressHydrationWarning
     >
       <body>
-        <AuthProvider>{children}</AuthProvider>
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "(function(){try{var r=document.documentElement;r.dataset.theme=localStorage.getItem('sm_theme')||'dark';r.dataset.accent=localStorage.getItem('sm_accent')||'preto';}catch(e){}})();",
+          }}
+        />
+        <ThemeProvider>
+          <AuthProvider>{children}</AuthProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

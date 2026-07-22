@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { ROLE_LABEL } from "@/lib/users";
+import { useTheme } from "@/lib/theme";
 import { Icon } from "@/components/icons";
 import styles from "./app-shell.module.css";
 
@@ -19,6 +20,7 @@ const NAV = [
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, profile, loading, authorized, logout } = useAuth();
+  const { theme, accent, setTheme, setAccent } = useTheme();
   const router = useRouter();
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -120,6 +122,46 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     {ROLE_LABEL[profile.role]}
                   </span>
                 </div>
+
+                <div className={styles.popLbl}>Tema</div>
+                <div className={styles.themeRow}>
+                  <button
+                    className={`${styles.themeBtn} ${theme === "dark" ? styles.themeOn : ""}`}
+                    onClick={() => setTheme("dark")}
+                  >
+                    Escuro
+                  </button>
+                  <button
+                    className={`${styles.themeBtn} ${theme === "light" ? styles.themeOn : ""}`}
+                    onClick={() => setTheme("light")}
+                  >
+                    Claro
+                  </button>
+                </div>
+
+                <div className={styles.popLbl}>Cor de destaque</div>
+                <div className={styles.swatchRow}>
+                  <button
+                    className={`${styles.swatch} ${styles.swPreto} ${accent === "preto" ? styles.swOn : ""}`}
+                    onClick={() => setAccent("preto")}
+                    title="Laranja"
+                    aria-label="Laranja"
+                  />
+                  <button
+                    className={`${styles.swatch} ${styles.swAzul} ${accent === "azul" ? styles.swOn : ""}`}
+                    onClick={() => setAccent("azul")}
+                    title="Azul"
+                    aria-label="Azul"
+                  />
+                  <button
+                    className={`${styles.swatch} ${styles.swCafe} ${accent === "cafe" ? styles.swOn : ""}`}
+                    onClick={() => setAccent("cafe")}
+                    title="Café"
+                    aria-label="Café"
+                  />
+                </div>
+
+                <div className={styles.popSep} />
                 <button className={styles.popItem} onClick={() => logout()}>
                   <Icon name="logout" size={15} /> Sair
                 </button>
