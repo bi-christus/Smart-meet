@@ -1,0 +1,240 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { useAuth } from "@/lib/auth-context";
+import { ROLE_LABEL } from "@/lib/users";
+import { Icon } from "@/components/icons";
+import styles from "./app-shell.module.css";
+
+const NAV = [
+  { id: "inicio", label: "Início", href: "/" },
+  { id: "reunioes", label: "Reuniões", href: "/reunioes" },
+  { id: "relatorios", label: "Relatórios IA", href: "/relatorios" },
+  { id: "kanban", label: "Kanban", href: "/kanban" },
+  { id: "dashboard", label: "Dashboard", href: "/dashboard" },
+  { id: "cronograma", label: "Cronograma", href: "/cronograma" },
+];
+
+export default function AppLayout({ children }: { children: React.ReactNode }) {
+  const { user, profile, loading, authorized, logout } = useAuth();
+  const router = useRouter();
+  const pathname = usePathname();
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (!loading && !user) router.replace("/login");
+  }, [loading, user, router]);
+
+  if (loading || !user) {
+    return <div className={styles.loader}>Carregando…</div>;
+  }
+
+  if (!authorized || !profile) {
+    return (
+      <AccessPending
+        email={user.email}
+        name={user.displayName}
+        photo={user.photoURL}
+        onLogout={logout}
+      />
+    );
+  }
+
+  const nav = [...NAV];
+  if (profile.role === "admin") {
+    nav.push({ id: "admin", label: "Admin", href: "/admin" });
+  }
+
+  const isActive = (href: string) =>
+    href === "/" ? pathname === "/" : pathname.startsWith(href);
+
+  const inicial = (profile.name?.trim()[0] || "U").toUpperCase();
+
+  return (
+    <div className={styles.shell}>
+      <header className={styles.topbar}>
+        <Link href="/" className={styles.brand}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo-uh-white.png" alt="Smart Meeting" />
+          <b>Smart Meeting</b>
+        </Link>
+
+        <nav className={styles.nav}>
+          {nav.map((n) => (
+            <Link
+              key={n.id}
+              href={n.href}
+              className={`${styles.navBtn} ${isActive(n.href) ? styles.on : ""}`}
+            >
+              <Icon name={n.id} size={16} />
+              <span>{n.label}</span>
+            </Link>
+          ))}
+        </nav>
+
+        <div className={styles.user}>
+          <button
+            className={styles.userBtn}
+            onClick={() => setMenuOpen((o) => !o)}
+          >
+            {user.photoURL ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                className={styles.uAvatar}
+                src={user.photoURL}
+                alt={profile.name}
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <span
+                className={styles.uAvatarFallback}
+                style={{ background: profile.color }}
+              >
+                {inicial}
+              </span>
+            )}
+            <span className={styles.uMeta}>
+              <span className={styles.uName}>
+                {profile.name?.split(" ")[0]}
+              </span>
+              <span className={styles.uRole}>{ROLE_LABEL[profile.role]}</span>
+            </span>
+          </button>
+
+          {menuOpen && (
+            <>
+              <div
+                style={{ position: "fixed", inset: 0, zIndex: 50 }}
+                onClick={() => setMenuOpen(false)}
+              />
+              <div className={styles.pop}>
+                <div className={styles.popHead}>
+                  <div className={styles.popName}>{profile.name}</div>
+                  <div className={styles.popEmail}>{profile.email}</div>
+                  <span className={styles.popRole}>
+                    {ROLE_LABEL[profile.role]}
+                  </span>
+                </div>
+                <button className={styles.popItem} onClick={() => logout()}>
+                  <Icon name="logout" size={15} /> Sair
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </header>
+
+      <main className={styles.content}>{children}</main>
+    </div>
+  );
+}
+
+function AccessPending({
+  email,
+  name,
+  photo,
+  onLogout,
+}: {
+  email: string | null;
+  name: string | null;
+  photo: string | null;
+  onLogout: () => void;
+}) {
+  const inicial = ((name || email || "U").trim()[0] || "U").toUpperCase();
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 24,
+      }}
+    >
+      <div
+        style={{
+          maxWidth: 460,
+          textAlign: "center",
+          background: "var(--card)",
+          border: "1px solid rgba(255,255,255,.07)",
+          borderRadius: 20,
+          padding: "40px 34px",
+          backdropFilter: "blur(14px)",
+        }}
+      >
+        {photo ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={photo}
+            alt=""
+            referrerPolicy="no-referrer"
+            style={{
+              width: 60,
+              height: 60,
+              borderRadius: "50%",
+              border: "2px solid rgba(255,106,43,.5)",
+            }}
+          />
+        ) : (
+          <div
+            style={{
+              width: 60,
+              height: 60,
+              borderRadius: "50%",
+              background: "var(--brand)",
+              color: "#fff",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontWeight: 700,
+              fontSize: 22,
+            }}
+          >
+            {inicial}
+          </div>
+        )}
+        <h1
+          style={{
+            fontFamily: "var(--font-serif), serif",
+            fontWeight: 600,
+            fontSize: 26,
+            margin: "16px 0 10px",
+          }}
+        >
+          Acesso pendente
+        </h1>
+        <p
+          style={{
+            color: "var(--tx-2)",
+            fontSize: 14.5,
+            lineHeight: 1.6,
+            marginBottom: 20,
+          }}
+        >
+          A conta <strong style={{ color: "var(--tx)" }}>{email}</strong> ainda
+          não tem acesso liberado ao Smart Meeting. Peça ao administrador para
+          incluir o seu e-mail.
+        </p>
+        <button
+          onClick={onLogout}
+          style={{
+            height: 42,
+            padding: "0 22px",
+            border: "1px solid var(--line)",
+            borderRadius: 11,
+            background: "transparent",
+            color: "var(--tx)",
+            fontFamily: "inherit",
+            fontSize: 14,
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          Sair
+        </button>
+      </div>
+    </div>
+  );
+}
