@@ -80,6 +80,28 @@ const PATHS: Record<string, ReactNode> = {
       <path d="M3 9h18M8 2v4M16 2v4" />
     </>
   ),
+  mic: (
+    <>
+      <rect x="9" y="2" width="6" height="12" rx="3" />
+      <path d="M5 11a7 7 0 0 0 14 0" />
+      <path d="M12 18v3M8 21h8" />
+    </>
+  ),
+  upload: (
+    <>
+      <path d="M12 15V3" />
+      <path d="M7 8l5-5 5 5" />
+      <path d="M20 16v3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-3" />
+    </>
+  ),
+  online: (
+    <>
+      <rect x="2" y="4" width="20" height="13" rx="2" />
+      <path d="M8 21h8M12 17v4" />
+    </>
+  ),
+  wave: <path d="M4 10v4M8 6v12M12 3v18M16 6v12M20 10v4" />,
+  stop: <rect x="6" y="6" width="12" height="12" rx="2" />,
 };
 
 export function Icon({ name, size = 24 }: { name: string; size?: number }) {
