@@ -8,6 +8,7 @@ import {
   deleteDoc,
   doc,
   serverTimestamp,
+  writeBatch,
 } from "firebase/firestore";
 import { db } from "./firebase";
 
@@ -139,4 +140,99 @@ export async function moveCard(id: string, columnId: string): Promise<void> {
     order: now,
     enteredAt: now,
   });
+}
+
+// ---------------------------------------------------------------------------
+// Colunas por setor (editáveis) — armazenadas no Firestore.
+// `colId` é o id que os cards referenciam em `columnId`.
+// ---------------------------------------------------------------------------
+
+export type ColumnDoc = {
+  id: string; // id do documento no Firestore
+  sector: string;
+  colId: string; // id lógico usado por card.columnId
+  title: string;
+  color: string;
+  order: number;
+};
+
+export const COLUMN_COLORS = [
+  "#78776f",
+  "#54b8ff",
+  "#f5b13d",
+  "#c084fc",
+  "#34d399",
+  "#fb7185",
+  "#ff6a2b",
+  "#2b7fff",
+];
+
+function sectorKey(s: string): string {
+  return s.replace(/[^\w]/g, "_");
+}
+
+export function subscribeColumns(
+  sector: string,
+  onData: (cols: ColumnDoc[]) => void,
+  onError?: (e: Error) => void,
+): () => void {
+  return onSnapshot(
+    query(collection(db, "columns"), where("sector", "==", sector)),
+    (snap) => {
+      const cols = snap.docs.map((d) => ({
+        id: d.id,
+        ...(d.data() as Omit<ColumnDoc, "id">),
+      }));
+      cols.sort((a, b) => a.order - b.order);
+      onData(cols);
+    },
+    (e) => onError?.(e),
+  );
+}
+
+/** Cria as colunas padrão de um setor (idempotente — ids determinísticos). */
+export async function seedDefaultColumns(sector: string): Promise<void> {
+  const batch = writeBatch(db);
+  DEFAULT_COLUMNS.forEach((c, i) => {
+    batch.set(doc(db, "columns", `${sectorKey(sector)}__${c.id}`), {
+      sector,
+      colId: c.id,
+      title: c.title,
+      color: c.color,
+      order: i,
+    });
+  });
+  await batch.commit();
+}
+
+export async function addColumn(
+  sector: string,
+  title: string,
+  color: string,
+  order: number,
+): Promise<void> {
+  await addDoc(collection(db, "columns"), {
+    sector,
+    colId: `col_${Date.now()}`,
+    title: title.trim(),
+    color,
+    order,
+  });
+}
+
+export async function updateColumn(
+  id: string,
+  patch: { title?: string; color?: string },
+): Promise<void> {
+  await updateDoc(doc(db, "columns", id), patch);
+}
+
+export async function deleteColumn(id: string): Promise<void> {
+  await deleteDoc(doc(db, "columns", id));
+}
+
+export async function reorderColumns(orderedIds: string[]): Promise<void> {
+  const batch = writeBatch(db);
+  orderedIds.forEach((id, i) => batch.update(doc(db, "columns", id), { order: i }));
+  await batch.commit();
 }

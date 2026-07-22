@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { subscribeUsers, DEFAULT_SECTORS, type UserProfile } from "@/lib/users";
 import {
@@ -9,13 +9,20 @@ import {
   updateCard,
   deleteCardById,
   moveCard,
+  subscribeColumns,
+  seedDefaultColumns,
+  addColumn,
+  updateColumn,
+  deleteColumn,
+  reorderColumns,
   DEFAULT_COLUMNS,
+  COLUMN_COLORS,
   PRIORITY_LABEL,
   type Card,
   type CardInput,
   type Priority,
   type ChecklistItem,
-  type KanbanColumn,
+  type ColumnDoc,
 } from "@/lib/kanban";
 import { Icon } from "@/components/icons";
 import styles from "./kanban.module.css";
@@ -59,9 +66,11 @@ type EditState =
   | { mode: "new"; columnId: string }
   | { mode: "edit"; card: Card }
   | null;
+type ColEditState = { mode: "new" } | { mode: "edit"; col: ColumnDoc } | null;
 
 export default function KanbanPage() {
   const { profile } = useAuth();
+  const canManage = profile?.role === "admin" || profile?.role === "gestor";
 
   const sectors = useMemo(
     () =>
@@ -76,11 +85,16 @@ export default function KanbanPage() {
   const [sector, setSector] = useState("");
   const [cards, setCards] = useState<Card[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
+  const [fireColumns, setFireColumns] = useState<ColumnDoc[]>([]);
+  const [colsLoaded, setColsLoaded] = useState(false);
   const [search, setSearch] = useState("");
   const [prio, setPrio] = useState<"" | Priority>("");
   const [edit, setEdit] = useState<EditState>(null);
-  const [dragId, setDragId] = useState<string | null>(null);
+  const [colEdit, setColEdit] = useState<ColEditState>(null);
+  const [dragCardId, setDragCardId] = useState<string | null>(null);
+  const [dragColId, setDragColId] = useState<string | null>(null);
   const [overCol, setOverCol] = useState<string | null>(null);
+  const seededRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (sectors.length && !sectors.includes(sector)) setSector(sectors[0]);
@@ -96,6 +110,37 @@ export default function KanbanPage() {
     );
     return () => u();
   }, [sector]);
+
+  useEffect(() => {
+    setColsLoaded(false);
+    if (!sector) {
+      setFireColumns([]);
+      return;
+    }
+    const u = subscribeColumns(
+      sector,
+      (cols) => {
+        setFireColumns(cols);
+        setColsLoaded(true);
+      },
+      (e) => console.error("Erro ao carregar colunas:", e),
+    );
+    return () => u();
+  }, [sector]);
+
+  // Semeia as colunas padrão se o setor ainda não tiver nenhuma.
+  useEffect(() => {
+    if (
+      colsLoaded &&
+      sector &&
+      fireColumns.length === 0 &&
+      canManage &&
+      !seededRef.current.has(sector)
+    ) {
+      seededRef.current.add(sector);
+      seedDefaultColumns(sector).catch(console.error);
+    }
+  }, [colsLoaded, fireColumns.length, sector, canManage]);
 
   useEffect(() => {
     const u = subscribeUsers(setUsers, () => {});
@@ -118,6 +163,19 @@ export default function KanbanPage() {
     );
   }, [cards, search, prio]);
 
+  const displayCols: ColumnDoc[] = fireColumns.length
+    ? fireColumns
+    : DEFAULT_COLUMNS.map((c, i) => ({
+        id: `_fb_${c.id}`,
+        sector,
+        colId: c.id,
+        title: c.title,
+        color: c.color,
+        order: i,
+      }));
+  const colsReal = fireColumns.length > 0;
+  const canEditCols = canManage && colsReal;
+
   if (!profile) return null;
 
   if (sectors.length === 0) {
@@ -129,13 +187,23 @@ export default function KanbanPage() {
     );
   }
 
-  function onDrop(colId: string) {
-    if (dragId) {
-      const c = cards.find((x) => x.id === dragId);
-      if (c && c.columnId !== colId)
-        moveCard(dragId, colId).catch(console.error);
+  function onColDrop(col: ColumnDoc) {
+    if (dragCardId) {
+      const c = cards.find((x) => x.id === dragCardId);
+      if (c && c.columnId !== col.colId)
+        moveCard(dragCardId, col.colId).catch(console.error);
+    } else if (dragColId && colsReal && dragColId !== col.id) {
+      const ids = fireColumns.map((c) => c.id);
+      const from = ids.indexOf(dragColId);
+      const to = ids.indexOf(col.id);
+      if (from >= 0 && to >= 0) {
+        const [m] = ids.splice(from, 1);
+        ids.splice(to, 0, m);
+        reorderColumns(ids).catch(console.error);
+      }
     }
-    setDragId(null);
+    setDragCardId(null);
+    setDragColId(null);
     setOverCol(null);
   }
 
@@ -182,33 +250,58 @@ export default function KanbanPage() {
       </div>
 
       <div className={styles.board}>
-        {DEFAULT_COLUMNS.map((col) => {
-          const colCards = filtered.filter((c) => c.columnId === col.id);
+        {displayCols.map((col) => {
+          const colCards = filtered.filter((c) => c.columnId === col.colId);
           return (
             <div
               key={col.id}
-              className={`${styles.col} ${overCol === col.id ? styles.colDrop : ""}`}
+              className={`${styles.col} ${overCol === col.id ? styles.colDrop : ""} ${dragColId === col.id ? styles.colDragging : ""}`}
               onDragOver={(e) => {
                 e.preventDefault();
                 if (overCol !== col.id) setOverCol(col.id);
               }}
-              onDrop={() => onDrop(col.id)}
+              onDrop={() => onColDrop(col)}
             >
               <div
                 className={styles.colstripe}
                 style={{ background: col.color }}
               />
               <div className={styles.colhead}>
+                {canEditCols && (
+                  <span
+                    className={styles.colGrip}
+                    draggable
+                    onDragStart={() => setDragColId(col.id)}
+                    onDragEnd={() => {
+                      setDragColId(null);
+                      setOverCol(null);
+                    }}
+                    title="Arraste para reordenar a coluna"
+                  >
+                    <GripDots />
+                  </span>
+                )}
                 <span className={styles.colTitle}>{col.title}</span>
                 <span className={styles.colCount}>{colCards.length}</span>
                 <div style={{ flex: 1 }} />
                 <button
                   className={styles.iconbtn}
                   title="Adicionar card"
-                  onClick={() => setEdit({ mode: "new", columnId: col.id })}
+                  onClick={() =>
+                    setEdit({ mode: "new", columnId: col.colId })
+                  }
                 >
                   <Icon name="plus" size={15} />
                 </button>
+                {canEditCols && (
+                  <button
+                    className={styles.iconbtn}
+                    title="Editar coluna"
+                    onClick={() => setColEdit({ mode: "edit", col })}
+                  >
+                    <Icon name="edit" size={14} />
+                  </button>
+                )}
               </div>
               <div className={styles.collist}>
                 {colCards.length === 0 ? (
@@ -220,10 +313,10 @@ export default function KanbanPage() {
                       card={c}
                       col={col}
                       assignee={c.assignee ? usersMap[c.assignee] : undefined}
-                      dragging={dragId === c.id}
-                      onDragStart={() => setDragId(c.id)}
+                      dragging={dragCardId === c.id}
+                      onDragStart={() => setDragCardId(c.id)}
                       onDragEnd={() => {
-                        setDragId(null);
+                        setDragCardId(null);
                         setOverCol(null);
                       }}
                       onClick={() => setEdit({ mode: "edit", card: c })}
@@ -234,6 +327,15 @@ export default function KanbanPage() {
             </div>
           );
         })}
+
+        {canEditCols && (
+          <button
+            className={styles.addColBtn}
+            onClick={() => setColEdit({ mode: "new" })}
+          >
+            <Icon name="plus" size={15} /> Nova coluna
+          </button>
+        )}
         <div style={{ flex: "none", width: 6 }} />
       </div>
 
@@ -241,9 +343,24 @@ export default function KanbanPage() {
         <CardModal
           state={edit}
           sector={sector}
+          columns={displayCols}
           actorEmail={profile.email}
           activeUsers={activeUsers}
           onClose={() => setEdit(null)}
+        />
+      )}
+
+      {colEdit && (
+        <ColumnModal
+          state={colEdit}
+          sector={sector}
+          order={displayCols.length}
+          cardCount={
+            colEdit.mode === "edit"
+              ? cards.filter((c) => c.columnId === colEdit.col.colId).length
+              : 0
+          }
+          onClose={() => setColEdit(null)}
         />
       )}
     </div>
@@ -252,7 +369,13 @@ export default function KanbanPage() {
 
 function GripDots() {
   return (
-    <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor" aria-hidden="true">
+    <svg
+      width="10"
+      height="14"
+      viewBox="0 0 10 14"
+      fill="currentColor"
+      aria-hidden="true"
+    >
       <circle cx="2" cy="2" r="1.3" />
       <circle cx="8" cy="2" r="1.3" />
       <circle cx="2" cy="7" r="1.3" />
@@ -273,7 +396,7 @@ function CardItem({
   onClick,
 }: {
   card: Card;
-  col: KanbanColumn;
+  col: ColumnDoc;
   assignee?: UserProfile;
   dragging: boolean;
   onDragStart: () => void;
@@ -281,7 +404,7 @@ function CardItem({
   onClick: () => void;
 }) {
   const di = dueInfo(card.due);
-  const aging = col.id === "aguardando" ? agingDays(card.enteredAt) : 0;
+  const aging = col.colId === "aguardando" ? agingDays(card.enteredAt) : 0;
   const items = card.checklist ?? [];
   const done = items.filter((i) => i.done).length;
 
@@ -342,12 +465,14 @@ function CardItem({
 function CardModal({
   state,
   sector,
+  columns,
   actorEmail,
   activeUsers,
   onClose,
 }: {
   state: NonNullable<EditState>;
   sector: string;
+  columns: ColumnDoc[];
   actorEmail: string;
   activeUsers: UserProfile[];
   onClose: () => void;
@@ -369,7 +494,7 @@ function CardModal({
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const col = DEFAULT_COLUMNS.find((c) => c.id === columnId);
+  const col = columns.find((c) => c.colId === columnId);
   const done = checklist.filter((i) => i.done).length;
   const pct = checklist.length ? Math.round((done / checklist.length) * 100) : 0;
 
@@ -380,7 +505,9 @@ function CardModal({
     setNewItem("");
   }
   function toggleItem(i: number) {
-    setChecklist((c) => c.map((x, idx) => (idx === i ? { ...x, done: !x.done } : x)));
+    setChecklist((c) =>
+      c.map((x, idx) => (idx === i ? { ...x, done: !x.done } : x)),
+    );
   }
   function editItem(i: number, text: string) {
     setChecklist((c) => c.map((x, idx) => (idx === i ? { ...x, text } : x)));
@@ -478,8 +605,8 @@ function CardModal({
               value={columnId}
               onChange={(e) => setColumnId(e.target.value)}
             >
-              {DEFAULT_COLUMNS.map((c) => (
-                <option key={c.id} value={c.id}>
+              {columns.map((c) => (
+                <option key={c.colId} value={c.colId}>
                   {c.title}
                 </option>
               ))}
@@ -582,6 +709,121 @@ function CardModal({
             <button className={styles.checkAddBtn} onClick={addItem}>
               Adicionar
             </button>
+          </div>
+        </div>
+
+        {err && <div className={styles.err}>{err}</div>}
+
+        <div className={styles.mactions}>
+          {!isNew && (
+            <button className={styles.btnDanger} onClick={remove}>
+              <Icon name="trash" size={15} /> Excluir
+            </button>
+          )}
+          <div className={styles.spacer} />
+          <button className={styles.btnGhost} onClick={onClose} disabled={saving}>
+            Cancelar
+          </button>
+          <button className={styles.btnSave} onClick={submit} disabled={saving}>
+            {saving ? "Salvando…" : isNew ? "Criar" : "Salvar"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ColumnModal({
+  state,
+  sector,
+  order,
+  cardCount,
+  onClose,
+}: {
+  state: NonNullable<ColEditState>;
+  sector: string;
+  order: number;
+  cardCount: number;
+  onClose: () => void;
+}) {
+  const isNew = state.mode === "new";
+  const col = state.mode === "edit" ? state.col : null;
+  const [title, setTitle] = useState(col?.title ?? "");
+  const [color, setColor] = useState(col?.color ?? COLUMN_COLORS[1]);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function submit() {
+    setErr(null);
+    if (!title.trim()) {
+      setErr("Informe o nome da coluna.");
+      return;
+    }
+    setSaving(true);
+    try {
+      if (isNew) await addColumn(sector, title, color, order);
+      else if (col) await updateColumn(col.id, { title: title.trim(), color });
+      onClose();
+    } catch (e) {
+      console.error(e);
+      setErr("Não foi possível salvar a coluna.");
+      setSaving(false);
+    }
+  }
+
+  async function remove() {
+    if (!col) return;
+    if (cardCount > 0) {
+      setErr(
+        `Mova os ${cardCount} card(s) desta coluna para outra antes de removê-la.`,
+      );
+      return;
+    }
+    if (!confirm("Remover esta coluna?")) return;
+    try {
+      await deleteColumn(col.id);
+      onClose();
+    } catch (e) {
+      console.error(e);
+      setErr("Não foi possível remover.");
+    }
+  }
+
+  return (
+    <div className={styles.overlay} onClick={onClose}>
+      <div
+        className={styles.modal}
+        onClick={(e) => e.stopPropagation()}
+        style={{ width: 420 }}
+      >
+        <div className={styles.mtitle} style={{ fontSize: 19 }}>
+          {isNew ? "Nova coluna" : "Editar coluna"}
+        </div>
+
+        <div className={styles.field}>
+          <label className={styles.label}>Nome</label>
+          <input
+            className={styles.inp}
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Ex.: Em revisão"
+            autoFocus
+          />
+        </div>
+
+        <div className={styles.field}>
+          <label className={styles.label}>Cor</label>
+          <div className={styles.colorRow}>
+            {COLUMN_COLORS.map((c) => (
+              <button
+                key={c}
+                type="button"
+                className={`${styles.colorSwatch} ${color === c ? styles.colorOn : ""}`}
+                style={{ background: c }}
+                onClick={() => setColor(c)}
+                aria-label={`Cor ${c}`}
+              />
+            ))}
           </div>
         </div>
 
