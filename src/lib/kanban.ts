@@ -52,8 +52,13 @@ export const DEMAND_TYPE_COLOR: Record<DemandType, string> = {
   relatorio: "#f5b13d", // âmbar
 };
 
-export type ChecklistItem = { text: string; done: boolean; desc?: string };
-export type Comment = { author: string; text: string; at: number };
+export type ChecklistItem = {
+  id?: string;
+  text: string;
+  done: boolean;
+  desc?: string;
+};
+export type Comment = { id?: string; author: string; text: string; at: number };
 
 /** Paleta de tags (cor estável por nome). */
 export const TAG_COLORS = [
@@ -167,7 +172,7 @@ export async function createCard(
     tags: input.tags,
     checklist: input.checklist,
     comments: [],
-    order: now,
+    order: -now,
     enteredAt: now,
     createdAt: serverTimestamp(),
     createdBy,
@@ -197,7 +202,7 @@ export async function moveCard(id: string, columnId: string): Promise<void> {
   const now = Date.now();
   await updateDoc(doc(db, "cards", id), {
     columnId,
-    order: now,
+    order: -now,
     enteredAt: now,
   });
 }

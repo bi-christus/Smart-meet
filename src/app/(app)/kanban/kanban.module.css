@@ -430,7 +430,9 @@
   margin-bottom: 14px;
 }
 .mtitle:focus {
-  outline: none;
+  outline: 2px solid var(--brand);
+  outline-offset: 3px;
+  border-radius: 4px;
 }
 .field {
   margin-bottom: 14px;
@@ -534,7 +536,9 @@
   padding: 2px 0;
 }
 .checkText:focus {
-  outline: none;
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 .checkDone {
   text-decoration: line-through;
@@ -892,7 +896,9 @@
   padding: 1px 0 3px;
 }
 .checkDesc:focus {
-  outline: none;
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: 4px;
   color: var(--tx-2);
 }
 
@@ -1048,10 +1054,19 @@
   .tagChip {
     animation: none !important;
   }
+  .checkFill,
+  .sectorBtn,
+  .iconbtn,
+  .commentBtn {
+    transition: none !important;
+  }
   .kcard {
     transition: border-color 0.1s, box-shadow 0.1s;
   }
-  .kcard:hover {
-    transform: none;
+  .kcard:hover,
+  .sectorBtn:active,
+  .iconbtn:active,
+  .commentBtn:active {
+    transform: none !important;
   }
 }

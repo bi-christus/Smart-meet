@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import styles from "./select.module.css";
 
 export type SelectOption = { value: string; label: string; color?: string };
@@ -20,7 +20,10 @@ export function Select({
 }) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
+  const [up, setUp] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const baseId = useId();
+  const listId = `${baseId}-list`;
 
   const selected = options.find((o) => o.value === value);
 
@@ -37,8 +40,16 @@ export function Select({
 
   useEffect(() => {
     if (open) setActive(options.findIndex((o) => o.value === value));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [open, value, options]);
+
+  function openMenu() {
+    const r = rootRef.current?.getBoundingClientRect();
+    if (r) {
+      const below = window.innerHeight - r.bottom;
+      setUp(below < 280 && r.top > below);
+    }
+    setOpen(true);
+  }
 
   function choose(v: string) {
     onChange(v);
@@ -47,12 +58,15 @@ export function Select({
 
   function onKey(e: React.KeyboardEvent) {
     if (e.key === "Escape") {
-      setOpen(false);
+      if (open) {
+        e.stopPropagation();
+        setOpen(false);
+      }
       return;
     }
     if (!open && (e.key === "Enter" || e.key === " " || e.key === "ArrowDown")) {
       e.preventDefault();
-      setOpen(true);
+      openMenu();
       return;
     }
     if (!open) return;
@@ -74,10 +88,15 @@ export function Select({
       <button
         type="button"
         className={`${styles.trigger} ${open ? styles.open : ""}`}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => (open ? setOpen(false) : openMenu())}
         onKeyDown={onKey}
+        role="combobox"
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-controls={listId}
+        aria-activedescendant={
+          open && active >= 0 ? `${baseId}-opt-${active}` : undefined
+        }
         aria-label={ariaLabel}
       >
         <span className={styles.val}>
@@ -105,11 +124,16 @@ export function Select({
       </button>
 
       {open && (
-        <div className={styles.menu} role="listbox">
+        <div
+          className={`${styles.menu} ${up ? styles.up : ""}`}
+          role="listbox"
+          id={listId}
+        >
           {options.map((o, i) => (
             <button
               key={o.value}
               type="button"
+              id={`${baseId}-opt-${i}`}
               role="option"
               aria-selected={o.value === value}
               className={`${styles.option} ${o.value === value ? styles.sel : ""} ${i === active ? styles.active : ""}`}

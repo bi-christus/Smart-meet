@@ -33,6 +33,7 @@ import {
 } from "@/lib/kanban";
 import { Icon } from "@/components/icons";
 import { Select, type SelectOption } from "@/components/select";
+import { Modal } from "@/components/modal";
 import styles from "./kanban.module.css";
 
 const PRIORITY_COLOR: Record<Priority, string> = {
@@ -40,6 +41,13 @@ const PRIORITY_COLOR: Record<Priority, string> = {
   media: "#f5b13d",
   baixa: "#78776f",
 };
+const KNOWN_PRIORITIES: Priority[] = ["alta", "media", "baixa"];
+
+function uid(): string {
+  return typeof crypto !== "undefined" && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `id_${Date.now()}_${Math.round(Math.random() * 1e9)}`;
+}
 
 function startOfToday(): Date {
   const d = new Date();
@@ -245,6 +253,13 @@ export default function KanbanPage() {
     setOverCol(null);
   }
 
+  const prioFilterOptions: SelectOption[] = [
+    { value: "", label: "Qualquer prioridade" },
+    { value: "alta", label: "Alta", color: PRIORITY_COLOR.alta },
+    { value: "media", label: "Média", color: PRIORITY_COLOR.media },
+    { value: "baixa", label: "Baixa", color: PRIORITY_COLOR.baixa },
+  ];
+
   return (
     <div className={styles.page}>
       <div className={styles.head}>
@@ -275,16 +290,15 @@ export default function KanbanPage() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <select
-          className={styles.select}
-          value={prio}
-          onChange={(e) => setPrio(e.target.value as "" | Priority)}
-        >
-          <option value="">Qualquer prioridade</option>
-          <option value="alta">Alta</option>
-          <option value="media">Média</option>
-          <option value="baixa">Baixa</option>
-        </select>
+        <div style={{ width: 200 }}>
+          <Select
+            value={prio}
+            options={prioFilterOptions}
+            onChange={(v) => setPrio(v as "" | Priority)}
+            placeholder="Qualquer prioridade"
+            ariaLabel="Filtrar por prioridade"
+          />
+        </div>
       </div>
 
       <div className={styles.board} key={sector}>
@@ -309,7 +323,11 @@ export default function KanbanPage() {
                   <span
                     className={styles.colGrip}
                     draggable
-                    onDragStart={() => setDragColId(col.id)}
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData("text/plain", col.id);
+                      e.dataTransfer.effectAllowed = "move";
+                      setDragColId(col.id);
+                    }}
                     onDragEnd={() => {
                       setDragColId(null);
                       setOverCol(null);
@@ -349,8 +367,15 @@ export default function KanbanPage() {
                       card={c}
                       col={col}
                       assignee={c.assignee ? usersMap[c.assignee] : undefined}
+                      requester={
+                        c.requester ? usersMap[c.requester] : undefined
+                      }
                       dragging={dragCardId === c.id}
-                      onDragStart={() => setDragCardId(c.id)}
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData("text/plain", c.id);
+                        e.dataTransfer.effectAllowed = "move";
+                        setDragCardId(c.id);
+                      }}
                       onDragEnd={() => {
                         setDragCardId(null);
                         setOverCol(null);
@@ -391,7 +416,7 @@ export default function KanbanPage() {
         <ColumnModal
           state={colEdit}
           sector={sector}
-          order={displayCols.length}
+          columns={fireColumns}
           cardCount={
             colEdit.mode === "edit"
               ? cards.filter((c) => c.columnId === colEdit.col.colId).length
@@ -427,6 +452,7 @@ function CardItem({
   card,
   col,
   assignee,
+  requester,
   dragging,
   onDragStart,
   onDragEnd,
@@ -435,18 +461,25 @@ function CardItem({
   card: Card;
   col: ColumnDoc;
   assignee?: UserProfile;
+  requester?: UserProfile;
   dragging: boolean;
-  onDragStart: () => void;
+  onDragStart: (e: React.DragEvent) => void;
   onDragEnd: () => void;
   onClick: () => void;
 }) {
   const di = dueInfo(card.due);
+  const startShort = card.startDate ? fmtShort(parseDue(card.startDate)) : "";
   const aging = col.colId === "aguardando" ? agingDays(card.enteredAt) : 0;
   const items = card.checklist ?? [];
   const done = items.filter((i) => i.done).length;
   const tags = card.tags ?? [];
   const comments = card.comments?.length ?? 0;
-  const typeColor = card.type ? DEMAND_TYPE_COLOR[card.type] : "";
+
+  const knownType =
+    !!card.type && DEMAND_TYPES.includes(card.type as DemandType);
+  const typeColor = knownType ? DEMAND_TYPE_COLOR[card.type as DemandType] : "";
+  const knownPrio =
+    !!card.priority && KNOWN_PRIORITIES.includes(card.priority as Priority);
 
   return (
     <div
@@ -457,18 +490,21 @@ function CardItem({
       onClick={onClick}
     >
       <div className={styles.ktop}>
-        {card.type && (
+        {knownType && (
           <span
             className={styles.kType}
-            style={{ background: typeColor + "22", color: typeColor }}
+            style={{
+              background: `color-mix(in srgb, ${typeColor} 15%, transparent)`,
+              color: `color-mix(in srgb, ${typeColor} 60%, var(--tx))`,
+            }}
           >
             <span className={styles.kTypeDot} style={{ background: typeColor }} />
-            {DEMAND_TYPE_LABEL[card.type]}
+            {DEMAND_TYPE_LABEL[card.type as DemandType]}
           </span>
         )}
-        {card.priority && (
+        {knownPrio && (
           <span className={`${styles.prio} ${styles["prio_" + card.priority]}`}>
-            {PRIORITY_LABEL[card.priority]}
+            {PRIORITY_LABEL[card.priority as Priority]}
           </span>
         )}
         <div style={{ flex: 1 }} />
@@ -491,12 +527,18 @@ function CardItem({
         </div>
       )}
       <div className={styles.kmeta}>
-        {di && (
+        {di ? (
           <span className={`${styles.chip} ${styles["due_" + di.tone]}`}>
             <Icon name="calendar" size={12} />
+            {startShort ? `${startShort} → ` : ""}
             {di.label}
           </span>
-        )}
+        ) : startShort ? (
+          <span className={`${styles.chip} ${styles.due_ok}`}>
+            <Icon name="calendar" size={12} />
+            Início {startShort}
+          </span>
+        ) : null}
         {aging >= 1 && (
           <span className={`${styles.aging} ${aging >= 7 ? styles.hot : ""}`}>
             <Icon name="clock" size={12} />
@@ -516,11 +558,19 @@ function CardItem({
           </span>
         )}
         <div style={{ flex: 1 }} />
+        {requester && (
+          <span
+            className={styles.mini}
+            title={`Solicitante: ${requester.name}`}
+          >
+            por {requester.name?.split(" ")[0]}
+          </span>
+        )}
         {assignee && (
           <span
             className={styles.miniAvatar}
             style={{ background: assignee.color || "#555" }}
-            title={assignee.name}
+            title={`Responsável: ${assignee.name}`}
           >
             {(assignee.name?.[0] || "?").toUpperCase()}
           </span>
@@ -561,14 +611,16 @@ function CardModal({
   const [requester, setRequester] = useState(
     card?.requester ?? (isNew ? actorEmail : ""),
   );
-  const [startDate, setStartDate] = useState(card?.startDate ?? todayStr());
+  const [startDate, setStartDate] = useState(
+    card?.startDate ?? (isNew ? todayStr() : ""),
+  );
   const [due, setDue] = useState(
-    card?.due ?? plusDays(todayStr(), 7),
+    card?.due ?? (isNew ? plusDays(todayStr(), 7) : ""),
   );
   const [tags, setTags] = useState<string[]>(card?.tags ?? []);
   const [newTag, setNewTag] = useState("");
-  const [checklist, setChecklist] = useState<ChecklistItem[]>(
-    card?.checklist ?? [],
+  const [checklist, setChecklist] = useState<ChecklistItem[]>(() =>
+    (card?.checklist ?? []).map((it) => ({ ...it, id: it.id ?? uid() })),
   );
   const [newItem, setNewItem] = useState("");
   const [comments, setComments] = useState<Comment[]>(card?.comments ?? []);
@@ -593,21 +645,26 @@ function CardModal({
     label: DEMAND_TYPE_LABEL[t],
     color: DEMAND_TYPE_COLOR[t],
   }));
-  const priorityOptions: SelectOption[] = (
-    ["alta", "media", "baixa"] as Priority[]
-  ).map((p) => ({
+  const priorityOptions: SelectOption[] = KNOWN_PRIORITIES.map((p) => ({
     value: p,
     label: PRIORITY_LABEL[p],
     color: PRIORITY_COLOR[p],
   }));
-  const userOptions = (noneLabel: string): SelectOption[] => [
-    { value: "", label: noneLabel },
-    ...activeUsers.map((u) => ({
-      value: u.email,
-      label: u.name || u.email,
-      color: u.color,
-    })),
-  ];
+  function userOptions(noneLabel: string, current: string): SelectOption[] {
+    const opts: SelectOption[] = [{ value: "", label: noneLabel }];
+    activeUsers.forEach((u) =>
+      opts.push({ value: u.email, label: u.name || u.email, color: u.color }),
+    );
+    if (current && !activeUsers.some((u) => u.email === current)) {
+      const u = usersMap[current];
+      opts.push({
+        value: current,
+        label: (u?.name || current) + " (inativo)",
+        color: u?.color,
+      });
+    }
+    return opts;
+  }
 
   function addTag() {
     const t = newTag.trim();
@@ -624,7 +681,7 @@ function CardModal({
   function addItem() {
     const t = newItem.trim();
     if (!t) return;
-    setChecklist((c) => [...c, { text: t, done: false }]);
+    setChecklist((c) => [...c, { id: uid(), text: t, done: false }]);
     setNewItem("");
   }
   function toggleItem(i: number) {
@@ -644,8 +701,13 @@ function CardModal({
 
   async function postComment() {
     const text = newComment.trim();
-    if (!text || !card) return;
-    const comment: Comment = { author: actorEmail, text, at: Date.now() };
+    if (!text || !card || posting) return;
+    const comment: Comment = {
+      id: uid(),
+      author: actorEmail,
+      text,
+      at: Date.now(),
+    };
     setPosting(true);
     try {
       await addComment(card.id, comment);
@@ -688,7 +750,13 @@ function CardModal({
         const input: CardInput = base;
         await createCard(sector, input, actorEmail);
       } else if (card) {
-        await updateCard(card.id, base);
+        const changedCol = card.columnId !== columnId;
+        await updateCard(
+          card.id,
+          changedCol
+            ? { ...base, order: -Date.now(), enteredAt: Date.now() }
+            : base,
+        );
       }
       onClose();
     } catch (e) {
@@ -712,292 +780,299 @@ function CardModal({
   }
 
   return (
-    <div className={styles.overlay} onClick={onClose}>
-      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-        <div className={styles.mhead}>
-          {col && (
-            <span className={styles.mchip}>
-              <span className={styles.mdot} style={{ background: col.color }} />
-              {col.title}
-            </span>
-          )}
-          <span className={styles.mchip}>{sector}</span>
-        </div>
+    <Modal
+      onClose={onClose}
+      ariaLabel={isNew ? "Nova demanda" : "Editar demanda"}
+      overlayClassName={styles.overlay}
+      className={styles.modal}
+    >
+      <div className={styles.mhead}>
+        {col && (
+          <span className={styles.mchip}>
+            <span className={styles.mdot} style={{ background: col.color }} />
+            {col.title}
+          </span>
+        )}
+        <span className={styles.mchip}>{sector}</span>
+      </div>
 
-        <input
-          className={styles.mtitle}
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="Título da demanda"
-          autoFocus
-        />
+      <input
+        className={styles.mtitle}
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        placeholder="Título da demanda"
+        autoFocus
+      />
 
-        <div className={styles.row2}>
-          <div className={styles.field}>
-            <label className={styles.label}>Tipo</label>
-            <Select
-              value={type}
-              options={typeOptions}
-              onChange={(v) => setType(v as DemandType)}
-              ariaLabel="Tipo da demanda"
-            />
-          </div>
-          <div className={styles.field}>
-            <label className={styles.label}>Prioridade</label>
-            <Select
-              value={priority}
-              options={priorityOptions}
-              onChange={(v) => setPriority(v as Priority)}
-              ariaLabel="Prioridade"
-            />
-          </div>
-        </div>
-
-        <div className={styles.row2}>
-          <div className={styles.field}>
-            <label className={styles.label}>Solicitante</label>
-            <Select
-              value={requester ?? ""}
-              options={userOptions("— Não definido —")}
-              onChange={setRequester}
-              placeholder="— Não definido —"
-              ariaLabel="Solicitante"
-            />
-          </div>
-          <div className={styles.field}>
-            <label className={styles.label}>Responsável</label>
-            <Select
-              value={assignee ?? ""}
-              options={userOptions("— Ninguém —")}
-              onChange={setAssignee}
-              placeholder="— Ninguém —"
-              ariaLabel="Responsável"
-            />
-          </div>
-        </div>
-
-        <div className={styles.row2}>
-          <div className={styles.field}>
-            <label className={styles.label}>Início</label>
-            <input
-              className={styles.inp}
-              type="date"
-              value={startDate ?? ""}
-              onChange={(e) => setStartDate(e.target.value)}
-            />
-          </div>
-          <div className={styles.field}>
-            <label className={styles.label}>Prazo de entrega</label>
-            <input
-              className={styles.inp}
-              type="date"
-              value={due ?? ""}
-              onChange={(e) => setDue(e.target.value)}
-            />
-          </div>
-        </div>
-
-        <div className={styles.row2}>
-          <div className={styles.field}>
-            <label className={styles.label}>Coluna</label>
-            <Select
-              value={columnId}
-              options={columnOptions}
-              onChange={setColumnId}
-              ariaLabel="Coluna"
-            />
-          </div>
-          <div className={styles.field} />
-        </div>
-
-        <div className={styles.sectionLabel}>Tags</div>
-        <div className={styles.tagsEdit}>
-          {tags.map((t) => (
-            <span key={t} className={styles.tagChip}>
-              <span className={styles.tagDot} style={{ background: tagColor(t) }} />
-              {t}
-              <button
-                className={styles.tagDel}
-                onClick={() => removeTag(t)}
-                title="Remover tag"
-              >
-                <Icon name="x" size={12} />
-              </button>
-            </span>
-          ))}
-          <input
-            className={styles.tagInput}
-            value={newTag}
-            onChange={(e) => setNewTag(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                addTag();
-              }
-            }}
-            placeholder="Adicionar tag + Enter"
+      <div className={styles.row2}>
+        <div className={styles.field}>
+          <label className={styles.label}>Tipo</label>
+          <Select
+            value={type}
+            options={typeOptions}
+            onChange={(v) => setType(v as DemandType)}
+            ariaLabel="Tipo da demanda"
           />
         </div>
-
-        <div className={styles.sectionLabel}>Descrição</div>
-        <textarea
-          className={styles.textarea}
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder="Contexto, requisitos, links…"
-        />
-
-        <div className={styles.sectionLabel}>
-          Checklist
-          {checklist.length > 0 ? ` · ${doneCount}/${checklist.length}` : ""}
-        </div>
-        {checklist.length > 0 && (
-          <div className={styles.checkBar} style={{ marginBottom: 10 }}>
-            <div className={styles.checkFill} style={{ width: `${pct}%` }} />
-          </div>
-        )}
-        {checklist.map((it, i) => (
-          <div key={i} className={styles.checkRow}>
-            <div className={styles.checkMain}>
-              <input
-                type="checkbox"
-                className={styles.checkBox}
-                checked={it.done}
-                onChange={() => toggleItem(i)}
-              />
-              <input
-                className={`${styles.checkText} ${it.done ? styles.checkDone : ""}`}
-                value={it.text}
-                onChange={(e) => editItem(i, e.target.value)}
-              />
-              <button
-                className={styles.checkDel}
-                onClick={() => removeItem(i)}
-                title="Remover item"
-              >
-                <Icon name="x" size={14} />
-              </button>
-            </div>
-            <input
-              className={styles.checkDesc}
-              value={it.desc ?? ""}
-              onChange={(e) => editItemDesc(i, e.target.value)}
-              placeholder="mini descrição (opcional)"
-            />
-          </div>
-        ))}
-        <div className={styles.checkAdd}>
-          <input
-            value={newItem}
-            onChange={(e) => setNewItem(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                addItem();
-              }
-            }}
-            placeholder="Adicionar item…"
+        <div className={styles.field}>
+          <label className={styles.label}>Prioridade</label>
+          <Select
+            value={priority}
+            options={priorityOptions}
+            onChange={(v) => setPriority(v as Priority)}
+            ariaLabel="Prioridade"
           />
-          <button className={styles.checkAddBtn} onClick={addItem}>
-            Adicionar
-          </button>
-        </div>
-
-        {!isNew && (
-          <>
-            <div className={styles.sectionLabel}>
-              Comentários{comments.length ? ` · ${comments.length}` : ""}
-            </div>
-            <div className={styles.comments}>
-              {comments.length === 0 ? (
-                <div className={styles.noComments}>
-                  Nenhum comentário ainda.
-                </div>
-              ) : (
-                [...comments]
-                  .sort((a, b) => a.at - b.at)
-                  .map((c, i) => {
-                    const u = usersMap[c.author];
-                    const name = u?.name || c.author;
-                    return (
-                      <div key={i} className={styles.comment}>
-                        <span
-                          className={styles.cAvatar}
-                          style={{ background: u?.color || "#555" }}
-                        >
-                          {(name[0] || "?").toUpperCase()}
-                        </span>
-                        <div className={styles.cBody}>
-                          <div className={styles.cHead}>
-                            <span className={styles.cName}>
-                              {name.split(" ")[0]}
-                            </span>
-                            <span className={styles.cTime}>
-                              {relTime(c.at)}
-                            </span>
-                          </div>
-                          <div className={styles.cText}>{c.text}</div>
-                        </div>
-                      </div>
-                    );
-                  })
-              )}
-            </div>
-            <div className={styles.commentAdd}>
-              <textarea
-                className={styles.commentInput}
-                value={newComment}
-                onChange={(e) => setNewComment(e.target.value)}
-                placeholder="Escreva um comentário…"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                    e.preventDefault();
-                    postComment();
-                  }
-                }}
-              />
-              <button
-                className={styles.commentBtn}
-                onClick={postComment}
-                disabled={posting || !newComment.trim()}
-              >
-                {posting ? "…" : "Comentar"}
-              </button>
-            </div>
-          </>
-        )}
-
-        {err && <div className={styles.err}>{err}</div>}
-
-        <div className={styles.mactions}>
-          {!isNew && (
-            <button className={styles.btnDanger} onClick={remove}>
-              <Icon name="trash" size={15} /> Excluir
-            </button>
-          )}
-          <div className={styles.spacer} />
-          <button className={styles.btnGhost} onClick={onClose} disabled={saving}>
-            Cancelar
-          </button>
-          <button className={styles.btnSave} onClick={submit} disabled={saving}>
-            {saving ? "Salvando…" : isNew ? "Criar demanda" : "Salvar"}
-          </button>
         </div>
       </div>
-    </div>
+
+      <div className={styles.row2}>
+        <div className={styles.field}>
+          <label className={styles.label}>Solicitante</label>
+          <Select
+            value={requester ?? ""}
+            options={userOptions("— Não definido —", requester ?? "")}
+            onChange={setRequester}
+            placeholder="— Não definido —"
+            ariaLabel="Solicitante"
+          />
+        </div>
+        <div className={styles.field}>
+          <label className={styles.label}>Responsável</label>
+          <Select
+            value={assignee ?? ""}
+            options={userOptions("— Ninguém —", assignee ?? "")}
+            onChange={setAssignee}
+            placeholder="— Ninguém —"
+            ariaLabel="Responsável"
+          />
+        </div>
+      </div>
+
+      <div className={styles.row2}>
+        <div className={styles.field}>
+          <label className={styles.label}>Início</label>
+          <input
+            className={styles.inp}
+            type="date"
+            value={startDate ?? ""}
+            onChange={(e) => setStartDate(e.target.value)}
+          />
+        </div>
+        <div className={styles.field}>
+          <label className={styles.label}>Prazo de entrega</label>
+          <input
+            className={styles.inp}
+            type="date"
+            value={due ?? ""}
+            onChange={(e) => setDue(e.target.value)}
+          />
+        </div>
+      </div>
+
+      <div className={styles.row2}>
+        <div className={styles.field}>
+          <label className={styles.label}>Coluna</label>
+          <Select
+            value={columnId}
+            options={columnOptions}
+            onChange={setColumnId}
+            ariaLabel="Coluna"
+          />
+        </div>
+        <div className={styles.field} />
+      </div>
+
+      <div className={styles.sectionLabel}>Tags</div>
+      <div className={styles.tagsEdit}>
+        {tags.map((t) => (
+          <span key={t} className={styles.tagChip}>
+            <span className={styles.tagDot} style={{ background: tagColor(t) }} />
+            {t}
+            <button
+              className={styles.tagDel}
+              onClick={() => removeTag(t)}
+              title="Remover tag"
+              aria-label={`Remover tag ${t}`}
+            >
+              <Icon name="x" size={12} />
+            </button>
+          </span>
+        ))}
+        <input
+          className={styles.tagInput}
+          value={newTag}
+          onChange={(e) => setNewTag(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              addTag();
+            }
+          }}
+          placeholder="Adicionar tag + Enter"
+          aria-label="Adicionar tag"
+        />
+      </div>
+
+      <div className={styles.sectionLabel}>Descrição</div>
+      <textarea
+        className={styles.textarea}
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        placeholder="Contexto, requisitos, links…"
+      />
+
+      <div className={styles.sectionLabel}>
+        Checklist
+        {checklist.length > 0 ? ` · ${doneCount}/${checklist.length}` : ""}
+      </div>
+      {checklist.length > 0 && (
+        <div className={styles.checkBar} style={{ marginBottom: 10 }}>
+          <div className={styles.checkFill} style={{ width: `${pct}%` }} />
+        </div>
+      )}
+      {checklist.map((it, i) => (
+        <div key={it.id ?? i} className={styles.checkRow}>
+          <div className={styles.checkMain}>
+            <input
+              type="checkbox"
+              className={styles.checkBox}
+              checked={it.done}
+              onChange={() => toggleItem(i)}
+              aria-label={`Concluir item: ${it.text}`}
+            />
+            <input
+              className={`${styles.checkText} ${it.done ? styles.checkDone : ""}`}
+              value={it.text}
+              onChange={(e) => editItem(i, e.target.value)}
+              aria-label="Item do checklist"
+            />
+            <button
+              className={styles.checkDel}
+              onClick={() => removeItem(i)}
+              title="Remover item"
+              aria-label="Remover item"
+            >
+              <Icon name="x" size={14} />
+            </button>
+          </div>
+          <input
+            className={styles.checkDesc}
+            value={it.desc ?? ""}
+            onChange={(e) => editItemDesc(i, e.target.value)}
+            placeholder="mini descrição (opcional)"
+            aria-label="Descrição do item"
+          />
+        </div>
+      ))}
+      <div className={styles.checkAdd}>
+        <input
+          value={newItem}
+          onChange={(e) => setNewItem(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              addItem();
+            }
+          }}
+          placeholder="Adicionar item…"
+          aria-label="Adicionar item ao checklist"
+        />
+        <button className={styles.checkAddBtn} onClick={addItem}>
+          Adicionar
+        </button>
+      </div>
+
+      {!isNew && (
+        <>
+          <div className={styles.sectionLabel}>
+            Comentários{comments.length ? ` · ${comments.length}` : ""}
+          </div>
+          <div className={styles.comments}>
+            {comments.length === 0 ? (
+              <div className={styles.noComments}>Nenhum comentário ainda.</div>
+            ) : (
+              [...comments]
+                .sort((a, b) => a.at - b.at)
+                .map((c, i) => {
+                  const u = usersMap[c.author];
+                  const name = u?.name || c.author;
+                  return (
+                    <div key={c.id ?? i} className={styles.comment}>
+                      <span
+                        className={styles.cAvatar}
+                        style={{ background: u?.color || "#555" }}
+                      >
+                        {(name[0] || "?").toUpperCase()}
+                      </span>
+                      <div className={styles.cBody}>
+                        <div className={styles.cHead}>
+                          <span className={styles.cName}>
+                            {name.split(" ")[0]}
+                          </span>
+                          <span className={styles.cTime}>{relTime(c.at)}</span>
+                        </div>
+                        <div className={styles.cText}>{c.text}</div>
+                      </div>
+                    </div>
+                  );
+                })
+            )}
+          </div>
+          <div className={styles.commentAdd}>
+            <textarea
+              className={styles.commentInput}
+              value={newComment}
+              onChange={(e) => setNewComment(e.target.value)}
+              placeholder="Escreva um comentário… (Ctrl+Enter envia)"
+              aria-label="Novo comentário"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault();
+                  postComment();
+                }
+              }}
+            />
+            <button
+              className={styles.commentBtn}
+              onClick={postComment}
+              disabled={posting || !newComment.trim()}
+            >
+              {posting ? "…" : "Comentar"}
+            </button>
+          </div>
+        </>
+      )}
+
+      {err && <div className={styles.err}>{err}</div>}
+
+      <div className={styles.mactions}>
+        {!isNew && (
+          <button className={styles.btnDanger} onClick={remove}>
+            <Icon name="trash" size={15} /> Excluir
+          </button>
+        )}
+        <div className={styles.spacer} />
+        <button className={styles.btnGhost} onClick={onClose} disabled={saving}>
+          Cancelar
+        </button>
+        <button className={styles.btnSave} onClick={submit} disabled={saving}>
+          {saving ? "Salvando…" : isNew ? "Criar demanda" : "Salvar"}
+        </button>
+      </div>
+    </Modal>
   );
 }
 
 function ColumnModal({
   state,
   sector,
-  order,
+  columns,
   cardCount,
   onClose,
 }: {
   state: NonNullable<ColEditState>;
   sector: string;
-  order: number;
+  columns: ColumnDoc[];
   cardCount: number;
   onClose: () => void;
 }) {
@@ -1008,6 +1083,18 @@ function ColumnModal({
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  const colIndex = col ? columns.findIndex((c) => c.id === col.id) : -1;
+
+  function moveCol(dir: -1 | 1) {
+    if (!col) return;
+    const ids = columns.map((c) => c.id);
+    const i = ids.indexOf(col.id);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= ids.length) return;
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+    reorderColumns(ids).catch(console.error);
+  }
+
   async function submit() {
     setErr(null);
     if (!title.trim()) {
@@ -1016,8 +1103,14 @@ function ColumnModal({
     }
     setSaving(true);
     try {
-      if (isNew) await addColumn(sector, title, color, order);
-      else if (col) await updateColumn(col.id, { title: title.trim(), color });
+      if (isNew) {
+        const order = columns.length
+          ? Math.max(...columns.map((c) => c.order)) + 1
+          : 0;
+        await addColumn(sector, title, color, order);
+      } else if (col) {
+        await updateColumn(col.id, { title: title.trim(), color });
+      }
       onClose();
     } catch (e) {
       console.error(e);
@@ -1045,60 +1138,84 @@ function ColumnModal({
   }
 
   return (
-    <div className={styles.overlay} onClick={onClose}>
-      <div
-        className={styles.modal}
-        onClick={(e) => e.stopPropagation()}
-        style={{ width: 420 }}
-      >
-        <div className={styles.mtitle} style={{ fontSize: 19 }}>
-          {isNew ? "Nova coluna" : "Editar coluna"}
-        </div>
+    <Modal
+      onClose={onClose}
+      ariaLabel={isNew ? "Nova coluna" : "Editar coluna"}
+      overlayClassName={styles.overlay}
+      className={styles.modal}
+      width={420}
+    >
+      <div className={styles.mtitle} style={{ fontSize: 19 }}>
+        {isNew ? "Nova coluna" : "Editar coluna"}
+      </div>
 
-        <div className={styles.field}>
-          <label className={styles.label}>Nome</label>
-          <input
-            className={styles.inp}
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Ex.: Em revisão"
-            autoFocus
-          />
-        </div>
+      <div className={styles.field}>
+        <label className={styles.label}>Nome</label>
+        <input
+          className={styles.inp}
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="Ex.: Em revisão"
+          autoFocus
+        />
+      </div>
 
-        <div className={styles.field}>
-          <label className={styles.label}>Cor</label>
-          <div className={styles.colorRow}>
-            {COLUMN_COLORS.map((c) => (
-              <button
-                key={c}
-                type="button"
-                className={`${styles.colorSwatch} ${color === c ? styles.colorOn : ""}`}
-                style={{ background: c }}
-                onClick={() => setColor(c)}
-                aria-label={`Cor ${c}`}
-              />
-            ))}
-          </div>
-        </div>
-
-        {err && <div className={styles.err}>{err}</div>}
-
-        <div className={styles.mactions}>
-          {!isNew && (
-            <button className={styles.btnDanger} onClick={remove}>
-              <Icon name="trash" size={15} /> Excluir
-            </button>
-          )}
-          <div className={styles.spacer} />
-          <button className={styles.btnGhost} onClick={onClose} disabled={saving}>
-            Cancelar
-          </button>
-          <button className={styles.btnSave} onClick={submit} disabled={saving}>
-            {saving ? "Salvando…" : isNew ? "Criar" : "Salvar"}
-          </button>
+      <div className={styles.field}>
+        <label className={styles.label}>Cor</label>
+        <div className={styles.colorRow}>
+          {COLUMN_COLORS.map((c) => (
+            <button
+              key={c}
+              type="button"
+              className={`${styles.colorSwatch} ${color === c ? styles.colorOn : ""}`}
+              style={{ background: c }}
+              onClick={() => setColor(c)}
+              aria-label={`Cor ${c}`}
+            />
+          ))}
         </div>
       </div>
-    </div>
+
+      {!isNew && columns.length > 1 && (
+        <div className={styles.field}>
+          <label className={styles.label}>Posição da coluna</label>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              className={styles.btnGhost}
+              style={{ flex: 1, height: 38 }}
+              onClick={() => moveCol(-1)}
+              disabled={colIndex <= 0}
+            >
+              ← Mover
+            </button>
+            <button
+              className={styles.btnGhost}
+              style={{ flex: 1, height: 38 }}
+              onClick={() => moveCol(1)}
+              disabled={colIndex < 0 || colIndex >= columns.length - 1}
+            >
+              Mover →
+            </button>
+          </div>
+        </div>
+      )}
+
+      {err && <div className={styles.err}>{err}</div>}
+
+      <div className={styles.mactions}>
+        {!isNew && (
+          <button className={styles.btnDanger} onClick={remove}>
+            <Icon name="trash" size={15} /> Excluir
+          </button>
+        )}
+        <div className={styles.spacer} />
+        <button className={styles.btnGhost} onClick={onClose} disabled={saving}>
+          Cancelar
+        </button>
+        <button className={styles.btnSave} onClick={submit} disabled={saving}>
+          {saving ? "Salvando…" : isNew ? "Criar" : "Salvar"}
+        </button>
+      </div>
+    </Modal>
   );
 }
