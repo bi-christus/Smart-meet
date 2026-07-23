@@ -9,12 +9,13 @@ import {
   doc,
   serverTimestamp,
   writeBatch,
+  arrayUnion,
 } from "firebase/firestore";
 import { db } from "./firebase";
 
 export type KanbanColumn = { id: string; title: string; color: string };
 
-/** Colunas padrão (compartilhadas entre setores por enquanto; por-setor vem na Fase 3f). */
+/** Colunas padrão (seed inicial por setor). */
 export const DEFAULT_COLUMNS: KanbanColumn[] = [
   { id: "backlog", title: "A fazer", color: "#78776f" },
   { id: "andamento", title: "Em andamento", color: "#54b8ff" },
@@ -24,14 +25,52 @@ export const DEFAULT_COLUMNS: KanbanColumn[] = [
 ];
 
 export type Priority = "alta" | "media" | "baixa";
-
 export const PRIORITY_LABEL: Record<Priority, string> = {
   alta: "Alta",
   media: "Média",
   baixa: "Baixa",
 };
 
-export type ChecklistItem = { text: string; done: boolean };
+/** Tipo da demanda. */
+export type DemandType = "implementacao" | "correcao" | "melhoria" | "relatorio";
+export const DEMAND_TYPES: DemandType[] = [
+  "implementacao",
+  "correcao",
+  "melhoria",
+  "relatorio",
+];
+export const DEMAND_TYPE_LABEL: Record<DemandType, string> = {
+  implementacao: "Nova implementação",
+  correcao: "Correção",
+  melhoria: "Melhoria",
+  relatorio: "Relatório",
+};
+export const DEMAND_TYPE_COLOR: Record<DemandType, string> = {
+  implementacao: "#54b8ff", // info
+  correcao: "#fb7185", // danger
+  melhoria: "#c084fc", // roxo
+  relatorio: "#f5b13d", // âmbar
+};
+
+export type ChecklistItem = { text: string; done: boolean; desc?: string };
+export type Comment = { author: string; text: string; at: number };
+
+/** Paleta de tags (cor estável por nome). */
+export const TAG_COLORS = [
+  "#54b8ff",
+  "#34d399",
+  "#f5b13d",
+  "#c084fc",
+  "#fb7185",
+  "#ff6a2b",
+  "#2b7fff",
+  "#5fe0b0",
+];
+export function tagColor(tag: string): string {
+  let h = 0;
+  for (let i = 0; i < tag.length; i++) h = (h * 31 + tag.charCodeAt(i)) >>> 0;
+  return TAG_COLORS[h % TAG_COLORS.length];
+}
 
 export type Card = {
   id: string;
@@ -39,12 +78,17 @@ export type Card = {
   columnId: string;
   title: string;
   description?: string;
-  assignee?: string | null; // e-mail do responsável
-  due?: string | null; // yyyy-mm-dd
+  type?: DemandType;
+  assignee?: string | null; // responsável (e-mail)
+  requester?: string | null; // solicitante (e-mail)
+  startDate?: string | null; // data de início (yyyy-mm-dd)
+  due?: string | null; // prazo de entrega (yyyy-mm-dd)
   priority?: Priority;
+  tags?: string[];
   checklist?: ChecklistItem[];
+  comments?: Comment[];
   order: number;
-  enteredAt?: number; // ms — quando entrou na coluna atual (aging)
+  enteredAt?: number;
   createdBy?: string;
 };
 
@@ -52,9 +96,13 @@ export type CardInput = {
   title: string;
   description: string;
   columnId: string;
+  type: DemandType;
   assignee: string | null;
+  requester: string | null;
+  startDate: string | null;
   due: string | null;
   priority: Priority;
+  tags: string[];
   checklist: ChecklistItem[];
 };
 
@@ -78,7 +126,7 @@ export function subscribeCards(
   );
 }
 
-/** Assina os cards de vários setores (para Dashboard/Cronograma). */
+/** Assina os cards de vários setores (Dashboard/Cronograma). */
 export function subscribeCardsForSectors(
   sectors: string[],
   onData: (cards: Card[]) => void,
@@ -110,10 +158,15 @@ export async function createCard(
     columnId: input.columnId,
     title: input.title.trim(),
     description: input.description.trim(),
+    type: input.type,
     assignee: input.assignee || null,
+    requester: input.requester || null,
+    startDate: input.startDate || null,
     due: input.due || null,
     priority: input.priority,
+    tags: input.tags,
     checklist: input.checklist,
+    comments: [],
     order: now,
     enteredAt: now,
     createdAt: serverTimestamp(),
@@ -126,6 +179,13 @@ export async function updateCard(
   patch: Partial<Omit<Card, "id">>,
 ): Promise<void> {
   await updateDoc(doc(db, "cards", id), patch);
+}
+
+export async function addComment(
+  id: string,
+  comment: Comment,
+): Promise<void> {
+  await updateDoc(doc(db, "cards", id), { comments: arrayUnion(comment) });
 }
 
 export async function deleteCardById(id: string): Promise<void> {
@@ -143,14 +203,13 @@ export async function moveCard(id: string, columnId: string): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Colunas por setor (editáveis) — armazenadas no Firestore.
-// `colId` é o id que os cards referenciam em `columnId`.
+// Colunas por setor (editáveis)
 // ---------------------------------------------------------------------------
 
 export type ColumnDoc = {
-  id: string; // id do documento no Firestore
+  id: string;
   sector: string;
-  colId: string; // id lógico usado por card.columnId
+  colId: string;
   title: string;
   color: string;
   order: number;
@@ -190,7 +249,6 @@ export function subscribeColumns(
   );
 }
 
-/** Cria as colunas padrão de um setor (idempotente — ids determinísticos). */
 export async function seedDefaultColumns(sector: string): Promise<void> {
   const batch = writeBatch(db);
   DEFAULT_COLUMNS.forEach((c, i) => {

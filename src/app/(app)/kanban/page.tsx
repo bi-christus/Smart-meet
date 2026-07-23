@@ -9,6 +9,7 @@ import {
   updateCard,
   deleteCardById,
   moveCard,
+  addComment,
   subscribeColumns,
   seedDefaultColumns,
   addColumn,
@@ -18,14 +19,27 @@ import {
   DEFAULT_COLUMNS,
   COLUMN_COLORS,
   PRIORITY_LABEL,
+  DEMAND_TYPES,
+  DEMAND_TYPE_LABEL,
+  DEMAND_TYPE_COLOR,
+  tagColor,
   type Card,
   type CardInput,
   type Priority,
   type ChecklistItem,
   type ColumnDoc,
+  type DemandType,
+  type Comment,
 } from "@/lib/kanban";
 import { Icon } from "@/components/icons";
+import { Select, type SelectOption } from "@/components/select";
 import styles from "./kanban.module.css";
+
+const PRIORITY_COLOR: Record<Priority, string> = {
+  alta: "#fb7185",
+  media: "#f5b13d",
+  baixa: "#78776f",
+};
 
 function startOfToday(): Date {
   const d = new Date();
@@ -35,6 +49,18 @@ function startOfToday(): Date {
 function parseDue(due: string): Date {
   const [y, m, dd] = due.split("-").map(Number);
   return new Date(y, m - 1, dd);
+}
+function toStr(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+function todayStr(): string {
+  return toStr(new Date());
+}
+function plusDays(dateStr: string, n: number): string {
+  const d = parseDue(dateStr);
+  d.setDate(d.getDate() + n);
+  return toStr(d);
 }
 function fmtShort(d: Date): string {
   const p = (n: number) => String(n).padStart(2, "0");
@@ -60,6 +86,17 @@ function dueInfo(
 function agingDays(enteredAt?: number): number {
   if (!enteredAt) return 0;
   return Math.floor((Date.now() - enteredAt) / 86400000);
+}
+function relTime(ts: number): string {
+  const m = Math.floor((Date.now() - ts) / 60000);
+  if (m < 1) return "agora";
+  if (m < 60) return `há ${m} min`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `há ${h} h`;
+  const d = Math.floor(h / 24);
+  if (d === 1) return "ontem";
+  if (d < 7) return `há ${d} dias`;
+  return fmtShort(new Date(ts));
 }
 
 type EditState =
@@ -128,7 +165,6 @@ export default function KanbanPage() {
     return () => u();
   }, [sector]);
 
-  // Semeia as colunas padrão se o setor ainda não tiver nenhuma.
   useEffect(() => {
     if (
       colsLoaded &&
@@ -158,7 +194,9 @@ export default function KanbanPage() {
     const q = search.trim().toLowerCase();
     return cards.filter(
       (c) =>
-        (!q || c.title.toLowerCase().includes(q)) &&
+        (!q ||
+          c.title.toLowerCase().includes(q) ||
+          (c.tags ?? []).some((t) => t.toLowerCase().includes(q))) &&
         (!prio || c.priority === prio),
     );
   }, [cards, search, prio]);
@@ -212,7 +250,7 @@ export default function KanbanPage() {
       <div className={styles.head}>
         <div className={styles.headMain}>
           <h1>Quadro — {sector}</h1>
-          <p>Cada setor tem o seu próprio quadro de demandas.</p>
+          <p>Demandas do setor: crie, priorize e acompanhe até a entrega.</p>
         </div>
       </div>
 
@@ -232,7 +270,7 @@ export default function KanbanPage() {
           <Icon name="search" size={15} />
           <input
             className={styles.search}
-            placeholder="Buscar cards…"
+            placeholder="Buscar por título ou tag…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -249,7 +287,7 @@ export default function KanbanPage() {
         </select>
       </div>
 
-      <div className={styles.board}>
+      <div className={styles.board} key={sector}>
         {displayCols.map((col) => {
           const colCards = filtered.filter((c) => c.columnId === col.colId);
           return (
@@ -286,10 +324,8 @@ export default function KanbanPage() {
                 <div style={{ flex: 1 }} />
                 <button
                   className={styles.iconbtn}
-                  title="Adicionar card"
-                  onClick={() =>
-                    setEdit({ mode: "new", columnId: col.colId })
-                  }
+                  title="Adicionar demanda"
+                  onClick={() => setEdit({ mode: "new", columnId: col.colId })}
                 >
                   <Icon name="plus" size={15} />
                 </button>
@@ -305,7 +341,7 @@ export default function KanbanPage() {
               </div>
               <div className={styles.collist}>
                 {colCards.length === 0 ? (
-                  <div className={styles.colempty}>Nenhum card</div>
+                  <div className={styles.colempty}>Nenhuma demanda</div>
                 ) : (
                   colCards.map((c) => (
                     <CardItem
@@ -346,6 +382,7 @@ export default function KanbanPage() {
           columns={displayCols}
           actorEmail={profile.email}
           activeUsers={activeUsers}
+          usersMap={usersMap}
           onClose={() => setEdit(null)}
         />
       )}
@@ -407,6 +444,9 @@ function CardItem({
   const aging = col.colId === "aguardando" ? agingDays(card.enteredAt) : 0;
   const items = card.checklist ?? [];
   const done = items.filter((i) => i.done).length;
+  const tags = card.tags ?? [];
+  const comments = card.comments?.length ?? 0;
+  const typeColor = card.type ? DEMAND_TYPE_COLOR[card.type] : "";
 
   return (
     <div
@@ -417,6 +457,15 @@ function CardItem({
       onClick={onClick}
     >
       <div className={styles.ktop}>
+        {card.type && (
+          <span
+            className={styles.kType}
+            style={{ background: typeColor + "22", color: typeColor }}
+          >
+            <span className={styles.kTypeDot} style={{ background: typeColor }} />
+            {DEMAND_TYPE_LABEL[card.type]}
+          </span>
+        )}
         {card.priority && (
           <span className={`${styles.prio} ${styles["prio_" + card.priority]}`}>
             {PRIORITY_LABEL[card.priority]}
@@ -428,6 +477,19 @@ function CardItem({
         </span>
       </div>
       <div className={styles.ktitle}>{card.title}</div>
+      {tags.length > 0 && (
+        <div className={styles.kTags}>
+          {tags.slice(0, 4).map((t) => (
+            <span key={t} className={styles.kTag}>
+              <span className={styles.kTagDot} style={{ background: tagColor(t) }} />
+              {t}
+            </span>
+          ))}
+          {tags.length > 4 && (
+            <span className={styles.kTag}>+{tags.length - 4}</span>
+          )}
+        </div>
+      )}
       <div className={styles.kmeta}>
         {di && (
           <span className={`${styles.chip} ${styles["due_" + di.tone]}`}>
@@ -445,6 +507,12 @@ function CardItem({
           <span className={styles.mini}>
             <Icon name="check" size={12} />
             {done}/{items.length}
+          </span>
+        )}
+        {comments > 0 && (
+          <span className={styles.mini}>
+            <Icon name="chat" size={12} />
+            {comments}
           </span>
         )}
         <div style={{ flex: 1 }} />
@@ -468,6 +536,7 @@ function CardModal({
   columns,
   actorEmail,
   activeUsers,
+  usersMap,
   onClose,
 }: {
   state: NonNullable<EditState>;
@@ -475,29 +544,83 @@ function CardModal({
   columns: ColumnDoc[];
   actorEmail: string;
   activeUsers: UserProfile[];
+  usersMap: Record<string, UserProfile>;
   onClose: () => void;
 }) {
   const isNew = state.mode === "new";
   const card = state.mode === "edit" ? state.card : null;
+
   const [title, setTitle] = useState(card?.title ?? "");
   const [description, setDescription] = useState(card?.description ?? "");
   const [columnId, setColumnId] = useState(
     state.mode === "new" ? state.columnId : state.card.columnId,
   );
+  const [type, setType] = useState<DemandType>(card?.type ?? "implementacao");
   const [priority, setPriority] = useState<Priority>(card?.priority ?? "media");
   const [assignee, setAssignee] = useState(card?.assignee ?? "");
-  const [due, setDue] = useState(card?.due ?? "");
+  const [requester, setRequester] = useState(
+    card?.requester ?? (isNew ? actorEmail : ""),
+  );
+  const [startDate, setStartDate] = useState(card?.startDate ?? todayStr());
+  const [due, setDue] = useState(
+    card?.due ?? plusDays(todayStr(), 7),
+  );
+  const [tags, setTags] = useState<string[]>(card?.tags ?? []);
+  const [newTag, setNewTag] = useState("");
   const [checklist, setChecklist] = useState<ChecklistItem[]>(
     card?.checklist ?? [],
   );
   const [newItem, setNewItem] = useState("");
+  const [comments, setComments] = useState<Comment[]>(card?.comments ?? []);
+  const [newComment, setNewComment] = useState("");
+  const [posting, setPosting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const col = columns.find((c) => c.colId === columnId);
-  const done = checklist.filter((i) => i.done).length;
-  const pct = checklist.length ? Math.round((done / checklist.length) * 100) : 0;
+  const doneCount = checklist.filter((i) => i.done).length;
+  const pct = checklist.length
+    ? Math.round((doneCount / checklist.length) * 100)
+    : 0;
 
+  const columnOptions: SelectOption[] = columns.map((c) => ({
+    value: c.colId,
+    label: c.title,
+    color: c.color,
+  }));
+  const typeOptions: SelectOption[] = DEMAND_TYPES.map((t) => ({
+    value: t,
+    label: DEMAND_TYPE_LABEL[t],
+    color: DEMAND_TYPE_COLOR[t],
+  }));
+  const priorityOptions: SelectOption[] = (
+    ["alta", "media", "baixa"] as Priority[]
+  ).map((p) => ({
+    value: p,
+    label: PRIORITY_LABEL[p],
+    color: PRIORITY_COLOR[p],
+  }));
+  const userOptions = (noneLabel: string): SelectOption[] => [
+    { value: "", label: noneLabel },
+    ...activeUsers.map((u) => ({
+      value: u.email,
+      label: u.name || u.email,
+      color: u.color,
+    })),
+  ];
+
+  function addTag() {
+    const t = newTag.trim();
+    if (!t || tags.includes(t)) {
+      setNewTag("");
+      return;
+    }
+    setTags((cur) => [...cur, t]);
+    setNewTag("");
+  }
+  function removeTag(t: string) {
+    setTags((cur) => cur.filter((x) => x !== t));
+  }
   function addItem() {
     const t = newItem.trim();
     if (!t) return;
@@ -512,8 +635,28 @@ function CardModal({
   function editItem(i: number, text: string) {
     setChecklist((c) => c.map((x, idx) => (idx === i ? { ...x, text } : x)));
   }
+  function editItemDesc(i: number, desc: string) {
+    setChecklist((c) => c.map((x, idx) => (idx === i ? { ...x, desc } : x)));
+  }
   function removeItem(i: number) {
     setChecklist((c) => c.filter((_, idx) => idx !== i));
+  }
+
+  async function postComment() {
+    const text = newComment.trim();
+    if (!text || !card) return;
+    const comment: Comment = { author: actorEmail, text, at: Date.now() };
+    setPosting(true);
+    try {
+      await addComment(card.id, comment);
+      setComments((c) => [...c, comment]);
+      setNewComment("");
+    } catch (e) {
+      console.error(e);
+      setErr("Não foi possível comentar.");
+    } finally {
+      setPosting(false);
+    }
   }
 
   async function submit() {
@@ -522,41 +665,43 @@ function CardModal({
       setErr("Informe um título.");
       return;
     }
+    if (!startDate || !due) {
+      setErr("Defina a data de início e o prazo de entrega.");
+      return;
+    }
     setSaving(true);
     try {
-      const input: CardInput = {
-        title,
-        description,
+      const base = {
+        title: title.trim(),
+        description: description.trim(),
         columnId,
+        type,
         assignee: assignee || null,
+        requester: requester || null,
+        startDate: startDate || null,
         due: due || null,
         priority,
+        tags,
         checklist,
       };
       if (isNew) {
+        const input: CardInput = base;
         await createCard(sector, input, actorEmail);
       } else if (card) {
-        await updateCard(card.id, {
-          title: title.trim(),
-          description: description.trim(),
-          columnId,
-          assignee: assignee || null,
-          due: due || null,
-          priority,
-          checklist,
-        });
+        await updateCard(card.id, base);
       }
       onClose();
     } catch (e) {
       console.error(e);
-      setErr("Não foi possível salvar o card.");
+      setErr("Não foi possível salvar a demanda.");
       setSaving(false);
     }
   }
 
   async function remove() {
     if (!card) return;
-    if (!confirm("Remover este card? Esta ação não pode ser desfeita.")) return;
+    if (!confirm("Remover esta demanda? Esta ação não pode ser desfeita."))
+      return;
     try {
       await deleteCardById(card.id);
       onClose();
@@ -583,67 +728,66 @@ function CardModal({
           className={styles.mtitle}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="Título do card"
+          placeholder="Título da demanda"
           autoFocus
         />
 
-        <div className={styles.field}>
-          <label className={styles.label}>Descrição</label>
-          <textarea
-            className={styles.textarea}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Detalhes, contexto, links…"
-          />
-        </div>
-
         <div className={styles.row2}>
           <div className={styles.field}>
-            <label className={styles.label}>Coluna</label>
-            <select
-              className={styles.sel}
-              value={columnId}
-              onChange={(e) => setColumnId(e.target.value)}
-            >
-              {columns.map((c) => (
-                <option key={c.colId} value={c.colId}>
-                  {c.title}
-                </option>
-              ))}
-            </select>
+            <label className={styles.label}>Tipo</label>
+            <Select
+              value={type}
+              options={typeOptions}
+              onChange={(v) => setType(v as DemandType)}
+              ariaLabel="Tipo da demanda"
+            />
           </div>
           <div className={styles.field}>
             <label className={styles.label}>Prioridade</label>
-            <select
-              className={styles.sel}
+            <Select
               value={priority}
-              onChange={(e) => setPriority(e.target.value as Priority)}
-            >
-              <option value="alta">Alta</option>
-              <option value="media">Média</option>
-              <option value="baixa">Baixa</option>
-            </select>
+              options={priorityOptions}
+              onChange={(v) => setPriority(v as Priority)}
+              ariaLabel="Prioridade"
+            />
           </div>
         </div>
 
         <div className={styles.row2}>
           <div className={styles.field}>
-            <label className={styles.label}>Responsável</label>
-            <select
-              className={styles.sel}
-              value={assignee ?? ""}
-              onChange={(e) => setAssignee(e.target.value)}
-            >
-              <option value="">— Ninguém —</option>
-              {activeUsers.map((u) => (
-                <option key={u.email} value={u.email}>
-                  {u.name}
-                </option>
-              ))}
-            </select>
+            <label className={styles.label}>Solicitante</label>
+            <Select
+              value={requester ?? ""}
+              options={userOptions("— Não definido —")}
+              onChange={setRequester}
+              placeholder="— Não definido —"
+              ariaLabel="Solicitante"
+            />
           </div>
           <div className={styles.field}>
-            <label className={styles.label}>Prazo</label>
+            <label className={styles.label}>Responsável</label>
+            <Select
+              value={assignee ?? ""}
+              options={userOptions("— Ninguém —")}
+              onChange={setAssignee}
+              placeholder="— Ninguém —"
+              ariaLabel="Responsável"
+            />
+          </div>
+        </div>
+
+        <div className={styles.row2}>
+          <div className={styles.field}>
+            <label className={styles.label}>Início</label>
+            <input
+              className={styles.inp}
+              type="date"
+              value={startDate ?? ""}
+              onChange={(e) => setStartDate(e.target.value)}
+            />
+          </div>
+          <div className={styles.field}>
+            <label className={styles.label}>Prazo de entrega</label>
             <input
               className={styles.inp}
               type="date"
@@ -653,27 +797,68 @@ function CardModal({
           </div>
         </div>
 
-        <div className={styles.field}>
-          <div className={styles.checkHead}>
-            <label className={styles.label} style={{ marginBottom: 0 }}>
-              Checklist
-            </label>
-            {checklist.length > 0 && (
-              <>
-                <div className={styles.checkBar}>
-                  <div
-                    className={styles.checkFill}
-                    style={{ width: `${pct}%` }}
-                  />
-                </div>
-                <span className={styles.checkPct}>
-                  {done}/{checklist.length}
-                </span>
-              </>
-            )}
+        <div className={styles.row2}>
+          <div className={styles.field}>
+            <label className={styles.label}>Coluna</label>
+            <Select
+              value={columnId}
+              options={columnOptions}
+              onChange={setColumnId}
+              ariaLabel="Coluna"
+            />
           </div>
-          {checklist.map((it, i) => (
-            <div key={i} className={styles.checkItem}>
+          <div className={styles.field} />
+        </div>
+
+        <div className={styles.sectionLabel}>Tags</div>
+        <div className={styles.tagsEdit}>
+          {tags.map((t) => (
+            <span key={t} className={styles.tagChip}>
+              <span className={styles.tagDot} style={{ background: tagColor(t) }} />
+              {t}
+              <button
+                className={styles.tagDel}
+                onClick={() => removeTag(t)}
+                title="Remover tag"
+              >
+                <Icon name="x" size={12} />
+              </button>
+            </span>
+          ))}
+          <input
+            className={styles.tagInput}
+            value={newTag}
+            onChange={(e) => setNewTag(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                addTag();
+              }
+            }}
+            placeholder="Adicionar tag + Enter"
+          />
+        </div>
+
+        <div className={styles.sectionLabel}>Descrição</div>
+        <textarea
+          className={styles.textarea}
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="Contexto, requisitos, links…"
+        />
+
+        <div className={styles.sectionLabel}>
+          Checklist
+          {checklist.length > 0 ? ` · ${doneCount}/${checklist.length}` : ""}
+        </div>
+        {checklist.length > 0 && (
+          <div className={styles.checkBar} style={{ marginBottom: 10 }}>
+            <div className={styles.checkFill} style={{ width: `${pct}%` }} />
+          </div>
+        )}
+        {checklist.map((it, i) => (
+          <div key={i} className={styles.checkRow}>
+            <div className={styles.checkMain}>
               <input
                 type="checkbox"
                 className={styles.checkBox}
@@ -693,24 +878,94 @@ function CardModal({
                 <Icon name="x" size={14} />
               </button>
             </div>
-          ))}
-          <div className={styles.checkAdd}>
             <input
-              value={newItem}
-              onChange={(e) => setNewItem(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  addItem();
-                }
-              }}
-              placeholder="Adicionar item…"
+              className={styles.checkDesc}
+              value={it.desc ?? ""}
+              onChange={(e) => editItemDesc(i, e.target.value)}
+              placeholder="mini descrição (opcional)"
             />
-            <button className={styles.checkAddBtn} onClick={addItem}>
-              Adicionar
-            </button>
           </div>
+        ))}
+        <div className={styles.checkAdd}>
+          <input
+            value={newItem}
+            onChange={(e) => setNewItem(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                addItem();
+              }
+            }}
+            placeholder="Adicionar item…"
+          />
+          <button className={styles.checkAddBtn} onClick={addItem}>
+            Adicionar
+          </button>
         </div>
+
+        {!isNew && (
+          <>
+            <div className={styles.sectionLabel}>
+              Comentários{comments.length ? ` · ${comments.length}` : ""}
+            </div>
+            <div className={styles.comments}>
+              {comments.length === 0 ? (
+                <div className={styles.noComments}>
+                  Nenhum comentário ainda.
+                </div>
+              ) : (
+                [...comments]
+                  .sort((a, b) => a.at - b.at)
+                  .map((c, i) => {
+                    const u = usersMap[c.author];
+                    const name = u?.name || c.author;
+                    return (
+                      <div key={i} className={styles.comment}>
+                        <span
+                          className={styles.cAvatar}
+                          style={{ background: u?.color || "#555" }}
+                        >
+                          {(name[0] || "?").toUpperCase()}
+                        </span>
+                        <div className={styles.cBody}>
+                          <div className={styles.cHead}>
+                            <span className={styles.cName}>
+                              {name.split(" ")[0]}
+                            </span>
+                            <span className={styles.cTime}>
+                              {relTime(c.at)}
+                            </span>
+                          </div>
+                          <div className={styles.cText}>{c.text}</div>
+                        </div>
+                      </div>
+                    );
+                  })
+              )}
+            </div>
+            <div className={styles.commentAdd}>
+              <textarea
+                className={styles.commentInput}
+                value={newComment}
+                onChange={(e) => setNewComment(e.target.value)}
+                placeholder="Escreva um comentário…"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                    e.preventDefault();
+                    postComment();
+                  }
+                }}
+              />
+              <button
+                className={styles.commentBtn}
+                onClick={postComment}
+                disabled={posting || !newComment.trim()}
+              >
+                {posting ? "…" : "Comentar"}
+              </button>
+            </div>
+          </>
+        )}
 
         {err && <div className={styles.err}>{err}</div>}
 
@@ -725,7 +980,7 @@ function CardModal({
             Cancelar
           </button>
           <button className={styles.btnSave} onClick={submit} disabled={saving}>
-            {saving ? "Salvando…" : isNew ? "Criar" : "Salvar"}
+            {saving ? "Salvando…" : isNew ? "Criar demanda" : "Salvar"}
           </button>
         </div>
       </div>
@@ -775,7 +1030,7 @@ function ColumnModal({
     if (!col) return;
     if (cardCount > 0) {
       setErr(
-        `Mova os ${cardCount} card(s) desta coluna para outra antes de removê-la.`,
+        `Mova as ${cardCount} demanda(s) desta coluna para outra antes de removê-la.`,
       );
       return;
     }

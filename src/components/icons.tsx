@@ -102,6 +102,9 @@ const PATHS: Record<string, ReactNode> = {
   ),
   wave: <path d="M4 10v4M8 6v12M12 3v18M16 6v12M20 10v4" />,
   stop: <rect x="6" y="6" width="12" height="12" rx="2" />,
+  chat: (
+    <path d="M21 15a2 2 0 0 1-2 2H8l-4 4V5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2z" />
+  ),
 };
 
 export function Icon({ name, size = 24 }: { name: string; size?: number }) {
