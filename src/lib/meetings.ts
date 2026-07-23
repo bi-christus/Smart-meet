@@ -44,6 +44,8 @@ export type Meeting = {
   send?: SendMethod;
   output?: OutputKind;
   durationMin?: number;
+  driveFileId?: string | null;
+  driveLink?: string | null;
   transcript?: string;
   ata?: string;
   reportStatus?: ReportStatus;
@@ -58,6 +60,8 @@ export type MeetingInput = {
   send: SendMethod;
   output: OutputKind;
   durationMin?: number;
+  driveFileId?: string | null;
+  driveLink?: string | null;
 };
 
 export function subscribeMeetings(
@@ -99,6 +103,8 @@ export async function createMeeting(
     send: input.send,
     output: input.output,
     durationMin: input.durationMin ?? null,
+    driveFileId: input.driveFileId ?? null,
+    driveLink: input.driveLink ?? null,
     transcript: "",
     ata: "",
     reportStatus: "rascunho" as ReportStatus,

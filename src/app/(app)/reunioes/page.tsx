@@ -16,6 +16,7 @@ import {
   type OutputKind,
 } from "@/lib/meetings";
 import { Icon } from "@/components/icons";
+import { uploadAudioToDrive } from "@/lib/drive-upload";
 import styles from "./reunioes.module.css";
 
 const MES = [
@@ -46,6 +47,7 @@ type Confirm = {
   send: SendMethod;
   title: string;
   durationMin?: number;
+  blob?: Blob | null;
 } | null;
 
 const STATUS_CLASS: Record<MeetingStatus, string> = {
@@ -86,6 +88,7 @@ export default function ReunioesPage() {
   const streamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<number | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const startTimeRef = useRef<number>(0);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -143,6 +146,20 @@ export default function ReunioesPage() {
       rec.ondataavailable = (e) => {
         if (e.data.size) chunksRef.current.push(e.data);
       };
+      rec.onstop = () => {
+        const blob = new Blob(chunksRef.current, {
+          type: rec.mimeType || "audio/webm",
+        });
+        const secs = Math.round((Date.now() - startTimeRef.current) / 1000);
+        streamRef.current?.getTracks().forEach((t) => t.stop());
+        setConfirm({
+          send: "mic",
+          title: `Gravação — ${fmtDate(todayStr())}`,
+          durationMin: Math.max(1, Math.round(secs / 60)),
+          blob,
+        });
+      };
+      startTimeRef.current = Date.now();
       rec.start();
       recorderRef.current = rec;
       setRecording(true);
@@ -159,21 +176,14 @@ export default function ReunioesPage() {
   }
 
   function stopRecording() {
-    const secs = recSeconds;
     const rec = recorderRef.current;
-    if (rec && rec.state !== "inactive") rec.stop();
-    streamRef.current?.getTracks().forEach((t) => t.stop());
+    if (rec && rec.state !== "inactive") rec.stop(); // onstop monta o blob e abre o confirm
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
     setRecording(false);
     setRecSeconds(0);
-    setConfirm({
-      send: "mic",
-      title: `Gravação — ${fmtDate(todayStr())}`,
-      durationMin: Math.max(1, Math.round(secs / 60)),
-    });
   }
 
   function handleFile(file: File | undefined) {
@@ -181,14 +191,12 @@ export default function ReunioesPage() {
     setConfirm({
       send: "file",
       title: file.name.replace(/\.[^.]+$/, ""),
+      blob: file,
     });
   }
 
   function connectOnline() {
-    setConfirm({
-      send: "online",
-      title: onlineLink ? `Reunião online` : `Reunião online`,
-    });
+    setConfirm({ send: "online", title: "Reunião online", blob: null });
     setOnlineLink("");
   }
 
@@ -493,6 +501,17 @@ export default function ReunioesPage() {
                     <span>· {m.sector}</span>
                     <span>· via {SEND_LABEL[m.send ?? "file"]}</span>
                     <span>· {m.participants?.length || 0} participante(s)</span>
+                    {m.driveLink && (
+                      <a
+                        href={m.driveLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={styles.driveLink}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        · Áudio no Drive
+                      </a>
+                    )}
                   </div>
                 </div>
                 <span className={`${styles.badge} ${STATUS_CLASS[m.status]}`}>
@@ -550,6 +569,7 @@ function NewMeetingModal({
   const [date, setDate] = useState(todayStr());
   const [participants, setParticipants] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+  const [uploadPct, setUploadPct] = useState<number | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   const avail = activeUsers.filter(
@@ -570,6 +590,27 @@ function NewMeetingModal({
     }
     setSaving(true);
     try {
+      let driveFileId: string | null = null;
+      let driveLink: string | null = null;
+      if (confirm.blob) {
+        setUploadPct(0);
+        const t = confirm.blob.type;
+        const ext = t.includes("webm")
+          ? "webm"
+          : t.includes("mpeg") || t.includes("mp3")
+            ? "mp3"
+            : t.includes("wav")
+              ? "wav"
+              : t.includes("m4a") || t.includes("mp4")
+                ? "m4a"
+                : "audio";
+        const filename = `${title.trim()} — ${date}.${ext}`;
+        const r = await uploadAudioToDrive(confirm.blob, filename, sec, (f) =>
+          setUploadPct(Math.round(f * 100)),
+        );
+        driveFileId = r.id || null;
+        driveLink = r.webViewLink || null;
+      }
       await createMeeting(
         {
           title,
@@ -579,14 +620,21 @@ function NewMeetingModal({
           send: confirm.send,
           output,
           durationMin: confirm.durationMin,
+          driveFileId,
+          driveLink,
         },
         actorEmail,
       );
       onClose();
     } catch (e) {
       console.error(e);
-      setErr("Não foi possível registrar a reunião.");
+      setErr(
+        e instanceof Error
+          ? e.message
+          : "Não foi possível registrar a reunião.",
+      );
       setSaving(false);
+      setUploadPct(null);
     }
   }
 
@@ -603,9 +651,11 @@ function NewMeetingModal({
         <div className={styles.modalTitle}>Registrar reunião</div>
         <div className={styles.hint}>
           🎧 <b>{sendLabel}</b>
-          {confirm.durationMin ? ` · ${confirm.durationMin} min` : ""} · a IA vai
-          gerar a ata na <b>Fase 4</b>. Por ora, a reunião entra na esteira como{" "}
-          <b>Aguardando</b>.
+          {confirm.durationMin ? ` · ${confirm.durationMin} min` : ""}.
+          {confirm.blob
+            ? " O áudio será enviado ao Drive Compartilhado do setor."
+            : ""}{" "}
+          A ata automática por IA chega na <b>Fase 4</b>.
         </div>
 
         <div className={styles.field}>
@@ -666,6 +716,21 @@ function NewMeetingModal({
           </div>
         </div>
 
+        {uploadPct !== null && (
+          <div className={styles.uploadWrap}>
+            <div className={styles.uploadLabel}>
+              <Icon name="upload" size={13} /> Enviando áudio para o Drive…{" "}
+              {uploadPct}%
+            </div>
+            <div className={styles.uploadBar}>
+              <div
+                className={styles.uploadFill}
+                style={{ width: `${uploadPct}%` }}
+              />
+            </div>
+          </div>
+        )}
+
         {err && <div className={styles.err}>{err}</div>}
 
         <div className={styles.mactions}>
@@ -674,7 +739,11 @@ function NewMeetingModal({
             Cancelar
           </button>
           <button className={styles.btnSave} onClick={submit} disabled={saving}>
-            {saving ? "Registrando…" : "Registrar"}
+            {saving
+              ? confirm.blob
+                ? "Enviando…"
+                : "Registrando…"
+              : "Registrar"}
           </button>
         </div>
       </div>
@@ -815,6 +884,17 @@ function MeetingModal({
           transcrição e a ata automáticas chegam na <b>Fase 4</b> — por ora você
           pode colá-las abaixo.
         </div>
+
+        {meeting.driveLink && (
+          <a
+            href={meeting.driveLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={styles.driveBtn}
+          >
+            <Icon name="upload" size={14} /> Abrir áudio no Drive
+          </a>
+        )}
 
         <div className={styles.tabs}>
           <button
