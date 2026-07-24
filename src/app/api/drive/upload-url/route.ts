@@ -1,119 +1,80 @@
 import { NextResponse } from "next/server";
-import { GoogleAuth } from "google-auth-library";
+import {
+  HttpError,
+  driveToken,
+  ensureFolder,
+  requireUser,
+  sectorGrantees,
+  syncReaders,
+} from "@/lib/server/drive-server";
 
 export const runtime = "nodejs";
 
-const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive";
-
-async function getAccessToken(): Promise<string> {
-  const raw = process.env.GOOGLE_SERVICE_ACCOUNT;
-  if (!raw) throw new Error("GOOGLE_SERVICE_ACCOUNT não configurado");
-  const credentials = JSON.parse(raw);
-  const auth = new GoogleAuth({ credentials, scopes: [DRIVE_SCOPE] });
-  const client = await auth.getClient();
-  const res = await client.getAccessToken();
-  if (!res.token) throw new Error("Falha ao obter token da conta de serviço");
-  return res.token;
-}
-
-/** Localiza (ou cria) a subpasta do setor dentro do Drive Compartilhado. */
-async function ensureSectorFolder(
-  token: string,
-  driveId: string,
-  sector: string,
-): Promise<string> {
-  const safe = sector.replace(/'/g, "\\'");
-  const q = `name = '${safe}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false and '${driveId}' in parents`;
-  const listUrl =
-    "https://www.googleapis.com/drive/v3/files?" +
-    new URLSearchParams({
-      q,
-      corpora: "drive",
-      driveId,
-      includeItemsFromAllDrives: "true",
-      supportsAllDrives: "true",
-      fields: "files(id,name)",
-    }).toString();
-
-  const r = await fetch(listUrl, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!r.ok) throw new Error("Falha ao listar pastas: " + (await r.text()));
-  const d = (await r.json()) as { files?: { id: string }[] };
-  if (d.files && d.files.length) return d.files[0].id;
-
-  const cr = await fetch(
-    "https://www.googleapis.com/drive/v3/files?supportsAllDrives=true&fields=id",
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        name: sector,
-        mimeType: "application/vnd.google-apps.folder",
-        parents: [driveId],
-      }),
-    },
-  );
-  if (!cr.ok) throw new Error("Falha ao criar pasta: " + (await cr.text()));
-  const cd = (await cr.json()) as { id: string };
-  return cd.id;
-}
-
 export async function POST(req: Request) {
   try {
+    const caller = await requireUser(req);
+
     const body = (await req.json()) as {
       name?: string;
       mimeType?: string;
       sector?: string;
     };
-    const name = body.name;
-    if (!name) {
-      return NextResponse.json({ error: "name obrigatório" }, { status: 400 });
-    }
-    const driveId = process.env.DRIVE_SHARED_DRIVE_ID;
-    if (!driveId) throw new Error("DRIVE_SHARED_DRIVE_ID não configurado");
+    const name = (body.name || "").trim();
+    const sector = (body.sector || "").trim();
+    if (!name || !sector) throw new HttpError(400, "Dados incompletos.");
 
-    const token = await getAccessToken();
-    const folderId = await ensureSectorFolder(
-      token,
-      driveId,
-      (body.sector || "Geral").toString(),
-    );
+    // Só pode enviar para um setor do qual participa (admin pode em qualquer um).
+    if (caller.role !== "admin" && !caller.sectors.includes(sector)) {
+      throw new HttpError(403, "Você não participa deste setor.");
+    }
+
+    const root = process.env.DRIVE_ROOT_FOLDER_ID;
+    if (!root)
+      throw new HttpError(500, "DRIVE_ROOT_FOLDER_ID não configurado na Vercel.");
+
+    const token = await driveToken();
+
+    // /{setor} — visível para admins e gestores do setor
+    const sectorFolder = await ensureFolder(token, sector, root);
+    await syncReaders(token, sectorFolder, await sectorGrantees(sector));
+
+    // /{setor}/{usuario} — visível só para o próprio usuário (e quem herda do setor)
+    const userFolder = await ensureFolder(token, caller.email, sectorFolder);
+    await syncReaders(token, userFolder, [caller.email]);
 
     const origin = req.headers.get("origin") || "";
-    const initUrl =
-      "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true&fields=id,name,webViewLink";
-    const initRes = await fetch(initUrl, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json; charset=UTF-8",
-        "X-Upload-Content-Type": body.mimeType || "application/octet-stream",
-        ...(origin ? { Origin: origin } : {}),
+    const initRes = await fetch(
+      "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true&fields=id,name,webViewLink",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json; charset=UTF-8",
+          "X-Upload-Content-Type": body.mimeType || "application/octet-stream",
+          ...(origin ? { Origin: origin } : {}),
+        },
+        body: JSON.stringify({ name, parents: [userFolder] }),
       },
-      body: JSON.stringify({ name, parents: [folderId] }),
-    });
+    );
     if (!initRes.ok) {
       const t = await initRes.text();
-      return NextResponse.json(
-        { error: "Falha ao iniciar upload no Drive", detail: t },
-        { status: 500 },
+      const quota = t.includes("storageQuotaExceeded");
+      throw new HttpError(
+        500,
+        quota
+          ? "A pasta não está em um Drive Compartilhado (conta de serviço não tem cota). Mova a pasta para um Drive Compartilhado."
+          : `Falha ao iniciar upload no Drive: ${t.slice(0, 300)}`,
       );
     }
     const uploadUrl = initRes.headers.get("location");
-    if (!uploadUrl) {
-      return NextResponse.json(
-        { error: "Sessão de upload não retornada pelo Drive" },
-        { status: 500 },
-      );
-    }
-    return NextResponse.json({ uploadUrl });
+    if (!uploadUrl)
+      throw new HttpError(500, "Sessão de upload não retornada pelo Drive.");
+
+    return NextResponse.json({ uploadUrl, folderId: userFolder });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "erro desconhecido";
-    console.error("drive/upload-url:", msg);
-    return NextResponse.json({ error: msg }, { status: 500 });
+    const status = e instanceof HttpError ? e.status : 500;
+    const message = e instanceof Error ? e.message : "Erro desconhecido.";
+    console.error("drive/upload-url:", message);
+    return NextResponse.json({ error: message }, { status });
   }
 }

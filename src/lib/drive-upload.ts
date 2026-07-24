@@ -1,9 +1,35 @@
+import { auth } from "./firebase";
+
 export type DriveResult = { id: string; webViewLink?: string; name?: string };
 
+export type DriveCheck = {
+  ok: boolean;
+  serviceAccount?: string;
+  folderName?: string;
+  folderId?: string;
+  sharedDrive?: boolean;
+  canWrite?: boolean;
+  hint?: string;
+  error?: string;
+};
+
+async function authHeader(): Promise<Record<string, string>> {
+  const t = await auth.currentUser?.getIdToken();
+  if (!t) throw new Error("Sessão expirada. Entre novamente.");
+  return { Authorization: `Bearer ${t}` };
+}
+
+/** Diagnóstico da ligação com o Drive (apenas admin). */
+export async function checkDrive(): Promise<DriveCheck> {
+  const res = await fetch("/api/drive/check", { headers: await authHeader() });
+  return (await res.json()) as DriveCheck;
+}
+
 /**
- * Envia um áudio para o Drive Compartilhado.
- * 1) pede ao servidor uma sessão de upload (a chave da conta de serviço fica no servidor);
- * 2) envia os bytes direto ao Google (aguenta arquivos grandes) com progresso.
+ * Envia um áudio para o Drive.
+ * 1) o servidor confere quem é você, garante a pasta /{setor}/{seu e-mail}
+ *    com as permissões certas e devolve uma sessão de upload;
+ * 2) o navegador envia os bytes direto ao Google, com progresso.
  */
 export async function uploadAudioToDrive(
   blob: Blob,
@@ -15,7 +41,7 @@ export async function uploadAudioToDrive(
 
   const res = await fetch("/api/drive/upload-url", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...(await authHeader()) },
     body: JSON.stringify({ name: filename, mimeType, sector }),
   });
   if (!res.ok) {

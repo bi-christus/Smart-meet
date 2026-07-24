@@ -16,7 +16,11 @@ import {
   type OutputKind,
 } from "@/lib/meetings";
 import { Icon } from "@/components/icons";
-import { uploadAudioToDrive } from "@/lib/drive-upload";
+import {
+  uploadAudioToDrive,
+  checkDrive,
+  type DriveCheck,
+} from "@/lib/drive-upload";
 import styles from "./reunioes.module.css";
 
 const MES = [
@@ -78,6 +82,8 @@ export default function ReunioesPage() {
   const [view, setView] = useState<Meeting | null>(null);
   const [confirm, setConfirm] = useState<Confirm>(null);
   const [onlineLink, setOnlineLink] = useState("");
+  const [driveCheck, setDriveCheck] = useState<DriveCheck | null>(null);
+  const [checking, setChecking] = useState(false);
 
   // gravação
   const [recording, setRecording] = useState(false);
@@ -198,6 +204,30 @@ export default function ReunioesPage() {
   function connectOnline() {
     setConfirm({ send: "online", title: "Reunião online", blob: null });
     setOnlineLink("");
+  }
+
+  async function runCheck() {
+    setChecking(true);
+    try {
+      setDriveCheck(await checkDrive());
+    } catch (e) {
+      setDriveCheck({
+        ok: false,
+        error: e instanceof Error ? e.message : "Erro ao testar.",
+      });
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  /** O áudio é visível só para quem enviou, gestores do setor e admins. */
+  function canSeeAudio(m: Meeting): boolean {
+    if (!profile) return false;
+    if (profile.role === "admin") return true;
+    if (m.createdBy === profile.email) return true;
+    return (
+      profile.role === "gestor" && (profile.sectors ?? []).includes(m.sector)
+    );
   }
 
   if (!profile) return null;
@@ -385,9 +415,40 @@ export default function ReunioesPage() {
           </div>
 
           <div className={styles.infoBanner}>
-            <Icon name="shield" size={15} />O áudio ficará vinculado ao setor{" "}
-            <b>&nbsp;{sector}</b>&nbsp;e será processado pela IA na Fase 4.
+            <Icon name="shield" size={15} />
+            O áudio vai para o Drive em{" "}
+            <b>
+              &nbsp;{sector} › {profile.email}
+            </b>
+            &nbsp;— visível apenas para você, o gestor do setor e
+            administradores.
           </div>
+
+          {profile.role === "admin" && (
+            <div className={styles.driveTest}>
+              <button
+                className={styles.btnGhostSm}
+                onClick={runCheck}
+                disabled={checking}
+              >
+                {checking ? "Testando…" : "Testar conexão com o Drive"}
+              </button>
+              {driveCheck && (
+                <div className={driveCheck.ok ? styles.testOk : styles.testBad}>
+                  {driveCheck.error ??
+                    `${driveCheck.folderName} · ${driveCheck.sharedDrive ? "Drive Compartilhado ✓" : "NÃO é Drive Compartilhado ✗"} · ${driveCheck.canWrite ? "escrita ✓" : "sem escrita ✗"}`}
+                  {driveCheck.hint && !driveCheck.error && (
+                    <div className={styles.saLine}>{driveCheck.hint}</div>
+                  )}
+                  {driveCheck.serviceAccount && (
+                    <div className={styles.saLine}>
+                      Conta de serviço: {driveCheck.serviceAccount}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* ---------- esteira ---------- */}
@@ -501,7 +562,7 @@ export default function ReunioesPage() {
                     <span>· {m.sector}</span>
                     <span>· via {SEND_LABEL[m.send ?? "file"]}</span>
                     <span>· {m.participants?.length || 0} participante(s)</span>
-                    {m.driveLink && (
+                    {m.driveLink && canSeeAudio(m) && (
                       <a
                         href={m.driveLink}
                         target="_blank"
@@ -540,6 +601,7 @@ export default function ReunioesPage() {
           meeting={view}
           activeUsers={activeUsers}
           sectors={sectors}
+          canSeeAudio={canSeeAudio(view)}
           onClose={() => setView(null)}
         />
       )}
@@ -755,11 +817,13 @@ function MeetingModal({
   meeting,
   activeUsers,
   sectors,
+  canSeeAudio,
   onClose,
 }: {
   meeting: Meeting;
   activeUsers: UserProfile[];
   sectors: string[];
+  canSeeAudio: boolean;
   onClose: () => void;
 }) {
   const [title, setTitle] = useState(meeting.title);
@@ -885,7 +949,7 @@ function MeetingModal({
           pode colá-las abaixo.
         </div>
 
-        {meeting.driveLink && (
+        {meeting.driveLink && canSeeAudio && (
           <a
             href={meeting.driveLink}
             target="_blank"
