@@ -33,20 +33,40 @@ type UserDoc = {
   active?: boolean;
 };
 
-function credentials(): ServiceAccount {
-  const raw = process.env.GOOGLE_SERVICE_ACCOUNT;
-  if (!raw)
-    throw new HttpError(500, "GOOGLE_SERVICE_ACCOUNT não configurado na Vercel.");
+function parseSA(raw: string | undefined, varName: string): ServiceAccount {
+  if (!raw) throw new HttpError(500, `${varName} não configurado na Vercel.`);
   try {
     return JSON.parse(raw) as ServiceAccount;
   } catch {
-    throw new HttpError(500, "GOOGLE_SERVICE_ACCOUNT não é um JSON válido.");
+    throw new HttpError(500, `${varName} não é um JSON válido.`);
   }
 }
 
-export function serviceAccountEmail(): string {
+/** Credencial principal — Firebase Admin (validar token + ler Firestore). */
+function credentials(): ServiceAccount {
+  return parseSA(process.env.GOOGLE_SERVICE_ACCOUNT, "GOOGLE_SERVICE_ACCOUNT");
+}
+
+/** Credencial do Drive — usa uma específica se existir, senão a principal. */
+function driveCredentials(): ServiceAccount {
+  return process.env.GOOGLE_DRIVE_SERVICE_ACCOUNT
+    ? parseSA(
+        process.env.GOOGLE_DRIVE_SERVICE_ACCOUNT,
+        "GOOGLE_DRIVE_SERVICE_ACCOUNT",
+      )
+    : credentials();
+}
+
+export function driveServiceAccountEmail(): string {
+  return driveCredentials().client_email;
+}
+export function firebaseServiceAccountEmail(): string {
   return credentials().client_email;
 }
+
+/** O Firebase pode estar em outro projeto que o da chave — por isso explícito. */
+const FIREBASE_PROJECT_ID =
+  process.env.FIREBASE_PROJECT_ID || "smart-meet-d441b";
 
 let cached: App | null = null;
 function adminApp(): App {
@@ -55,6 +75,7 @@ function adminApp(): App {
       ? getApps()[0]
       : initializeApp({
           credential: cert(credentials() as unknown as FbServiceAccount),
+          projectId: FIREBASE_PROJECT_ID,
         });
   }
   return cached;
@@ -62,7 +83,7 @@ function adminApp(): App {
 
 export async function driveToken(): Promise<string> {
   const auth = new GoogleAuth({
-    credentials: credentials(),
+    credentials: driveCredentials(),
     scopes: [DRIVE_SCOPE],
   });
   const client = await auth.getClient();

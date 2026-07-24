@@ -45,3 +45,6 @@ next-env.d.ts
 
 # Firebase CLI cache
 .firebase/
+
+# script local de teste do Drive
+drive-test.mjs
