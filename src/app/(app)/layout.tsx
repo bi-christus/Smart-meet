@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/auth-context";
 import { ROLE_LABEL } from "@/lib/users";
 import { useTheme } from "@/lib/theme";
 import { Icon } from "@/components/icons";
+import { RecoveryBanner } from "@/components/recovery-banner";
 import styles from "./app-shell.module.css";
 
 const NAV = [
@@ -171,7 +172,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      <main className={styles.content}>{children}</main>
+      <main className={styles.content}>
+        {/* Fica no shell — assim a bomba de envio segue viva mesmo quando o
+            usuário sai da tela de reuniões, e uma gravação interrompida
+            aparece em qualquer página. */}
+        <RecoveryBanner />
+        {children}
+      </main>
     </div>
   );
 }

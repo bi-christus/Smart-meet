@@ -25,50 +25,145 @@ export async function checkDrive(): Promise<DriveCheck> {
   return (await res.json()) as DriveCheck;
 }
 
-/**
- * Envia um áudio para o Drive.
- * 1) o servidor confere quem é você, garante a pasta /{setor}/{seu e-mail}
- *    com as permissões certas e devolve uma sessão de upload;
- * 2) o navegador envia os bytes direto ao Google, com progresso.
- */
-export async function uploadAudioToDrive(
-  blob: Blob,
-  filename: string,
-  sector: string,
-  onProgress?: (fraction: number) => void,
-): Promise<DriveResult> {
-  const mimeType = blob.type || "audio/webm";
+// ---------------------------------------------------------------------------
+// protocolo retomável do Google Drive
+//
+// O envio é feito em blocos: cada PUT leva um `Content-Range`. Enquanto a
+// reunião está acontecendo o tamanho final é desconhecido, então usamos
+// `bytes X-Y/*`; o último bloco leva o total real e fecha o arquivo, e o Drive
+// responde 200 com o id. Assim o áudio chega ao servidor do Google DURANTE a
+// gravação, e uma interrupção só custa o trecho ainda não confirmado.
+// ---------------------------------------------------------------------------
 
+/** Resultado de um bloco: incompleto (com offset), concluído ou sessão expirada. */
+export type ChunkOutcome =
+  | { state: "incomplete"; confirmedBytes: number }
+  | { state: "complete"; file: DriveResult }
+  | { state: "expired" };
+
+/** Abre a sessão de upload; o servidor cuida da pasta e das permissões. */
+export async function createUploadSession(params: {
+  name: string;
+  mimeType: string;
+  sector: string;
+  recordingId?: string;
+}): Promise<{ uploadUrl: string; folderId?: string }> {
   const res = await fetch("/api/drive/upload-url", {
     method: "POST",
     headers: { "Content-Type": "application/json", ...(await authHeader()) },
-    body: JSON.stringify({ name: filename, mimeType, sector }),
+    body: JSON.stringify(params),
   });
   if (!res.ok) {
     const e = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(e.error || "Falha ao preparar o upload no Drive");
+    throw new Error(e.error || "Falha ao preparar o upload no Drive.");
   }
-  const { uploadUrl } = (await res.json()) as { uploadUrl: string };
+  return (await res.json()) as { uploadUrl: string; folderId?: string };
+}
 
-  return await new Promise<DriveResult>((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("PUT", uploadUrl);
-    xhr.setRequestHeader("Content-Type", mimeType);
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total);
-    };
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          resolve(JSON.parse(xhr.responseText) as DriveResult);
-        } catch {
-          resolve({ id: "" });
-        }
-      } else {
-        reject(new Error("Falha no envio ao Drive (" + xhr.status + ")"));
-      }
-    };
-    xhr.onerror = () => reject(new Error("Falha de rede no envio ao Drive"));
-    xhr.send(blob);
+/** Pergunta ao Google quantos bytes ele realmente tem (ver rota upload-status). */
+export async function queryOffset(
+  sessionUri: string,
+  totalBytes: number | null,
+): Promise<ChunkOutcome> {
+  const res = await fetch("/api/drive/upload-status", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeader()) },
+    body: JSON.stringify({ sessionUri, totalBytes }),
   });
+  if (!res.ok) {
+    const e = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(e.error || "Falha ao consultar o envio no Drive.");
+  }
+  return (await res.json()) as ChunkOutcome;
+}
+
+function contentRange(start: number, size: number, total: number | null): string {
+  const end = start + size - 1;
+  return `bytes ${start}-${end}/${total === null ? "*" : total}`;
+}
+
+/**
+ * Envia um bloco direto ao Google.
+ *
+ * Lança `CorsBlockedError` se o navegador barrar o `Content-Range` no preflight;
+ * o `UploadManager` reage ligando o modo proxy.
+ */
+export class CorsBlockedError extends Error {}
+
+export async function putChunkDirect(
+  sessionUri: string,
+  blob: Blob,
+  start: number,
+  total: number | null,
+): Promise<ChunkOutcome> {
+  let res: Response;
+  try {
+    res = await fetch(sessionUri, {
+      method: "PUT",
+      headers: { "Content-Range": contentRange(start, blob.size, total) },
+      body: blob,
+    });
+  } catch (e) {
+    // Um preflight barrado chega aqui como TypeError, igual a uma queda de
+    // rede. Quem distingue os dois é o UploadManager: se estamos online e a
+    // primeira tentativa falhou assim, tratamos como bloqueio de CORS.
+    throw new CorsBlockedError(
+      e instanceof Error ? e.message : "Falha de rede no envio ao Drive.",
+    );
+  }
+
+  if (res.status === 308) {
+    // Sem CORS para ler o header `Range`, seguimos com o offset otimista; o
+    // valor real é reconciliado via queryOffset() sempre que algo falha.
+    return { state: "incomplete", confirmedBytes: start + blob.size };
+  }
+  if (res.ok) {
+    const file = (await res.json().catch(() => ({}))) as DriveResult;
+    return { state: "complete", file };
+  }
+  if (res.status === 404 || res.status === 410) return { state: "expired" };
+
+  throw new Error(`Falha no envio ao Drive (${res.status}).`);
+}
+
+/** Mesma operação, porém repassada pelo nosso servidor (contorna CORS). */
+export async function putChunkProxied(
+  sessionUri: string,
+  blob: Blob,
+  start: number,
+  total: number | null,
+): Promise<ChunkOutcome> {
+  const res = await fetch("/api/drive/upload-chunk", {
+    method: "POST",
+    headers: {
+      ...(await authHeader()),
+      "Content-Type": "application/octet-stream",
+      "x-session-uri": sessionUri,
+      "x-content-range": contentRange(start, blob.size, total),
+    },
+    body: blob,
+  });
+  if (!res.ok) {
+    const e = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(e.error || `Falha no envio ao Drive (${res.status}).`);
+  }
+  return (await res.json()) as ChunkOutcome;
+}
+
+/** Renomeia o arquivo quando o usuário confirma o título definitivo. */
+export async function renameDriveFile(
+  fileId: string,
+  name: string,
+  sector: string,
+): Promise<DriveResult> {
+  const res = await fetch("/api/drive/rename", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeader()) },
+    body: JSON.stringify({ fileId, name, sector }),
+  });
+  if (!res.ok) {
+    const e = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(e.error || "Falha ao renomear o arquivo no Drive.");
+  }
+  return (await res.json()) as DriveResult;
 }

@@ -16,11 +16,10 @@ import {
   type OutputKind,
 } from "@/lib/meetings";
 import { Icon } from "@/components/icons";
-import {
-  uploadAudioToDrive,
-  checkDrive,
-  type DriveCheck,
-} from "@/lib/drive-upload";
+import { checkDrive, type DriveCheck } from "@/lib/drive-upload";
+import { useRecorder } from "@/lib/audio/use-recorder";
+import { uploadManager } from "@/lib/audio/uploader";
+import { fmtBytes } from "@/lib/audio/recording-db";
 import styles from "./reunioes.module.css";
 
 const MES = [
@@ -41,17 +40,26 @@ function fmtShortDate(d: string): string {
   const [, m, dd] = d.split("-").map(Number) as unknown as number[];
   return `${dd} ${MES[(m ?? 1) - 1]}`;
 }
-function fmtTimer(s: number): string {
-  const mm = Math.floor(s / 60);
-  const ss = s % 60;
+function fmtTimer(ms: number): string {
+  const total = Math.floor(ms / 1000);
+  const mm = Math.floor(total / 60);
+  const ss = total % 60;
   return `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
 }
 
+/**
+ * Dados que abrem o modal de confirmação.
+ * `meetingId` já vem preenchido nas gravações por microfone: o registro nasce
+ * junto com a gravação, então o modal apenas completa os dados.
+ */
 type Confirm = {
   send: SendMethod;
   title: string;
   durationMin?: number;
-  blob?: Blob | null;
+  recordingId?: string | null;
+  meetingId?: string | null;
+  /** caminho "enviar arquivo": o envio só começa quando o usuário confirma */
+  file?: File | null;
 } | null;
 
 const STATUS_CLASS: Record<MeetingStatus, string> = {
@@ -85,17 +93,21 @@ export default function ReunioesPage() {
   const [driveCheck, setDriveCheck] = useState<DriveCheck | null>(null);
   const [checking, setChecking] = useState(false);
 
-  // gravação
-  const [recording, setRecording] = useState(false);
-  const [recSeconds, setRecSeconds] = useState(0);
+  // gravação — toda a durabilidade (disco + envio retomável) vive no hook
+  const {
+    state: rec,
+    devices,
+    deviceId,
+    setDeviceId,
+    start,
+    stop,
+    startFileUpload,
+  } = useRecorder(profile?.email ?? "");
   const [micError, setMicError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const [dragOver, setDragOver] = useState(false);
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const timerRef = useRef<number | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const startTimeRef = useRef<number>(0);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const recording = rec.recording;
 
   useEffect(() => {
     if (sectors.length && !sectors.includes(sector)) setSector(sectors[0]);
@@ -113,13 +125,14 @@ export default function ReunioesPage() {
     return () => u();
   }, []);
 
-  // limpeza ao desmontar
+  // Enquanto o microfone está aberto, fechar a aba custa os últimos segundos —
+  // o resto já está em disco. O aviso evita o acidente mais comum.
   useEffect(() => {
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-    };
-  }, []);
+    if (!recording) return;
+    const guard = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", guard);
+    return () => window.removeEventListener("beforeunload", guard);
+  }, [recording]);
 
   const activeUsers = useMemo(() => users.filter((u) => u.active), [users]);
 
@@ -140,56 +153,40 @@ export default function ReunioesPage() {
 
   async function startRecording() {
     setMicError(null);
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setMicError("Seu navegador não suporta gravação de áudio.");
-      return;
-    }
+    setBusy(true);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
-      const rec = new MediaRecorder(stream);
-      chunksRef.current = [];
-      rec.ondataavailable = (e) => {
-        if (e.data.size) chunksRef.current.push(e.data);
-      };
-      rec.onstop = () => {
-        const blob = new Blob(chunksRef.current, {
-          type: rec.mimeType || "audio/webm",
-        });
-        const secs = Math.round((Date.now() - startTimeRef.current) / 1000);
-        streamRef.current?.getTracks().forEach((t) => t.stop());
-        setConfirm({
-          send: "mic",
-          title: `Gravação — ${fmtDate(todayStr())}`,
-          durationMin: Math.max(1, Math.round(secs / 60)),
-          blob,
-        });
-      };
-      startTimeRef.current = Date.now();
-      rec.start();
-      recorderRef.current = rec;
-      setRecording(true);
-      setRecSeconds(0);
-      timerRef.current = window.setInterval(
-        () => setRecSeconds((s) => s + 1),
-        1000,
-      );
-    } catch {
-      setMicError(
-        "Não foi possível acessar o microfone. Permita o acesso e tente novamente.",
-      );
+      await start({ sector, output });
+    } catch (e) {
+      setMicError(e instanceof Error ? e.message : "Não foi possível gravar.");
+    } finally {
+      setBusy(false);
     }
   }
 
-  function stopRecording() {
-    const rec = recorderRef.current;
-    if (rec && rec.state !== "inactive") rec.stop(); // onstop monta o blob e abre o confirm
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
+  /**
+   * Encerra a gravação e abre o modal. O envio ao Drive já começou minutos
+   * atrás e continua sozinho — o modal só completa os dados da reunião.
+   */
+  async function stopRecording() {
+    setBusy(true);
+    try {
+      const done = await stop();
+      if (done) {
+        setConfirm({
+          send: "mic",
+          title: done.title || `Gravação — ${fmtDate(todayStr())}`,
+          durationMin: done.durationMin,
+          recordingId: done.recordingId,
+          meetingId: done.meetingId,
+        });
+      }
+    } catch (e) {
+      setMicError(
+        e instanceof Error ? e.message : "Não foi possível encerrar a gravação.",
+      );
+    } finally {
+      setBusy(false);
     }
-    setRecording(false);
-    setRecSeconds(0);
   }
 
   function handleFile(file: File | undefined) {
@@ -197,12 +194,12 @@ export default function ReunioesPage() {
     setConfirm({
       send: "file",
       title: file.name.replace(/\.[^.]+$/, ""),
-      blob: file,
+      file,
     });
   }
 
   function connectOnline() {
-    setConfirm({ send: "online", title: "Reunião online", blob: null });
+    setConfirm({ send: "online", title: "Reunião online" });
     setOnlineLink("");
   }
 
@@ -332,38 +329,107 @@ export default function ReunioesPage() {
                 </div>
                 {recording ? (
                   <>
-                    <div className={styles.recTime}>{fmtTimer(recSeconds)}</div>
+                    <div className={styles.recTime}>{fmtTimer(rec.elapsedMs)}</div>
                     <div className={styles.recLabel}>
                       <span className={styles.recDot} /> Gravando…
                     </div>
+
+                    {/* barras movidas pelo nível real: também servem de
+                        prova visual de que há som entrando */}
                     <div className={styles.eq}>
                       {Array.from({ length: 7 }).map((_, i) => (
-                        <i key={i} />
+                        <i
+                          key={i}
+                          style={{
+                            height: `${Math.max(
+                              4,
+                              Math.round(
+                                rec.level * 26 * (0.55 + 0.45 * Math.sin(i * 1.7 + rec.elapsedMs / 90)),
+                              ),
+                            )}px`,
+                          }}
+                        />
                       ))}
                     </div>
+
+                    {rec.silent && (
+                      <div className={styles.silentAlert}>
+                        <Icon name="clock" size={14} />
+                        Nenhum som detectado há mais de 30 s. Confira se o
+                        microfone certo está selecionado e se não está mudo.
+                      </div>
+                    )}
+
+                    <SafetyBar
+                      written={rec.bytesWritten}
+                      uploaded={rec.uploadedBytes}
+                    />
+
                     <div className={styles.center}>
                       <button
                         className={`${styles.btnPri} ${styles.btnStop}`}
                         onClick={stopRecording}
+                        disabled={busy}
                       >
-                        <Icon name="stop" size={15} /> Parar e enviar
+                        <Icon name="stop" size={15} />{" "}
+                        {busy ? "Encerrando…" : "Parar e enviar"}
                       </button>
                     </div>
+                    {rec.warning && (
+                      <div className={styles.silentAlert} style={{ marginTop: 10 }}>
+                        {rec.warning}
+                      </div>
+                    )}
                   </>
                 ) : (
                   <>
                     <div className={styles.micTitle}>Gravar pelo microfone</div>
                     <div className={styles.micSub}>
-                      Grave a reunião presencial direto no navegador.
+                      Grave a reunião presencial direto no navegador. O áudio é
+                      salvo no disco a cada 5 segundos e enviado ao Drive
+                      durante a reunião.
                     </div>
+
+                    {devices.length > 1 && (
+                      <div className={styles.micDevice}>
+                        <label htmlFor="micDevice">Microfone</label>
+                        <select
+                          id="micDevice"
+                          className={styles.select}
+                          value={deviceId}
+                          onChange={(e) => setDeviceId(e.target.value)}
+                        >
+                          <option value="">Padrão do sistema</option>
+                          {devices.map((d, i) => (
+                            <option key={d.deviceId} value={d.deviceId}>
+                              {d.label || `Microfone ${i + 1}`}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
                     <div className={styles.center}>
-                      <button className={styles.btnPri} onClick={startRecording}>
-                        <Icon name="mic" size={15} /> Iniciar gravação
+                      <button
+                        className={styles.btnPri}
+                        onClick={startRecording}
+                        disabled={busy}
+                      >
+                        <Icon name="mic" size={15} />{" "}
+                        {busy ? "Abrindo microfone…" : "Iniciar gravação"}
                       </button>
                     </div>
                     {micError && (
                       <div className={styles.err} style={{ marginTop: 12 }}>
                         {micError}
+                      </div>
+                    )}
+                    {/* gravação encerrada sozinha (microfone caiu, etc.): o áudio
+                        já gravado está a salvo e sendo enviado */}
+                    {!micError && rec.warning && (
+                      <div className={styles.silentAlert} style={{ marginTop: 12 }}>
+                        <Icon name="shield" size={14} />
+                        {rec.warning}
                       </div>
                     )}
                   </>
@@ -508,6 +574,7 @@ export default function ReunioesPage() {
                     <span className={`${styles.chip} ${STATUS_CLASS[m.status]}`}>
                       {MEETING_STATUS_LABEL[m.status]}
                     </span>
+                    <UploadChip meeting={m} />
                   </div>
                 </div>
               ))
@@ -592,6 +659,7 @@ export default function ReunioesPage() {
           output={output}
           activeUsers={activeUsers}
           actorEmail={profile.email}
+          startFileUpload={startFileUpload}
           onClose={() => setConfirm(null)}
         />
       )}
@@ -609,6 +677,52 @@ export default function ReunioesPage() {
   );
 }
 
+/** Quanto do áudio já está seguro: em disco e no Drive. */
+function SafetyBar({
+  written,
+  uploaded,
+}: {
+  written: number;
+  uploaded: number;
+}) {
+  const pct = written > 0 ? Math.min(100, (uploaded / written) * 100) : 0;
+  return (
+    <div className={styles.safety}>
+      <div className={styles.safetyLine}>
+        <Icon name="shield" size={13} />
+        <span>
+          <b>{fmtBytes(written)}</b> salvos no computador ·{" "}
+          <b>{fmtBytes(uploaded)}</b> já no Drive
+        </span>
+      </div>
+      <div className={styles.uploadBar}>
+        <div className={styles.uploadFill} style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
+/** Selo de envio na esteira — só aparece enquanto o áudio não chegou inteiro. */
+function UploadChip({ meeting }: { meeting: Meeting }) {
+  const s = meeting.uploadStatus;
+  if (!s || s === "concluido") return null;
+  const total = meeting.totalBytes ?? 0;
+  const sent = meeting.uploadedBytes ?? 0;
+  const pct = total > 0 ? Math.min(100, Math.round((sent / total) * 100)) : 0;
+  return (
+    <span
+      className={`${styles.chip} ${s === "falha" ? styles.st_falha : styles.st_enviando}`}
+      title={meeting.uploadError ?? undefined}
+    >
+      {s === "gravando"
+        ? "Gravando…"
+        : s === "falha"
+          ? "Envio interrompido"
+          : `Enviando áudio ${pct}%`}
+    </span>
+  );
+}
+
 function NewMeetingModal({
   confirm,
   sector,
@@ -616,6 +730,7 @@ function NewMeetingModal({
   output,
   activeUsers,
   actorEmail,
+  startFileUpload,
   onClose,
 }: {
   confirm: NonNullable<Confirm>;
@@ -624,6 +739,10 @@ function NewMeetingModal({
   output: OutputKind;
   activeUsers: UserProfile[];
   actorEmail: string;
+  startFileUpload: (
+    file: File,
+    opts: { sector: string; output: OutputKind; title: string },
+  ) => Promise<{ recordingId: string; meetingId: string | null }>;
   onClose: () => void;
 }) {
   const [title, setTitle] = useState(confirm.title);
@@ -631,8 +750,11 @@ function NewMeetingModal({
   const [date, setDate] = useState(todayStr());
   const [participants, setParticipants] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
-  const [uploadPct, setUploadPct] = useState<number | null>(null);
   const [err, setErr] = useState<string | null>(null);
+
+  // A gravação já está indo para /{setor}/{e-mail} no Drive — trocar o setor
+  // aqui deixaria o arquivo numa pasta e o registro em outra.
+  const sectorLocked = !!confirm.recordingId;
 
   const avail = activeUsers.filter(
     (u) => u.sectors?.includes(sec) || u.role === "admin",
@@ -646,47 +768,48 @@ function NewMeetingModal({
 
   async function submit() {
     setErr(null);
-    if (!title.trim()) {
+    const clean = title.trim();
+    if (!clean) {
       setErr("Informe o título.");
       return;
     }
     setSaving(true);
     try {
-      let driveFileId: string | null = null;
-      let driveLink: string | null = null;
-      if (confirm.blob) {
-        setUploadPct(0);
-        const t = confirm.blob.type;
-        const ext = t.includes("webm")
-          ? "webm"
-          : t.includes("mpeg") || t.includes("mp3")
-            ? "mp3"
-            : t.includes("wav")
-              ? "wav"
-              : t.includes("m4a") || t.includes("mp4")
-                ? "m4a"
-                : "audio";
-        const filename = `${title.trim()} — ${date}.${ext}`;
-        const r = await uploadAudioToDrive(confirm.blob, filename, sec, (f) =>
-          setUploadPct(Math.round(f * 100)),
-        );
-        driveFileId = r.id || null;
-        driveLink = r.webViewLink || null;
-      }
-      await createMeeting(
-        {
-          title,
-          sector: sec,
+      if (confirm.meetingId) {
+        // Microfone: o registro nasceu junto com a gravação e o áudio já está
+        // a caminho do Drive. Aqui só completamos os dados.
+        await updateMeeting(confirm.meetingId, {
+          title: clean,
           date,
           participants,
-          send: confirm.send,
+        });
+        if (confirm.recordingId) {
+          await uploadManager.applyTitle(confirm.recordingId, clean);
+        }
+      } else if (confirm.file) {
+        // Arquivo: o envio começa agora e segue em segundo plano, retomável.
+        const { meetingId } = await startFileUpload(confirm.file, {
+          sector: sec,
           output,
-          durationMin: confirm.durationMin,
-          driveFileId,
-          driveLink,
-        },
-        actorEmail,
-      );
+          title: clean,
+        });
+        if (meetingId) await updateMeeting(meetingId, { date, participants });
+      } else {
+        await createMeeting(
+          {
+            title: clean,
+            sector: sec,
+            date,
+            participants,
+            send: confirm.send,
+            output,
+            durationMin: confirm.durationMin,
+            driveFileId: null,
+            driveLink: null,
+          },
+          actorEmail,
+        );
+      }
       onClose();
     } catch (e) {
       console.error(e);
@@ -696,7 +819,6 @@ function NewMeetingModal({
           : "Não foi possível registrar a reunião.",
       );
       setSaving(false);
-      setUploadPct(null);
     }
   }
 
@@ -713,10 +835,12 @@ function NewMeetingModal({
         <div className={styles.modalTitle}>Registrar reunião</div>
         <div className={styles.hint}>
           🎧 <b>{sendLabel}</b>
-          {confirm.durationMin ? ` · ${confirm.durationMin} min` : ""}.
-          {confirm.blob
-            ? " O áudio será enviado ao Drive Compartilhado do setor."
-            : ""}{" "}
+          {confirm.durationMin ? ` · ${confirm.durationMin} min` : ""}.{" "}
+          {confirm.recordingId
+            ? "O áudio já foi enviado ao Drive durante a gravação — se ainda faltar algum trecho, ele sobe sozinho em segundo plano."
+            : confirm.file
+              ? "O envio ao Drive começa ao confirmar e continua em segundo plano, retomando sozinho se a rede cair."
+              : ""}{" "}
           A ata automática por IA chega na <b>Fase 4</b>.
         </div>
 
@@ -737,6 +861,12 @@ function NewMeetingModal({
               className={styles.select}
               value={sec}
               onChange={(e) => setSec(e.target.value)}
+              disabled={sectorLocked}
+              title={
+                sectorLocked
+                  ? "O áudio já está sendo enviado para a pasta deste setor."
+                  : undefined
+              }
             >
               {sectors.map((s) => (
                 <option key={s} value={s}>
@@ -778,21 +908,6 @@ function NewMeetingModal({
           </div>
         </div>
 
-        {uploadPct !== null && (
-          <div className={styles.uploadWrap}>
-            <div className={styles.uploadLabel}>
-              <Icon name="upload" size={13} /> Enviando áudio para o Drive…{" "}
-              {uploadPct}%
-            </div>
-            <div className={styles.uploadBar}>
-              <div
-                className={styles.uploadFill}
-                style={{ width: `${uploadPct}%` }}
-              />
-            </div>
-          </div>
-        )}
-
         {err && <div className={styles.err}>{err}</div>}
 
         <div className={styles.mactions}>
@@ -801,11 +916,7 @@ function NewMeetingModal({
             Cancelar
           </button>
           <button className={styles.btnSave} onClick={submit} disabled={saving}>
-            {saving
-              ? confirm.blob
-                ? "Enviando…"
-                : "Registrando…"
-              : "Registrar"}
+            {saving ? "Registrando…" : "Registrar"}
           </button>
         </div>
       </div>

@@ -142,6 +142,44 @@ export async function sectorGrantees(sector: string): Promise<string[]> {
   return [...out];
 }
 
+/**
+ * Valida uma URI de sessão retomável vinda do navegador antes de o servidor
+ * buscá-la. Sem isto o cliente poderia fazer o servidor requisitar qualquer
+ * endereço (SSRF).
+ */
+export function assertUploadSessionUri(raw: unknown): string {
+  if (typeof raw !== "string" || !raw) {
+    throw new HttpError(400, "Sessão de upload ausente.");
+  }
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new HttpError(400, "Sessão de upload inválida.");
+  }
+  const hostOk =
+    url.protocol === "https:" &&
+    (url.hostname === "www.googleapis.com" ||
+      url.hostname === "storage.googleapis.com");
+  if (!hostOk || !url.pathname.startsWith("/upload/drive/v3/files")) {
+    throw new HttpError(400, "Sessão de upload não pertence ao Google Drive.");
+  }
+  return url.toString();
+}
+
+/**
+ * Lê o offset confirmado numa resposta 308 do protocolo retomável.
+ * O header vem como `bytes=0-N` (N é inclusivo); ausência do header significa
+ * que o Google ainda não persistiu byte algum.
+ */
+export function parseConfirmedBytes(res: Response): number {
+  const range = res.headers.get("range");
+  if (!range) return 0;
+  const m = /bytes=(\d+)-(\d+)/.exec(range);
+  if (!m) return 0;
+  return Number(m[2]) + 1;
+}
+
 async function driveFetch(
   token: string,
   url: string,
@@ -208,6 +246,24 @@ export async function ensureFolder(
     }),
   });
   return ((await cr.json()) as { id: string }).id;
+}
+
+/** Renomeia um arquivo já enviado (o áudio nasce com um nome provisório). */
+export async function renameFile(
+  token: string,
+  fileId: string,
+  name: string,
+): Promise<{ id: string; name: string; webViewLink?: string }> {
+  const r = await driveFetch(
+    token,
+    `${API}/files/${fileId}?supportsAllDrives=true&fields=id,name,webViewLink`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    },
+  );
+  return (await r.json()) as { id: string; name: string; webViewLink?: string };
 }
 
 /** Garante que os e-mails informados tenham leitura no item (idempotente). */

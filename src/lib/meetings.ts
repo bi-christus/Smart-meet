@@ -34,6 +34,20 @@ export const SEND_LABEL: Record<SendMethod, string> = {
   online: "online",
 };
 
+/**
+ * Estado do áudio no caminho até o Drive. Fica no Firestore (e não só no
+ * navegador) para que uma gravação interrompida apareça na esteira de qualquer
+ * dispositivo — inclusive para o gestor — em vez de sumir em silêncio.
+ */
+export type UploadStatus = "gravando" | "enviando" | "concluido" | "falha";
+
+export const UPLOAD_STATUS_LABEL: Record<UploadStatus, string> = {
+  gravando: "Gravando",
+  enviando: "Enviando áudio",
+  concluido: "Áudio salvo",
+  falha: "Envio interrompido",
+};
+
 export type Meeting = {
   id: string;
   title: string;
@@ -50,6 +64,12 @@ export type Meeting = {
   ata?: string;
   reportStatus?: ReportStatus;
   createdBy?: string;
+  /** id da gravação no IndexedDB do navegador que a originou */
+  recordingId?: string | null;
+  uploadStatus?: UploadStatus;
+  uploadedBytes?: number;
+  totalBytes?: number;
+  uploadError?: string | null;
 };
 
 export type MeetingInput = {
@@ -112,6 +132,70 @@ export async function createMeeting(
     createdBy,
   });
   return ref.id;
+}
+
+/**
+ * Cria o registro da reunião no INÍCIO da gravação, com título provisório.
+ *
+ * Antecipar isso é uma proteção: se a máquina desligar no meio, a reunião já
+ * existe na esteira com `uploadStatus` pendente, então ninguém depende de
+ * lembrar que havia uma gravação em andamento. O modal de confirmação depois
+ * só completa os dados via `updateMeeting`.
+ */
+export async function createMeetingDraft(
+  input: {
+    title: string;
+    sector: string;
+    date: string;
+    send: SendMethod;
+    output: OutputKind;
+    recordingId: string;
+  },
+  createdBy: string,
+): Promise<string> {
+  const ref = await addDoc(collection(db, "meetings"), {
+    title: input.title.trim(),
+    sector: input.sector,
+    date: input.date,
+    participants: [],
+    status: "aguardando" as MeetingStatus,
+    send: input.send,
+    output: input.output,
+    durationMin: null,
+    driveFileId: null,
+    driveLink: null,
+    transcript: "",
+    ata: "",
+    reportStatus: "rascunho" as ReportStatus,
+    recordingId: input.recordingId,
+    uploadStatus: "gravando" as UploadStatus,
+    uploadedBytes: 0,
+    totalBytes: 0,
+    uploadError: null,
+    createdAt: serverTimestamp(),
+    createdBy,
+  });
+  return ref.id;
+}
+
+/** Espelha o progresso do envio. Campos `undefined` são ignorados. */
+export async function patchMeetingUpload(
+  id: string,
+  patch: {
+    uploadStatus?: UploadStatus;
+    uploadedBytes?: number;
+    totalBytes?: number;
+    driveFileId?: string | null;
+    driveLink?: string | null;
+    uploadError?: string | null;
+    durationMin?: number;
+  },
+): Promise<void> {
+  const clean = Object.fromEntries(
+    Object.entries(patch).filter(([, v]) => v !== undefined),
+  );
+  if (!Object.keys(clean).length) return;
+  await updateDoc(doc(db, "meetings", id), clean);
 }
 
 export async function updateMeeting(
