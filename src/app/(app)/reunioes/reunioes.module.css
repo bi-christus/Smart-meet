@@ -1060,6 +1060,15 @@
 .driveBtn:hover {
   background: rgba(255, 106, 43, 0.14);
 }
+.outLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.outLinks .driveBtn {
+  margin-bottom: 0;
+}
 .driveTest {
   margin-top: 12px;
 }

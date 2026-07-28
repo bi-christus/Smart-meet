@@ -20,6 +20,19 @@ export type SendMethod = "file" | "mic" | "online";
  */
 export type OutputKind = "resumo" | "detalhada" | "didatica";
 
+/**
+ * Arquivos que o processador externo (Cowork) gera na pasta do Drive e que o
+ * app apenas LÊ e linka — ele não faz a IA, só reflete o resultado.
+ */
+export type DriveOutputKind = "transcricao" | "ata" | "relatorio";
+export type DriveOutput = { kind: DriveOutputKind; name: string; link: string };
+
+export const DRIVE_OUTPUT_LABEL: Record<DriveOutputKind, string> = {
+  transcricao: "Transcrição",
+  ata: "Ata",
+  relatorio: "Relatório",
+};
+
 export const MEETING_STATUS_LABEL: Record<MeetingStatus, string> = {
   aguardando: "Aguardando",
   processando: "Processando",
@@ -64,6 +77,8 @@ export type Meeting = {
   durationMin?: number;
   driveFileId?: string | null;
   driveLink?: string | null;
+  /** arquivos gerados pelo Cowork na pasta do Drive (transcrição, ata, relatório) */
+  driveOutputs?: DriveOutput[];
   transcript?: string;
   ata?: string;
   reportStatus?: ReportStatus;

@@ -25,6 +25,22 @@ export async function checkDrive(): Promise<DriveCheck> {
   return (await res.json()) as DriveCheck;
 }
 
+export type SyncResult = { checked: number; updated: number };
+
+/**
+ * Pede ao servidor para conferir no Drive quais áudios o Cowork já processou
+ * (renomeou com "Transcrito") e refletir isso nas reuniões. O snapshot do
+ * Firestore atualiza a tela sozinho quando algo muda.
+ */
+export async function syncDrive(): Promise<SyncResult> {
+  const res = await fetch("/api/drive/sync", { headers: await authHeader() });
+  if (!res.ok) {
+    const e = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(e.error || "Falha ao verificar o processamento no Drive.");
+  }
+  return (await res.json()) as SyncResult;
+}
+
 // ---------------------------------------------------------------------------
 // protocolo retomável do Google Drive
 //

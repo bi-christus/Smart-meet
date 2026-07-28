@@ -81,6 +81,12 @@ function adminApp(): App {
   return cached;
 }
 
+/** Firestore Admin já inicializado — para rotas que escrevem sem um usuário (cron). */
+export function adminDb() {
+  adminApp();
+  return getFirestore();
+}
+
 export async function driveToken(): Promise<string> {
   const auth = new GoogleAuth({
     credentials: driveCredentials(),
@@ -214,6 +220,53 @@ export async function getFolderMeta(token: string, id: string) {
     mimeType: string;
     capabilities?: { canAddChildren?: boolean };
   };
+}
+
+/** Nome atual e pasta-pai de um arquivo (o id é estável mesmo após rename). */
+export async function getFileMeta(
+  token: string,
+  fileId: string,
+): Promise<{ id: string; name: string; parents?: string[]; mimeType?: string }> {
+  const r = await driveFetch(
+    token,
+    `${API}/files/${fileId}?fields=id,name,parents,mimeType&supportsAllDrives=true`,
+  );
+  return (await r.json()) as {
+    id: string;
+    name: string;
+    parents?: string[];
+    mimeType?: string;
+  };
+}
+
+/** Lista os arquivos diretos de uma pasta (para achar ata/relatório/transcrição). */
+export async function listFolder(
+  token: string,
+  folderId: string,
+): Promise<
+  { id: string; name: string; mimeType: string; webViewLink?: string }[]
+> {
+  const url =
+    `${API}/files?` +
+    new URLSearchParams({
+      q: `'${folderId}' in parents and trashed = false`,
+      fields: "files(id,name,mimeType,webViewLink)",
+      supportsAllDrives: "true",
+      includeItemsFromAllDrives: "true",
+      corpora: "allDrives",
+      pageSize: "200",
+    }).toString();
+  const r = await driveFetch(token, url);
+  return (
+    (await r.json()) as {
+      files?: {
+        id: string;
+        name: string;
+        mimeType: string;
+        webViewLink?: string;
+      }[];
+    }
+  ).files ?? [];
 }
 
 /** Acha (ou cria) uma subpasta pelo nome dentro de um pai. */

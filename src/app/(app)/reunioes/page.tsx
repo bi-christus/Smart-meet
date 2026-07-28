@@ -10,12 +10,15 @@ import {
   deleteMeetingById,
   MEETING_STATUS_LABEL,
   SEND_LABEL,
+  DRIVE_OUTPUT_LABEL,
   type Meeting,
   type MeetingStatus,
   type SendMethod,
   type OutputKind,
+  type DriveOutputKind,
 } from "@/lib/meetings";
 import { Icon } from "@/components/icons";
+import { syncDrive } from "@/lib/drive-upload";
 import { useRecorder } from "@/lib/audio/use-recorder";
 import { uploadManager } from "@/lib/audio/uploader";
 import { fmtBytes } from "@/lib/audio/recording-db";
@@ -89,6 +92,13 @@ const OUTPUT_OPTIONS: { id: OutputKind; label: string; desc: string }[] = [
   },
 ];
 
+/** Ícone de cada arquivo gerado pelo Cowork. */
+const OUTPUT_ICON: Record<DriveOutputKind, string> = {
+  transcricao: "chat",
+  ata: "reunioes",
+  relatorio: "relatorios",
+};
+
 export default function ReunioesPage() {
   const { profile } = useAuth();
 
@@ -138,6 +148,33 @@ export default function ReunioesPage() {
     );
     return () => u();
   }, [sectors]);
+
+  // Reflete o trabalho do Cowork: pergunta ao servidor se algum áudio já virou
+  // "Transcrito". Dispara ao abrir a aba, ao focá-la e a cada 45s — mas só
+  // enquanto houver reunião aguardando com áudio no Drive. O snapshot do
+  // Firestore atualiza a tela sozinho quando o status muda.
+  const pendingCount = useMemo(
+    () =>
+      meetings.filter((m) => m.status === "aguardando" && m.driveFileId).length,
+    [meetings],
+  );
+  const lastSyncRef = useRef(0);
+  useEffect(() => {
+    if (!pendingCount) return;
+    const run = () => {
+      if (Date.now() - lastSyncRef.current < 20000) return;
+      lastSyncRef.current = Date.now();
+      void syncDrive().catch(() => {});
+    };
+    run();
+    const onFocus = () => run();
+    window.addEventListener("focus", onFocus);
+    const timer = window.setInterval(run, 45000);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      clearInterval(timer);
+    };
+  }, [pendingCount]);
 
   useEffect(() => {
     const u = subscribeUsers(setUsers, () => {});
@@ -1052,6 +1089,27 @@ function MeetingModal({
             <Icon name="upload" size={14} /> Abrir áudio no Drive
           </a>
         )}
+
+        {canSeeAudio &&
+          meeting.driveOutputs &&
+          meeting.driveOutputs.length > 0 && (
+            <div className={styles.outLinks}>
+              {meeting.driveOutputs
+                .filter((o) => o.link)
+                .map((o, i) => (
+                  <a
+                    key={i}
+                    href={o.link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={styles.driveBtn}
+                  >
+                    <Icon name={OUTPUT_ICON[o.kind]} size={14} /> Abrir{" "}
+                    {DRIVE_OUTPUT_LABEL[o.kind]}
+                  </a>
+                ))}
+            </div>
+          )}
 
         <div className={styles.tabs}>
           <button
