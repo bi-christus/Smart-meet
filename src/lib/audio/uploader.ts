@@ -67,6 +67,29 @@ async function withLock<T>(name: string, fn: () => Promise<T>): Promise<T> {
   return (await navigator.locks.request(name, fn)) as T;
 }
 
+function hasWebLocks(): boolean {
+  return typeof navigator !== "undefined" && !!navigator.locks?.request;
+}
+
+/**
+ * true se NINGUÉM está segurando a trava de "gravação viva" — ou seja, a aba que
+ * gravava sumiu (fechou, recarregou, travou) e o áudio ficou órfão. O gravador
+ * segura essa trava enquanto captura (mesmo pausado); o navegador a solta quando
+ * a aba morre.
+ */
+async function recLockFree(id: string): Promise<boolean> {
+  if (!navigator.locks?.request) return false;
+  try {
+    return (await navigator.locks.request(
+      `smartmeet-rec-${id}`,
+      { ifAvailable: true },
+      (lock) => lock !== null,
+    )) as boolean;
+  } catch {
+    return false; // não deu para consultar → conservador: trata como viva
+  }
+}
+
 function waitOnline(): Promise<void> {
   if (navigator.onLine) return Promise.resolve();
   return new Promise((resolve) => {
@@ -103,6 +126,9 @@ class UploadManagerImpl {
       if (document.visibilityState === "visible") void this.resumeAll();
     });
     void this.resumeAll();
+    // Segunda passada: numa recarga, a trava da aba anterior pode levar um
+    // instante para cair — assim adotamos a gravação órfã mesmo nessa corrida.
+    window.setTimeout(() => void this.resumeAll(), 2500);
   }
 
   subscribe(fn: Listener): () => void {
@@ -184,8 +210,16 @@ class UploadManagerImpl {
    */
   private async adoptIfOrphan(rec: RecordingRecord): Promise<void> {
     if (rec.id === this.activeRecordingId) return;
-    const beat = rec.lastActiveAt ?? rec.createdAt;
-    if (Date.now() - beat <= RECORDING_ORPHAN_MS) return;
+
+    // A aba que grava (mesmo pausada) segura a trava smartmeet-rec-<id>. Se ela
+    // sumiu, a trava caiu e adotamos na hora. Sem Web Locks, caímos na batida:
+    // só adota após um tempo sem novos pedaços.
+    if (hasWebLocks()) {
+      if (!(await recLockFree(rec.id))) return;
+    } else {
+      const beat = rec.lastActiveAt ?? rec.createdAt;
+      if (Date.now() - beat <= RECORDING_ORPHAN_MS) return;
+    }
 
     if (rec.bytesWritten <= 0) {
       // morreu antes de captar qualquer áudio: nada a salvar

@@ -130,6 +130,8 @@ export default function ReunioesPage() {
     setDeviceId,
     start,
     stop,
+    pause,
+    resume,
     startFileUpload,
   } = useRecorder(profile?.email ?? "");
   const [micError, setMicError] = useState<string | null>(null);
@@ -368,15 +370,26 @@ export default function ReunioesPage() {
             {mode === "mic" && (
               <div className={styles.micBox}>
                 <div
-                  className={`${styles.micCircle} ${recording ? styles.micRecording : ""}`}
+                  className={`${styles.micCircle} ${
+                    recording
+                      ? rec.paused
+                        ? styles.micPaused
+                        : styles.micRecording
+                      : ""
+                  }`}
                 >
                   <Icon name="mic" size={26} />
                 </div>
                 {recording ? (
                   <>
                     <div className={styles.recTime}>{fmtTimer(rec.elapsedMs)}</div>
-                    <div className={styles.recLabel}>
-                      <span className={styles.recDot} /> Gravando…
+                    <div
+                      className={`${styles.recLabel} ${rec.paused ? styles.recLabelPaused : ""}`}
+                    >
+                      <span
+                        className={`${styles.recDot} ${rec.paused ? styles.recDotPaused : ""}`}
+                      />
+                      {rec.paused ? "Pausado" : "Gravando…"}
                     </div>
 
                     {/* barras movidas pelo nível real: também servem de
@@ -411,6 +424,13 @@ export default function ReunioesPage() {
                     />
 
                     <div className={styles.center}>
+                      <button
+                        className={styles.btnPause}
+                        onClick={rec.paused ? resume : pause}
+                        disabled={busy}
+                      >
+                        {rec.paused ? "Retomar" : "Pausar"}
+                      </button>
                       <button
                         className={`${styles.btnPri} ${styles.btnStop}`}
                         onClick={stopRecording}

@@ -30,6 +30,8 @@ export type RecorderState = {
   uploadedBytes: number;
   /** true enquanto o áudio ainda não chegou inteiro ao Drive */
   uploading: boolean;
+  /** true quando a captura está pausada (mesmo arquivo, retomável) */
+  paused: boolean;
 };
 
 const IDLE: RecorderState = {
@@ -42,6 +44,7 @@ const IDLE: RecorderState = {
   bytesWritten: 0,
   uploadedBytes: 0,
   uploading: false,
+  paused: false,
 };
 
 export function extFromMime(mime: string): string {
@@ -118,11 +121,25 @@ export function useRecorder(ownerEmail: string) {
     [patch],
   );
 
-  // libera o microfone se a tela sair do ar com a gravação aberta
+  // Sair da tela no meio da gravação NÃO pode perder áudio: encerramos a
+  // captura e enviamos o que já foi gravado (arquivo válido) em vez de largar a
+  // gravação em aberto. Num recarregar/fechar da aba, isto pode não chegar a
+  // rodar — mas aí a trava de "gravação viva" cai e a próxima carga adota o
+  // órfão. Nos dois caminhos o áudio se preserva.
   useEffect(() => {
     return () => {
       if (tickRef.current) clearInterval(tickRef.current);
-      recorderRef.current?.dispose();
+      const recorder = recorderRef.current;
+      const id = recordingIdRef.current;
+      recorderRef.current = null;
+      if (recorder && id) {
+        void recorder
+          .stop()
+          .then((ms) => uploadManager.finishRecording(id, ms))
+          .catch(() => {});
+      } else {
+        recorder?.dispose();
+      }
     };
   }, []);
 
@@ -175,7 +192,13 @@ export function useRecorder(ownerEmail: string) {
             const durationMs = recorderRef.current?.elapsedMs() ?? 0;
             recorderRef.current = null;
             recordingIdRef.current = null;
-            patch({ recording: false, level: 0, silent: false, warning: message });
+            patch({
+              recording: false,
+              paused: false,
+              level: 0,
+              silent: false,
+              warning: message,
+            });
             if (rid) void uploadManager.finishRecording(rid, durationMs);
           },
         },
@@ -252,7 +275,13 @@ export function useRecorder(ownerEmail: string) {
     }
     const durationMs = await recorder.stop();
     recorderRef.current = null;
-    patch({ recording: false, level: 0, silent: false, elapsedMs: durationMs });
+    patch({
+      recording: false,
+      paused: false,
+      level: 0,
+      silent: false,
+      elapsedMs: durationMs,
+    });
 
     await uploadManager.finishRecording(id, durationMs);
     const rec = await getRecording(id);
@@ -262,6 +291,16 @@ export function useRecorder(ownerEmail: string) {
       durationMin: Math.max(1, Math.round(durationMs / 60000)),
       title: rec?.title ?? "",
     };
+  }, [patch]);
+
+  const pause = useCallback(() => {
+    recorderRef.current?.pause();
+    patch({ paused: true, level: 0 });
+  }, [patch]);
+
+  const resume = useCallback(() => {
+    recorderRef.current?.resume();
+    patch({ paused: false });
   }, [patch]);
 
   /** Envia um arquivo escolhido pelo usuário pela mesma esteira retomável. */
@@ -336,6 +375,8 @@ export function useRecorder(ownerEmail: string) {
     setDeviceId,
     start,
     stop,
+    pause,
+    resume,
     startFileUpload,
     dismissWarning,
   };

@@ -13,6 +13,10 @@
  *    injetaria um segundo cabeçalho WebM no meio do arquivo e tornaria ilegível
  *    todo o áudio posterior — então, em vez disso, fechamos o arquivo já válido,
  *    o entregamos para envio e avisamos o usuário para iniciar outra gravação.
+ *  - Pausar/retomar no MESMO arquivo (pause/resume nativos — sem novo cabeçalho).
+ *  - Trava de "gravação viva" (Web Locks): se a aba recarrega, fecha ou trava, a
+ *    trava cai sozinha e a próxima carga da página adota a gravação órfã na hora,
+ *    sem esperar tempo de inatividade — foi o que já estava salvo, não se perde.
  *  - Medidor de nível real, que também serve para detectar "gravando silêncio".
  */
 
@@ -86,6 +90,11 @@ export class AudioRecorder {
   private silentNotified = false;
   private stopping = false;
   private interrupted = false;
+  private paused = false;
+  private pausedAt = 0;
+  private pausedTotal = 0;
+  /** solta a trava de "gravação viva" quando a captura encerra */
+  private releaseLock: (() => void) | null = null;
   /** encadeia as escritas para os pedaços chegarem ao disco em ordem */
   private writeChain: Promise<unknown> = Promise.resolve();
 
@@ -101,9 +110,14 @@ export class AudioRecorder {
     this.deviceId = deviceId;
   }
 
-  /** Milissegundos decorridos — por timestamp, imune ao throttle de aba em segundo plano. */
+  /**
+   * Milissegundos GRAVADOS — por timestamp (imune ao throttle de aba em segundo
+   * plano) e descontando o tempo pausado, para refletir a duração real do áudio.
+   */
   elapsedMs(): number {
-    return this.startedAt ? Date.now() - this.startedAt : 0;
+    if (!this.startedAt) return 0;
+    const now = this.paused && this.pausedAt ? this.pausedAt : Date.now();
+    return now - this.startedAt - this.pausedTotal;
   }
 
   async start(): Promise<void> {
@@ -112,6 +126,7 @@ export class AudioRecorder {
     }
     this.stream = await this.openStream();
     this.startedAt = Date.now();
+    this.acquireRecLock();
     this.attachRecorder();
     this.attachMeter(this.stream);
     void this.acquireWakeLock();
@@ -140,6 +155,43 @@ export class AudioRecorder {
     await this.writeChain;
     this.teardown();
     return duration;
+  }
+
+  /** Pausa a captura no MESMO arquivo (pause nativo — não injeta cabeçalho). */
+  pause(): void {
+    if (this.stopping || this.paused) return;
+    const rec = this.recorder;
+    if (rec && rec.state === "recording") {
+      try {
+        rec.pause();
+      } catch {
+        return; // não conseguiu pausar: mantém gravando
+      }
+    }
+    this.paused = true;
+    this.pausedAt = Date.now();
+    this.silentSince = null; // pausado não dispara alerta de silêncio
+    this.events.onLevel?.(0);
+  }
+
+  /** Retoma a captura no mesmo arquivo. */
+  resume(): void {
+    if (this.stopping || !this.paused) return;
+    const rec = this.recorder;
+    if (rec && rec.state === "paused") {
+      try {
+        rec.resume();
+      } catch {
+        /* segue: o medidor volta e a duração continua do ponto certo */
+      }
+    }
+    this.pausedTotal += Date.now() - this.pausedAt;
+    this.pausedAt = 0;
+    this.paused = false;
+  }
+
+  isPaused(): boolean {
+    return this.paused;
   }
 
   /** Libera microfone, medidor e wake lock sem esperar pelo disco. */
@@ -263,7 +315,7 @@ export class AudioRecorder {
 
       const buf = new Float32Array(analyser.fftSize);
       this.levelTimer = window.setInterval(() => {
-        if (!this.analyser) return;
+        if (!this.analyser || this.paused) return;
         this.analyser.getFloatTimeDomainData(buf);
         let sum = 0;
         for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
@@ -304,6 +356,23 @@ export class AudioRecorder {
     this.audioCtx = null;
   }
 
+  /**
+   * Segura uma trava (Web Locks) enquanto a captura vive. Se a aba fecha,
+   * recarrega ou trava, o navegador solta a trava sozinho — é isso que permite
+   * a próxima carga saber que a gravação ficou órfã e adotá-la para envio na
+   * hora, sem esperar por tempo de inatividade (e sem confundir uma pausa longa,
+   * que mantém a trava presa, com abandono).
+   */
+  private acquireRecLock(): void {
+    if (typeof navigator === "undefined" || !navigator.locks?.request) return;
+    const held = new Promise<void>((resolve) => {
+      this.releaseLock = resolve;
+    });
+    void navigator.locks
+      .request(`smartmeet-rec-${this.recordingId}`, () => held)
+      .catch(() => {});
+  }
+
   private async acquireWakeLock(): Promise<void> {
     if (!navigator.wakeLock) return;
     try {
@@ -327,5 +396,8 @@ export class AudioRecorder {
     this.recorder = null;
     void this.wakeLock?.release().catch(() => {});
     this.wakeLock = null;
+    // solta a trava de "gravação viva": a gravação não está mais sendo capturada
+    this.releaseLock?.();
+    this.releaseLock = null;
   }
 }

@@ -204,6 +204,10 @@
   background: var(--danger);
   animation: recPulse 1.1s infinite;
 }
+.micPaused {
+  background: var(--s3);
+  color: var(--tx-2);
+}
 @keyframes recPulse {
   0% {
     box-shadow: 0 0 0 0 rgba(251, 113, 133, 0.5);
@@ -257,6 +261,13 @@
   50% {
     opacity: 0.25;
   }
+}
+.recLabelPaused {
+  color: var(--tx-3);
+}
+.recDotPaused {
+  background: var(--tx-3);
+  animation: none;
 }
 .eq {
   display: flex;
@@ -419,9 +430,35 @@
 .btnStop:hover {
   filter: brightness(1.06);
 }
+.btnPause {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  padding: 0 18px;
+  border: 1px solid var(--line);
+  background: var(--s2);
+  color: var(--tx);
+  border-radius: 9px;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, transform 0.05s;
+}
+.btnPause:hover {
+  background: var(--s3);
+}
+.btnPause:active {
+  transform: translateY(1px);
+}
+.btnPause:disabled {
+  opacity: 0.5;
+}
 .center {
   display: flex;
   justify-content: center;
+  gap: 10px;
 }
 
 .outLbl {
