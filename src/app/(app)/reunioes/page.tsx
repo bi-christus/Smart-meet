@@ -16,7 +16,6 @@ import {
   type OutputKind,
 } from "@/lib/meetings";
 import { Icon } from "@/components/icons";
-import { checkDrive, type DriveCheck } from "@/lib/drive-upload";
 import { useRecorder } from "@/lib/audio/use-recorder";
 import { uploadManager } from "@/lib/audio/uploader";
 import { fmtBytes } from "@/lib/audio/recording-db";
@@ -68,6 +67,28 @@ const STATUS_CLASS: Record<MeetingStatus, string> = {
   processado: styles.st_processado,
 };
 
+/**
+ * O que gerar a partir da transcrição. "Pontos importantes" vem marcado por
+ * padrão; as atas são opcionais e podem ser combinadas.
+ */
+const OUTPUT_OPTIONS: { id: OutputKind; label: string; desc: string }[] = [
+  {
+    id: "resumo",
+    label: "Pontos importantes",
+    desc: "Resumo objetivo: decisões e o essencial da reunião.",
+  },
+  {
+    id: "detalhada",
+    label: "Ata detalhada",
+    desc: "Registro completo, ponto a ponto.",
+  },
+  {
+    id: "didatica",
+    label: "Ata didática",
+    desc: "Explicada e fácil de entender.",
+  },
+];
+
 export default function ReunioesPage() {
   const { profile } = useAuth();
 
@@ -83,15 +104,13 @@ export default function ReunioesPage() {
 
   const [sector, setSector] = useState("");
   const [mode, setMode] = useState<SendMethod>("file");
-  const [output, setOutput] = useState<OutputKind>("ambas");
+  const [output, setOutput] = useState<OutputKind[]>(["resumo"]);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [filter, setFilter] = useState("todas");
   const [view, setView] = useState<Meeting | null>(null);
   const [confirm, setConfirm] = useState<Confirm>(null);
   const [onlineLink, setOnlineLink] = useState("");
-  const [driveCheck, setDriveCheck] = useState<DriveCheck | null>(null);
-  const [checking, setChecking] = useState(false);
 
   // gravação — toda a durabilidade (disco + envio retomável) vive no hook
   const {
@@ -203,18 +222,10 @@ export default function ReunioesPage() {
     setOnlineLink("");
   }
 
-  async function runCheck() {
-    setChecking(true);
-    try {
-      setDriveCheck(await checkDrive());
-    } catch (e) {
-      setDriveCheck({
-        ok: false,
-        error: e instanceof Error ? e.message : "Erro ao testar.",
-      });
-    } finally {
-      setChecking(false);
-    }
+  function toggleOutput(id: OutputKind) {
+    setOutput((cur) =>
+      cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id],
+    );
   }
 
   /** O áudio é visível só para quem enviou, gestores do setor e admins. */
@@ -242,10 +253,6 @@ export default function ReunioesPage() {
     <div className={styles.page}>
       <div className={styles.head}>
         <h1>Reuniões</h1>
-        <p>
-          Início do fluxo — grave ou envie o áudio da reunião. (O processamento
-          por IA chega na Fase 4.)
-        </p>
       </div>
 
       <div className={styles.grid}>
@@ -285,7 +292,8 @@ export default function ReunioesPage() {
             </div>
           </div>
 
-          <div className={styles.capBody} key={mode}>
+          <div className={styles.capGrid}>
+            <div className={`${styles.capMain} ${styles.capBody}`} key={mode}>
             {mode === "file" && (
               <div
                 className={`${styles.dropzone} ${dragOver ? styles.dropOver : ""}`}
@@ -459,62 +467,36 @@ export default function ReunioesPage() {
                 </div>
               </div>
             )}
-          </div>
-
-          <div className={styles.outLbl}>O que gerar a partir da transcrição?</div>
-          <div className={styles.seg}>
-            {(
-              [
-                ["detalhada", "Ata detalhada"],
-                ["didatica", "Ata didática"],
-                ["ambas", "Ambas"],
-              ] as [OutputKind, string][]
-            ).map(([id, label]) => (
-              <button
-                key={id}
-                className={`${styles.segBtn} ${output === id ? styles.on : ""}`}
-                onClick={() => setOutput(id)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          <div className={styles.infoBanner}>
-            <Icon name="shield" size={15} />
-            O áudio vai para o Drive em{" "}
-            <b>
-              &nbsp;{sector} › {profile.email}
-            </b>
-            &nbsp;— visível apenas para você, o gestor do setor e
-            administradores.
-          </div>
-
-          {profile.role === "admin" && (
-            <div className={styles.driveTest}>
-              <button
-                className={styles.btnGhostSm}
-                onClick={runCheck}
-                disabled={checking}
-              >
-                {checking ? "Testando…" : "Testar conexão com o Drive"}
-              </button>
-              {driveCheck && (
-                <div className={driveCheck.ok ? styles.testOk : styles.testBad}>
-                  {driveCheck.error ??
-                    `${driveCheck.folderName} · ${driveCheck.sharedDrive ? "Drive Compartilhado ✓" : "NÃO é Drive Compartilhado ✗"} · ${driveCheck.canWrite ? "escrita ✓" : "sem escrita ✗"}`}
-                  {driveCheck.hint && !driveCheck.error && (
-                    <div className={styles.saLine}>{driveCheck.hint}</div>
-                  )}
-                  {driveCheck.serviceAccount && (
-                    <div className={styles.saLine}>
-                      Conta de serviço: {driveCheck.serviceAccount}
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
-          )}
+
+            <aside className={styles.capSide}>
+              <div className={styles.outLbl}>
+                O que gerar a partir da transcrição?
+              </div>
+              <div className={styles.outOptions}>
+                {OUTPUT_OPTIONS.map((o) => {
+                  const on = output.includes(o.id);
+                  return (
+                    <button
+                      key={o.id}
+                      type="button"
+                      className={`${styles.outOption} ${on ? styles.on : ""}`}
+                      onClick={() => toggleOutput(o.id)}
+                      aria-pressed={on}
+                    >
+                      <span className={styles.outCheck}>
+                        <Icon name="check" size={12} />
+                      </span>
+                      <span className={styles.outText}>
+                        <span className={styles.outName}>{o.label}</span>
+                        <span className={styles.outDesc}>{o.desc}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </aside>
+          </div>
         </div>
 
         {/* ---------- esteira ---------- */}
@@ -736,12 +718,12 @@ function NewMeetingModal({
   confirm: NonNullable<Confirm>;
   sector: string;
   sectors: string[];
-  output: OutputKind;
+  output: OutputKind[];
   activeUsers: UserProfile[];
   actorEmail: string;
   startFileUpload: (
     file: File,
-    opts: { sector: string; output: OutputKind; title: string },
+    opts: { sector: string; output: OutputKind[]; title: string },
   ) => Promise<{ recordingId: string; meetingId: string | null }>;
   onClose: () => void;
 }) {

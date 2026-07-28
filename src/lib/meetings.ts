@@ -14,7 +14,11 @@ import { db } from "./firebase";
 export type MeetingStatus = "aguardando" | "processando" | "processado";
 export type ReportStatus = "rascunho" | "a_validar" | "validada";
 export type SendMethod = "file" | "mic" | "online";
-export type OutputKind = "detalhada" | "didatica" | "ambas";
+/**
+ * O que a IA gera a partir da transcrição (Fase 4). É uma multi-seleção: por
+ * padrão vem só "resumo" (pontos importantes); as atas são opcionais.
+ */
+export type OutputKind = "resumo" | "detalhada" | "didatica";
 
 export const MEETING_STATUS_LABEL: Record<MeetingStatus, string> = {
   aguardando: "Aguardando",
@@ -56,7 +60,7 @@ export type Meeting = {
   participants: string[]; // e-mails
   status: MeetingStatus;
   send?: SendMethod;
-  output?: OutputKind;
+  output?: OutputKind[];
   durationMin?: number;
   driveFileId?: string | null;
   driveLink?: string | null;
@@ -78,7 +82,7 @@ export type MeetingInput = {
   date: string;
   participants: string[];
   send: SendMethod;
-  output: OutputKind;
+  output: OutputKind[];
   durationMin?: number;
   driveFileId?: string | null;
   driveLink?: string | null;
@@ -148,7 +152,7 @@ export async function createMeetingDraft(
     sector: string;
     date: string;
     send: SendMethod;
-    output: OutputKind;
+    output: OutputKind[];
     recordingId: string;
   },
   createdBy: string,

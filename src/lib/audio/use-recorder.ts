@@ -129,7 +129,7 @@ export function useRecorder(ownerEmail: string) {
   const start = useCallback(
     async (opts: {
       sector: string;
-      output: OutputKind;
+      output: OutputKind[];
       titleHint?: string;
     }): Promise<StartResult> => {
       const mimeType = pickMimeType();
@@ -268,7 +268,7 @@ export function useRecorder(ownerEmail: string) {
   const startFileUpload = useCallback(
     async (
       file: File,
-      opts: { sector: string; output: OutputKind; title: string },
+      opts: { sector: string; output: OutputKind[]; title: string },
     ): Promise<StartResult> => {
       const id = newRecordingId();
       const mimeType = file.type || "application/octet-stream";
