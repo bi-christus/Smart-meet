@@ -63,6 +63,8 @@ export async function createUploadSession(params: {
   mimeType: string;
   sector: string;
   recordingId?: string;
+  /** o que o usuário pediu gerar — vira a etiqueta smGerar no arquivo do Drive */
+  outputs?: string[];
 }): Promise<{ uploadUrl: string; folderId?: string }> {
   const res = await fetch("/api/drive/upload-url", {
     method: "POST",

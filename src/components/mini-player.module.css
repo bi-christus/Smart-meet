@@ -1,0 +1,109 @@
+.wrap {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px 8px 8px;
+  background: var(--s2);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.42);
+  animation: slideUp 0.24s ease;
+}
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.face {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 10px;
+  color: var(--tx);
+}
+.face:hover {
+  background: var(--s3);
+}
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--danger);
+  animation: blink 1s infinite;
+  flex: none;
+}
+.dotPaused {
+  background: var(--tx-3);
+  animation: none;
+}
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+.info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.15;
+}
+.label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--tx-3);
+}
+.time {
+  font-family: var(--font-mono), monospace;
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--tx);
+}
+.controls {
+  display: flex;
+  gap: 4px;
+}
+.ctrl {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  background: var(--s1);
+  color: var(--tx);
+  border-radius: 9px;
+  cursor: pointer;
+  transition: background 0.12s, filter 0.12s;
+}
+.ctrl:hover {
+  background: var(--s3);
+}
+.stop {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+.stop:hover {
+  filter: brightness(1.08);
+  background: var(--danger);
+}

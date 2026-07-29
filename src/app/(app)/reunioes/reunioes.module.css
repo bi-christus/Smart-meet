@@ -496,6 +496,13 @@
   border-color: var(--brand);
   background: var(--brand-soft);
 }
+.outOption:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.outLocked {
+  cursor: default;
+}
 .outCheck {
   width: 18px;
   height: 18px;
@@ -1039,6 +1046,74 @@
 }
 .btnSave:disabled {
   opacity: 0.5;
+}
+.delBtn {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line-soft);
+  background: var(--s1);
+  color: var(--tx-3);
+  border-radius: 9px;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+.delBtn:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: var(--danger-bg);
+}
+.confirmBox {
+  width: 420px;
+  max-width: 100%;
+  background: var(--s2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 24px;
+  box-shadow: var(--shadow);
+  text-align: center;
+  animation: modalIn 0.2s ease;
+}
+.delIcon {
+  width: 46px;
+  height: 46px;
+  margin: 0 auto 14px;
+  border-radius: 50%;
+  background: var(--danger-bg);
+  color: var(--danger);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.delWarn {
+  font-size: 13.5px;
+  color: var(--tx-2);
+  line-height: 1.6;
+  margin: 4px 0 6px;
+}
+.confirmBox .mactions {
+  justify-content: center;
+}
+.btnDangerSolid {
+  height: 42px;
+  padding: 0 18px;
+  border: none;
+  background: var(--danger);
+  color: #fff;
+  border-radius: 9px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.btnDangerSolid:hover {
+  filter: brightness(1.06);
+}
+.btnDangerSolid:disabled {
+  opacity: 0.6;
 }
 .err {
   color: var(--danger-tx);

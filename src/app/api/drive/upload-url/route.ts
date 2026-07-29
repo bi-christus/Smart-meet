@@ -18,10 +18,21 @@ export async function POST(req: Request) {
       name?: string;
       mimeType?: string;
       sector?: string;
+      outputs?: string[];
     };
     const name = (body.name || "").trim();
     const sector = (body.sector || "").trim();
     if (!name || !sector) throw new HttpError(400, "Dados incompletos.");
+
+    // Etiqueta lida pelo Cowork para saber o que gerar (Pontos importantes vem
+    // sempre; atas conforme o pedido). Ele deriva título/setor/usuário do nome
+    // do arquivo e da pasta, então basta esta chave.
+    const outputs = Array.isArray(body.outputs)
+      ? body.outputs.filter((o): o is string => typeof o === "string" && !!o)
+      : [];
+    const appProperties = outputs.length
+      ? { smGerar: outputs.join(",") }
+      : undefined;
 
     // Só pode enviar para um setor do qual participa (admin pode em qualquer um).
     if (caller.role !== "admin" && !caller.sectors.includes(sector)) {
@@ -53,7 +64,11 @@ export async function POST(req: Request) {
           "X-Upload-Content-Type": body.mimeType || "application/octet-stream",
           ...(origin ? { Origin: origin } : {}),
         },
-        body: JSON.stringify({ name, parents: [userFolder] }),
+        body: JSON.stringify({
+          name,
+          parents: [userFolder],
+          ...(appProperties ? { appProperties } : {}),
+        }),
       },
     );
     if (!initRes.ok) {

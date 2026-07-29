@@ -257,6 +257,7 @@ class UploadManagerImpl {
       mimeType: rec.mimeType || "application/octet-stream",
       sector: rec.sector,
       recordingId: rec.id,
+      outputs: rec.output,
     });
     const next = await patchRecording(rec.id, {
       sessionUri: uploadUrl,

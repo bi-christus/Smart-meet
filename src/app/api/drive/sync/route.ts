@@ -29,7 +29,7 @@ const MARKER = /transcrito/i;
 /** Teto de reuniões por execução, para caber no tempo da função. */
 const BATCH_LIMIT = 60;
 
-type OutputKind = "transcricao" | "ata" | "relatorio";
+type OutputKind = "transcricao" | "resumo" | "detalhada" | "didatica";
 type DriveOutput = { kind: OutputKind; name: string; link: string };
 
 function stripExt(name: string): string {
@@ -46,9 +46,11 @@ function baseStem(audioName: string): string {
 
 function classify(suffix: string): OutputKind | null {
   const s = suffix.toLowerCase();
-  if (s.includes("transcri")) return "transcricao";
-  if (s.includes("relat")) return "relatorio";
-  if (s.includes("ata")) return "ata";
+  if (s.includes("transcri")) return "transcricao"; // Transcrição / Transcrito
+  if (s.includes("detalhad")) return "detalhada"; // Ata detalhada
+  if (s.includes("didatic") || s.includes("didátic")) return "didatica"; // com/sem acento
+  if (s.includes("ponto") || s.includes("importante") || s.includes("resumo"))
+    return "resumo"; // Pontos importantes
   return null;
 }
 

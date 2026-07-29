@@ -19,7 +19,7 @@ import {
 } from "@/lib/meetings";
 import { Icon } from "@/components/icons";
 import { syncDrive } from "@/lib/drive-upload";
-import { useRecorder } from "@/lib/audio/use-recorder";
+import { useRecording } from "@/lib/audio/recording-context";
 import { uploadManager } from "@/lib/audio/uploader";
 import { fmtBytes } from "@/lib/audio/recording-db";
 import styles from "./reunioes.module.css";
@@ -95,8 +95,9 @@ const OUTPUT_OPTIONS: { id: OutputKind; label: string; desc: string }[] = [
 /** Ícone de cada arquivo gerado pelo Cowork. */
 const OUTPUT_ICON: Record<DriveOutputKind, string> = {
   transcricao: "chat",
-  ata: "reunioes",
-  relatorio: "relatorios",
+  resumo: "check",
+  detalhada: "relatorios",
+  didatica: "reunioes",
 };
 
 export default function ReunioesPage() {
@@ -121,6 +122,8 @@ export default function ReunioesPage() {
   const [view, setView] = useState<Meeting | null>(null);
   const [confirm, setConfirm] = useState<Confirm>(null);
   const [onlineLink, setOnlineLink] = useState("");
+  const [delMeeting, setDelMeeting] = useState<Meeting | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   // gravação — toda a durabilidade (disco + envio retomável) vive no hook
   const {
@@ -133,7 +136,9 @@ export default function ReunioesPage() {
     pause,
     resume,
     startFileUpload,
-  } = useRecorder(profile?.email ?? "");
+    pendingConfirm,
+    clearPendingConfirm,
+  } = useRecording();
   const [micError, setMicError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -183,14 +188,19 @@ export default function ReunioesPage() {
     return () => u();
   }, []);
 
-  // Enquanto o microfone está aberto, fechar a aba custa os últimos segundos —
-  // o resto já está em disco. O aviso evita o acidente mais comum.
+  // A gravação encerrou (aqui ou pelo mini player em outra aba): abre o modal
+  // para completar os dados. O aviso de fechar a aba agora vive no shell.
   useEffect(() => {
-    if (!recording) return;
-    const guard = (e: BeforeUnloadEvent) => e.preventDefault();
-    window.addEventListener("beforeunload", guard);
-    return () => window.removeEventListener("beforeunload", guard);
-  }, [recording]);
+    if (!pendingConfirm) return;
+    setConfirm({
+      send: "mic",
+      title: pendingConfirm.title || `Gravação — ${fmtDate(todayStr())}`,
+      durationMin: pendingConfirm.durationMin,
+      recordingId: pendingConfirm.recordingId,
+      meetingId: pendingConfirm.meetingId,
+    });
+    clearPendingConfirm();
+  }, [pendingConfirm, clearPendingConfirm]);
 
   const activeUsers = useMemo(() => users.filter((u) => u.active), [users]);
 
@@ -228,16 +238,7 @@ export default function ReunioesPage() {
   async function stopRecording() {
     setBusy(true);
     try {
-      const done = await stop();
-      if (done) {
-        setConfirm({
-          send: "mic",
-          title: done.title || `Gravação — ${fmtDate(todayStr())}`,
-          durationMin: done.durationMin,
-          recordingId: done.recordingId,
-          meetingId: done.meetingId,
-        });
-      }
+      await stop(); // o modal abre via pendingConfirm (efeito acima)
     } catch (e) {
       setMicError(
         e instanceof Error ? e.message : "Não foi possível encerrar a gravação.",
@@ -261,7 +262,27 @@ export default function ReunioesPage() {
     setOnlineLink("");
   }
 
+  /** Apaga a reunião do sistema + o áudio local (permanente). */
+  async function doDelete() {
+    if (!delMeeting) return;
+    setDeleting(true);
+    try {
+      if (delMeeting.recordingId) {
+        await uploadManager.discard(delMeeting.recordingId).catch(() => {});
+      }
+      await deleteMeetingById(delMeeting.id);
+      if (view?.id === delMeeting.id) setView(null);
+      setDelMeeting(null);
+    } catch (e) {
+      console.error(e);
+      alert("Não foi possível apagar. Tente novamente.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   function toggleOutput(id: OutputKind) {
+    if (id === "resumo") return; // Pontos importantes é obrigatório (cadeado)
     setOutput((cur) =>
       cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id],
     );
@@ -532,17 +553,29 @@ export default function ReunioesPage() {
               </div>
               <div className={styles.outOptions}>
                 {OUTPUT_OPTIONS.map((o) => {
-                  const on = output.includes(o.id);
+                  const locked = o.id === "resumo";
+                  const on = locked || output.includes(o.id);
+                  const frozen = recording && !locked;
                   return (
                     <button
                       key={o.id}
                       type="button"
-                      className={`${styles.outOption} ${on ? styles.on : ""}`}
-                      onClick={() => toggleOutput(o.id)}
+                      className={`${styles.outOption} ${on ? styles.on : ""} ${locked ? styles.outLocked : ""}`}
+                      onClick={() => {
+                        if (!locked && !recording) toggleOutput(o.id);
+                      }}
+                      disabled={frozen}
                       aria-pressed={on}
+                      title={
+                        locked
+                          ? "Sempre gerado"
+                          : frozen
+                            ? "Não é possível alterar durante a gravação"
+                            : undefined
+                      }
                     >
                       <span className={styles.outCheck}>
-                        <Icon name="check" size={12} />
+                        <Icon name={locked ? "lock" : "check"} size={12} />
                       </span>
                       <span className={styles.outText}>
                         <span className={styles.outName}>{o.label}</span>
@@ -615,6 +648,16 @@ export default function ReunioesPage() {
                     </span>
                     <UploadChip meeting={m} />
                   </div>
+                  <button
+                    className={styles.delBtn}
+                    title="Apagar gravação"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDelMeeting(m);
+                    }}
+                  >
+                    <Icon name="trash" size={15} />
+                  </button>
                 </div>
               ))
             )}
@@ -684,6 +727,16 @@ export default function ReunioesPage() {
                 <span className={`${styles.badge} ${STATUS_CLASS[m.status]}`}>
                   {MEETING_STATUS_LABEL[m.status]}
                 </span>
+                <button
+                  className={styles.delBtn}
+                  title="Apagar gravação"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setDelMeeting(m);
+                  }}
+                >
+                  <Icon name="trash" size={16} />
+                </button>
               </div>
             ))}
           </div>
@@ -711,6 +764,44 @@ export default function ReunioesPage() {
           canSeeAudio={canSeeAudio(view)}
           onClose={() => setView(null)}
         />
+      )}
+
+      {delMeeting && (
+        <div
+          className={styles.overlay}
+          onClick={() => !deleting && setDelMeeting(null)}
+        >
+          <div
+            className={styles.confirmBox}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className={styles.delIcon}>
+              <Icon name="trash" size={22} />
+            </div>
+            <div className={styles.modalTitle}>Apagar gravação?</div>
+            <p className={styles.delWarn}>
+              Você vai apagar <b>“{delMeeting.title}”</b>. Esta ação é{" "}
+              <b>permanente</b>: a gravação será removida do sistema e{" "}
+              <b>não poderá ser recuperada</b>.
+            </p>
+            <div className={styles.mactions}>
+              <button
+                className={styles.btnGhost}
+                onClick={() => setDelMeeting(null)}
+                disabled={deleting}
+              >
+                Cancelar
+              </button>
+              <button
+                className={styles.btnDangerSolid}
+                onClick={doDelete}
+                disabled={deleting}
+              >
+                {deleting ? "Apagando…" : "Apagar permanentemente"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -8,6 +8,8 @@ import { ROLE_LABEL } from "@/lib/users";
 import { useTheme } from "@/lib/theme";
 import { Icon } from "@/components/icons";
 import { RecoveryBanner } from "@/components/recovery-banner";
+import { RecordingProvider } from "@/lib/audio/recording-context";
+import { MiniPlayer } from "@/components/mini-player";
 import styles from "./app-shell.module.css";
 
 const NAV = [
@@ -56,7 +58,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const inicial = (profile.name?.trim()[0] || "U").toUpperCase();
 
   return (
-    <div className={styles.shell}>
+    <RecordingProvider ownerEmail={profile.email}>
+      <div className={styles.shell}>
       <header className={styles.topbar}>
         <Link href="/" className={styles.brand}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -179,7 +182,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <RecoveryBanner />
         {children}
       </main>
-    </div>
+      </div>
+      <MiniPlayer />
+    </RecordingProvider>
   );
 }
 

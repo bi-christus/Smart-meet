@@ -105,6 +105,14 @@ const PATHS: Record<string, ReactNode> = {
   chat: (
     <path d="M21 15a2 2 0 0 1-2 2H8l-4 4V5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2z" />
   ),
+  lock: (
+    <>
+      <rect x="4" y="11" width="16" height="10" rx="2" />
+      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+    </>
+  ),
+  pause: <path d="M8 5v14M16 5v14" />,
+  play: <path d="M7 5l12 7-12 7z" />,
 };
 
 export function Icon({ name, size = 24 }: { name: string; size?: number }) {

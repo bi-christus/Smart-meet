@@ -53,6 +53,8 @@ export type RecordingRecord = {
   /** nome com que o arquivo nasceu no Drive */
   driveName: string;
   mimeType: string;
+  /** o que o usuário pediu gerar — vira a etiqueta smGerar no arquivo do Drive */
+  output?: string[];
   createdAt: number;
   /**
    * Última "batida" da aba que grava — atualizada a cada pedaço. Se um registro

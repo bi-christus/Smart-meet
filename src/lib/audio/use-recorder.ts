@@ -167,6 +167,7 @@ export function useRecorder(ownerEmail: string) {
         title,
         driveName,
         mimeType,
+        output: opts.output,
       });
 
       const recorder = new AudioRecorder(
@@ -327,6 +328,7 @@ export function useRecorder(ownerEmail: string) {
         titleConfirmed: true,
         driveName,
         mimeType,
+        output: opts.output,
         status: "uploading",
         file,
         bytesWritten: file.size,

@@ -7,11 +7,21 @@ import {
   subscribeMeetings,
   updateMeeting,
   REPORT_STATUS_LABEL,
+  DRIVE_OUTPUT_LABEL,
   type Meeting,
   type ReportStatus,
+  type DriveOutputKind,
 } from "@/lib/meetings";
 import { Icon } from "@/components/icons";
 import styles from "./relatorios.module.css";
+
+/** Ícone de cada arquivo gerado pelo Cowork. */
+const OUTPUT_ICON: Record<DriveOutputKind, string> = {
+  transcricao: "chat",
+  resumo: "check",
+  detalhada: "relatorios",
+  didatica: "reunioes",
+};
 
 function fmtDate(d: string): string {
   const parts = d.split("-");
@@ -44,9 +54,20 @@ export default function RelatoriosPage() {
     return () => u();
   }, [sectors]);
 
-  const reports = useMemo(
-    () => meetings.filter((m) => (m.ata ?? "").trim().length > 0),
-    [meetings],
+  // Mesma regra de visibilidade do áudio: dono, gestor do setor e admin.
+  const canSee = (m: Meeting): boolean => {
+    if (!profile) return false;
+    if (profile.role === "admin") return true;
+    if (m.createdBy === profile.email) return true;
+    return (
+      profile.role === "gestor" && (profile.sectors ?? []).includes(m.sector)
+    );
+  };
+
+  const reports = meetings.filter(
+    (m) =>
+      canSee(m) &&
+      ((m.driveOutputs?.length ?? 0) > 0 || (m.ata ?? "").trim().length > 0),
   );
   const shown =
     filter === "todas"
@@ -87,8 +108,8 @@ export default function RelatoriosPage() {
         <div className={styles.empty}>
           Nenhuma ata ainda.
           <br />
-          Preencha a ata de uma reunião (aba Reuniões) para vê-la aqui — ou
-          aguarde a geração automática na Fase 4.
+          Quando o processamento gerar as atas de uma reunião, elas aparecem
+          aqui — com os links para abrir cada arquivo.
         </div>
       ) : (
         <div className={styles.list}>
@@ -108,6 +129,11 @@ export default function RelatoriosPage() {
                   <div className={styles.itemMeta}>
                     <span>{fmtDate(m.date)}</span>
                     <span>· {m.sector}</span>
+                    {(m.driveOutputs?.length ?? 0) > 0 && (
+                      <span className={styles.count}>
+                        · {m.driveOutputs!.length} arquivo(s) da IA
+                      </span>
+                    )}
                   </div>
                 </div>
                 <span className={`${styles.badge} ${styles["rs_" + rs]}`}>
@@ -155,7 +181,27 @@ function ReportModal({
         <div className={styles.metaLine}>
           {fmtDate(meeting.date)} · {meeting.sector}
         </div>
-        <div className={styles.ata}>{meeting.ata}</div>
+        {meeting.driveOutputs && meeting.driveOutputs.length > 0 && (
+          <div className={styles.outLinks}>
+            {meeting.driveOutputs
+              .filter((o) => o.link)
+              .map((o, i) => (
+                <a
+                  key={i}
+                  href={o.link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={styles.outLink}
+                >
+                  <Icon name={OUTPUT_ICON[o.kind]} size={14} />{" "}
+                  {DRIVE_OUTPUT_LABEL[o.kind]}
+                </a>
+              ))}
+          </div>
+        )}
+        {(meeting.ata ?? "").trim().length > 0 && (
+          <div className={styles.ata}>{meeting.ata}</div>
+        )}
         <div className={styles.hint}>
           💡 Na <b>Fase 4</b>, a IA vai extrair sugestões da ata (novos projetos
           e atividades) para você aprovar — virando cards no Kanban

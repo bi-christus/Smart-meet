@@ -24,13 +24,18 @@ export type OutputKind = "resumo" | "detalhada" | "didatica";
  * Arquivos que o processador externo (Cowork) gera na pasta do Drive e que o
  * app apenas LÊ e linka — ele não faz a IA, só reflete o resultado.
  */
-export type DriveOutputKind = "transcricao" | "ata" | "relatorio";
+export type DriveOutputKind =
+  | "transcricao"
+  | "resumo"
+  | "detalhada"
+  | "didatica";
 export type DriveOutput = { kind: DriveOutputKind; name: string; link: string };
 
 export const DRIVE_OUTPUT_LABEL: Record<DriveOutputKind, string> = {
   transcricao: "Transcrição",
-  ata: "Ata",
-  relatorio: "Relatório",
+  resumo: "Pontos importantes",
+  detalhada: "Ata detalhada",
+  didatica: "Ata didática",
 };
 
 export const MEETING_STATUS_LABEL: Record<MeetingStatus, string> = {
