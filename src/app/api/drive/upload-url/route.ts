@@ -25,12 +25,13 @@ export async function POST(req: Request) {
     if (!name || !sector) throw new HttpError(400, "Dados incompletos.");
 
     // Etiqueta lida pelo Cowork para saber o que gerar (Pontos importantes vem
-    // sempre; atas conforme o pedido). Ele deriva título/setor/usuário do nome
-    // do arquivo e da pasta, então basta esta chave.
+    // sempre; atas conforme o pedido). Usamos `properties` (PÚBLICO — legível por
+    // qualquer cliente com acesso ao arquivo), e NÃO `appProperties`, que é
+    // privado ao OAuth client que gravou (o Cowork leria null).
     const outputs = Array.isArray(body.outputs)
       ? body.outputs.filter((o): o is string => typeof o === "string" && !!o)
       : [];
-    const appProperties = outputs.length
+    const properties = outputs.length
       ? { smGerar: outputs.join(",") }
       : undefined;
 
@@ -67,7 +68,7 @@ export async function POST(req: Request) {
         body: JSON.stringify({
           name,
           parents: [userFolder],
-          ...(appProperties ? { appProperties } : {}),
+          ...(properties ? { properties } : {}),
         }),
       },
     );

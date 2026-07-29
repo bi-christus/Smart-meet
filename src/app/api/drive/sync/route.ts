@@ -69,9 +69,10 @@ function collectOutputs(
   for (const f of files) {
     if (f.id === audioId) continue;
     if (f.mimeType === "application/vnd.google-apps.folder") continue;
-    const fname = stripExt(f.name);
-    if (!fname.toLowerCase().startsWith(stemLower)) continue;
-    const suffix = fname.slice(stem.length);
+    // Casamos pelo nome CRU: os resultados podem ser Google Docs (sem extensão),
+    // e um `stripExt` cortaria um ponto do próprio nome (ex.: "Reunião 29.07").
+    if (!f.name.toLowerCase().startsWith(stemLower)) continue;
+    const suffix = f.name.slice(stem.length);
     if (!/^\s*[-–—]\s*/.test(suffix)) continue; // exige separador após o nome-base
     const kind = classify(suffix);
     if (!kind) continue;
@@ -98,31 +99,48 @@ export async function GET(req: Request) {
     }
 
     const db = adminDb();
-    const snap = await db
+    const inScope = (m: {
+      driveFileId?: unknown;
+      sector?: unknown;
+    }): boolean =>
+      !!m.driveFileId && (!sectors || sectors.includes(m.sector as string));
+
+    // (1) reuniões aguardando com áudio no Drive
+    const aguSnap = await db
       .collection("meetings")
       .where("status", "==", "aguardando")
       .get();
+    const aguardando = aguSnap.docs.filter((d) => inScope(d.data()));
 
-    const pending = snap.docs
-      .filter((d) => {
-        const m = d.data();
-        if (!m.driveFileId) return false;
-        if (sectors && !sectors.includes(m.sector)) return false;
-        return true;
-      })
-      .slice(0, BATCH_LIMIT);
+    // (2) reuniões JÁ processadas mas SEM arquivos linkados — o Cowork pode ter
+    // criado os Docs depois, ou um estado anterior ficou vazio. Reconciliamos:
+    // marcar "processado" cedo é irreversível pela busca de aguardando, então
+    // esta segunda passada é a rede de segurança.
+    const procSnap = await db
+      .collection("meetings")
+      .where("status", "==", "processado")
+      .get();
+    const semArquivos = procSnap.docs.filter((d) => {
+      const m = d.data();
+      return (
+        inScope(m) &&
+        (!Array.isArray(m.driveOutputs) || m.driveOutputs.length === 0)
+      );
+    });
 
-    if (pending.length === 0) {
+    const targets = [...aguardando, ...semArquivos].slice(0, BATCH_LIMIT);
+    if (targets.length === 0) {
       return NextResponse.json({ checked: 0, updated: 0 });
     }
 
     const token = await driveToken();
     let updated = 0;
 
-    for (const doc of pending) {
-      const driveFileId = doc.data().driveFileId as string;
+    for (const doc of targets) {
+      const m = doc.data();
+      const isAguardando = m.status === "aguardando";
       try {
-        const meta = await getFileMeta(token, driveFileId);
+        const meta = await getFileMeta(token, m.driveFileId as string);
         if (!MARKER.test(meta.name)) continue; // Cowork ainda não terminou
 
         let outputs: DriveOutput[] = [];
@@ -132,15 +150,21 @@ export async function GET(req: Request) {
           outputs = collectOutputs(meta.id, baseStem(meta.name), files);
         }
 
-        await doc.ref.update({ status: "processado", driveOutputs: outputs });
-        updated++;
+        if (isAguardando) {
+          await doc.ref.update({ status: "processado", driveOutputs: outputs });
+          updated++;
+        } else if (outputs.length > 0) {
+          // já estava processado: só atualiza quando finalmente achou os arquivos
+          await doc.ref.update({ driveOutputs: outputs });
+          updated++;
+        }
       } catch (e) {
         // um arquivo inacessível não pode travar os outros
         console.warn("drive/sync: falha ao verificar", doc.id, e);
       }
     }
 
-    return NextResponse.json({ checked: pending.length, updated });
+    return NextResponse.json({ checked: targets.length, updated });
   } catch (e) {
     const status = e instanceof HttpError ? e.status : 500;
     const message = e instanceof Error ? e.message : "Erro desconhecido.";

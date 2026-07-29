@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   HttpError,
   driveToken,
+  getFileMeta,
   renameFile,
   requireUser,
 } from "@/lib/server/drive-server";
@@ -31,7 +32,15 @@ export async function POST(req: Request) {
       throw new HttpError(403, "Você não participa deste setor.");
     }
 
-    const file = await renameFile(await driveToken(), fileId, name);
+    const token = await driveToken();
+    // Se o Cowork já processou (o nome carrega "Transcrito"), NÃO renomeamos —
+    // isso apagaria o marcador e causaria retranscrição paga + Docs órfãos.
+    const cur = await getFileMeta(token, fileId);
+    if (/transcrito/i.test(cur.name)) {
+      return NextResponse.json({ id: fileId, name: cur.name });
+    }
+
+    const file = await renameFile(token, fileId, name);
     return NextResponse.json(file);
   } catch (e) {
     const status = e instanceof HttpError ? e.status : 500;
