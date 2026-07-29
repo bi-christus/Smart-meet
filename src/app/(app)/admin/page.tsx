@@ -13,14 +13,24 @@ import {
   type Role,
   type UserInput,
 } from "@/lib/users";
+import {
+  subscribeSolicitantes,
+  subscribeSolicitanteSetores,
+  addSolicitante,
+  deleteSolicitante,
+  addSolicitanteSetor,
+  deleteSolicitanteSetor,
+  type Solicitante,
+  type SolicitanteSetor,
+} from "@/lib/solicitantes";
 import { Icon } from "@/components/icons";
 import styles from "./admin.module.css";
 
 const SUBTABS = [
   { id: "usuarios", label: "Usuários", enabled: true },
+  { id: "solicitantes", label: "Solicitantes", enabled: true },
   { id: "permissoes", label: "Permissões", enabled: false },
   { id: "setores", label: "Setores", enabled: false },
-  { id: "equipe", label: "Equipe", enabled: false },
   { id: "logs", label: "Logs", enabled: false },
 ];
 
@@ -28,6 +38,7 @@ const ROLES: Role[] = ["admin", "gestor", "operador"];
 
 export default function AdminPage() {
   const { profile } = useAuth();
+  const [tab, setTab] = useState("usuarios");
   const [users, setUsers] = useState<UserProfile[] | null>(null);
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<UserProfile | "new" | null>(null);
@@ -71,8 +82,9 @@ export default function AdminPage() {
         {SUBTABS.map((t) => (
           <button
             key={t.id}
-            className={`${styles.subnavBtn} ${t.id === "usuarios" ? styles.on : ""}`}
+            className={`${styles.subnavBtn} ${t.id === tab ? styles.on : ""}`}
             disabled={!t.enabled}
+            onClick={() => t.enabled && setTab(t.id)}
           >
             {t.label}
             {!t.enabled && <span className={styles.soon}>em breve</span>}
@@ -80,6 +92,8 @@ export default function AdminPage() {
         ))}
       </div>
 
+      {tab === "usuarios" && (
+        <>
       <div className={styles.toolbar}>
         <div className={styles.searchBox}>
           <Icon name="search" size={15} />
@@ -115,6 +129,10 @@ export default function AdminPage() {
           ))}
         </div>
       )}
+        </>
+      )}
+
+      {tab === "solicitantes" && <SolicitantesAdmin />}
 
       {editing && (
         <UserModal
@@ -123,6 +141,176 @@ export default function AdminPage() {
           onClose={() => setEditing(null)}
         />
       )}
+    </div>
+  );
+}
+
+function SolicitantesAdmin() {
+  const [setores, setSetores] = useState<SolicitanteSetor[]>([]);
+  const [pessoas, setPessoas] = useState<Solicitante[]>([]);
+  const [newSetor, setNewSetor] = useState("");
+  const [newName, setNewName] = useState("");
+  const [newPessoaSetor, setNewPessoaSetor] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    const a = subscribeSolicitanteSetores(setSetores, () => {});
+    const b = subscribeSolicitantes(setPessoas, () => {});
+    return () => {
+      a();
+      b();
+    };
+  }, []);
+
+  async function addSetor() {
+    const n = newSetor.trim();
+    if (!n || busy) return;
+    if (setores.some((s) => s.name.toLowerCase() === n.toLowerCase())) {
+      setNewSetor("");
+      return;
+    }
+    setBusy(true);
+    try {
+      await addSolicitanteSetor(n);
+      setNewSetor("");
+    } catch (e) {
+      console.error(e);
+      alert("Não foi possível adicionar o setor.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function removeSetor(id: string, name: string) {
+    if (!confirm(`Remover o setor solicitante "${name}"?`)) return;
+    try {
+      await deleteSolicitanteSetor(id);
+    } catch (e) {
+      console.error(e);
+      alert("Não foi possível remover.");
+    }
+  }
+  async function addPessoa() {
+    const n = newName.trim();
+    if (!n || busy) return;
+    setBusy(true);
+    try {
+      await addSolicitante(n, newPessoaSetor);
+      setNewName("");
+    } catch (e) {
+      console.error(e);
+      alert("Não foi possível adicionar o solicitante.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function removePessoa(id: string, name: string) {
+    if (!confirm(`Remover o solicitante "${name}"?`)) return;
+    try {
+      await deleteSolicitante(id);
+    } catch (e) {
+      console.error(e);
+      alert("Não foi possível remover.");
+    }
+  }
+
+  return (
+    <div className={styles.solGrid}>
+      <div className={styles.solCol}>
+        <div className={styles.solHead}>Setores solicitantes</div>
+        <div className={styles.solAdd}>
+          <input
+            className={styles.input}
+            placeholder="Ex.: Comercial"
+            value={newSetor}
+            onChange={(e) => setNewSetor(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") addSetor();
+            }}
+          />
+          <button
+            className={styles.btnPrimary}
+            onClick={addSetor}
+            disabled={busy || !newSetor.trim()}
+          >
+            <Icon name="plus" size={15} /> Adicionar
+          </button>
+        </div>
+        {setores.length === 0 ? (
+          <div className={styles.empty}>Nenhum setor solicitante ainda.</div>
+        ) : (
+          <div className={styles.solList}>
+            {setores.map((s) => (
+              <div key={s.id} className={styles.solItem}>
+                <span>{s.name}</span>
+                <button
+                  className={styles.iconBtn}
+                  title="Remover"
+                  onClick={() => removeSetor(s.id, s.name)}
+                >
+                  <Icon name="trash" size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className={styles.solCol}>
+        <div className={styles.solHead}>Solicitantes</div>
+        <div className={styles.solAdd}>
+          <input
+            className={styles.input}
+            placeholder="Nome do solicitante"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") addPessoa();
+            }}
+          />
+          <select
+            className={styles.select}
+            value={newPessoaSetor}
+            onChange={(e) => setNewPessoaSetor(e.target.value)}
+          >
+            <option value="">— Setor —</option>
+            {setores.map((s) => (
+              <option key={s.id} value={s.name}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+          <button
+            className={styles.btnPrimary}
+            onClick={addPessoa}
+            disabled={busy || !newName.trim()}
+          >
+            <Icon name="plus" size={15} /> Adicionar
+          </button>
+        </div>
+        {pessoas.length === 0 ? (
+          <div className={styles.empty}>Nenhum solicitante ainda.</div>
+        ) : (
+          <div className={styles.solList}>
+            {pessoas.map((p) => (
+              <div key={p.id} className={styles.solItem}>
+                <span>
+                  {p.name}
+                  {p.setor ? (
+                    <span className={styles.solSetor}> · {p.setor}</span>
+                  ) : null}
+                </span>
+                <button
+                  className={styles.iconBtn}
+                  title="Remover"
+                  onClick={() => removePessoa(p.id, p.name)}
+                >
+                  <Icon name="trash" size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -4,6 +4,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { subscribeUsers, DEFAULT_SECTORS, type UserProfile } from "@/lib/users";
 import {
+  subscribeSolicitantes,
+  subscribeSolicitanteSetores,
+  type Solicitante,
+  type SolicitanteSetor,
+} from "@/lib/solicitantes";
+import {
   subscribeCards,
   createCard,
   updateCard,
@@ -130,6 +136,8 @@ export default function KanbanPage() {
   const [sector, setSector] = useState("");
   const [cards, setCards] = useState<Card[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
+  const [solicitantes, setSolicitantes] = useState<Solicitante[]>([]);
+  const [reqSetores, setReqSetores] = useState<SolicitanteSetor[]>([]);
   const [fireColumns, setFireColumns] = useState<ColumnDoc[]>([]);
   const [colsLoaded, setColsLoaded] = useState(false);
   const [search, setSearch] = useState("");
@@ -189,6 +197,15 @@ export default function KanbanPage() {
   useEffect(() => {
     const u = subscribeUsers(setUsers, () => {});
     return () => u();
+  }, []);
+
+  useEffect(() => {
+    const a = subscribeSolicitantes(setSolicitantes, () => {});
+    const b = subscribeSolicitanteSetores(setReqSetores, () => {});
+    return () => {
+      a();
+      b();
+    };
   }, []);
 
   const usersMap = useMemo(() => {
@@ -367,9 +384,8 @@ export default function KanbanPage() {
                       card={c}
                       col={col}
                       assignee={c.assignee ? usersMap[c.assignee] : undefined}
-                      requester={
-                        c.requester ? usersMap[c.requester] : undefined
-                      }
+                      requester={c.requester ?? undefined}
+                      requesterSector={c.requesterSector ?? undefined}
                       dragging={dragCardId === c.id}
                       onDragStart={(e) => {
                         e.dataTransfer.setData("text/plain", c.id);
@@ -408,6 +424,8 @@ export default function KanbanPage() {
           actorEmail={profile.email}
           activeUsers={activeUsers}
           usersMap={usersMap}
+          solicitantes={solicitantes}
+          reqSetores={reqSetores}
           onClose={() => setEdit(null)}
         />
       )}
@@ -453,6 +471,7 @@ function CardItem({
   col,
   assignee,
   requester,
+  requesterSector,
   dragging,
   onDragStart,
   onDragEnd,
@@ -461,7 +480,8 @@ function CardItem({
   card: Card;
   col: ColumnDoc;
   assignee?: UserProfile;
-  requester?: UserProfile;
+  requester?: string;
+  requesterSector?: string;
   dragging: boolean;
   onDragStart: (e: React.DragEvent) => void;
   onDragEnd: () => void;
@@ -561,9 +581,9 @@ function CardItem({
         {requester && (
           <span
             className={styles.mini}
-            title={`Solicitante: ${requester.name}`}
+            title={`Solicitante: ${requester}${requesterSector ? ` · ${requesterSector}` : ""}`}
           >
-            por {requester.name?.split(" ")[0]}
+            por {requester.split(" ")[0]}
           </span>
         )}
         {assignee && (
@@ -587,6 +607,8 @@ function CardModal({
   actorEmail,
   activeUsers,
   usersMap,
+  solicitantes,
+  reqSetores,
   onClose,
 }: {
   state: NonNullable<EditState>;
@@ -595,6 +617,8 @@ function CardModal({
   actorEmail: string;
   activeUsers: UserProfile[];
   usersMap: Record<string, UserProfile>;
+  solicitantes: Solicitante[];
+  reqSetores: SolicitanteSetor[];
   onClose: () => void;
 }) {
   const isNew = state.mode === "new";
@@ -608,8 +632,9 @@ function CardModal({
   const [type, setType] = useState<DemandType>(card?.type ?? "implementacao");
   const [priority, setPriority] = useState<Priority>(card?.priority ?? "media");
   const [assignee, setAssignee] = useState(card?.assignee ?? "");
-  const [requester, setRequester] = useState(
-    card?.requester ?? (isNew ? actorEmail : ""),
+  const [requester, setRequester] = useState(card?.requester ?? "");
+  const [requesterSector, setRequesterSector] = useState(
+    card?.requesterSector ?? "",
   );
   const [startDate, setStartDate] = useState(
     card?.startDate ?? (isNew ? todayStr() : ""),
@@ -664,6 +689,38 @@ function CardModal({
       });
     }
     return opts;
+  }
+
+  // Solicitante e Setor solicitante vêm do CADASTRO (aba Admin), não dos usuários.
+  const reqSetorOptions: SelectOption[] = [
+    { value: "", label: "— Não definido —" },
+    ...reqSetores.map((s) => ({ value: s.name, label: s.name })),
+  ];
+  const solicOptions: SelectOption[] = (() => {
+    const base = requesterSector
+      ? solicitantes.filter((s) => s.setor === requesterSector)
+      : solicitantes;
+    const opts: SelectOption[] = [{ value: "", label: "— Não definido —" }];
+    base.forEach((s) => opts.push({ value: s.name, label: s.name }));
+    // valor legado/fora do filtro atual continua visível para não sumir
+    if (requester && !base.some((s) => s.name === requester)) {
+      opts.push({ value: requester, label: requester });
+    }
+    return opts;
+  })();
+  function pickSolicitante(name: string) {
+    setRequester(name);
+    if (name && !requesterSector) {
+      const s = solicitantes.find((x) => x.name === name);
+      if (s?.setor) setRequesterSector(s.setor);
+    }
+  }
+  function pickReqSetor(name: string) {
+    setRequesterSector(name);
+    if (name && requester) {
+      const s = solicitantes.find((x) => x.name === requester);
+      if (s && s.setor !== name) setRequester("");
+    }
   }
 
   function addTag() {
@@ -740,6 +797,7 @@ function CardModal({
         type,
         assignee: assignee || null,
         requester: requester || null,
+        requesterSector: requesterSector || null,
         startDate: startDate || null,
         due: due || null,
         priority,
@@ -827,25 +885,36 @@ function CardModal({
 
       <div className={styles.row2}>
         <div className={styles.field}>
+          <label className={styles.label}>Setor solicitante</label>
+          <Select
+            value={requesterSector}
+            options={reqSetorOptions}
+            onChange={pickReqSetor}
+            placeholder="— Não definido —"
+            ariaLabel="Setor solicitante"
+          />
+        </div>
+        <div className={styles.field}>
           <label className={styles.label}>Solicitante</label>
           <Select
-            value={requester ?? ""}
-            options={userOptions("— Não definido —", requester ?? "")}
-            onChange={setRequester}
+            value={requester}
+            options={solicOptions}
+            onChange={pickSolicitante}
             placeholder="— Não definido —"
             ariaLabel="Solicitante"
           />
         </div>
-        <div className={styles.field}>
-          <label className={styles.label}>Responsável</label>
-          <Select
-            value={assignee ?? ""}
-            options={userOptions("— Ninguém —", assignee ?? "")}
-            onChange={setAssignee}
-            placeholder="— Ninguém —"
-            ariaLabel="Responsável"
-          />
-        </div>
+      </div>
+
+      <div className={styles.field}>
+        <label className={styles.label}>Responsável</label>
+        <Select
+          value={assignee ?? ""}
+          options={userOptions("— Ninguém —", assignee ?? "")}
+          onChange={setAssignee}
+          placeholder="— Ninguém —"
+          ariaLabel="Responsável"
+        />
       </div>
 
       <div className={styles.row2}>

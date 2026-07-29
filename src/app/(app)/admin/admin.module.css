@@ -368,3 +368,64 @@
   color: var(--tx-2);
   font-size: 15px;
 }
+
+/* cadastro de solicitantes / setores solicitantes */
+.solGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+@media (max-width: 780px) {
+  .solGrid {
+    grid-template-columns: 1fr;
+  }
+}
+.solCol {
+  background: var(--card);
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  padding: 16px 16px 18px;
+}
+.solHead {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--tx);
+  margin-bottom: 12px;
+}
+.solAdd {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.solAdd .input,
+.solAdd .select {
+  flex: 1;
+  min-width: 120px;
+  height: 40px;
+}
+.solList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.solItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 12px;
+  background: var(--field);
+  border: 1px solid var(--line-soft);
+  border-radius: 9px;
+  font-size: 13.5px;
+  color: var(--tx);
+}
+.solSetor {
+  color: var(--tx-3);
+  font-size: 12.5px;
+}
+.solCol .empty {
+  padding: 24px 10px;
+  font-size: 13px;
+}

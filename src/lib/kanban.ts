@@ -84,8 +84,9 @@ export type Card = {
   title: string;
   description?: string;
   type?: DemandType;
-  assignee?: string | null; // responsável (e-mail)
-  requester?: string | null; // solicitante (e-mail)
+  assignee?: string | null; // responsável (e-mail do usuário do sistema)
+  requester?: string | null; // solicitante (nome cadastrado)
+  requesterSector?: string | null; // setor solicitante (cadastrado)
   startDate?: string | null; // data de início (yyyy-mm-dd)
   due?: string | null; // prazo de entrega (yyyy-mm-dd)
   priority?: Priority;
@@ -104,6 +105,7 @@ export type CardInput = {
   type: DemandType;
   assignee: string | null;
   requester: string | null;
+  requesterSector: string | null;
   startDate: string | null;
   due: string | null;
   priority: Priority;
@@ -166,6 +168,7 @@ export async function createCard(
     type: input.type,
     assignee: input.assignee || null,
     requester: input.requester || null,
+    requesterSector: input.requesterSector || null,
     startDate: input.startDate || null,
     due: input.due || null,
     priority: input.priority,
