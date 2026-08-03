@@ -6,7 +6,10 @@ import {
   getFileMeta,
   listFolder,
   requireUser,
+  syncGrants,
+  type Grant,
 } from "@/lib/server/drive-server";
+import { notifyProcessed } from "@/lib/server/notify";
 
 export const runtime = "nodejs";
 
@@ -29,8 +32,60 @@ const MARKER = /transcrito/i;
 /** Teto de reuniões por execução, para caber no tempo da função. */
 const BATCH_LIMIT = 60;
 
+/**
+ * Corte para reprocessar avisos de reuniões que JÁ estavam processadas.
+ *
+ * Sem isto, ligar o e-mail dispararia um aviso para toda reunião antiga do
+ * histórico de uma vez. Com a data preenchida (ISO, ex.: "2026-08-03"), só
+ * entram na retentativa as reuniões criadas a partir dela; vazio = nenhuma.
+ * A transição normal aguardando → processado nunca depende deste corte.
+ */
+const NOTIFY_START_AT = process.env.NOTIFY_START_AT;
+
+function criadaApos(createdAt: unknown, limite: Date): boolean {
+  const d =
+    createdAt instanceof Date
+      ? createdAt
+      : typeof (createdAt as { toDate?: () => Date })?.toDate === "function"
+        ? (createdAt as { toDate: () => Date }).toDate()
+        : null;
+  return !!d && d.getTime() >= limite.getTime();
+}
+
+function mesmosOutputs(guardados: unknown, achados: DriveOutput[]): boolean {
+  if (!Array.isArray(guardados) || guardados.length !== achados.length)
+    return false;
+  const chave = (o: { kind?: unknown; name?: unknown }) =>
+    `${String(o.kind)}|${String(o.name)}`;
+  const a = (guardados as DriveOutput[]).map(chave).sort();
+  const b = achados.map(chave).sort();
+  return a.every((v, i) => v === b[i]);
+}
+
 type OutputKind = "transcricao" | "resumo" | "detalhada" | "didatica";
 type DriveOutput = { kind: OutputKind; name: string; link: string };
+
+/**
+ * Quem recebe acesso aos documentos da reunião.
+ *
+ * Quem enviou o áudio entra como editor: o e-mail pede que ele *valide* a ata,
+ * e validar às vezes é corrigir. Os participantes entram como leitores, para
+ * que o registro não mude sem passar por quem responde por ele. Se a mesma
+ * pessoa estiver nos dois papéis, o editor prevalece.
+ */
+function grantsDaReuniao(m: FirebaseFirestore.DocumentData): Grant[] {
+  const por = new Map<string, Grant>();
+  const participantes = Array.isArray(m.participants)
+    ? (m.participants as unknown[])
+    : [];
+  for (const p of participantes) {
+    const email = String(p ?? "").trim().toLowerCase();
+    if (email.includes("@")) por.set(email, { email, role: "reader" });
+  }
+  const dono = String(m.createdBy ?? "").trim().toLowerCase();
+  if (dono.includes("@")) por.set(dono, { email: dono, role: "writer" });
+  return [...por.values()];
+}
 
 function stripExt(name: string): string {
   const dot = name.lastIndexOf(".");
@@ -128,13 +183,37 @@ export async function GET(req: Request) {
       );
     });
 
-    const targets = [...aguardando, ...semArquivos].slice(0, BATCH_LIMIT);
+    // (3) reuniões processadas, COM arquivos, que ainda não geraram aviso — o
+    // envio pode ter falhado (SMTP fora do ar, cota do Gmail). Sem esta lista
+    // elas nunca mais seriam reavaliadas, porque já saíram de "aguardando" e
+    // não estão em (2). O corte por data evita avisar o histórico inteiro.
+    const limite = NOTIFY_START_AT ? new Date(NOTIFY_START_AT) : null;
+    const semAviso =
+      limite && !Number.isNaN(limite.getTime())
+        ? procSnap.docs.filter((d) => {
+            const m = d.data();
+            return (
+              inScope(m) &&
+              !m.notifiedAt &&
+              Array.isArray(m.driveOutputs) &&
+              m.driveOutputs.length > 0 &&
+              criadaApos(m.createdAt, limite)
+            );
+          })
+        : [];
+
+    const targets = [...aguardando, ...semArquivos, ...semAviso].slice(
+      0,
+      BATCH_LIMIT,
+    );
     if (targets.length === 0) {
       return NextResponse.json({ checked: 0, updated: 0 });
     }
 
     const token = await driveToken();
+    const appUrl = new URL(req.url).origin;
     let updated = 0;
+    let notified = 0;
 
     for (const doc of targets) {
       const m = doc.data();
@@ -144,19 +223,74 @@ export async function GET(req: Request) {
         if (!MARKER.test(meta.name)) continue; // Cowork ainda não terminou
 
         let outputs: DriveOutput[] = [];
+        let files: {
+          id: string;
+          name: string;
+          mimeType: string;
+          webViewLink?: string;
+        }[] = [];
         const folderId = meta.parents?.[0];
         if (folderId) {
-          const files = await listFolder(token, folderId);
+          files = await listFolder(token, folderId);
           outputs = collectOutputs(meta.id, baseStem(meta.name), files);
         }
 
         if (isAguardando) {
           await doc.ref.update({ status: "processado", driveOutputs: outputs });
           updated++;
-        } else if (outputs.length > 0) {
+        } else if (
+          outputs.length > 0 &&
+          !mesmosOutputs(m.driveOutputs, outputs)
+        ) {
           // já estava processado: só atualiza quando finalmente achou os arquivos
           await doc.ref.update({ driveOutputs: outputs });
           updated++;
+        }
+
+        // Acesso aos documentos gerados. Sem isto o aviso chega com links que
+        // dão "você precisa de acesso": quem envia áudio pelo app não é membro
+        // do Drive Compartilhado, porque quem escreve lá é a conta de serviço.
+        // Só os Docs — o áudio original continua restrito, por decisão do Ítalo.
+        if (outputs.length > 0) {
+          const porNome = new Map(files.map((f) => [f.name, f.id]));
+          for (const o of outputs) {
+            const id = porNome.get(o.name);
+            if (!id) continue;
+            try {
+              await syncGrants(token, id, grantsDaReuniao(m));
+            } catch (e) {
+              console.warn("drive/sync: falha ao compartilhar", o.name, e);
+            }
+          }
+        }
+
+        // Aviso ao autor do envio. Duas condições protegem contra e-mail ruim:
+        // `notifiedAt` garante uma única mensagem por reunião, e exigir outputs
+        // evita avisar "está pronto" com anexo nenhum quando os Docs ainda não
+        // apareceram — nesse caso a passada de reconciliação avisa depois.
+        if (!m.notifiedAt && outputs.length > 0) {
+          try {
+            const sent = await notifyProcessed({
+              meeting: {
+                title: m.title as string | undefined,
+                sector: m.sector as string | undefined,
+                date: m.date as string | undefined,
+                createdBy: m.createdBy as string | undefined,
+              },
+              outputs,
+              files,
+              appUrl,
+              token,
+            });
+            if (sent) {
+              await doc.ref.update({ notifiedAt: new Date() });
+              notified++;
+            }
+          } catch (e) {
+            // Falha de e-mail não desfaz o processamento: sem `notifiedAt`
+            // gravado, a próxima varredura tenta de novo.
+            console.warn("drive/sync: aviso não enviado", doc.id, e);
+          }
         }
       } catch (e) {
         // um arquivo inacessível não pode travar os outros
@@ -164,7 +298,7 @@ export async function GET(req: Request) {
       }
     }
 
-    return NextResponse.json({ checked: targets.length, updated });
+    return NextResponse.json({ checked: targets.length, updated, notified });
   } catch (e) {
     const status = e instanceof HttpError ? e.status : 500;
     const message = e instanceof Error ? e.message : "Erro desconhecido.";

@@ -269,6 +269,28 @@ export async function listFolder(
   ).files ?? [];
 }
 
+/** Formato dos anexos do aviso: Word, que abre em qualquer lugar. */
+export const DOCX_MIME =
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+/**
+ * Exporta um Google Doc como .docx para anexar no e-mail de conclusão.
+ *
+ * `export` só aceita arquivos nativos do Google (Docs/Sheets/Slides) e recusa
+ * binários comuns — por isso quem chama filtra pelo mimeType antes.
+ */
+export async function exportDoc(
+  token: string,
+  fileId: string,
+  mimeType: string = DOCX_MIME,
+): Promise<Buffer> {
+  const url =
+    `${API}/files/${fileId}/export?` +
+    new URLSearchParams({ mimeType, supportsAllDrives: "true" }).toString();
+  const r = await driveFetch(token, url);
+  return Buffer.from(await r.arrayBuffer());
+}
+
 /** Acha (ou cria) uma subpasta pelo nome dentro de um pai. */
 export async function ensureFolder(
   token: string,
@@ -319,40 +341,86 @@ export async function renameFile(
   return (await r.json()) as { id: string; name: string; webViewLink?: string };
 }
 
-/** Garante que os e-mails informados tenham leitura no item (idempotente). */
+export type Grant = { email: string; role: "reader" | "writer" };
+
+/**
+ * Garante que cada e-mail tenha PELO MENOS o papel pedido no item (idempotente).
+ *
+ * Quem envia áudio pelo app quase nunca é membro do Drive Compartilhado — a
+ * escrita é feita pela conta de serviço, não por ele. Sem uma concessão por
+ * arquivo, a pessoa recebe o aviso de "está pronto" e esbarra em "você precisa
+ * de acesso" ao abrir o documento.
+ *
+ * A concessão é por ARQUIVO porque a conta de serviço é Colaboradora: nas
+ * pastas do Drive Compartilhado ela tem `canShare: false` (só um Gerente
+ * compartilha pasta), mas nos arquivos que ela mesma criou tem `canShare: true`.
+ *
+ * NUNCA rebaixa: membros do Drive Compartilhado chegam aqui como organizer ou
+ * fileOrganizer, e transformá-los em reader tiraria acesso de quem já tinha.
+ * Só cria o que falta e promove reader → writer.
+ */
+export async function syncGrants(
+  token: string,
+  fileId: string,
+  grants: Grant[],
+): Promise<void> {
+  if (grants.length === 0) return;
+  const r = await driveFetch(
+    token,
+    `${API}/files/${fileId}/permissions?fields=permissions(id,emailAddress,role)&supportsAllDrives=true`,
+  );
+  const cur = (await r.json()) as {
+    permissions?: { id: string; emailAddress?: string; role?: string }[];
+  };
+  const atual = new Map(
+    (cur.permissions ?? []).map((p) => [
+      (p.emailAddress || "").toLowerCase(),
+      p,
+    ]),
+  );
+
+  for (const { email: raw, role } of grants) {
+    const email = raw.trim().toLowerCase();
+    if (!email || !email.includes("@")) continue;
+    const tem = atual.get(email);
+    try {
+      if (!tem) {
+        await driveFetch(
+          token,
+          `${API}/files/${fileId}/permissions?supportsAllDrives=true&sendNotificationEmail=false&fields=id`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ type: "user", role, emailAddress: email }),
+          },
+        );
+      } else if (role === "writer" && tem.role === "reader") {
+        await driveFetch(
+          token,
+          `${API}/files/${fileId}/permissions/${tem.id}?supportsAllDrives=true&fields=id`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ role: "writer" }),
+          },
+        );
+      }
+    } catch (e) {
+      // um compartilhamento que falha não pode derrubar os outros
+      console.warn("Drive: falha ao conceder acesso a", email, e);
+    }
+  }
+}
+
+/** Atalho para o caso antigo: leitura para todos os e-mails informados. */
 export async function syncReaders(
   token: string,
   fileId: string,
   emails: string[],
 ): Promise<void> {
-  const r = await driveFetch(
+  await syncGrants(
     token,
-    `${API}/files/${fileId}/permissions?fields=permissions(id,emailAddress)&supportsAllDrives=true`,
+    fileId,
+    emails.map((email) => ({ email, role: "reader" as const })),
   );
-  const cur = (await r.json()) as { permissions?: { emailAddress?: string }[] };
-  const have = new Set(
-    (cur.permissions ?? []).map((p) => (p.emailAddress || "").toLowerCase()),
-  );
-  for (const raw of emails) {
-    const email = raw.toLowerCase();
-    if (!email || have.has(email)) continue;
-    try {
-      await driveFetch(
-        token,
-        `${API}/files/${fileId}/permissions?supportsAllDrives=true&sendNotificationEmail=false&fields=id`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            type: "user",
-            role: "reader",
-            emailAddress: email,
-          }),
-        },
-      );
-    } catch (e) {
-      // não bloqueia o upload se um compartilhamento específico falhar
-      console.warn("Drive: falha ao conceder acesso a", email, e);
-    }
-  }
 }

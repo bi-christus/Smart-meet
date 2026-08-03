@@ -113,6 +113,9 @@ function relTime(ts: number): string {
   return fmtShort(new Date(ts));
 }
 
+/** Valor sentinela do filtro de responsável (e-mails sempre têm "@"). */
+const NO_ASSIGNEE = "__sem__";
+
 type EditState =
   | { mode: "new"; columnId: string }
   | { mode: "edit"; card: Card }
@@ -142,6 +145,8 @@ export default function KanbanPage() {
   const [colsLoaded, setColsLoaded] = useState(false);
   const [search, setSearch] = useState("");
   const [prio, setPrio] = useState<"" | Priority>("");
+  // O filtro de responsável é preso ao setor: trocar de quadro o descarta.
+  const [assigneeSel, setAssigneeSel] = useState({ sector: "", value: "" });
   const [edit, setEdit] = useState<EditState>(null);
   const [colEdit, setColEdit] = useState<ColEditState>(null);
   const [dragCardId, setDragCardId] = useState<string | null>(null);
@@ -215,7 +220,11 @@ export default function KanbanPage() {
   }, [users]);
   const activeUsers = useMemo(() => users.filter((u) => u.active), [users]);
 
-  const filtered = useMemo(() => {
+  const assigneeF = assigneeSel.sector === sector ? assigneeSel.value : "";
+  const setAssigneeF = (value: string) => setAssigneeSel({ sector, value });
+
+  // Busca + prioridade (sem o filtro de responsável — é a base das contagens).
+  const baseFiltered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return cards.filter(
       (c) =>
@@ -225,6 +234,57 @@ export default function KanbanPage() {
         (!prio || c.priority === prio),
     );
   }, [cards, search, prio]);
+
+  const filtered = useMemo(
+    () =>
+      !assigneeF
+        ? baseFiltered
+        : baseFiltered.filter((c) =>
+            assigneeF === NO_ASSIGNEE ? !c.assignee : c.assignee === assigneeF,
+          ),
+    [baseFiltered, assigneeF],
+  );
+
+  // Só entram no filtro os responsáveis que têm demandas neste quadro.
+  const assigneeFilterOptions: SelectOption[] = useMemo(() => {
+    const counts = new Map<string, number>();
+    let none = 0;
+    baseFiltered.forEach((c) => {
+      if (c.assignee) counts.set(c.assignee, (counts.get(c.assignee) ?? 0) + 1);
+      else none++;
+    });
+    const opts: SelectOption[] = [
+      { value: "", label: "Qualquer responsável" },
+    ];
+    [...counts.entries()]
+      .map(([email, n]) => ({
+        email,
+        n,
+        name: usersMap[email]?.name || email,
+        color: usersMap[email]?.color,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
+      .forEach((u) =>
+        opts.push({
+          value: u.email,
+          label: `${u.name} (${u.n})`,
+          color: u.color,
+        }),
+      );
+    if (none)
+      opts.push({ value: NO_ASSIGNEE, label: `Sem responsável (${none})` });
+    // Mantém a seleção visível mesmo que a busca/prioridade zere o resultado.
+    if (assigneeF && !opts.some((o) => o.value === assigneeF))
+      opts.push({
+        value: assigneeF,
+        label:
+          assigneeF === NO_ASSIGNEE
+            ? "Sem responsável (0)"
+            : `${usersMap[assigneeF]?.name || assigneeF} (0)`,
+        color: usersMap[assigneeF]?.color,
+      });
+    return opts;
+  }, [baseFiltered, usersMap, assigneeF]);
 
   const displayCols: ColumnDoc[] = fireColumns.length
     ? fireColumns
@@ -316,6 +376,35 @@ export default function KanbanPage() {
             ariaLabel="Filtrar por prioridade"
           />
         </div>
+        <div style={{ width: 210 }}>
+          <Select
+            value={assigneeF}
+            options={assigneeFilterOptions}
+            onChange={setAssigneeF}
+            placeholder="Qualquer responsável"
+            ariaLabel="Filtrar por responsável"
+          />
+        </div>
+        {profile.email &&
+          cards.some((c) => c.assignee === profile.email) &&
+          assigneeF !== profile.email && (
+            <button
+              className={styles.filterBtn}
+              onClick={() => setAssigneeF(profile.email)}
+              title="Ver apenas as minhas demandas"
+            >
+              Minhas demandas
+            </button>
+          )}
+        {assigneeF && (
+          <button
+            className={styles.filterBtn}
+            onClick={() => setAssigneeF("")}
+            title="Remover o filtro de responsável"
+          >
+            Limpar filtro
+          </button>
+        )}
       </div>
 
       <div className={styles.board} key={sector}>

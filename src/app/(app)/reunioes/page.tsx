@@ -710,7 +710,11 @@ export default function ReunioesPage() {
                     <span>{fmtDate(m.date)}</span>
                     <span>· {m.sector}</span>
                     <span>· via {SEND_LABEL[m.send ?? "file"]}</span>
-                    <span>· {m.participants?.length || 0} participante(s)</span>
+                    {/* só quando alguém marcou presença no modal da reunião —
+                        o registro inicial não pede mais participantes */}
+                    {(m.participants?.length ?? 0) > 0 && (
+                      <span>· {m.participants!.length} participante(s)</span>
+                    )}
                     {m.driveLink && canSeeAudio(m) && (
                       <a
                         href={m.driveLink}
@@ -749,7 +753,6 @@ export default function ReunioesPage() {
           sector={sector}
           sectors={sectors}
           output={output}
-          activeUsers={activeUsers}
           actorEmail={profile.email}
           startFileUpload={startFileUpload}
           onClose={() => setConfirm(null)}
@@ -858,7 +861,6 @@ function NewMeetingModal({
   sector,
   sectors,
   output,
-  activeUsers,
   actorEmail,
   startFileUpload,
   onClose,
@@ -867,7 +869,6 @@ function NewMeetingModal({
   sector: string;
   sectors: string[];
   output: OutputKind[];
-  activeUsers: UserProfile[];
   actorEmail: string;
   startFileUpload: (
     file: File,
@@ -878,7 +879,6 @@ function NewMeetingModal({
   const [title, setTitle] = useState(confirm.title);
   const [sec, setSec] = useState(sector);
   const [date, setDate] = useState(todayStr());
-  const [participants, setParticipants] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -886,15 +886,9 @@ function NewMeetingModal({
   // aqui deixaria o arquivo numa pasta e o registro em outra.
   const sectorLocked = !!confirm.recordingId;
 
-  const avail = activeUsers.filter(
-    (u) => u.sectors?.includes(sec) || u.role === "admin",
-  );
-
-  function toggleP(email: string) {
-    setParticipants((cur) =>
-      cur.includes(email) ? cur.filter((x) => x !== email) : [...cur, email],
-    );
-  }
+  // Participantes NÃO são pedidos aqui: registrar a reunião tem que ser rápido.
+  // Quem quiser marcar quem estava presente faz isso depois, no modal da
+  // reunião — o campo continua existindo lá.
 
   async function submit() {
     setErr(null);
@@ -908,11 +902,7 @@ function NewMeetingModal({
       if (confirm.meetingId) {
         // Microfone: o registro nasceu junto com a gravação e o áudio já está
         // a caminho do Drive. Aqui só completamos os dados.
-        await updateMeeting(confirm.meetingId, {
-          title: clean,
-          date,
-          participants,
-        });
+        await updateMeeting(confirm.meetingId, { title: clean, date });
         if (confirm.recordingId) {
           await uploadManager.applyTitle(confirm.recordingId, clean);
         }
@@ -923,14 +913,14 @@ function NewMeetingModal({
           output,
           title: clean,
         });
-        if (meetingId) await updateMeeting(meetingId, { date, participants });
+        if (meetingId) await updateMeeting(meetingId, { date });
       } else {
         await createMeeting(
           {
             title: clean,
             sector: sec,
             date,
-            participants,
+            participants: [],
             send: confirm.send,
             output,
             durationMin: confirm.durationMin,
@@ -1013,28 +1003,6 @@ function NewMeetingModal({
               value={date}
               onChange={(e) => setDate(e.target.value)}
             />
-          </div>
-        </div>
-
-        <div className={styles.field}>
-          <label className={styles.label}>Participantes</label>
-          <div className={styles.secGrid}>
-            {avail.length === 0 ? (
-              <span style={{ color: "var(--tx-3)", fontSize: 12 }}>
-                Nenhum usuário neste setor.
-              </span>
-            ) : (
-              avail.map((u) => (
-                <button
-                  key={u.email}
-                  type="button"
-                  className={`${styles.secToggle} ${participants.includes(u.email) ? styles.sel : ""}`}
-                  onClick={() => toggleP(u.email)}
-                >
-                  {u.name?.split(" ")[0] || u.email}
-                </button>
-              ))
-            )}
           </div>
         </div>
 
