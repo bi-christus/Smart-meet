@@ -150,6 +150,11 @@ function collectOutputs(
   for (const f of files) {
     if (f.id === audioId) continue;
     if (f.mimeType === "application/vnd.google-apps.folder") continue;
+    // O sidecar de demandas mora na mesma pasta e NUNCA é um documento da
+    // reunião. Hoje ele já escaparia por não casar nenhuma palavra do
+    // `classify`, mas um futuro "<base> - Resumo.json" casaria e viraria um
+    // link quebrado na tela — o app não sabe abrir JSON como Doc.
+    if (f.mimeType === "application/json") continue;
     // Casamos pelo nome CRU: os resultados podem ser Google Docs (sem extensão),
     // e um `stripExt` cortaria um ponto do próprio nome (ex.: "Reunião 29.07").
     if (!f.name.toLowerCase().startsWith(stemLower)) continue;
