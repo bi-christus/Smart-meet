@@ -90,3 +90,49 @@ export async function addSolicitante(
 export async function deleteSolicitante(id: string): Promise<void> {
   await deleteDoc(doc(db, "solicitantes", id));
 }
+
+// ---------------------------------------------------------------------------
+// Criação a partir do formulário de demanda
+//
+// Duas telas cadastram durante o preenchimento — o modal do Kanban e a
+// validação de propostas — e cada uma usa um componente de select diferente.
+// A UI diverge; a REGRA (não duplicar nome, devolver o nome já pronto para
+// selecionar) mora aqui, para não existir em duas versões.
+// ---------------------------------------------------------------------------
+
+/**
+ * Cadastra o setor solicitante se ainda não existir e devolve o nome
+ * canônico — o que já estava salvo, quando é repetido, para não criar
+ * "Compras" e "compras" como coisas diferentes.
+ */
+export async function garantirSetorSolicitante(
+  nome: string,
+  existentes: SolicitanteSetor[],
+): Promise<string> {
+  const n = nome.trim();
+  if (!n) throw new Error("Informe o nome do setor.");
+  const igual = existentes.find(
+    (s) => s.name.trim().toLowerCase() === n.toLowerCase(),
+  );
+  if (igual) return igual.name;
+  await addSolicitanteSetor(n);
+  return n;
+}
+
+/** Idem para a pessoa, considerando duplicata apenas DENTRO do mesmo setor. */
+export async function garantirSolicitante(
+  nome: string,
+  setor: string,
+  existentes: Solicitante[],
+): Promise<string> {
+  const n = nome.trim();
+  if (!n) throw new Error("Informe o nome do solicitante.");
+  if (!setor.trim()) throw new Error("Escolha o setor solicitante antes.");
+  const igual = existentes.find(
+    (s) =>
+      s.setor === setor && s.name.trim().toLowerCase() === n.toLowerCase(),
+  );
+  if (igual) return igual.name;
+  await addSolicitante(n, setor);
+  return n;
+}

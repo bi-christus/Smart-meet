@@ -117,15 +117,24 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // ---- solicitantes e setores solicitantes (cadastro do Admin) ----
-    // Todo mundo lê (o Kanban preenche os selects); só admin mexe.
+    // ---- solicitantes e setores solicitantes ----
+    // Qualquer usuário autorizado CRIA (no meio do preenchimento de uma
+    // demanda: quem descobre que falta um solicitante é quem está cadastrando,
+    // e mandá-lo pedir ao admin faz a demanda nascer sem solicitante).
+    // Alterar e APAGAR continuam de admin: remover um solicitante em uso
+    // deixaria cards apontando para um nome que não existe mais, e essa decisão
+    // precisa de quem enxerga o cadastro inteiro.
     match /solicitantes/{doc} {
       allow read: if isAuthorized();
-      allow write: if isAdmin();
+      allow create: if isAuthorized()
+                    && novo('name') != ''
+                    && novo('setor') != '';
+      allow update, delete: if isAdmin();
     }
     match /solicitanteSetores/{doc} {
       allow read: if isAuthorized();
-      allow write: if isAdmin();
+      allow create: if isAuthorized() && novo('name') != '';
+      allow update, delete: if isAdmin();
     }
 
     // ---- colunas do kanban (por setor) ----

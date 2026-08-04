@@ -33,6 +33,7 @@ import {
 } from "@/lib/solicitantes";
 import { decidirProposta, CERTEZA_LABEL, type Proposta } from "@/lib/demandas";
 import { Icon } from "@/components/icons";
+import { SolicitantePicker } from "@/components/solicitante-picker";
 import styles from "./relatorios.module.css";
 
 let seq = 0;
@@ -106,13 +107,6 @@ export function PropostaForm({
   const doSetor = useMemo(
     () => usuarios.filter((u) => u.active && (u.sectors ?? []).includes(alvo)),
     [usuarios, alvo],
-  );
-  const solicitantesFiltrados = useMemo(
-    () =>
-      requesterSector
-        ? solicitantes.filter((s) => s.setor === requesterSector)
-        : solicitantes,
-    [solicitantes, requesterSector],
   );
 
   function addItem() {
@@ -268,39 +262,15 @@ export function PropostaForm({
                 ))}
               </select>
             </div>
-            <div>
-              <label className={styles.rot}>Setor solicitante</label>
-              <select
-                className={styles.select}
-                value={requesterSector}
-                onChange={(e) => {
-                  setRequesterSector(e.target.value);
-                  setRequester("");
-                }}
-              >
-                <option value="">—</option>
-                {setoresSol.map((s) => (
-                  <option key={s.id} value={s.name}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className={styles.rot}>Solicitante</label>
-              <select
-                className={styles.select}
-                value={requester}
-                onChange={(e) => setRequester(e.target.value)}
-              >
-                <option value="">—</option>
-                {solicitantesFiltrados.map((s) => (
-                  <option key={s.id} value={s.name}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <SolicitantePicker
+              setores={setoresSol}
+              solicitantes={solicitantes}
+              setorValue={requesterSector}
+              requesterValue={requester}
+              onSetor={setRequesterSector}
+              onRequester={setRequester}
+              classes={{ select: styles.select, input: styles.input }}
+            />
           </div>
 
           <div className={styles.linha2}>

@@ -6,6 +6,8 @@ import { subscribeUsers, DEFAULT_SECTORS, type UserProfile } from "@/lib/users";
 import {
   subscribeSolicitantes,
   subscribeSolicitanteSetores,
+  garantirSetorSolicitante,
+  garantirSolicitante,
   type Solicitante,
   type SolicitanteSetor,
 } from "@/lib/solicitantes";
@@ -118,6 +120,51 @@ function relTime(ts: number): string {
 
 /** Valor sentinela do filtro de responsável (e-mails sempre têm "@"). */
 const NO_ASSIGNEE = "__sem__";
+
+/** Campo de texto que substitui o select enquanto se cadastra um nome novo. */
+function NovoCadastro({
+  valor,
+  onChange,
+  onSalvar,
+  salvando,
+  placeholder,
+  desabilitado,
+}: {
+  valor: string;
+  onChange: (v: string) => void;
+  onSalvar: () => void | Promise<void>;
+  salvando: boolean;
+  placeholder: string;
+  desabilitado?: boolean;
+}) {
+  return (
+    <div className={styles.novoCadastroLinha}>
+      <input
+        className={styles.input}
+        value={valor}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            void onSalvar();
+          }
+        }}
+        placeholder={placeholder}
+        maxLength={80}
+        autoFocus
+      />
+      <button
+        type="button"
+        className={styles.novoCadastroOk}
+        onClick={() => void onSalvar()}
+        disabled={salvando || !valor.trim() || desabilitado}
+        aria-label="Cadastrar"
+      >
+        <Icon name="check" size={13} />
+      </button>
+    </div>
+  );
+}
 
 /**
  * Igualdade tolerante para decidir se um campo do formulário mudou.
@@ -742,6 +789,10 @@ function CardModal({
   const [priority, setPriority] = useState<Priority>(card?.priority ?? "media");
   const [assignee, setAssignee] = useState(card?.assignee ?? "");
   const [requester, setRequester] = useState(card?.requester ?? "");
+  const [criando, setCriando] = useState<null | "setor" | "pessoa">(null);
+  const [novoNome, setNovoNome] = useState("");
+  const [salvandoCadastro, setSalvandoCadastro] = useState(false);
+  const [erroCadastro, setErroCadastro] = useState<string | null>(null);
   const [requesterSector, setRequesterSector] = useState(
     card?.requesterSector ?? "",
   );
@@ -829,6 +880,38 @@ function CardModal({
     if (name && requester) {
       const s = solicitantes.find((x) => x.name === requester);
       if (s && s.setor !== name) setRequester("");
+    }
+  }
+
+  /**
+   * Cadastra o setor ou o solicitante sem sair do formulário.
+   *
+   * Quem percebe que o nome não está na lista é quem está preenchendo a
+   * demanda. Mandá-lo abrir o Admin e voltar significa, na prática, salvar a
+   * demanda sem solicitante. Apagar continua só no Admin — remover um nome em
+   * uso deixa cards apontando para algo que não existe mais.
+   */
+  async function salvarCadastro() {
+    const n = novoNome.trim();
+    if (!n) return;
+    setErroCadastro(null);
+    setSalvandoCadastro(true);
+    try {
+      if (criando === "setor") {
+        const nome = await garantirSetorSolicitante(n, reqSetores);
+        pickReqSetor(nome);
+      } else {
+        const nome = await garantirSolicitante(n, requesterSector, solicitantes);
+        setRequester(nome);
+      }
+      setNovoNome("");
+      setCriando(null);
+    } catch (e) {
+      setErroCadastro(
+        e instanceof Error ? e.message : "Não foi possível cadastrar.",
+      );
+    } finally {
+      setSalvandoCadastro(false);
     }
   }
 
@@ -1006,25 +1089,81 @@ function CardModal({
 
       <div className={styles.row2}>
         <div className={styles.field}>
-          <label className={styles.label}>Setor solicitante</label>
-          <Select
-            value={requesterSector}
-            options={reqSetorOptions}
-            onChange={pickReqSetor}
-            placeholder="— Não definido —"
-            ariaLabel="Setor solicitante"
-          />
+          <label className={styles.labelLinha}>
+            Setor solicitante
+            <button
+              type="button"
+              className={styles.novoCadastro}
+              onClick={() => {
+                setCriando(criando === "setor" ? null : "setor");
+                setNovoNome("");
+                setErroCadastro(null);
+              }}
+            >
+              {criando === "setor" ? "cancelar" : "+ novo"}
+            </button>
+          </label>
+          {criando === "setor" ? (
+            <NovoCadastro
+              valor={novoNome}
+              onChange={setNovoNome}
+              onSalvar={salvarCadastro}
+              salvando={salvandoCadastro}
+              placeholder="Nome do setor…"
+            />
+          ) : (
+            <Select
+              value={requesterSector}
+              options={reqSetorOptions}
+              onChange={pickReqSetor}
+              placeholder="— Não definido —"
+              ariaLabel="Setor solicitante"
+            />
+          )}
         </div>
         <div className={styles.field}>
-          <label className={styles.label}>Solicitante</label>
-          <Select
-            value={requester}
-            options={solicOptions}
-            onChange={pickSolicitante}
-            placeholder="— Não definido —"
-            ariaLabel="Solicitante"
-          />
+          <label className={styles.labelLinha}>
+            Solicitante
+            <button
+              type="button"
+              className={styles.novoCadastro}
+              onClick={() => {
+                setCriando(criando === "pessoa" ? null : "pessoa");
+                setNovoNome("");
+                setErroCadastro(null);
+              }}
+            >
+              {criando === "pessoa" ? "cancelar" : "+ novo"}
+            </button>
+          </label>
+          {criando === "pessoa" ? (
+            <NovoCadastro
+              valor={novoNome}
+              onChange={setNovoNome}
+              onSalvar={salvarCadastro}
+              salvando={salvandoCadastro}
+              placeholder={
+                requesterSector
+                  ? `Nome — ${requesterSector}`
+                  : "Escolha o setor antes…"
+              }
+              desabilitado={!requesterSector}
+            />
+          ) : (
+            <Select
+              value={requester}
+              options={solicOptions}
+              onChange={pickSolicitante}
+              placeholder="— Não definido —"
+              ariaLabel="Solicitante"
+            />
+          )}
         </div>
+        {erroCadastro && (
+          <div className={styles.err} style={{ gridColumn: "1 / -1" }}>
+            {erroCadastro}
+          </div>
+        )}
       </div>
 
       <div className={styles.field}>

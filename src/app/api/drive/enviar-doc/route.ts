@@ -111,9 +111,14 @@ export async function POST(req: Request) {
     const rotulo = DRIVE_OUTPUT_LABEL[kind];
     const recado = String(body.mensagem ?? "").trim().slice(0, 800);
 
-    const html = `<div style="background:#faf6ef;padding:26px 0;">
-  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="max-width:680px;margin:0 auto;background:#fffdf8;border:1px solid #e6ddcf;">
-    <tr><td style="padding:26px 30px 6px;">
+    // 1080px em vez dos 680 tradicionais de e-mail promocional: aqui o corpo é
+    // um DOCUMENTO — a Ata detalhada tem tabelas de duas colunas largas e uma
+    // matriz de ação, e a 680 o texto ficava espremido numa faixa central com
+    // as laterais vazias. `width="100%"` com `max-width` continua encolhendo
+    // bem no celular.
+    const html = `<div style="background:#faf6ef;padding:24px 0;">
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="max-width:1080px;margin:0 auto;background:#fffdf8;border:1px solid #e6ddcf;">
+    <tr><td style="padding:26px 34px 6px;">
       <p style="margin:0 0 4px;font-family:Arial,sans-serif;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:#a08b6d;">Smart Meet · ${esc(rotulo)}</p>
       <p style="margin:0 0 2px;font-family:Arial,sans-serif;font-size:13px;color:#7a6f61;">
         ${esc(titulo)} · ${esc(setor)} — enviado por ${esc(caller.email)}
@@ -121,12 +126,12 @@ export async function POST(req: Request) {
     </td></tr>
     ${
       recado
-        ? `<tr><td style="padding:10px 30px 0;">
+        ? `<tr><td style="padding:10px 34px 0;">
              <p style="margin:0;padding:12px 14px;background:#fbf7f0;border-left:3px solid #c99a4e;font-family:Arial,sans-serif;font-size:14px;line-height:1.55;color:#4a4237;white-space:pre-wrap;">${esc(recado)}</p>
            </td></tr>`
         : ""
     }
-    <tr><td style="padding:18px 30px 26px;">
+    <tr><td style="padding:18px 34px 28px;">
       ${corpoDoc}
       <p style="margin:24px 0 0;font-family:Arial,sans-serif;font-size:11.5px;line-height:1.5;color:#9b8f7e;border-top:1px solid #ece4d7;padding-top:12px;">
         Documento gerado por IA a partir do áudio da reunião — confira antes de usar como registro oficial.
