@@ -16,7 +16,6 @@ const NAV = [
   { id: "inicio", label: "Início", href: "/" },
   { id: "reunioes", label: "Reuniões", href: "/reunioes" },
   { id: "relatorios", label: "Relatórios IA", href: "/relatorios" },
-  { id: "demandas", label: "Demandas", href: "/demandas" },
   { id: "kanban", label: "Kanban", href: "/kanban" },
   { id: "dashboard", label: "Dashboard", href: "/dashboard" },
   { id: "cronograma", label: "Cronograma", href: "/cronograma" },

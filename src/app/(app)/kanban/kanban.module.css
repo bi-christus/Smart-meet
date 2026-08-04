@@ -348,6 +348,12 @@
   background: var(--s3);
   color: var(--tx-2);
 }
+/* Sem prazo: tracejado e apagado — chama atenção sem gritar como atraso. */
+.due_none {
+  background: transparent;
+  color: var(--tx-3);
+  border: 1px dashed var(--line-soft);
+}
 .aging {
   display: inline-flex;
   align-items: center;

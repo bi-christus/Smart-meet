@@ -27,7 +27,12 @@ type Corpo = {
   propostaId?: string;
   decisao?: "aceitar" | "recusar";
   motivo?: string;
-  /** Campos editados pelo humano antes de aceitar. */
+  /**
+   * Campos editados pelo humano antes de aceitar.
+   *
+   * Responsável, solicitante e datas só existem aqui — a IA nunca os propõe,
+   * porque são o que a transcrição mais erra. Quem decide é quem valida.
+   */
   edicao?: {
     title?: string;
     description?: string;
@@ -36,8 +41,18 @@ type Corpo = {
     columnId?: string;
     tags?: string[];
     checklist?: { text: string; desc?: string }[];
+    assignee?: string | null;
+    requester?: string | null;
+    requesterSector?: string | null;
+    startDate?: string | null;
+    due?: string | null;
   };
 };
+
+/** Data no formato do app (aaaa-mm-dd) ou null. Rejeita qualquer outra coisa. */
+function dataOuNulo(v: unknown): string | null {
+  return typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null;
+}
 
 function limpo(v: unknown, max: number): string {
   return typeof v === "string" ? v.trim().slice(0, max) : "";
@@ -210,11 +225,13 @@ export async function POST(req: Request) {
           title,
           description: limpo(ed.description ?? base.description, 4000),
           type: tipo,
-          assignee: null,
-          requester: null,
-          requesterSector: null,
-          startDate: null,
-          due: null,
+          // Só o humano preenche estes. Datas são opcionais de propósito: uma
+          // fila que exige duas datas por item é uma fila que ninguém abre.
+          assignee: limpo(ed.assignee, 120) || null,
+          requester: limpo(ed.requester, 120) || null,
+          requesterSector: limpo(ed.requesterSector, 80) || null,
+          startDate: dataOuNulo(ed.startDate),
+          due: dataOuNulo(ed.due),
           priority: prioridade,
           tags,
           checklist,

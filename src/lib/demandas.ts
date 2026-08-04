@@ -124,6 +124,15 @@ export type Edicao = {
   columnId?: string;
   tags?: string[];
   checklist?: { text: string; desc?: string }[];
+  /**
+   * Estes quatro a IA nunca propõe — são o que a transcrição mais erra. Só
+   * chegam aqui quando a pessoa que valida os preenche.
+   */
+  assignee?: string | null;
+  requester?: string | null;
+  requesterSector?: string | null;
+  startDate?: string | null;
+  due?: string | null;
 };
 
 /** Aceitar ou recusar. Devolve o id do card quando a proposta é aceita. */

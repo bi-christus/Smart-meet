@@ -82,8 +82,11 @@ function fmtShort(d: Date): string {
 }
 function dueInfo(
   due?: string | null,
-): { label: string; tone: "late" | "soon" | "ok" } | null {
-  if (!due) return null;
+): { label: string; tone: "late" | "soon" | "ok" | "none" } | null {
+  // Demanda aceita a partir de uma reunião entra sem prazo de propósito — a
+  // fila de validação não exige datas para não virar uma fila que ninguém abre.
+  // Sem este selo, ela ficaria visualmente igual a uma demanda com tudo em dia.
+  if (!due) return { label: "sem prazo", tone: "none" };
   const today = startOfToday();
   const d = parseDue(due);
   const diff = Math.round((d.getTime() - today.getTime()) / 86400000);
