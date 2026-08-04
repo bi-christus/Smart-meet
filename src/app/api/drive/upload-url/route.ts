@@ -19,10 +19,21 @@ export async function POST(req: Request) {
       mimeType?: string;
       sector?: string;
       outputs?: string[];
+      observacoes?: string;
     };
     const name = (body.name || "").trim();
     const sector = (body.sector || "").trim();
     if (!name || !sector) throw new HttpError(400, "Dados incompletos.");
+
+    /**
+     * Instruções de quem enviou, para a IA seguir ao gerar os documentos.
+     *
+     * Vai no campo `description` do arquivo, e não em `properties`: uma
+     * propriedade do Drive cabe em 124 bytes contando a chave — não serve nem
+     * para uma frase. `description` aceita 4096 caracteres, e o motor do Cowork
+     * já lê esse campo na listagem.
+     */
+    const observacoes = (body.observacoes || "").trim().slice(0, 4000);
 
     // Etiqueta lida pelo Cowork para saber o que gerar (Pontos importantes vem
     // sempre; atas conforme o pedido). Usamos `properties` (PÚBLICO — legível por
@@ -69,6 +80,7 @@ export async function POST(req: Request) {
           name,
           parents: [userFolder],
           ...(properties ? { properties } : {}),
+          ...(observacoes ? { description: observacoes } : {}),
         }),
       },
     );

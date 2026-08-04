@@ -872,13 +872,19 @@ function NewMeetingModal({
   actorEmail: string;
   startFileUpload: (
     file: File,
-    opts: { sector: string; output: OutputKind[]; title: string },
+    opts: {
+      sector: string;
+      output: OutputKind[];
+      title: string;
+      observacoes?: string;
+    },
   ) => Promise<{ recordingId: string; meetingId: string | null }>;
   onClose: () => void;
 }) {
   const [title, setTitle] = useState(confirm.title);
   const [sec, setSec] = useState(sector);
   const [date, setDate] = useState(todayStr());
+  const [observacoes, setObservacoes] = useState("");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -897,14 +903,24 @@ function NewMeetingModal({
       setErr("Informe o título.");
       return;
     }
+    // Guardadas no registro E no arquivo do Drive. O registro é para você ver
+    // depois o que foi pedido; o Drive é o único lugar onde o Cowork consegue
+    // ler, já que ele não fala com o Firestore.
+    const obs = observacoes.trim();
     setSaving(true);
     try {
       if (confirm.meetingId) {
         // Microfone: o registro nasceu junto com a gravação e o áudio já está
         // a caminho do Drive. Aqui só completamos os dados.
-        await updateMeeting(confirm.meetingId, { title: clean, date });
+        await updateMeeting(confirm.meetingId, {
+          title: clean,
+          date,
+          ...(obs ? { aiNotes: obs } : {}),
+        });
         if (confirm.recordingId) {
-          await uploadManager.applyTitle(confirm.recordingId, clean);
+          // A sessão de upload abriu antes de o campo existir, então as
+          // observações só chegam ao arquivo agora.
+          await uploadManager.applyTitle(confirm.recordingId, clean, obs);
         }
       } else if (confirm.file) {
         // Arquivo: o envio começa agora e segue em segundo plano, retomável.
@@ -912,8 +928,14 @@ function NewMeetingModal({
           sector: sec,
           output,
           title: clean,
+          observacoes: obs,
         });
-        if (meetingId) await updateMeeting(meetingId, { date });
+        if (meetingId) {
+          await updateMeeting(meetingId, {
+            date,
+            ...(obs ? { aiNotes: obs } : {}),
+          });
+        }
       } else {
         await createMeeting(
           {
@@ -921,6 +943,7 @@ function NewMeetingModal({
             sector: sec,
             date,
             participants: [],
+            ...(obs ? { aiNotes: obs } : {}),
             send: confirm.send,
             output,
             durationMin: confirm.durationMin,
@@ -1003,6 +1026,23 @@ function NewMeetingModal({
               value={date}
               onChange={(e) => setDate(e.target.value)}
             />
+          </div>
+        </div>
+
+        <div className={styles.field}>
+          <label className={styles.label}>Observações para a IA (opcional)</label>
+          <textarea
+            className={styles.input}
+            rows={3}
+            value={observacoes}
+            onChange={(e) => setObservacoes(e.target.value)}
+            maxLength={4000}
+            placeholder="Ex.: não citar nomes de pessoas nesta reunião — usar o setor no lugar."
+          />
+          <div className={styles.hintSmall}>
+            Vale para a ata e os demais documentos. Use para o que a IA não tem
+            como saber sozinha: trocar um nome por um setor, corrigir uma
+            grafia, pedir foco num assunto.
           </div>
         </div>
 

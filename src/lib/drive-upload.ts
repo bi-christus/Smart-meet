@@ -65,6 +65,12 @@ export async function createUploadSession(params: {
   recordingId?: string;
   /** o que o usuário pediu gerar — vira a etiqueta smGerar no arquivo do Drive */
   outputs?: string[];
+  /**
+   * Instruções de quem enviou, para a IA seguir. Vira a `description` do
+   * arquivo no Drive — que é onde o Cowork consegue lê-las, já que ele não
+   * fala com o Firestore.
+   */
+  observacoes?: string;
 }): Promise<{ uploadUrl: string; folderId?: string }> {
   const res = await fetch("/api/drive/upload-url", {
     method: "POST",
@@ -173,11 +179,14 @@ export async function renameDriveFile(
   fileId: string,
   name: string,
   sector: string,
+  /** Gravação pelo microfone: a sessão de upload abriu antes de o usuário ter
+   *  escrito as observações, então elas chegam ao arquivo neste momento. */
+  observacoes?: string,
 ): Promise<DriveResult> {
   const res = await fetch("/api/drive/rename", {
     method: "POST",
     headers: { "Content-Type": "application/json", ...(await authHeader()) },
-    body: JSON.stringify({ fileId, name, sector }),
+    body: JSON.stringify({ fileId, name, sector, observacoes }),
   });
   if (!res.ok) {
     const e = (await res.json().catch(() => ({}))) as { error?: string };

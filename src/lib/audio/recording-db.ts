@@ -40,6 +40,8 @@ export type RecordingRecord = {
   status: RecordingStatus;
   sector: string;
   ownerEmail: string;
+  /** Instruções de quem enviou, para a IA seguir ao gerar os documentos. */
+  observacoes?: string;
   /** doc de `meetings` criado logo no início (rascunho) */
   meetingId: string | null;
   title: string;

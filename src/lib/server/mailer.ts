@@ -24,6 +24,8 @@ export type MailAttachment = {
 
 export type MailRequest = {
   to: string[];
+  /** Sempre em cópia. Quem dispara pelo app precisa ter o registro do envio. */
+  cc?: string[];
   subject: string;
   html: string;
   attachments?: MailAttachment[];
@@ -75,6 +77,10 @@ export async function sendMail(msg: MailRequest): Promise<void> {
 
   const to = msg.to.map((e) => e.trim()).filter(Boolean);
   if (to.length === 0) throw new Error("Nenhum destinatário.");
+  // Quem já está no "para" não precisa aparecer também em cópia.
+  const cc = (msg.cc ?? [])
+    .map((e) => e.trim())
+    .filter((e) => e && !to.includes(e));
 
   const transporter = nodemailer.createTransport({
     host: "smtp.gmail.com",
@@ -87,6 +93,7 @@ export async function sendMail(msg: MailRequest): Promise<void> {
     await transporter.sendMail({
       from: { name: process.env.MAIL_FROM_NAME || "Smart Meet", address: user },
       to,
+      ...(cc.length ? { cc } : {}),
       subject: msg.subject,
       text: textoSimples(msg.html),
       html: msg.html,

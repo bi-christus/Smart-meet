@@ -12,7 +12,7 @@
  * queremos: o conteúdo nasce de uma transcrição automática, então tratá-lo como
  * texto e nunca como marcação é a postura certa.
  */
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { auth } from "@/lib/firebase";
@@ -25,6 +25,45 @@ type Estado =
   | { fase: "carregando" }
   | { fase: "erro"; msg: string }
   | { fase: "ok"; nome: string; link: string; markdown: string };
+
+/**
+ * O documento renderizado, isolado num componente memoizado.
+ *
+ * Sem isto o Markdown era reprocessado a CADA mudança de estado do leitor — a
+ * lista de usuários chegando, o "Copiado" aparecendo e sumindo, o painel de
+ * compartilhar abrindo. Uma transcrição tem ~50 mil caracteres e milhares de
+ * nós; reparsear tudo isso a cada tecla é o que travava a rolagem.
+ */
+const Documento = memo(function Documento({ md }: { md: string }) {
+  return (
+    <article className={styles.doc}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{md}</ReactMarkdown>
+    </article>
+  );
+});
+
+/** Esqueleto do texto enquanto o Drive responde. */
+function Esqueleto() {
+  return (
+    <div className={styles.skeleton} aria-live="polite" aria-busy="true">
+      <span className={styles.srOnly}>Carregando o documento…</span>
+      <div className={`${styles.skLine} ${styles.skTitulo}`} />
+      <div className={`${styles.skLine} ${styles.skCurta}`} />
+      <div className={styles.skGap} />
+      <div className={styles.skLine} />
+      <div className={styles.skLine} />
+      <div className={`${styles.skLine} ${styles.skMedia}`} />
+      <div className={styles.skGap} />
+      <div className={`${styles.skLine} ${styles.skSubtitulo}`} />
+      <div className={styles.skLine} />
+      <div className={styles.skLine} />
+      <div className={`${styles.skLine} ${styles.skMedia}`} />
+      <div className={styles.skGap} />
+      <div className={styles.skLine} />
+      <div className={`${styles.skLine} ${styles.skCurta}`} />
+    </div>
+  );
+}
 
 export function DocViewer({
   meetingId,
@@ -40,8 +79,10 @@ export function DocViewer({
   const [estado, setEstado] = useState<Estado>({ fase: "carregando" });
   const [copiado, setCopiado] = useState(false);
   const [abrindoShare, setAbrindoShare] = useState(false);
-  const [destino, setDestino] = useState("");
-  const [compartilhando, setCompartilhando] = useState(false);
+  const [destinos, setDestinos] = useState<string[]>([]);
+  const [digitando, setDigitando] = useState("");
+  const [recado, setRecado] = useState("");
+  const [enviando, setEnviando] = useState(false);
   const [avisoShare, setAvisoShare] = useState<string | null>(null);
   const [usuarios, setUsuarios] = useState<UserProfile[]>([]);
 
@@ -98,32 +139,51 @@ export function DocViewer({
     }
   }
 
-  async function compartilhar() {
-    if (!destino) return;
-    setCompartilhando(true);
+  const EMAIL_OK = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+  function addDestino(bruto: string) {
+    const e = bruto.trim().toLowerCase();
+    if (!e) return;
+    if (!EMAIL_OK.test(e)) {
+      setAvisoShare(`"${e}" não parece um e-mail.`);
+      return;
+    }
+    setAvisoShare(null);
+    setDestinos((x) => (x.includes(e) ? x : [...x, e]));
+  }
+
+  async function enviar() {
+    if (destinos.length === 0) return;
+    setEnviando(true);
     setAvisoShare(null);
     try {
       const user = auth.currentUser;
       if (!user) throw new Error("Sessão expirada.");
       const token = await user.getIdToken();
-      const r = await fetch("/api/drive/compartilhar", {
+      const r = await fetch("/api/drive/enviar-doc", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ meetingId, email: destino }),
+        body: JSON.stringify({
+          meetingId,
+          kind,
+          para: destinos,
+          mensagem: recado.trim() || undefined,
+        }),
       });
       const body = await r.json();
-      if (!r.ok) throw new Error(body.error || "Não foi possível compartilhar.");
+      if (!r.ok) throw new Error(body.error || "Não foi possível enviar.");
       setAvisoShare(
-        `Acesso concedido a ${destino} — ${body.documentos} documento(s) desta reunião.`,
+        `Enviado para ${destinos.join(", ")} — com você em cópia.`,
       );
-      setDestino("");
+      setDestinos([]);
+      setRecado("");
     } catch (e) {
-      setAvisoShare(e instanceof Error ? e.message : "Falha ao compartilhar.");
+      setAvisoShare(e instanceof Error ? e.message : "Falha ao enviar.");
     } finally {
-      setCompartilhando(false);
+      setEnviando(false);
     }
   }
 
@@ -160,7 +220,7 @@ export function DocViewer({
             onClick={() => setAbrindoShare((v) => !v)}
             disabled={estado.fase !== "ok"}
           >
-            <Icon name="check" size={14} /> Compartilhar
+            <Icon name="chat" size={14} /> Enviar por e-mail
           </button>
           <div className={styles.spacer} />
           {estado.fase === "ok" && (
@@ -177,41 +237,88 @@ export function DocViewer({
 
         {abrindoShare && (
           <div className={styles.sharePanel}>
-            <select
-              className={styles.select}
-              value={destino}
-              onChange={(e) => setDestino(e.target.value)}
-            >
-              <option value="">Escolha quem recebe…</option>
-              {candidatos.map((u) => (
-                <option key={u.email} value={u.email}>
-                  {u.name || u.email}
-                </option>
-              ))}
-            </select>
-            <button
-              className={styles.btnSave}
-              onClick={compartilhar}
-              disabled={!destino || compartilhando}
-            >
-              {compartilhando ? "Concedendo…" : "Dar acesso"}
-            </button>
+            <div className={styles.shareLinha}>
+              <select
+                className={styles.select}
+                value=""
+                onChange={(e) => {
+                  addDestino(e.target.value);
+                  e.currentTarget.value = "";
+                }}
+              >
+                <option value="">Escolher da equipe…</option>
+                {candidatos
+                  .filter((u) => !destinos.includes(u.email))
+                  .map((u) => (
+                    <option key={u.email} value={u.email}>
+                      {u.name || u.email}
+                    </option>
+                  ))}
+              </select>
+              <input
+                className={styles.input}
+                placeholder="ou digite um e-mail e tecle Enter"
+                value={digitando}
+                onChange={(e) => setDigitando(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === ",") {
+                    e.preventDefault();
+                    addDestino(digitando);
+                    setDigitando("");
+                  }
+                }}
+              />
+            </div>
+
+            {destinos.length > 0 && (
+              <div className={styles.tags}>
+                {destinos.map((d) => (
+                  <span key={d} className={styles.tag}>
+                    {d}
+                    <button
+                      onClick={() =>
+                        setDestinos((x) => x.filter((y) => y !== d))
+                      }
+                      aria-label={`Remover ${d}`}
+                    >
+                      <Icon name="x" size={11} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <textarea
+              className={styles.area}
+              rows={2}
+              placeholder="Recado no topo do e-mail (opcional)"
+              value={recado}
+              onChange={(e) => setRecado(e.target.value)}
+              maxLength={800}
+            />
+
+            <div className={styles.shareRodape}>
+              <span className={styles.shareNota}>
+                O documento vai no corpo do e-mail, e você entra em cópia.
+              </span>
+              <button
+                className={styles.btnSave}
+                onClick={enviar}
+                disabled={destinos.length === 0 || enviando}
+              >
+                {enviando
+                  ? "Enviando…"
+                  : `Enviar${destinos.length ? ` (${destinos.length})` : ""}`}
+              </button>
+            </div>
           </div>
         )}
         {avisoShare && <p className={styles.shareAviso}>{avisoShare}</p>}
 
         <div className={styles.leitorCorpo}>
-          {estado.fase === "carregando" && (
-            <p className={styles.vazioBloco}>Abrindo o documento…</p>
-          )}
+          {estado.fase === "carregando" && <Esqueleto />}
           {estado.fase === "erro" && <p className={styles.erro}>{estado.msg}</p>}
-          {estado.fase === "ok" && (
-            <article className={styles.doc}>
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {estado.markdown}
-              </ReactMarkdown>
-            </article>
-          )}
+          {estado.fase === "ok" && <Documento md={estado.markdown} />}
         </div>
       </div>
     </div>

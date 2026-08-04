@@ -88,6 +88,8 @@ export type Meeting = {
   ata?: string;
   reportStatus?: ReportStatus;
   createdBy?: string;
+  /** Observações que o autor deixou para a IA seguir. */
+  aiNotes?: string;
   /** id da gravação no IndexedDB do navegador que a originou */
   recordingId?: string | null;
   uploadStatus?: UploadStatus;

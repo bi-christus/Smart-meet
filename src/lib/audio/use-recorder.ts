@@ -308,7 +308,12 @@ export function useRecorder(ownerEmail: string) {
   const startFileUpload = useCallback(
     async (
       file: File,
-      opts: { sector: string; output: OutputKind[]; title: string },
+      opts: {
+      sector: string;
+      output: OutputKind[];
+      title: string;
+      observacoes?: string;
+    },
     ): Promise<StartResult> => {
       const id = newRecordingId();
       const mimeType = file.type || "application/octet-stream";
@@ -329,6 +334,9 @@ export function useRecorder(ownerEmail: string) {
         driveName,
         mimeType,
         output: opts.output,
+        // Segue com a gravação até o uploader, que a grava na `description` do
+        // arquivo no Drive — o único canal por onde o Cowork consegue ler.
+        observacoes: opts.observacoes,
         status: "uploading",
         file,
         bytesWritten: file.size,

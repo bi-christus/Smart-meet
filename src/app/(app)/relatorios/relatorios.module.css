@@ -723,7 +723,9 @@
    =========================================================================== */
 
 .leitor {
-  width: 820px;
+  /* Largo: a Ata detalhada tem tabelas, e no modal estreito elas
+     espremiam o texto em duas palavras por linha. */
+  width: min(1180px, 100%);
   display: flex;
   flex-direction: column;
   max-height: calc(100vh - 96px);
@@ -744,14 +746,30 @@
   color: var(--brand);
 }
 .sharePanel {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  padding: 12px 0;
+  display: grid;
+  gap: 10px;
+  padding: 14px 0;
   border-bottom: 1px solid var(--line-soft);
 }
-.sharePanel .select {
+.shareLinha {
+  display: flex;
+  gap: 8px;
+}
+.shareLinha .select,
+.shareLinha .input {
   flex: 1;
+  min-width: 0;
+}
+.shareRodape {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.shareNota {
+  font-size: 12px;
+  color: var(--tx-3);
 }
 .shareAviso {
   font-size: 12.5px;
@@ -770,7 +788,14 @@
   font-size: 15px;
   line-height: 1.7;
   color: var(--tx);
-  max-width: 68ch;
+}
+/* Paragrafo e lista mantem a medida de leitura; tabela usa tudo. */
+.doc p,
+.doc li,
+.doc h1,
+.doc h2,
+.doc h3 {
+  max-width: 82ch;
 }
 .doc h1,
 .doc h2,
@@ -860,8 +885,8 @@
   overflow-x: auto;
   border-collapse: collapse;
   font-size: 13.5px;
-  margin: 0 0 16px;
-  max-width: 100%;
+  margin: 0 0 18px;
+  width: 100%;
 }
 .doc th,
 .doc td {
@@ -876,4 +901,69 @@
   color: var(--tx);
   font-weight: 600;
   white-space: nowrap;
+}
+
+/* Esqueleto do documento: mostra a FORMA do que vem — título, parágrafos,
+   subtítulo — em vez de uma frase solta. Ocupa a tela toda, então dá para ver
+   de longe que está carregando. */
+.skeleton {
+  max-width: 82ch;
+  padding: 4px 0;
+}
+.skLine {
+  height: 13px;
+  border-radius: 6px;
+  margin-bottom: 12px;
+  background: linear-gradient(
+    90deg,
+    var(--field) 25%,
+    var(--line-soft) 37%,
+    var(--field) 63%
+  );
+  background-size: 400% 100%;
+  animation: skPulse 1.4s ease-in-out infinite;
+}
+.skTitulo {
+  height: 26px;
+  width: 72%;
+  margin-bottom: 14px;
+}
+.skSubtitulo {
+  height: 18px;
+  width: 46%;
+}
+.skMedia {
+  width: 84%;
+}
+.skCurta {
+  width: 55%;
+}
+.skGap {
+  height: 16px;
+}
+@keyframes skPulse {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0 50%;
+  }
+}
+/* Quem prefere menos movimento não precisa de gradiente correndo na tela. */
+@media (prefers-reduced-motion: reduce) {
+  .skLine {
+    animation: none;
+    background: var(--field);
+  }
+}
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }

@@ -339,6 +339,29 @@ export async function downloadFileText(
 }
 
 /**
+ * Grava as instruções de quem enviou na `description` do arquivo.
+ *
+ * É onde elas cabem e onde o Cowork consegue lê-las: `properties` do Drive
+ * limita cada par a 124 bytes contando a chave, e o Cowork não fala com o
+ * Firestore. `description` aceita 4096 caracteres.
+ */
+export async function setFileDescription(
+  token: string,
+  fileId: string,
+  description: string,
+): Promise<void> {
+  await driveFetch(
+    token,
+    `${API}/files/${fileId}?supportsAllDrives=true&fields=id`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ description: description.slice(0, 4000) }),
+    },
+  );
+}
+
+/**
  * Exporta um Google Doc como Markdown, para o app renderizar com o próprio tema.
  *
  * Markdown e não HTML: a exportação em HTML do Google vem com ~26 KB de CSS

@@ -5,6 +5,7 @@ import {
   getFileMeta,
   renameFile,
   requireUser,
+  setFileDescription,
 } from "@/lib/server/drive-server";
 
 export const runtime = "nodejs";
@@ -22,10 +23,14 @@ export async function POST(req: Request) {
       fileId?: string;
       name?: string;
       sector?: string;
+      observacoes?: string;
     };
     const fileId = (body.fileId || "").trim();
     const name = (body.name || "").trim();
     const sector = (body.sector || "").trim();
+    // Gravação por microfone: a sessão de upload abre quando a gravação começa,
+    // antes de o usuário escrever as observações. Elas chegam ao arquivo aqui.
+    const observacoes = (body.observacoes || "").trim().slice(0, 4000);
     if (!fileId || !name) throw new HttpError(400, "Dados incompletos.");
 
     if (caller.role !== "admin" && sector && !caller.sectors.includes(sector)) {
@@ -36,6 +41,13 @@ export async function POST(req: Request) {
     // Se o Cowork já processou (o nome carrega "Transcrito"), NÃO renomeamos —
     // isso apagaria o marcador e causaria retranscrição paga + Docs órfãos.
     const cur = await getFileMeta(token, fileId);
+
+    // As observações valem mesmo depois de processado — se o áudio for
+    // reprocessado, elas continuam valendo. Por isso vão antes da trava.
+    if (observacoes) {
+      await setFileDescription(token, fileId, observacoes);
+    }
+
     if (/transcrito/i.test(cur.name)) {
       return NextResponse.json({ id: fileId, name: cur.name });
     }

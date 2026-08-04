@@ -258,6 +258,7 @@ class UploadManagerImpl {
       sector: rec.sector,
       recordingId: rec.id,
       outputs: rec.output,
+      observacoes: rec.observacoes,
     });
     const next = await patchRecording(rec.id, {
       sessionUri: uploadUrl,
@@ -307,10 +308,15 @@ class UploadManagerImpl {
    * Registra o título definitivo. Se o arquivo já fechou no Drive, renomeia na
    * hora; senão fica guardado e a renomeação acontece ao concluir.
    */
-  async applyTitle(recordingId: string, title: string): Promise<void> {
+  async applyTitle(
+    recordingId: string,
+    title: string,
+    observacoes?: string,
+  ): Promise<void> {
     const rec = await patchRecording(recordingId, {
       title,
       titleConfirmed: true,
+      ...(observacoes ? { observacoes } : {}),
     });
     if (!rec) return;
 
@@ -321,7 +327,12 @@ class UploadManagerImpl {
       const nextName = `${title}${ext}`;
       if (nextName !== rec.driveName) {
         try {
-          const file = await renameDriveFile(rec.driveFileId, nextName, rec.sector);
+          const file = await renameDriveFile(
+            rec.driveFileId,
+            nextName,
+            rec.sector,
+            observacoes,
+          );
           await patchRecording(recordingId, {
             driveName: nextName,
             driveLink: file.webViewLink ?? rec.driveLink,

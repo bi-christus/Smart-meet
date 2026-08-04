@@ -1230,3 +1230,11 @@
   opacity: 0.85;
   word-break: break-all;
 }
+
+/* Ajuda logo abaixo de um campo — menor que o .hint do topo do modal. */
+.hintSmall {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--tx-3);
+  margin-top: 6px;
+}
