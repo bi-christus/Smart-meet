@@ -287,6 +287,57 @@ export async function listFolder(
   return out;
 }
 
+/**
+ * Acha UM arquivo pelo nome exato dentro de uma pasta.
+ *
+ * Existe em vez de filtrar o resultado de `listFolder` porque é uma consulta
+ * direta ao Drive: não depende de paginação, não traz os outros arquivos e não
+ * some se a pasta crescer. Para buscar um arquivo específico é o caminho certo.
+ */
+export async function findInFolder(
+  token: string,
+  folderId: string,
+  name: string,
+): Promise<{ id: string; name: string; mimeType: string; size?: string } | null> {
+  const q =
+    `name = '${name.replace(/'/g, "\\'")}' and '${folderId}' in parents and trashed = false`;
+  const url =
+    `${API}/files?` +
+    new URLSearchParams({
+      q,
+      fields: "files(id,name,mimeType,size)",
+      supportsAllDrives: "true",
+      includeItemsFromAllDrives: "true",
+      corpora: "allDrives",
+      pageSize: "5",
+    }).toString();
+  const r = await driveFetch(token, url);
+  const body = (await r.json()) as {
+    files?: { id: string; name: string; mimeType: string; size?: string }[];
+  };
+  return body.files?.[0] ?? null;
+}
+
+/** Baixa o conteúdo de um arquivo binário comum (não serve para Google Docs). */
+export async function downloadFileText(
+  token: string,
+  fileId: string,
+  maxBytes: number,
+): Promise<string> {
+  const r = await driveFetch(
+    token,
+    `${API}/files/${fileId}?alt=media&supportsAllDrives=true`,
+  );
+  const buf = Buffer.from(await r.arrayBuffer());
+  if (buf.length > maxBytes) {
+    throw new HttpError(
+      413,
+      `arquivo de ${buf.length} bytes excede o teto de ${maxBytes}`,
+    );
+  }
+  return buf.toString("utf8");
+}
+
 /** Formato dos anexos do aviso: Word, que abre em qualquer lugar. */
 export const DOCX_MIME =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";

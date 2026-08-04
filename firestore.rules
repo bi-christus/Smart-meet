@@ -178,6 +178,20 @@ service cloud.firestore {
       allow delete: if isGestorOrAdmin() && canSeeSector(cur('sector'));
     }
 
+    // ---- propostas de demanda geradas a partir de reuniões ----
+    // O cliente NUNCA escreve aqui. Quem grava é o servidor: o ingest cria as
+    // propostas, e `api/demandas/decidir` registra a decisão depois de checar
+    // quem é o usuário. Deixar o cliente escrever abriria o caminho de forjar
+    // uma proposta "aprovada" e transformá-la em card.
+    match /demandPropostas/{doc} {
+      allow read: if isAuthorized() && canSeeSector(cur('sectorAlvo'));
+      allow write: if false;
+    }
+    match /demandLotes/{doc} {
+      allow read: if isAuthorized() && canSeeSector(cur('sectorReuniao'));
+      allow write: if false;
+    }
+
     // ---- trilha de auditoria ----
     // Escrita só pelo servidor (Admin SDK ignora estas regras). Log que o
     // cliente pode forjar ou apagar não serve como log.

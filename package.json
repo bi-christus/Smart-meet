@@ -7,7 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "backup:firestore": "node scripts/backup-firestore.mjs"
+    "backup:firestore": "node scripts/backup-firestore.mjs",
+    "check:demandas": "node scripts/check-demandas-boundary.mjs",
+    "prebuild": "node scripts/check-demandas-boundary.mjs && node scripts/test-demandas-schema.mjs",
+    "test:demandas": "node scripts/test-demandas-schema.mjs"
   },
   "dependencies": {
     "firebase": "^12.16.0",

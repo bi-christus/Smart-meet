@@ -10,6 +10,7 @@ import {
   type Grant,
 } from "@/lib/server/drive-server";
 import { notifyProcessed } from "@/lib/server/notify";
+import { ingestDemandas } from "@/lib/server/demand-ingest";
 
 export const runtime = "nodejs";
 
@@ -48,6 +49,14 @@ function jaTranscrito(nomeDoArquivo: string): boolean {
 }
 /** Teto de reuniões por execução, para caber no tempo da função. */
 const BATCH_LIMIT = 60;
+
+/**
+ * Quantas varreduras procuram o arquivo de demandas antes de desistir.
+ *
+ * Reunião sem demanda é o caso NORMAL — reunião informativa não gera nada. Sem
+ * um teto, toda reunião do histórico seria consultada no Drive para sempre.
+ */
+const MAX_TENTATIVAS_DEMANDAS = 12;
 
 /**
  * Corte para reprocessar avisos de reuniões que JÁ estavam processadas.
@@ -219,10 +228,44 @@ export async function GET(req: Request) {
           })
         : [];
 
-    const targets = [...aguardando, ...semArquivos, ...semAviso].slice(
-      0,
-      BATCH_LIMIT,
-    );
+    // (4) reuniões processadas cujo arquivo de demandas ainda não foi lido. O
+    // Cowork pode subir o sidecar depois das atas, então uma reunião já
+    // encerrada nas outras listas continua elegível por um tempo.
+    //
+    // O contador de tentativas é o que impede isto de virar uma varredura
+    // eterna: reunião sem sidecar (o caso normal, reunião sem demanda) para de
+    // ser consultada depois de MAX_TENTATIVAS_DEMANDAS.
+    const semDemandas = procSnap.docs.filter((d) => {
+      const m = d.data();
+      return (
+        inScope(m) &&
+        !m.demandasLoteId &&
+        (m.demandasTentativas ?? 0) < MAX_TENTATIVAS_DEMANDAS &&
+        Array.isArray(m.driveOutputs) &&
+        m.driveOutputs.length > 0
+      );
+    });
+
+    // Round-robin em vez de concatenar: com `slice` puro, uma lista grande de
+    // "aguardando" empurraria `semDemandas` para fora do lote todas as vezes, e
+    // as demandas nunca seriam ingeridas sem ninguém perceber.
+    const listas = [aguardando, semArquivos, semAviso, semDemandas];
+    const vistos = new Set<string>();
+    const targets: typeof aguardando = [];
+    for (let i = 0; targets.length < BATCH_LIMIT; i++) {
+      let achouAlgum = false;
+      for (const lista of listas) {
+        if (i >= lista.length) continue;
+        achouAlgum = true;
+        const d = lista[i];
+        if (vistos.has(d.id)) continue;
+        vistos.add(d.id);
+        targets.push(d);
+        if (targets.length >= BATCH_LIMIT) break;
+      }
+      if (!achouAlgum) break;
+    }
+
     if (targets.length === 0) {
       return NextResponse.json({ checked: 0, updated: 0 });
     }
@@ -231,6 +274,7 @@ export async function GET(req: Request) {
     const appUrl = new URL(req.url).origin;
     let updated = 0;
     let notified = 0;
+    let demandas = 0;
 
     for (const doc of targets) {
       const m = doc.data();
@@ -291,6 +335,42 @@ export async function GET(req: Request) {
           }
         }
 
+        // Propostas de demanda deixadas pelo Cowork na mesma pasta. Roda depois
+        // dos Docs porque o sidecar é opcional: reunião sem demanda é caso
+        // normal, e não pode impedir a ata de aparecer.
+        if (folderId) {
+          try {
+            const r = await ingestDemandas({
+              token,
+              meetingId: doc.id,
+              meeting: m,
+              driveFileId: m.driveFileId as string,
+              pastaId: folderId,
+              base: baseStem(meta.name),
+            });
+            if (r.estado === "criado") {
+              demandas += r.propostas ?? 0;
+              await doc.ref.update({
+                demandasLoteId: `${m.driveFileId}__r1`,
+                demandasEm: new Date(),
+              });
+            } else if (r.estado === "ja-ingerido") {
+              await doc.ref.update({ demandasLoteId: `${m.driveFileId}__r1` });
+            } else {
+              // Inclui "sem-arquivo": a reunião continua elegível, mas com uma
+              // tentativa a menos, até o teto.
+              await doc.ref.update({
+                demandasTentativas: (m.demandasTentativas ?? 0) + 1,
+              });
+              if (r.estado === "rejeitado" || r.estado === "erro") {
+                console.warn("drive/sync: demandas não ingeridas", doc.id, r.motivo);
+              }
+            }
+          } catch (e) {
+            console.warn("drive/sync: falha no ingest de demandas", doc.id, e);
+          }
+        }
+
         // Aviso ao autor do envio. Duas condições protegem contra e-mail ruim:
         // `notifiedAt` garante uma única mensagem por reunião, e exigir outputs
         // evita avisar "está pronto" com anexo nenhum quando os Docs ainda não
@@ -325,7 +405,7 @@ export async function GET(req: Request) {
       }
     }
 
-    return NextResponse.json({ checked: targets.length, updated, notified });
+    return NextResponse.json({ checked: targets.length, updated, notified, demandas });
   } catch (e) {
     const status = e instanceof HttpError ? e.status : 500;
     const message = e instanceof Error ? e.message : "Erro desconhecido.";
