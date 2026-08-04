@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "backup:firestore": "node scripts/backup-firestore.mjs"
   },
   "dependencies": {
     "firebase": "^12.16.0",

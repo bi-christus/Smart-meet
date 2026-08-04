@@ -246,27 +246,45 @@ export async function listFolder(
 ): Promise<
   { id: string; name: string; mimeType: string; webViewLink?: string }[]
 > {
-  const url =
-    `${API}/files?` +
-    new URLSearchParams({
+  // A pasta é por usuário e acumula ~3 a 5 arquivos por reunião. Sem seguir o
+  // nextPageToken, a partir de ~50 reuniões o Drive devolveria só as 200
+  // primeiras e as atas mais novas sumiriam da tela — sem erro, sem sintoma.
+  // Teto de páginas para não girar para sempre se a API repetir o token.
+  const MAX_PAGINAS = 25;
+  const out: {
+    id: string;
+    name: string;
+    mimeType: string;
+    webViewLink?: string;
+  }[] = [];
+  let pageToken: string | undefined;
+
+  for (let i = 0; i < MAX_PAGINAS; i++) {
+    const params = new URLSearchParams({
       q: `'${folderId}' in parents and trashed = false`,
-      fields: "files(id,name,mimeType,webViewLink)",
+      fields: "nextPageToken,files(id,name,mimeType,webViewLink)",
       supportsAllDrives: "true",
       includeItemsFromAllDrives: "true",
       corpora: "allDrives",
       pageSize: "200",
-    }).toString();
-  const r = await driveFetch(token, url);
-  return (
-    (await r.json()) as {
+    });
+    if (pageToken) params.set("pageToken", pageToken);
+
+    const r = await driveFetch(token, `${API}/files?${params.toString()}`);
+    const body = (await r.json()) as {
+      nextPageToken?: string;
       files?: {
         id: string;
         name: string;
         mimeType: string;
         webViewLink?: string;
       }[];
-    }
-  ).files ?? [];
+    };
+    out.push(...(body.files ?? []));
+    if (!body.nextPageToken || body.nextPageToken === pageToken) break;
+    pageToken = body.nextPageToken;
+  }
+  return out;
 }
 
 /** Formato dos anexos do aviso: Word, que abre em qualquer lugar. */

@@ -28,7 +28,24 @@ export const runtime = "nodejs";
  * da Vercel (cabeçalho com CRON_SECRET) para rodar sem ninguém com a aba aberta.
  */
 
-const MARKER = /transcrito/i;
+/**
+ * Marcador de "o processador externo terminou", ancorado no FIM do nome.
+ *
+ * Sem a âncora, um áudio chamado "Reunião sobre o transcrito antigo.mp3" era
+ * dado como processado no instante em que aparecia: a reunião virava
+ * "processado" com zero links, e como o status só é gravado uma vez, nunca
+ * mais era reavaliada.
+ *
+ * Aceita também "[Transcrito]", formato legado do fluxo antigo. É a mesma
+ * expressão do motor do Cowork (`jaTranscrito`), de propósito: se os dois
+ * lados discordarem, um áudio pode ficar preso para sempre — o motor achando
+ * que já terminou e o app achando que não.
+ */
+const MARKER = /[\s\-–—]*\[?transcrito\]?\s*$/i;
+
+function jaTranscrito(nomeDoArquivo: string): boolean {
+  return MARKER.test(stripExt(nomeDoArquivo));
+}
 /** Teto de reuniões por execução, para caber no tempo da função. */
 const BATCH_LIMIT = 60;
 
@@ -94,9 +111,9 @@ function stripExt(name: string): string {
 
 /** Nome-base = nome sem extensão e sem o marcador "Transcrito" do fim. */
 function baseStem(audioName: string): string {
-  return stripExt(audioName)
-    .replace(/[\s\-–—]*transcrito\s*$/i, "")
-    .trim();
+  // Mesmo MARKER da detecção: se um lado aceitasse "[Transcrito]" e o outro
+  // não, o nome-base sairia com o marcador colado e nenhum Doc casaria.
+  return stripExt(audioName).replace(MARKER, "").trim();
 }
 
 function classify(suffix: string): OutputKind | null {
@@ -220,7 +237,7 @@ export async function GET(req: Request) {
       const isAguardando = m.status === "aguardando";
       try {
         const meta = await getFileMeta(token, m.driveFileId as string);
-        if (!MARKER.test(meta.name)) continue; // Cowork ainda não terminou
+        if (!jaTranscrito(meta.name)) continue; // Cowork ainda não terminou
 
         let outputs: DriveOutput[] = [];
         let files: {
@@ -236,7 +253,17 @@ export async function GET(req: Request) {
         }
 
         if (isAguardando) {
-          await doc.ref.update({ status: "processado", driveOutputs: outputs });
+          // Nunca gravar lista vazia por cima de links que já existiam. O
+          // status da reunião é editável no modal, então uma reunião já
+          // processada pode voltar para "aguardando"; se nessa passada a
+          // listagem do Drive falhar ou vier incompleta, gravar `[]` apagaria
+          // as atas da tela sem nenhum sintoma e sem como recuperar.
+          const jaTinha = Array.isArray(m.driveOutputs)
+            ? (m.driveOutputs as DriveOutput[]).length
+            : 0;
+          const patch: Record<string, unknown> = { status: "processado" };
+          if (outputs.length > 0 || jaTinha === 0) patch.driveOutputs = outputs;
+          await doc.ref.update(patch);
           updated++;
         } else if (
           outputs.length > 0 &&

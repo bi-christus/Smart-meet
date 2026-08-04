@@ -116,6 +116,23 @@ function relTime(ts: number): string {
 /** Valor sentinela do filtro de responsável (e-mails sempre têm "@"). */
 const NO_ASSIGNEE = "__sem__";
 
+/**
+ * Igualdade tolerante para decidir se um campo do formulário mudou.
+ *
+ * `undefined`, `null` e `""` contam como o mesmo nada: um card antigo sem
+ * `description` não deve gerar escrita só porque o formulário devolve string
+ * vazia. Arrays e objetos (tags, checklist) comparam por conteúdo, e a ordem
+ * conta — reordenar a checklist É uma mudança.
+ */
+function mesmoValor(a: unknown, b: unknown): boolean {
+  const vazio = (v: unknown) => v === undefined || v === null || v === "";
+  if (vazio(a) && vazio(b)) return true;
+  if (typeof a === "object" || typeof b === "object") {
+    return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+  }
+  return a === b;
+}
+
 type EditState =
   | { mode: "new"; columnId: string }
   | { mode: "edit"; card: Card }
@@ -897,13 +914,25 @@ function CardModal({
         const input: CardInput = base;
         await createCard(sector, input, actorEmail);
       } else if (card) {
-        const changedCol = card.columnId !== columnId;
-        await updateCard(
-          card.id,
-          changedCol
-            ? { ...base, order: -Date.now(), enteredAt: Date.now() }
-            : base,
-        );
+        // Só os campos que REALMENTE mudaram. Enviar o formulário inteiro fazia
+        // o último a salvar apagar, em silêncio, a edição de quem salvou antes
+        // — inclusive em campos que ele nem abriu.
+        const atual = card as unknown as Record<string, unknown>;
+        const patch: Record<string, unknown> = {};
+        for (const [campo, valor] of Object.entries(base)) {
+          if (!mesmoValor(atual[campo], valor)) patch[campo] = valor;
+        }
+        if (card.columnId !== columnId) {
+          // Trocar de coluna reinicia o aging e joga para o topo.
+          patch.order = -Date.now();
+          patch.enteredAt = Date.now();
+        }
+        if (Object.keys(patch).length > 0) {
+          // Contador de versão: quem for aplicar mudança automática no futuro
+          // precisa saber se o card mudou desde que o leu.
+          patch.rev = (card.rev ?? 0) + 1;
+          await updateCard(card.id, patch as Partial<Omit<Card, "id">>);
+        }
       }
       onClose();
     } catch (e) {

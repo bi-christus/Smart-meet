@@ -96,6 +96,12 @@ export type Card = {
   order: number;
   enteredAt?: number;
   createdBy?: string;
+  /**
+   * Contador de versão, incrementado a cada edição pelo modal. Serve para
+   * detectar que o card mudou entre o momento em que uma mudança automática
+   * foi calculada e o momento em que seria aplicada.
+   */
+  rev?: number;
 };
 
 export type CardInput = {

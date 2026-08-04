@@ -9,7 +9,24 @@ rules_version = '2';
 //  - Papéis: admin > gestor > operador.
 //  - O super admin (bootstrap) pode sempre gerenciar — cria o próprio doc no
 //    primeiro acesso, resolvendo o problema do "primeiro admin".
-//  - Regras por setor/funcionalidade serão refinadas na Fase 3.
+//
+// O QUE MUDOU (2026-08-03) e por quê:
+//  - /cards e /meetings tinham `write: if isAuthorized()`. Qualquer operador
+//    ativo apagava TODOS os cards de TODOS os setores pelo console, sem log.
+//    Agora leitura e escrita são escopadas por setor, e apagar exige gestor.
+//  - `sector` e `createdBy` de um card passam a ser imutáveis: mover card entre
+//    setores por update era um jeito de contornar o escopo.
+//  - `driveOutputs` e `notifiedAt` das reuniões só o servidor escreve (Admin
+//    SDK ignora estas regras). Do cliente, ficam bloqueados — eram o caminho
+//    para apagar os links da ata ou reenviar e-mail.
+//  - /solicitantes e /solicitanteSetores ganharam regra própria: o app os usa
+//    (Kanban lê, Admin gerencia) e a negação final os bloqueava.
+//  - /logs deixa de aceitar escrita do cliente — auditoria forjável não serve
+//    como auditoria. Quem grava é o servidor.
+//
+// Nota sobre consultas: as telas sempre filtram por setor (`==` ou `in`), e o
+// admin consulta DEFAULT_SECTORS. Por isso o escopo por setor na leitura não
+// quebra nenhuma query existente.
 // ============================================================================
 
 service cloud.firestore {
@@ -51,6 +68,30 @@ service cloud.firestore {
       return isSuperAdmin() || isActive();
     }
 
+    // Setores do usuário. O admin não depende disto — enxerga tudo.
+    function mySectors() {
+      return hasProfile() ? profile().get('sectors', []) : [];
+    }
+    function canSeeSector(s) {
+      return isAdmin() || (s != '' && s in mySectors());
+    }
+    // Campo do doc existente / do doc enviado, tolerando ausência.
+    function cur(field) {
+      return resource.data.get(field, '');
+    }
+    function novo(field) {
+      return request.resource.data.get(field, '');
+    }
+    function mudou(campos) {
+      return request.resource.data.diff(resource.data)
+               .affectedKeys().hasAny(campos);
+    }
+    // O doc de /users tem id em minúsculas, mas o e-mail do token vem do Google
+    // como ele quiser. Comparar sem caixa evita negar criação por causa disso.
+    function souEu(email) {
+      return email.lower() == userEmail().lower();
+    }
+
     // ---- usuários ----
     match /users/{userId} {
       allow read: if isSignedIn() && (userId == userEmail() || isAdmin());
@@ -76,35 +117,73 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // ---- solicitantes e setores solicitantes (cadastro do Admin) ----
+    // Todo mundo lê (o Kanban preenche os selects); só admin mexe.
+    match /solicitantes/{doc} {
+      allow read: if isAuthorized();
+      allow write: if isAdmin();
+    }
+    match /solicitanteSetores/{doc} {
+      allow read: if isAuthorized();
+      allow write: if isAdmin();
+    }
+
     // ---- colunas do kanban (por setor) ----
     match /columns/{doc} {
-      allow read: if isAuthorized();
-      allow write: if isGestorOrAdmin();
+      allow read: if isAuthorized() && canSeeSector(cur('sector'));
+      allow create: if isGestorOrAdmin() && canSeeSector(novo('sector'));
+      allow update: if isGestorOrAdmin()
+                    && canSeeSector(cur('sector'))
+                    && novo('sector') == cur('sector');
+      allow delete: if isGestorOrAdmin() && canSeeSector(cur('sector'));
     }
 
     // ---- cards / demandas ----
     match /cards/{doc} {
-      allow read: if isAuthorized();
-      allow write: if isAuthorized();
+      allow read: if isAuthorized() && canSeeSector(cur('sector'));
+
+      allow create: if isAuthorized()
+                    && canSeeSector(novo('sector'))
+                    && souEu(novo('createdBy'));
+
+      // `sector` e `createdBy` imutáveis: trocar o setor por update seria a
+      // porta dos fundos para escrever em quadro alheio.
+      allow update: if isAuthorized()
+                    && canSeeSector(cur('sector'))
+                    && novo('sector') == cur('sector')
+                    && novo('createdBy').lower() == cur('createdBy').lower();
+
+      // Apagar demanda é ação de gestor, e só no próprio setor.
+      allow delete: if isGestorOrAdmin() && canSeeSector(cur('sector'));
     }
 
     // ---- reuniões ----
     match /meetings/{doc} {
-      allow read: if isAuthorized();
-      allow write: if isAuthorized();
-    }
+      allow read: if isAuthorized() && canSeeSector(cur('sector'));
 
-    // ---- relatórios (atas) ----
-    match /reports/{doc} {
-      allow read: if isAuthorized();
-      allow write: if isAuthorized();
+      allow create: if isAuthorized()
+                    && canSeeSector(novo('sector'))
+                    && souEu(novo('createdBy'));
+
+      // O setor da reunião PODE mudar (o modal permite corrigir), mas o destino
+      // também precisa ser um setor do usuário — senão daria para empurrar a
+      // reunião para um quadro onde ele não entra.
+      // driveOutputs/notifiedAt são do servidor: bloqueados aqui.
+      allow update: if isAuthorized()
+                    && canSeeSector(cur('sector'))
+                    && canSeeSector(novo('sector'))
+                    && novo('createdBy').lower() == cur('createdBy').lower()
+                    && !mudou(['driveOutputs', 'notifiedAt']);
+
+      allow delete: if isGestorOrAdmin() && canSeeSector(cur('sector'));
     }
 
     // ---- trilha de auditoria ----
+    // Escrita só pelo servidor (Admin SDK ignora estas regras). Log que o
+    // cliente pode forjar ou apagar não serve como log.
     match /logs/{doc} {
       allow read: if isGestorOrAdmin();
-      allow create: if isAuthorized();
-      allow update, delete: if false;
+      allow create, update, delete: if false;
     }
 
     // Nega qualquer outro caminho não previsto.
