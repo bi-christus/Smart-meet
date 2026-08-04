@@ -12,7 +12,7 @@
  * soubesse.
  */
 import { NextResponse } from "next/server";
-import { marked } from "marked";
+import { markdownParaEmail } from "@/lib/server/markdown-email";
 import {
   HttpError,
   adminDb,
@@ -45,53 +45,6 @@ function esc(s: string): string {
 }
 
 const EMAIL_OK = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-
-/**
- * Estilo inline em tudo: o Gmail remove blocos <style> e classes, e o e-mail
- * chegaria sem formatação nenhuma.
- */
-function comEstilo(html: string): string {
-  return html
-    .replace(
-      /<h1>/g,
-      '<h1 style="font-family:Georgia,serif;font-size:22px;font-weight:600;color:#2c251d;margin:0 0 10px;">',
-    )
-    .replace(
-      /<h2>/g,
-      '<h2 style="font-family:Georgia,serif;font-size:18px;font-weight:600;color:#2c251d;margin:26px 0 8px;padding-top:14px;border-top:1px solid #e6ddcf;">',
-    )
-    .replace(
-      /<h3>/g,
-      '<h3 style="font-family:Georgia,serif;font-size:15px;font-weight:600;color:#2c251d;margin:18px 0 6px;">',
-    )
-    .replace(
-      /<p>/g,
-      '<p style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#4a4237;margin:0 0 12px;">',
-    )
-    .replace(
-      /<li>/g,
-      '<li style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#4a4237;margin-bottom:5px;">',
-    )
-    .replace(/<ul>/g, '<ul style="margin:0 0 12px 18px;padding:0;">')
-    .replace(/<ol>/g, '<ol style="margin:0 0 12px 18px;padding:0;">')
-    // O exportador do Google embrulha as listas da ata em citação; sem zerar a
-    // barra, o e-mail inteiro pareceria um trecho citado.
-    .replace(/<blockquote>/g, '<blockquote style="margin:0;padding:0;border:none;">')
-    .replace(
-      /<table>/g,
-      '<table style="border-collapse:collapse;width:100%;margin:0 0 14px;font-family:Arial,sans-serif;font-size:13px;">',
-    )
-    .replace(
-      /<th>/g,
-      '<th style="border:1px solid #e6ddcf;background:#fbf7f0;padding:7px 9px;text-align:left;color:#2c251d;">',
-    )
-    .replace(
-      /<td>/g,
-      '<td style="border:1px solid #e6ddcf;padding:7px 9px;text-align:left;vertical-align:top;color:#4a4237;">',
-    )
-    .replace(/<hr>/g, '<hr style="border:none;border-top:1px solid #ece4d7;margin:20px 0;">')
-    .replace(/<a /g, '<a style="color:#8c5a2b;" ');
-}
 
 export async function POST(req: Request) {
   try {
@@ -152,9 +105,7 @@ export async function POST(req: Request) {
 
     const token = await driveToken();
     const markdown = await exportDocMarkdown(token, fileId);
-    const corpoDoc = comEstilo(
-      await marked.parse(markdown, { async: true, gfm: true, breaks: false }),
-    );
+    const corpoDoc = await markdownParaEmail(markdown);
 
     const titulo = (m.title as string) || "Reunião";
     const rotulo = DRIVE_OUTPUT_LABEL[kind];
