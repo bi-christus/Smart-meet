@@ -338,6 +338,39 @@ export async function downloadFileText(
   return buf.toString("utf8");
 }
 
+/**
+ * Exporta um Google Doc como Markdown, para o app renderizar com o próprio tema.
+ *
+ * Markdown e não HTML: a exportação em HTML do Google vem com ~26 KB de CSS
+ * dele em cada documento, que brigaria com o tema e teria de ser removido com
+ * uma limpeza frágil. Em Markdown o app controla toda a apresentação.
+ *
+ * O exportador do Google escapa caracteres que o Markdown trata como sintaxe
+ * (`~`, `.` depois de número, `-`), e envolve os títulos em `**`. Isso é
+ * desfeito aqui, uma vez, em vez de em cada componente que renderizar.
+ */
+export async function exportDocMarkdown(
+  token: string,
+  fileId: string,
+): Promise<string> {
+  const url =
+    `${API}/files/${fileId}/export?` +
+    new URLSearchParams({
+      mimeType: "text/markdown",
+      supportsAllDrives: "true",
+    }).toString();
+  const r = await driveFetch(token, url);
+  const bruto = await r.text();
+  return (
+    bruto
+      // "# **Título**" → "# Título": negrito dentro de heading vira ruído.
+      .replace(/^(#{1,6}\s+)\*\*(.+?)\*\*\s*$/gm, "$1$2")
+      // Escapes do exportador: \~35 min, 1\. Assunto, \- item.
+      .replace(/\\([~.\-*_[\]()#+!])/g, "$1")
+      .trim()
+  );
+}
+
 /** Formato dos anexos do aviso: Word, que abre em qualquer lugar. */
 export const DOCX_MIME =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";

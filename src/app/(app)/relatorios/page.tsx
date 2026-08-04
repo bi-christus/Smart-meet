@@ -25,6 +25,7 @@ import {
 import { subscribePropostas, type Proposta } from "@/lib/demandas";
 import { Icon } from "@/components/icons";
 import { PropostaForm } from "./proposta-form";
+import { DocViewer } from "./doc-viewer";
 import styles from "./relatorios.module.css";
 
 const OUTPUT_ICON: Record<DriveOutputKind, string> = {
@@ -231,6 +232,7 @@ function ReportModal({
   propostas: Proposta[];
   onClose: () => void;
 }) {
+  const [doc, setDoc] = useState<DriveOutputKind | null>(null);
   const [validando, setValidando] = useState(false);
   const [ataOk, setAtaOk] = useState(
     (meeting.reportStatus ?? "rascunho") === "validada",
@@ -280,16 +282,16 @@ function ReportModal({
                 {meeting.driveOutputs
                   .filter((o) => o.link)
                   .map((o, i) => (
-                    <a
+                    // Abre DENTRO do app: ler a ata não deveria exigir sair do
+                    // sistema nem ter acesso ao Drive Compartilhado.
+                    <button
                       key={i}
-                      href={o.link}
-                      target="_blank"
-                      rel="noopener noreferrer"
                       className={styles.outLink}
+                      onClick={() => setDoc(o.kind)}
                     >
                       <Icon name={OUTPUT_ICON[o.kind]} size={14} />{" "}
                       {DRIVE_OUTPUT_LABEL[o.kind]}
-                    </a>
+                    </button>
                   ))}
               </div>
             ) : (
@@ -368,6 +370,15 @@ function ReportModal({
           </section>
         </div>
       </div>
+
+      {doc && (
+        <DocViewer
+          meetingId={meeting.id}
+          kind={doc}
+          sector={meeting.sector}
+          onClose={() => setDoc(null)}
+        />
+      )}
     </div>
   );
 }

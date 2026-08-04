@@ -715,3 +715,165 @@
   border-color: rgba(251, 113, 133, 0.5);
   color: var(--danger, #fb7185);
 }
+
+/* ===========================================================================
+   Leitor de documentos — a ata lida dentro do app, com o tema do sistema.
+   Tipografia serifada e medida de linha curta: são textos para LER, não para
+   varrer. É o oposto da folha branca do Docs.
+   =========================================================================== */
+
+.leitor {
+  width: 820px;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 96px);
+}
+.leitorBarra {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.linkDrive {
+  font-size: 12px;
+  color: var(--tx-3);
+  text-decoration: underline;
+}
+.linkDrive:hover {
+  color: var(--brand);
+}
+.sharePanel {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.sharePanel .select {
+  flex: 1;
+}
+.shareAviso {
+  font-size: 12.5px;
+  color: var(--tx-2);
+  padding: 10px 0 0;
+  line-height: 1.5;
+}
+.leitorCorpo {
+  overflow-y: auto;
+  padding: 20px 4px 4px;
+}
+
+/* --- o documento --- */
+
+.doc {
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--tx);
+  max-width: 68ch;
+}
+.doc h1,
+.doc h2,
+.doc h3 {
+  font-family: var(--font-serif), Georgia, serif;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--tx);
+}
+.doc h1 {
+  font-size: 25px;
+  margin: 0 0 6px;
+}
+.doc h2 {
+  font-size: 19px;
+  margin: 30px 0 10px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line-soft);
+}
+.doc h3 {
+  font-size: 16px;
+  margin: 22px 0 8px;
+}
+.doc p {
+  margin: 0 0 14px;
+  color: var(--tx-2);
+}
+.doc strong {
+  color: var(--tx);
+  font-weight: 600;
+}
+.doc ul,
+.doc ol {
+  margin: 0 0 14px 20px;
+  color: var(--tx-2);
+}
+.doc li {
+  margin-bottom: 6px;
+}
+.doc li::marker {
+  color: var(--tx-3);
+}
+/* O exportador do Google envolve as listas das atas em citação. Sem isto
+   cada bloco da ata viraria uma barra vertical, e o texto todo pareceria
+   citado — o que não é. */
+.doc blockquote {
+  margin: 0 0 14px;
+  padding: 0;
+  border: none;
+}
+.doc blockquote > ul,
+.doc blockquote > ol {
+  margin-left: 20px;
+}
+.doc a {
+  color: var(--brand);
+  text-decoration: underline;
+}
+.doc code {
+  font-family: var(--font-mono), monospace;
+  font-size: 13px;
+  background: var(--field);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.doc pre {
+  background: var(--field);
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  padding: 14px;
+  overflow-x: auto;
+  margin: 0 0 14px;
+}
+.doc pre code {
+  background: none;
+  padding: 0;
+}
+.doc hr {
+  border: none;
+  border-top: 1px solid var(--line-soft);
+  margin: 24px 0;
+}
+/* Tabelas (a matriz de ação da Ata detalhada) rolam na própria caixa: a
+   página nunca deve rolar de lado. */
+.doc table {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 13.5px;
+  margin: 0 0 16px;
+  max-width: 100%;
+}
+.doc th,
+.doc td {
+  border: 1px solid var(--line-soft);
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+  color: var(--tx-2);
+}
+.doc th {
+  background: var(--field);
+  color: var(--tx);
+  font-weight: 600;
+  white-space: nowrap;
+}
