@@ -2,17 +2,44 @@
   position: relative;
   min-height: 100vh;
   overflow: hidden;
+
+  /* vidro — tons claros sobre fundo escuro */
+  --glass-bg: linear-gradient(
+    158deg,
+    rgba(255, 255, 255, 0.1) 0%,
+    rgba(255, 255, 255, 0.035) 46%,
+    rgba(255, 255, 255, 0.062) 100%
+  );
+  --glass-line: rgba(255, 255, 255, 0.13);
+  --glass-top: rgba(255, 255, 255, 0.17);
+  --glass-shadow: 0 34px 80px -26px rgba(0, 0, 0, 0.75);
+
   background: radial-gradient(
       980px 660px at 24% 46%,
       var(--brand-soft),
       transparent 64%
     ),
+    /* halo atrás do card, pro vidro ter cor pra captar */
+      radial-gradient(680px 560px at 84% 58%, var(--brand-soft), transparent 66%),
     radial-gradient(
       760px 560px at 88% 4%,
       rgba(255, 255, 255, 0.04),
       transparent 62%
     ),
     var(--bg);
+}
+
+/* no tema claro o vidro é branco leitoso, com borda escura pra não sumir */
+:global([data-theme="light"]) .wrap {
+  --glass-bg: linear-gradient(
+    158deg,
+    rgba(255, 255, 255, 0.8) 0%,
+    rgba(255, 255, 255, 0.5) 46%,
+    rgba(255, 255, 255, 0.68) 100%
+  );
+  --glass-line: rgba(26, 26, 23, 0.09);
+  --glass-top: rgba(255, 255, 255, 0.95);
+  --glass-shadow: 0 28px 64px -26px rgba(26, 26, 23, 0.32);
 }
 
 .stage {
@@ -22,7 +49,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 48px 56px;
+  padding: 48px 48px;
 }
 
 .inner {
@@ -31,7 +58,7 @@
   justify-content: space-between;
   gap: 84px;
   width: 100%;
-  max-width: 1180px;
+  max-width: 1480px;
 }
 
 /* ---------- lado esquerdo: waveform + frases ---------- */
@@ -39,7 +66,7 @@
 .hero {
   flex: 1;
   min-width: 0;
-  max-width: 560px;
+  max-width: 660px;
 }
 
 .waveBox {
@@ -129,12 +156,14 @@
   flex: none;
   width: 396px;
   max-width: 100%;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 20px;
+  border-radius: 22px;
   padding: 34px 34px 30px;
-  box-shadow: var(--shadow), 0 44px 96px -34px var(--brand-soft);
-  backdrop-filter: blur(14px);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-line);
+  /* a linha clara no topo é o que vende o vidro */
+  box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-top);
+  backdrop-filter: blur(26px) saturate(150%);
+  -webkit-backdrop-filter: blur(26px) saturate(150%);
 }
 
 .brand {
