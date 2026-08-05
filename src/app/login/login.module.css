@@ -14,17 +14,15 @@
   --glass-top: rgba(255, 255, 255, 0.17);
   --glass-shadow: 0 34px 80px -26px rgba(0, 0, 0, 0.75);
 
+  /* véu entre a waveform e o conteúdo — sem ele o texto morre no laranja */
+  --scrim: rgba(0, 0, 0, 0.66);
+  --scrim-2: rgba(0, 0, 0, 0.3);
+
+  /* discreto: a cor forte agora vem da própria waveform */
   background: radial-gradient(
-      980px 660px at 24% 46%,
+      1000px 700px at 50% 48%,
       var(--brand-soft),
-      transparent 64%
-    ),
-    /* halo atrás do card, pro vidro ter cor pra captar */
-      radial-gradient(680px 560px at 84% 58%, var(--brand-soft), transparent 66%),
-    radial-gradient(
-      760px 560px at 88% 4%,
-      rgba(255, 255, 255, 0.04),
-      transparent 62%
+      transparent 70%
     ),
     var(--bg);
 }
@@ -40,117 +38,52 @@
   --glass-line: rgba(26, 26, 23, 0.09);
   --glass-top: rgba(255, 255, 255, 0.95);
   --glass-shadow: 0 28px 64px -26px rgba(26, 26, 23, 0.32);
+  --scrim: rgba(241, 240, 236, 0.74);
+  --scrim-2: rgba(241, 240, 236, 0.34);
 }
+
+/* fica acima da waveform (mesmo z-index, vem depois no DOM) e abaixo do .stage */
+.wrap::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    820px 660px at 50% 52%,
+    var(--scrim),
+    var(--scrim-2) 58%,
+    transparent 100%
+  );
+}
+
+/* ---------- waveform: tela cheia, desfocada, atrás de tudo ---------- */
+
+.wave {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  filter: blur(10px);
+  opacity: 0.62;
+  pointer-events: none;
+}
+
+/* ---------- card centralizado + frases embaixo ---------- */
 
 .stage {
   position: relative;
   z-index: 1;
   min-height: 100vh;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 48px 48px;
+  gap: 42px;
+  padding: 48px 24px;
 }
-
-.inner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 84px;
-  width: 100%;
-  max-width: 1480px;
-}
-
-/* ---------- lado esquerdo: waveform + frases ---------- */
-
-.hero {
-  flex: 1;
-  min-width: 0;
-  max-width: 660px;
-}
-
-.waveBox {
-  position: relative;
-  height: 172px;
-  margin-bottom: 46px;
-}
-
-/* brilho difuso atrás da onda */
-.waveBox::before {
-  content: "";
-  position: absolute;
-  inset: -52px -8%;
-  background: radial-gradient(closest-side, var(--brand-soft), transparent 76%);
-  pointer-events: none;
-}
-
-/* linha de base, atrás das barras */
-.waveBox::after {
-  content: "";
-  position: absolute;
-  left: -5%;
-  right: -5%;
-  top: 50%;
-  height: 1px;
-  z-index: 0;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    var(--brand-line),
-    transparent
-  );
-  opacity: 0.4;
-  pointer-events: none;
-}
-
-.wave {
-  position: relative;
-  z-index: 1;
-  display: block;
-  width: 100%;
-  height: 100%;
-  filter: drop-shadow(0 0 12px var(--brand-soft))
-    drop-shadow(0 0 30px var(--brand-soft));
-}
-
-.promoText {
-  transition: opacity 0.5s ease;
-}
-.promoText h2 {
-  font-family: var(--font-serif), Georgia, "Times New Roman", serif;
-  font-weight: 600;
-  font-size: clamp(30px, 3.3vw, 46px);
-  line-height: 1.1;
-  margin: 0 0 16px;
-  letter-spacing: 0.2px;
-  text-wrap: balance;
-}
-.promoText p {
-  font-size: 16px;
-  line-height: 1.6;
-  color: var(--tx-2);
-  margin: 0;
-  max-width: 440px;
-}
-
-.dots {
-  display: flex;
-  gap: 8px;
-  margin-top: 30px;
-}
-.dots i {
-  width: 8px;
-  height: 8px;
-  border-radius: 20px;
-  background: var(--s4);
-  transition: width 0.3s, background 0.3s;
-}
-.dots i.on {
-  width: 26px;
-  background: var(--brand);
-}
-
-/* ---------- lado direito: card ---------- */
 
 .card {
   flex: none;
@@ -249,6 +182,49 @@
   text-align: center;
 }
 
+.promo {
+  width: 100%;
+  max-width: 560px;
+  text-align: center;
+}
+.promoText {
+  transition: opacity 0.5s ease;
+}
+.promoText h2 {
+  font-family: var(--font-serif), Georgia, "Times New Roman", serif;
+  font-weight: 600;
+  font-size: clamp(24px, 2.7vw, 34px);
+  line-height: 1.15;
+  margin: 0 0 12px;
+  letter-spacing: 0.2px;
+  text-wrap: balance;
+}
+.promoText p {
+  font-size: 15.5px;
+  line-height: 1.6;
+  color: var(--tx-2);
+  margin: 0 auto;
+  max-width: 460px;
+}
+
+.dots {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 24px;
+}
+.dots i {
+  width: 8px;
+  height: 8px;
+  border-radius: 20px;
+  background: var(--s4);
+  transition: width 0.3s, background 0.3s;
+}
+.dots i.on {
+  width: 26px;
+  background: var(--brand);
+}
+
 .loader {
   min-height: 100vh;
   display: flex;
@@ -260,44 +236,23 @@
 
 /* ---------- responsivo ---------- */
 
-@media (max-width: 1040px) {
-  .stage {
-    padding: 40px 24px;
-  }
-  .inner {
-    flex-direction: column;
-    gap: 40px;
-    max-width: 560px;
-  }
-  .hero {
-    width: 100%;
-    text-align: center;
-  }
-  .waveBox {
-    height: 132px;
-    margin-bottom: 34px;
-  }
-  .promoText p {
-    margin: 0 auto;
-  }
-  .dots {
-    justify-content: center;
-  }
-}
-
 @media (max-width: 560px) {
-  .waveBox {
-    height: 104px;
-    margin-bottom: 26px;
+  .stage {
+    gap: 32px;
+    padding: 40px 20px;
+  }
+  .card {
+    padding: 28px 24px 24px;
   }
   .promoText p {
     font-size: 15px;
   }
   .dots {
-    margin-top: 22px;
+    margin-top: 20px;
   }
-  .card {
-    padding: 28px 24px 24px;
+  /* barras são mais finas nessa largura — menos blur pra não virar mancha */
+  .wave {
+    filter: blur(6px);
   }
 }
 

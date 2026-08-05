@@ -93,50 +93,42 @@ export default function LoginPage() {
 
   return (
     <div className={styles.wrap}>
+      <Waveform />
       <div className={styles.stage}>
-        <div className={styles.inner}>
-          <div className={styles.hero}>
-            <div className={styles.waveBox}>
-              <Waveform />
-            </div>
-
-            <div
-              className={styles.promoText}
-              style={{ opacity: fade ? 0 : 1 }}
-            >
-              <h2>{ph}</h2>
-              <p>{ps}</p>
-            </div>
-            <div className={styles.dots}>
-              {PROMOS.map((_, i) => (
-                <i key={i} className={i === promo ? styles.on : undefined} />
-              ))}
-            </div>
+        <div className={styles.card}>
+          <div className={styles.brand}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo-uh-white.png" alt="Smart Meeting" />
           </div>
+          <h1 className={styles.title}>Smart Meeting</h1>
+          <p className={styles.sub}>Entre com sua conta para continuar</p>
 
-          <div className={styles.card}>
-            <div className={styles.brand}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/logo-uh-white.png" alt="Smart Meeting" />
-            </div>
-            <h1 className={styles.title}>Smart Meeting</h1>
-            <p className={styles.sub}>Entre com sua conta para continuar</p>
+          <button
+            className={styles.gbtn}
+            onClick={handleSignIn}
+            disabled={busy}
+          >
+            <GoogleIcon />
+            {busy ? "Entrando…" : "Entrar com Google"}
+          </button>
 
-            <button
-              className={styles.gbtn}
-              onClick={handleSignIn}
-              disabled={busy}
-            >
-              <GoogleIcon />
-              {busy ? "Entrando…" : "Entrar com Google"}
-            </button>
+          {error && <div className={styles.error}>{error}</div>}
 
-            {error && <div className={styles.error}>{error}</div>}
+          <p className={styles.note}>
+            O acesso é liberado pelo administrador. Se não conseguir entrar,
+            fale com o setor de B.I.
+          </p>
+        </div>
 
-            <p className={styles.note}>
-              O acesso é liberado pelo administrador. Se não conseguir entrar,
-              fale com o setor de B.I.
-            </p>
+        <div className={styles.promo}>
+          <div className={styles.promoText} style={{ opacity: fade ? 0 : 1 }}>
+            <h2>{ph}</h2>
+            <p>{ps}</p>
+          </div>
+          <div className={styles.dots}>
+            {PROMOS.map((_, i) => (
+              <i key={i} className={i === promo ? styles.on : undefined} />
+            ))}
           </div>
         </div>
       </div>
@@ -211,13 +203,13 @@ function Waveform() {
     };
 
     const resize = () => {
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
       const r = cv.getBoundingClientRect();
       W = Math.max(1, Math.round(r.width));
       H = Math.max(1, Math.round(r.height));
-      cv.width = Math.round(W * dpr);
-      cv.height = Math.round(H * dpr);
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      // sem DPR: a camada é desfocada, resolução extra só custaria pixel à toa
+      cv.width = W;
+      cv.height = H;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
       buildGradient();
     };
 
@@ -228,11 +220,12 @@ function Waveform() {
       ctx.clearRect(0, 0, W, H);
 
       const cy = H / 2;
-      const step = W < 460 ? 7 : 9;
-      const barW = step * 0.44;
+      // ~55 barras na largura: grossas o bastante pra sobreviver ao blur
+      const step = Math.max(11, W / 55);
+      const barW = step * 0.5;
       const n = Math.max(12, Math.floor((W - barW) / step) + 1);
       const x0 = (W - ((n - 1) * step + barW)) / 2;
-      const maxH = Math.max(4, H / 2 - 6);
+      const maxH = H * 0.5;
       const rounded = typeof ctx.roundRect === "function";
 
       ctx.fillStyle = grad ?? "#ff6a2b";
@@ -244,11 +237,11 @@ function Waveform() {
         const fast =
           Math.sin(u * 39.7 + p * 2.9) * 0.5 + Math.sin(u * 71.3 - p * 3.6) * 0.5;
         // respiração geral, como alguém falando
-        const pulse = 0.62 + 0.38 * Math.sin(p * 1.5 - u * 3.1);
+        const pulse = 0.7 + 0.3 * Math.sin(p * 1.5 - u * 3.1);
         // sino: cheio no meio, some suavemente nas pontas
         const bell = Math.pow(Math.sin(Math.PI * u), 0.4);
         const amp =
-          Math.max(0.05, 0.3 + 0.27 * slow + 0.18 * fast) * pulse * bell;
+          Math.max(0.12, 0.42 + 0.3 * slow + 0.17 * fast) * pulse * bell;
         const h = Math.max(1.5, amp * maxH);
 
         ctx.beginPath();
