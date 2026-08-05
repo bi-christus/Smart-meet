@@ -3,49 +3,136 @@
   min-height: 100vh;
   overflow: hidden;
   background: radial-gradient(
-      1300px 820px at 10% -6%,
-      rgba(255, 106, 43, 0.2),
-      transparent 58%
+      980px 660px at 24% 46%,
+      var(--brand-soft),
+      transparent 64%
+    ),
+    radial-gradient(
+      760px 560px at 88% 4%,
+      rgba(255, 255, 255, 0.04),
+      transparent 62%
     ),
     var(--bg);
 }
 
-.fx {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-}
-
 .stage {
   position: relative;
-  z-index: 2;
+  z-index: 1;
   min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 74px;
-  padding: 40px 56px;
+  padding: 48px 56px;
 }
 
 .inner {
   display: flex;
   align-items: center;
-  gap: 74px;
+  gap: 84px;
   width: 100%;
   max-width: 1180px;
-  transform: translateX(-3%);
 }
+
+/* ---------- lado esquerdo: waveform + frases ---------- */
+
+.hero {
+  flex: 1;
+  min-width: 0;
+  max-width: 560px;
+}
+
+.waveBox {
+  position: relative;
+  height: 172px;
+  margin-bottom: 46px;
+}
+
+/* brilho difuso atrás da onda */
+.waveBox::before {
+  content: "";
+  position: absolute;
+  inset: -52px -8%;
+  background: radial-gradient(closest-side, var(--brand-soft), transparent 76%);
+  pointer-events: none;
+}
+
+/* linha de base, atrás das barras */
+.waveBox::after {
+  content: "";
+  position: absolute;
+  left: -5%;
+  right: -5%;
+  top: 50%;
+  height: 1px;
+  z-index: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--brand-line),
+    transparent
+  );
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.wave {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 0 12px var(--brand-soft))
+    drop-shadow(0 0 30px var(--brand-soft));
+}
+
+.promoText {
+  transition: opacity 0.5s ease;
+}
+.promoText h2 {
+  font-family: var(--font-serif), Georgia, "Times New Roman", serif;
+  font-weight: 600;
+  font-size: clamp(30px, 3.3vw, 46px);
+  line-height: 1.1;
+  margin: 0 0 16px;
+  letter-spacing: 0.2px;
+  text-wrap: balance;
+}
+.promoText p {
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--tx-2);
+  margin: 0;
+  max-width: 440px;
+}
+
+.dots {
+  display: flex;
+  gap: 8px;
+  margin-top: 30px;
+}
+.dots i {
+  width: 8px;
+  height: 8px;
+  border-radius: 20px;
+  background: var(--s4);
+  transition: width 0.3s, background 0.3s;
+}
+.dots i.on {
+  width: 26px;
+  background: var(--brand);
+}
+
+/* ---------- lado direito: card ---------- */
 
 .card {
   flex: none;
-  width: 392px;
+  width: 396px;
   max-width: 100%;
   background: var(--card);
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--line);
   border-radius: 20px;
   padding: 34px 34px 30px;
-  box-shadow: 0 30px 70px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow), 0 44px 96px -34px var(--brand-soft);
   backdrop-filter: blur(14px);
 }
 
@@ -57,7 +144,11 @@
 .brand img {
   height: 68px;
   width: auto;
-  filter: drop-shadow(0 6px 18px rgba(255, 106, 43, 0.28));
+  filter: drop-shadow(0 6px 18px var(--brand-line));
+}
+/* o arquivo da logo é branco — no tema claro precisa inverter pra aparecer */
+:global([data-theme="light"]) .brand img {
+  filter: invert(1) drop-shadow(0 6px 18px var(--brand-line));
 }
 
 .title {
@@ -120,54 +211,12 @@
 .error {
   margin-top: 14px;
   font-size: 12.5px;
-  color: #ff9b8a;
-  background: rgba(255, 80, 60, 0.09);
-  border: 1px solid rgba(255, 80, 60, 0.28);
+  color: var(--danger-tx);
+  background: var(--danger-bg);
+  border: 1px solid var(--danger);
   border-radius: 10px;
   padding: 9px 12px;
   text-align: center;
-}
-
-.promo {
-  flex: 1;
-  min-width: 0;
-  max-width: 520px;
-  align-self: center;
-}
-.promoText {
-  transition: opacity 0.5s ease;
-}
-.promo h2 {
-  font-family: var(--font-serif), Georgia, "Times New Roman", serif;
-  font-weight: 600;
-  font-size: 44px;
-  line-height: 1.12;
-  margin: 0 0 16px;
-  letter-spacing: 0.2px;
-  text-wrap: balance;
-}
-.promo p {
-  font-size: 16px;
-  line-height: 1.6;
-  color: var(--tx-2);
-  margin: 0;
-  max-width: 440px;
-}
-.dots {
-  display: flex;
-  gap: 8px;
-  margin-top: 30px;
-}
-.dots i {
-  width: 8px;
-  height: 8px;
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.16);
-  transition: width 0.3s, background 0.3s;
-}
-.dots i.on {
-  width: 26px;
-  background: var(--brand);
 }
 
 .loader {
@@ -179,32 +228,54 @@
   font-size: 13px;
 }
 
-@media (max-width: 940px) {
+/* ---------- responsivo ---------- */
+
+@media (max-width: 1040px) {
   .stage {
-    padding: 24px;
+    padding: 40px 24px;
   }
   .inner {
     flex-direction: column;
-    gap: 34px;
-    transform: none;
+    gap: 40px;
+    max-width: 560px;
   }
-  .promo {
-    order: -1;
+  .hero {
+    width: 100%;
     text-align: center;
-    max-width: 520px;
   }
-  .promo p {
+  .waveBox {
+    height: 132px;
+    margin-bottom: 34px;
+  }
+  .promoText p {
     margin: 0 auto;
   }
   .dots {
     justify-content: center;
   }
-  .promo h2 {
-    font-size: 32px;
+}
+
+@media (max-width: 560px) {
+  .waveBox {
+    height: 104px;
+    margin-bottom: 26px;
+  }
+  .promoText p {
+    font-size: 15px;
+  }
+  .dots {
+    margin-top: 22px;
+  }
+  .card {
+    padding: 28px 24px 24px;
   }
 }
-@media (max-width: 520px) {
-  .promo {
-    display: none;
+
+@media (prefers-reduced-motion: reduce) {
+  .promoText {
+    transition: none;
+  }
+  .dots i {
+    transition: none;
   }
 }

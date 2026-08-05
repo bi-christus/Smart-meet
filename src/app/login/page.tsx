@@ -93,9 +93,27 @@ export default function LoginPage() {
 
   return (
     <div className={styles.wrap}>
-      <CanvasBackground />
       <div className={styles.stage}>
         <div className={styles.inner}>
+          <div className={styles.hero}>
+            <div className={styles.waveBox}>
+              <Waveform />
+            </div>
+
+            <div
+              className={styles.promoText}
+              style={{ opacity: fade ? 0 : 1 }}
+            >
+              <h2>{ph}</h2>
+              <p>{ps}</p>
+            </div>
+            <div className={styles.dots}>
+              {PROMOS.map((_, i) => (
+                <i key={i} className={i === promo ? styles.on : undefined} />
+              ))}
+            </div>
+          </div>
+
           <div className={styles.card}>
             <div className={styles.brand}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -119,21 +137,6 @@ export default function LoginPage() {
               O acesso é liberado pelo administrador. Se não conseguir entrar,
               fale com o setor de B.I.
             </p>
-          </div>
-
-          <div className={styles.promo}>
-            <div
-              className={styles.promoText}
-              style={{ opacity: fade ? 0 : 1 }}
-            >
-              <h2>{ph}</h2>
-              <p>{ps}</p>
-            </div>
-            <div className={styles.dots}>
-              {PROMOS.map((_, i) => (
-                <i key={i} className={i === promo ? styles.on : undefined} />
-              ))}
-            </div>
           </div>
         </div>
       </div>
@@ -164,8 +167,21 @@ function GoogleIcon() {
   );
 }
 
-/** Fundo animado com símbolos reativos ao mouse — portado do mockup. */
-function CanvasBackground() {
+/** Converte #rgb / #rrggbb em rgba(); devolve a cor original se não for hex. */
+function withAlpha(color: string, a: number) {
+  const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(color.trim());
+  if (!m) return color;
+  const h = m[1].length === 3 ? m[1].replace(/./g, (c) => c + c) : m[1];
+  const n = parseInt(h, 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+}
+
+/**
+ * Waveform de gravação: barras em cápsula espelhadas na linha de base,
+ * com amplitude orgânica e um brilho que varre da esquerda para a direita.
+ * As cores saem dos tokens do tema (--brand / --accent-2).
+ */
+function Waveform() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -174,135 +190,115 @@ function CanvasBackground() {
     const ctx = cv.getContext("2d");
     if (!ctx) return;
 
-    const SYMS = ["@", "#", "!", ">", "~", "*", "%", "?", "+", "&", "/", "<", "=", ";"];
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     let W = 0;
     let H = 0;
-    let DPR = 1;
     let raf = 0;
-    const mouse = { x: -9999, y: -9999, on: false };
+    let start = 0;
+    let grad: CanvasGradient | null = null;
+
+    const buildGradient = () => {
+      const cs = getComputedStyle(document.documentElement);
+      const brand = cs.getPropertyValue("--brand").trim() || "#ff6a2b";
+      const soft = cs.getPropertyValue("--accent-2").trim() || "#ffb089";
+      const g = ctx.createLinearGradient(0, 0, W, 0);
+      g.addColorStop(0, withAlpha(soft, 0.55));
+      g.addColorStop(0.24, soft);
+      g.addColorStop(0.5, brand);
+      g.addColorStop(0.76, soft);
+      g.addColorStop(1, withAlpha(soft, 0.55));
+      grad = g;
+    };
 
     const resize = () => {
-      DPR = Math.min(2, window.devicePixelRatio || 1);
-      W = window.innerWidth;
-      H = window.innerHeight;
-      cv.width = W * DPR;
-      cv.height = H * DPR;
-      cv.style.width = W + "px";
-      cv.style.height = H + "px";
-      ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const r = cv.getBoundingClientRect();
+      W = Math.max(1, Math.round(r.width));
+      H = Math.max(1, Math.round(r.height));
+      cv.width = Math.round(W * dpr);
+      cv.height = Math.round(H * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      buildGradient();
     };
 
-    const focus = () => ({ x: W * 0.34, y: H * 0.5 });
+    const draw = (ts: number) => {
+      if (!start) start = ts;
+      const p = ((ts - start) / 1000) * 1.15;
 
-    type Particle = {
-      x: number;
-      y: number;
-      vx: number;
-      vy: number;
-      s: number;
-      ch: string;
-      t: number;
-      life: number;
-      col: string;
-      peak: number;
-      react: number;
-    };
+      ctx.clearRect(0, 0, W, H);
 
-    const mk = (): Particle => {
-      const f = focus();
-      const ang = Math.random() * Math.PI * 2;
-      const rad = Math.pow(Math.random(), 0.7) * Math.min(W, H) * 0.55;
-      return {
-        x: f.x + Math.cos(ang) * rad * 1.15,
-        y: f.y + Math.sin(ang) * rad,
-        vx: (Math.random() - 0.5) * 0.22,
-        vy: (Math.random() - 0.5) * 0.22,
-        s: 12 + Math.random() * 17,
-        ch: SYMS[(Math.random() * SYMS.length) | 0],
-        t: 0,
-        life: 340 + Math.random() * 520,
-        col: Math.random() < 0.72 ? "255,106,43" : "243,242,239",
-        peak: 0.16 + Math.random() * 0.34,
-        react: 0,
-      };
+      const cy = H / 2;
+      const step = W < 460 ? 7 : 9;
+      const barW = step * 0.44;
+      const n = Math.max(12, Math.floor((W - barW) / step) + 1);
+      const x0 = (W - ((n - 1) * step + barW)) / 2;
+      const maxH = Math.max(4, H / 2 - 6);
+      const rounded = typeof ctx.roundRect === "function";
+
+      ctx.fillStyle = grad ?? "#ff6a2b";
+      for (let i = 0; i < n; i++) {
+        const u = n === 1 ? 0.5 : i / (n - 1);
+        // graves lentos + detalhe agudo = textura de voz
+        const slow =
+          Math.sin(u * 5.1 + p * 1.15) * 0.55 + Math.sin(u * 9.7 - p * 0.74) * 0.45;
+        const fast =
+          Math.sin(u * 39.7 + p * 2.9) * 0.5 + Math.sin(u * 71.3 - p * 3.6) * 0.5;
+        // respiração geral, como alguém falando
+        const pulse = 0.62 + 0.38 * Math.sin(p * 1.5 - u * 3.1);
+        // sino: cheio no meio, some suavemente nas pontas
+        const bell = Math.pow(Math.sin(Math.PI * u), 0.4);
+        const amp =
+          Math.max(0.05, 0.3 + 0.27 * slow + 0.18 * fast) * pulse * bell;
+        const h = Math.max(1.5, amp * maxH);
+
+        ctx.beginPath();
+        if (rounded) {
+          ctx.roundRect(x0 + i * step, cy - h, barW, h * 2, barW / 2);
+        } else {
+          ctx.rect(x0 + i * step, cy - h, barW, h * 2);
+        }
+        ctx.fill();
+      }
+
+      // varredura de luz — só onde já existem barras
+      const sweep = (((p * 0.22) % 1.5) - 0.25) * W;
+      const sg = ctx.createLinearGradient(sweep - 130, 0, sweep + 130, 0);
+      sg.addColorStop(0, "rgba(255, 255, 255, 0)");
+      sg.addColorStop(0.5, "rgba(255, 255, 255, 0.24)");
+      sg.addColorStop(1, "rgba(255, 255, 255, 0)");
+      ctx.globalCompositeOperation = "source-atop";
+      ctx.fillStyle = sg;
+      ctx.fillRect(0, 0, W, H);
+      ctx.globalCompositeOperation = "source-over";
+
+      if (!reduce) raf = requestAnimationFrame(draw);
     };
 
     resize();
-    const N = Math.max(46, Math.min(96, Math.round(window.innerWidth / 18)));
-    const parts: Particle[] = [];
-    for (let i = 0; i < N; i++) {
-      const p = mk();
-      p.t = Math.random() * p.life;
-      parts.push(p);
-    }
+    raf = requestAnimationFrame(draw);
 
-    const onMove = (e: MouseEvent) => {
-      mouse.x = e.clientX;
-      mouse.y = e.clientY;
-      mouse.on = true;
-    };
-    const onOut = () => {
-      mouse.on = false;
-    };
-    window.addEventListener("resize", resize);
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseout", onOut);
+    const ro = new ResizeObserver(() => {
+      resize();
+      if (reduce) raf = requestAnimationFrame(draw);
+    });
+    ro.observe(cv);
 
-    const mono =
-      getComputedStyle(document.documentElement).getPropertyValue("--font-mono") ||
-      "monospace";
-
-    const step = () => {
-      ctx.clearRect(0, 0, W, H);
-      const f = focus();
-      const diag = Math.max(W, H) * 0.62;
-      for (let i = 0; i < parts.length; i++) {
-        const p = parts[i];
-        p.t++;
-        p.x += p.vx;
-        p.y += p.vy;
-        if (mouse.on) {
-          const dx = p.x - mouse.x;
-          const dy = p.y - mouse.y;
-          const d2 = dx * dx + dy * dy;
-          const R = 150;
-          if (d2 < R * R) {
-            const d = Math.sqrt(d2) || 1;
-            const fr = (R - d) / R;
-            p.vx += (dx / d) * fr * 0.7;
-            p.vy += (dy / d) * fr * 0.7;
-            p.react = Math.min(1, p.react + fr * 0.16);
-          }
-        }
-        p.react *= 0.94;
-        p.vx *= 0.986;
-        p.vy *= 0.986;
-        const k = p.t / p.life;
-        const env =
-          k < 0.16 ? k / 0.16 : k > 0.66 ? Math.max(0, (1 - k) / 0.34) : 1;
-        const dd = Math.hypot(p.x - f.x, p.y - f.y);
-        const distFade = Math.max(0, 1 - dd / diag);
-        const a = Math.min(0.85, p.peak * env * (0.32 + 0.68 * distFade) + p.react * 0.5);
-        if (a > 0.008) {
-          ctx.font = p.s + "px " + mono;
-          ctx.fillStyle = "rgba(" + p.col + "," + a.toFixed(3) + ")";
-          ctx.fillText(p.ch, p.x, p.y);
-        }
-        if (p.t >= p.life || p.x < -60 || p.x > W + 60 || p.y < -60 || p.y > H + 60) {
-          parts[i] = mk();
-        }
-      }
-      raf = requestAnimationFrame(step);
-    };
-    step();
+    // troca de tema/acento → recalcula o gradiente
+    const mo = new MutationObserver(() => {
+      buildGradient();
+      if (reduce) raf = requestAnimationFrame(draw);
+    });
+    mo.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme", "data-accent"],
+    });
 
     return () => {
       cancelAnimationFrame(raf);
-      window.removeEventListener("resize", resize);
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseout", onOut);
+      ro.disconnect();
+      mo.disconnect();
     };
   }, []);
 
-  return <canvas ref={canvasRef} className={styles.fx} />;
+  return <canvas ref={canvasRef} className={styles.wave} aria-hidden="true" />;
 }
