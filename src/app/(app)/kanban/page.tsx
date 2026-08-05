@@ -416,14 +416,6 @@ export default function KanbanPage() {
       </div>
 
       <div className={styles.filters}>
-        <button
-          className={`${styles.filterBtn} ${styles.reportBtn}`}
-          onClick={() => setRelatorio(true)}
-          title="Montar e enviar o relatório de demandas para o gestor"
-        >
-          <Icon name="relatorios" size={14} />
-          Relatório para gestor
-        </button>
         <div className={styles.sectors}>
           {sectors.map((s) => (
             <button
@@ -482,6 +474,18 @@ export default function KanbanPage() {
             Limpar filtro
           </button>
         )}
+
+        {/* Empurrado para a direita: o relatório não é um filtro do quadro, é
+            a ação que se toma depois de olhar para ele. */}
+        <div className={styles.grow} />
+        <button
+          className={`${styles.filterBtn} ${styles.reportBtn}`}
+          onClick={() => setRelatorio(true)}
+          title="Montar e enviar o relatório de demandas para o gestor"
+        >
+          <Icon name="relatorios" size={14} />
+          Relatório para gestor
+        </button>
       </div>
 
       <div className={styles.board} key={sector}>

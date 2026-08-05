@@ -7,8 +7,8 @@
  * a mentir, e uma prévia que mente é pior que nenhuma: dá confiança sem base.
  */
 import {
-  TEMA_PERGAMINHO,
-  ACENTO_CAFE,
+  TEMAS,
+  ACENTOS,
   ESTADO,
   dataExtenso,
   dataCurta,
@@ -31,6 +31,7 @@ import {
 } from "@/lib/email/blocos";
 import {
   CATALOGO_COLUNAS,
+  colunasEfetivas,
   ORCAMENTO_BYTES,
   ORDENACAO_LABEL,
   RECORTE_LABEL,
@@ -45,6 +46,8 @@ export type MetaRelatorio = {
   enviadoPor: string;
   recado?: string;
   agora: number;
+  /** Só o próprio montador usa, ao reduzir por orçamento. */
+  tetoPorGrupo?: number;
 };
 
 export type RelatorioMontado = {
@@ -117,6 +120,15 @@ function celula(l: LinhaDemanda, col: ColunaId): Celula {
             texto: `${l.paradaDias} ${plural(l.paradaDias, "dia", "dias")}`,
             cor: l.paradaDias >= 14 ? ESTADO.atencao : undefined,
           };
+    case "setorSolicitante":
+      return { texto: l.setorSolicitante || "—" };
+    case "inicio":
+      return { texto: l.inicio ? dataCurta(l.inicio) : "—" };
+    case "progresso":
+      return {
+        texto: l.checklistTotal > 0 ? `${l.checklistFeitos}/${l.checklistTotal}` : "—",
+        cor: l.checklistTotal === 0 ? ESTADO.neutro : undefined,
+      };
     case "setor":
       return { texto: l.setor };
   }
@@ -154,8 +166,8 @@ export function montarRelatorio(
   meta: MetaRelatorio,
 ): RelatorioMontado {
   const ctx: Ctx = {
-    tema: TEMA_PERGAMINHO,
-    acento: ACENTO_CAFE,
+    tema: TEMAS[prefs.tema] ?? TEMAS.pergaminho,
+    acento: ACENTOS[prefs.acento] ?? ACENTOS.cafe,
     densidade: prefs.densidade,
   };
 
@@ -169,6 +181,9 @@ export function montarRelatorio(
     `${d.semPrazo} sem prazo · ${d.total} ${plural(d.total, "aberta", "abertas")}`;
 
   const partes: string[] = [];
+  // Teto de linhas por grupo. Não é preferência: o corte real é por orçamento
+  // de bytes, e expor um limite convidaria a configurar "0" e estourar o Gmail.
+  const tetoPorGrupo = meta.tetoPorGrupo ?? 12;
 
   partes.push(
     cabecalho(ctx, {
@@ -183,7 +198,7 @@ export function montarRelatorio(
 
   if (meta.recado?.trim()) partes.push(citacao(ctx, meta.recado.trim()));
 
-  if (prefs.blocos.numeros) {
+  if (prefs.blocos.resumo) {
     partes.push(
       kpis(ctx, [
         { valor: numBr(d.total), rotulo: "ABERTAS" },
@@ -250,10 +265,41 @@ export function montarRelatorio(
     );
   }
 
+  if (prefs.blocos.qualidade && d.total > 0) {
+    const semResp = d.carga.find((c) => c.nome === "Sem responsável")?.total ?? 0;
+    partes.push(h2Secao(ctx, "Qualidade do cadastro"));
+    partes.push(
+      subtitulo(
+        ctx,
+        "O que falta preencher nas demandas abertas. Campo vazio não é erro, mas é o que impede o número acima de significar alguma coisa.",
+      ),
+    );
+    const linha = (rot: string, n: number): Celula[] => [
+      { texto: rot },
+      { texto: `${n}` },
+      {
+        texto: `${Math.round((n / d.total) * 100)}%`,
+        cor: n / d.total > 0.3 ? ESTADO.atencao : undefined,
+      },
+    ];
+    partes.push(
+      tabelaDados(
+        ctx,
+        ["Falta", "Demandas", "Do total"],
+        [
+          linha("Sem responsável", semResp),
+          linha("Sem prazo", d.semPrazo),
+          linha("Sem data de entrada na etapa", d.semDataEntrada),
+        ],
+      ),
+    );
+  }
+
   // --- demandas ---
   let enviadas = 0;
   let cortadas = 0;
-  const cabecalhos = prefs.colunas.map((c) => ROTULO[c]);
+  const colunas = colunasEfetivas(prefs, meta.setores.length);
+  const cabecalhos = colunas.map((c) => ROTULO[c]);
 
   partes.push(h2Secao(ctx, "Demandas"));
   for (const g of d.grupos) {
@@ -273,7 +319,7 @@ export function montarRelatorio(
         ),
       );
     }
-    const mostrar = g.linhas.slice(0, prefs.maxLinhasPorGrupo);
+    const mostrar = g.linhas.slice(0, tetoPorGrupo);
     const resto = g.linhas.length - mostrar.length;
     enviadas += mostrar.length;
     cortadas += resto;
@@ -281,7 +327,7 @@ export function montarRelatorio(
       tabelaDados(
         ctx,
         cabecalhos,
-        mostrar.map((l) => prefs.colunas.map((c) => celula(l, c))),
+        mostrar.map((l) => colunas.map((c) => celula(l, c))),
       ),
     );
     if (resto > 0) {
@@ -311,13 +357,10 @@ export function montarRelatorio(
   // que vai ser enviado — e não o e-mail chegar aparado sem ninguém saber.
   const bytes = new TextEncoder().encode(html).length;
   if (bytes > ORCAMENTO_BYTES) {
-    const menor: PrefsRelatorio = {
-      ...prefs,
-      maxLinhasPorGrupo: Math.max(3, Math.floor(prefs.maxLinhasPorGrupo / 2)),
-    };
-    // `maxLinhasPorGrupo` cai pela metade a cada volta e o piso é 3, então a
-    // recursão termina — não é um laço que pode girar sozinho.
-    return montarRelatorio(d, menor, meta);
+    const menor = Math.max(3, Math.floor(tetoPorGrupo / 2));
+    if (menor < tetoPorGrupo) {
+      return montarRelatorio(d, prefs, { ...meta, tetoPorGrupo: menor });
+    }
   }
 
   const texto = versaoTexto(d, meta);

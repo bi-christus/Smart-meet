@@ -21,6 +21,10 @@ export type LinhaDemanda = {
   prioridade: Priority;
   tipo: string;
   solicitante: string;
+  setorSolicitante: string;
+  inicio: string | null;
+  checklistFeitos: number;
+  checklistTotal: number;
   /** Dias parados na etapa atual. */
   paradaDias: number;
 };
@@ -47,6 +51,18 @@ export type DadosRelatorio = {
 };
 
 const DIA = 86400000;
+
+/** Rótulos do agrupamento por prioridade, na ordem de urgência. */
+const ROTULO_PRIORIDADE: Record<Priority, string> = {
+  alta: "Prioridade alta",
+  media: "Prioridade média",
+  baixa: "Prioridade baixa",
+};
+const ORDEM_PRIORIDADE = [
+  "Prioridade alta",
+  "Prioridade média",
+  "Prioridade baixa",
+];
 
 /**
  * Uma etapa conta como entregue?
@@ -105,6 +121,10 @@ export function agregar(
       prioridade: c.priority ?? "media",
       tipo: c.type ?? "",
       solicitante: c.requester ?? "",
+      setorSolicitante: c.requesterSector ?? "",
+      inicio: c.startDate ?? null,
+      checklistFeitos: (c.checklist ?? []).filter((i) => i.done).length,
+      checklistTotal: (c.checklist ?? []).length,
       paradaDias: c.enteredAt ? diasEntre(agora, c.enteredAt) : -1,
     };
   });
@@ -138,6 +158,9 @@ export function agregar(
       const d = ordem[a.prioridade] - ordem[b.prioridade];
       return d !== 0 ? d : (a.diasPrazo ?? 9999) - (b.diasPrazo ?? 9999);
     }
+    if (prefs.ordenacao === "titulo") {
+      return a.titulo.localeCompare(b.titulo, "pt-BR");
+    }
     return b.paradaDias - a.paradaDias;
   });
 
@@ -147,7 +170,11 @@ export function agregar(
     grupos = [{ titulo: "", linhas: ordenadas }];
   } else {
     const chave = (l: LinhaDemanda) =>
-      prefs.agrupamento === "etapa" ? l.etapa : l.responsavel;
+      prefs.agrupamento === "etapa"
+        ? l.etapa
+        : prefs.agrupamento === "prioridade"
+          ? ROTULO_PRIORIDADE[l.prioridade]
+          : l.responsavel;
     const mapa = new Map<string, LinhaDemanda[]>();
     for (const l of ordenadas) {
       const k = chave(l);
@@ -155,8 +182,16 @@ export function agregar(
       arr.push(l);
       mapa.set(k, arr);
     }
-    // Etapa segue a ordem do quadro; responsável segue quem tem mais.
-    if (prefs.agrupamento === "etapa") {
+    // Etapa segue a ordem do quadro; prioridade segue a urgência; responsável
+    // segue quem tem mais — em nenhum caso a ordem é alfabética por acaso.
+    if (prefs.agrupamento === "prioridade") {
+      grupos = [...mapa.entries()]
+        .sort(
+          (a, b) =>
+            ORDEM_PRIORIDADE.indexOf(a[0]) - ORDEM_PRIORIDADE.indexOf(b[0]),
+        )
+        .map(([titulo, linhas]) => ({ titulo, linhas }));
+    } else if (prefs.agrupamento === "etapa") {
       const pos = new Map(colunas.map((c, i) => [c.title, i]));
       grupos = [...mapa.entries()]
         .sort((a, b) => (pos.get(a[0]) ?? 99) - (pos.get(b[0]) ?? 99))

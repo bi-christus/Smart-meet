@@ -17,7 +17,11 @@ import { HttpError, adminDb, requireUser } from "@/lib/server/drive-server";
 import { sendMail, mailerConfigured } from "@/lib/server/mailer";
 import { agregar } from "@/lib/relatorio/agregar";
 import { montarRelatorio } from "@/lib/relatorio/montar";
-import { PREFS_PADRAO, MAX_DESTINATARIOS } from "@/lib/relatorio/config";
+import {
+  normalizarPrefs,
+  hashPrefs,
+  MAX_DESTINATARIOS,
+} from "@/lib/relatorio/config";
 import type { Card, ColumnDoc } from "@/lib/kanban";
 
 export const runtime = "nodejs";
@@ -38,6 +42,8 @@ export async function POST(req: Request) {
       recado?: string;
       /** Envio de teste: manda só para quem disparou. */
       teste?: boolean;
+      /** Impressão digital das prefs com que a prévia foi renderizada. */
+      prefsRev?: string;
     };
 
     const setor = (body.setor || "").trim();
@@ -92,8 +98,31 @@ export async function POST(req: Request) {
       if (u.name) nomePorEmail[email] = String(u.name);
     });
 
+    // As preferências vêm do FIRESTORE, nunca do corpo da requisição. Cor,
+    // fonte e largura vindas do cliente seriam entrada controlada indo para
+    // dentro de style="…" num e-mail que parte da conta institucional.
+    const prefSnap = await db
+      .collection("users")
+      .doc(caller.email)
+      .collection("prefs")
+      .doc("relatorioGestor")
+      .get();
+    const prefs = {
+      ...normalizarPrefs(prefSnap.exists ? prefSnap.data() : null),
+      setores: [setor],
+    };
+
+    // Paridade prévia↔envio: o cliente manda o hash do que renderizou. Divergiu
+    // = a configuração mudou no meio (outra aba, migração). Rejeitar é melhor
+    // que enviar em silêncio algo diferente do que a pessoa conferiu.
+    if (body.prefsRev && hashPrefs(prefs) !== body.prefsRev) {
+      throw new HttpError(
+        409,
+        "A configuração mudou desde a pré-visualização. Reabra a tela.",
+      );
+    }
+
     const agora = Date.now();
-    const prefs = { ...PREFS_PADRAO, setores: [setor] };
     const dados = agregar(cards, colunas, nomePorEmail, prefs, agora);
     const rel = montarRelatorio(dados, prefs, {
       setores: [setor],

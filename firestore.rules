@@ -111,6 +111,25 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // ---- preferências do próprio usuário ----
+    // Subcoleção de propósito: o doc-pai só aceita ['uid','lastLogin'] do dono,
+    // e abrir aquele hasOnly seria arriscar role/active/sectors por causa de
+    // uma preferência de e-mail. O hasOnly aqui trava a FORMA do documento —
+    // preferência é dado que o cliente escreve, então o schema é a defesa.
+    // Regras v2 não cascateiam, então este bloco aninhado é obrigatório.
+    match /users/{userId}/prefs/{docId} {
+      allow read: if isSignedIn() && (souEu(userId) || isAdmin());
+      allow write: if isSignedIn()
+                   && souEu(userId)
+                   && isActive()
+                   && docId == 'relatorioGestor'
+                   && request.resource.data.keys().hasOnly([
+                        'v', 'tema', 'acento', 'densidade', 'setores', 'recorte',
+                        'agrupamento', 'ordenacao', 'colunas', 'blocos',
+                        'destinatariosPadrao', 'atualizadoEm'
+                      ]);
+    }
+
     // ---- setores ----
     match /sectors/{doc} {
       allow read: if isAuthorized();

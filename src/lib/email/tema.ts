@@ -17,7 +17,7 @@ export const SANS = "Arial,Helvetica,sans-serif";
 export const MONO = "Consolas,'Courier New',Courier,monospace";
 
 export type Tema = {
-  id: "pergaminho";
+  id: string;
   nome: string;
   /** Fundo da área externa ao envelope. */
   fundo: string;
@@ -34,25 +34,43 @@ export type Tema = {
   fonteTitulo: string;
 };
 
-export const TEMA_PERGAMINHO: Tema = {
-  id: "pergaminho",
-  nome: "Pergaminho",
-  fundo: "#f4efe6",
-  papel: "#fffdf8",
-  linha: "#d9ccb6",
-  linhaClara: "#ece4d7",
-  faixa: "#fbf7f0",
-  zebra: "#faf7f1",
-  texto: "#4a4237",
-  forte: "#2c251d",
-  suave: "#7a6f61",
-  fonte: SANS,
-  fonteTitulo: SERIF,
-};
-
 export type Acento = { id: string; nome: string; cor: string };
 
-export const ACENTO_CAFE: Acento = { id: "cafe", nome: "Café", cor: "#8c5a2b" };
+export const TEMAS: Record<string, Tema> = {
+  pergaminho: {
+    id: 'pergaminho', nome: 'Pergaminho',
+    fundo: '#f4efe6', papel: '#fffdf8', linha: '#d9ccb6', linhaClara: '#ece4d7',
+    faixa: '#fbf7f0', zebra: '#faf7f1',
+    texto: '#4a4237', forte: '#2c251d', suave: '#7a6f61',
+    fonte: SANS, fonteTitulo: SERIF,
+  },
+  clinico: {
+    id: 'clinico', nome: 'Clínico',
+    fundo: '#eef0f2', papel: '#ffffff', linha: '#cfd6dc', linhaClara: '#e3e8ec',
+    faixa: '#f7f9fa', zebra: '#f7f9fa',
+    texto: '#3d4650', forte: '#1f272e', suave: '#68737d',
+    fonte: SANS, fonteTitulo: SANS,
+  },
+  institucional: {
+    id: 'institucional', nome: 'Institucional',
+    fundo: '#ecebe7', papel: '#ffffff', linha: '#d5d5cf', linhaClara: '#e6e6e1',
+    faixa: '#f6f6f3', zebra: '#f8f8f5',
+    texto: '#40403a', forte: '#22221e', suave: '#6e6e66',
+    fonte: SANS, fonteTitulo: SANS,
+  },
+};
+
+export const TEMA_PERGAMINHO = TEMAS.pergaminho;
+
+/** Acentos medidos contra branco (WCAG, texto normal). Todos passam de 4,5:1. */
+export const ACENTOS: Record<string, Acento> = {
+  cafe: { id: 'cafe', nome: 'Café', cor: '#8c5a2b' },      // 5,8:1
+  grafite: { id: 'grafite', nome: 'Grafite', cor: '#3f4a55' }, // 8,7:1
+  verde: { id: 'verde', nome: 'Verde', cor: '#2f7d5d' },     // 5,0:1
+  bordo: { id: 'bordo', nome: 'Bordô', cor: '#8a3b3b' },     // 7,3:1
+};
+
+export const ACENTO_CAFE = ACENTOS.cafe;
 
 /** Cores de estado. Vivem fora do tema: significado não é preferência. */
 export const ESTADO = {

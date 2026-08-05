@@ -12,7 +12,7 @@
 
 .modal {
   width: min(1240px, 100%);
-  height: min(88vh, 900px);
+  height: min(92vh, 960px);
   display: flex;
   flex-direction: column;
   background: var(--card, var(--s1));
@@ -297,4 +297,182 @@
 .btnEnviar:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+/* ===========================================================================
+   Controles do relatório: abas, seletores, medidor de largura e barra de envio
+   =========================================================================== */
+
+.cabecaDir {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.salvo {
+  font-size: 11.5px;
+  color: var(--tx-3);
+  white-space: nowrap;
+}
+
+.abas {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--line-soft);
+  padding-bottom: 8px;
+}
+.aba {
+  flex: 1;
+  height: 30px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--tx-3);
+  border-radius: 7px;
+  font-family: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.abaOn {
+  border-color: var(--line-soft);
+  background: var(--s2);
+  color: var(--tx);
+}
+
+.select {
+  width: 100%;
+  border: 1px solid var(--line-soft);
+  background: var(--bg, var(--s2));
+  color: var(--tx);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: 13.5px;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 13px;
+  color: var(--tx-2);
+  cursor: pointer;
+}
+.check input {
+  accent-color: var(--brand);
+  cursor: pointer;
+}
+/* Coluna que o agrupamento já expressa: repeti-la em toda linha seria ruído,
+   então ela sai sozinha e o motivo fica escrito ao lado. */
+.checkFora {
+  opacity: 0.5;
+  cursor: default;
+}
+.tagFixa {
+  font-size: 10.5px;
+  color: var(--tx-3);
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+/* A trava é de LARGURA, não de contagem: quatro colunas largas estouram e seis
+   estreitas cabem. Por isso um medidor, e não um contador. */
+.medidor {
+  margin-top: 14px;
+  display: grid;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--tx-3);
+  line-height: 1.45;
+}
+.medidorBarra {
+  height: 5px;
+  border-radius: 999px;
+  background: var(--s3);
+  overflow: hidden;
+}
+.medidorFill {
+  height: 100%;
+  background: var(--brand);
+  transition: width 0.15s;
+}
+.medidorCheio {
+  color: var(--danger, #fb7185);
+}
+.medidorCheio .medidorFill {
+  background: var(--danger, #fb7185);
+}
+
+.acentos {
+  display: flex;
+  gap: 8px;
+}
+.acento {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+}
+.acentoOn {
+  border-color: var(--tx);
+  box-shadow: 0 0 0 2px var(--bg, var(--s1));
+}
+
+.notaPequena {
+  margin-top: 10px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--tx-3);
+}
+
+.restaurar {
+  margin-top: 16px;
+  width: 100%;
+  height: 32px;
+  border: 1px solid var(--line-soft);
+  background: transparent;
+  color: var(--tx-2);
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.restaurar:hover {
+  border-color: var(--brand);
+  color: var(--tx);
+}
+
+.contador {
+  font-size: 11.5px;
+  color: var(--tx-3);
+  white-space: nowrap;
+}
+
+/* --- barra de envio --- */
+
+.envio {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 16px;
+  padding: 14px 22px 0;
+}
+@media (max-width: 980px) {
+  .envio {
+    grid-template-columns: 1fr;
+  }
+}
+.envioCol {
+  min-width: 0;
+}
+.linhaDestino {
+  display: flex;
+  gap: 8px;
+}
+.linhaDestino .select,
+.linhaDestino .input {
+  flex: 1;
+  min-width: 0;
 }
