@@ -42,6 +42,7 @@ import {
 import { Icon } from "@/components/icons";
 import { Select, type SelectOption } from "@/components/select";
 import { Modal } from "@/components/modal";
+import { RelatorioModal } from "./relatorio-modal";
 import styles from "./kanban.module.css";
 
 const PRIORITY_COLOR: Record<Priority, string> = {
@@ -216,6 +217,7 @@ export default function KanbanPage() {
   const [assigneeSel, setAssigneeSel] = useState({ sector: "", value: "" });
   const [edit, setEdit] = useState<EditState>(null);
   const [colEdit, setColEdit] = useState<ColEditState>(null);
+  const [relatorio, setRelatorio] = useState(false);
   const [dragCardId, setDragCardId] = useState<string | null>(null);
   const [dragColId, setDragColId] = useState<string | null>(null);
   const [overCol, setOverCol] = useState<string | null>(null);
@@ -414,6 +416,14 @@ export default function KanbanPage() {
       </div>
 
       <div className={styles.filters}>
+        <button
+          className={`${styles.filterBtn} ${styles.reportBtn}`}
+          onClick={() => setRelatorio(true)}
+          title="Montar e enviar o relatório de demandas para o gestor"
+        >
+          <Icon name="relatorios" size={14} />
+          Relatório para gestor
+        </button>
         <div className={styles.sectors}>
           {sectors.map((s) => (
             <button
@@ -598,6 +608,10 @@ export default function KanbanPage() {
           }
           onClose={() => setColEdit(null)}
         />
+      )}
+
+      {relatorio && (
+        <RelatorioModal sector={sector} onClose={() => setRelatorio(false)} />
       )}
     </div>
   );

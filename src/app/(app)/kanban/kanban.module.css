@@ -121,6 +121,21 @@
   flex: 1;
 }
 
+/* Primeiro item da barra de filtros: é o ponto de partida de uma ação, não um
+   filtro. `flex:none` porque `.filters` tem wrap e o botão não pode encolher
+   até o texto quebrar. */
+.reportBtn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border-color: var(--brand);
+  color: var(--tx);
+}
+.reportBtn svg {
+  color: var(--brand);
+}
+
 .board {
   display: flex;
   gap: 13px;

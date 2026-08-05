@@ -26,8 +26,19 @@ export type MailRequest = {
   to: string[];
   /** Sempre em cópia. Quem dispara pelo app precisa ter o registro do envio. */
   cc?: string[];
+  /**
+   * Para onde vai a resposta. O remetente é a conta do B.I., então sem isto o
+   * gestor responde ao B.I. e quem enviou nunca vê.
+   */
+  replyTo?: string;
   subject: string;
   html: string;
+  /**
+   * Versão em texto puro. Quando não vem, é derivada do HTML — o que serve
+   * para documento, mas não para um relatório em tabela, onde a derivação
+   * produz uma parede de palavras soltas.
+   */
+  text?: string;
   attachments?: MailAttachment[];
 };
 
@@ -94,8 +105,9 @@ export async function sendMail(msg: MailRequest): Promise<void> {
       from: { name: process.env.MAIL_FROM_NAME || "Smart Meet", address: user },
       to,
       ...(cc.length ? { cc } : {}),
+      ...(msg.replyTo ? { replyTo: msg.replyTo } : {}),
       subject: msg.subject,
-      text: textoSimples(msg.html),
+      text: msg.text ?? textoSimples(msg.html),
       html: msg.html,
       attachments: msg.attachments,
     });

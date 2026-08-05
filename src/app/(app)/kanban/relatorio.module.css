@@ -1,0 +1,300 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.62);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 90;
+}
+
+.modal {
+  width: min(1240px, 100%);
+  height: min(88vh, 900px);
+  display: flex;
+  flex-direction: column;
+  background: var(--card, var(--s1));
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 30px 70px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+
+.cabeca {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 20px 22px 0;
+}
+.titulo {
+  font-family: var(--font-serif), Georgia, serif;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--tx);
+}
+.sub {
+  font-size: 12.5px;
+  color: var(--tx-3);
+  margin-top: 3px;
+}
+.fechar {
+  background: none;
+  border: none;
+  color: var(--tx-3);
+  font-size: 18px;
+  cursor: pointer;
+  padding: 2px 6px;
+}
+.fechar:hover {
+  color: var(--tx);
+}
+
+/* O relatório ignora os filtros do quadro de propósito. Filtro invisível
+   dentro de e-mail que vai ao gestor é a pior classe de erro — ninguém
+   descobre que o número está errado. Por isso o aviso é fixo, não um tooltip. */
+.avisoFiltro {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 12px 22px 0;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border-left: 3px solid var(--warn, #f5b13d);
+  background: rgba(245, 177, 61, 0.08);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--tx-2);
+}
+
+.corpo {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 330px 1fr;
+  gap: 18px;
+  padding: 16px 22px 0;
+}
+@media (max-width: 980px) {
+  .corpo {
+    grid-template-columns: 1fr;
+    overflow-y: auto;
+  }
+}
+
+.controles {
+  overflow-y: auto;
+  padding-right: 4px;
+  min-height: 0;
+}
+.rot {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--tx-3);
+  margin: 14px 0 5px;
+}
+.rot:first-child {
+  margin-top: 0;
+}
+.input,
+.area {
+  width: 100%;
+  border: 1px solid var(--line-soft);
+  background: var(--bg, var(--s2));
+  color: var(--tx);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: 13.5px;
+}
+.area {
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  background: var(--s2);
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  padding: 3px 9px;
+  color: var(--tx-2);
+}
+.chip button {
+  background: none;
+  border: none;
+  color: var(--tx-3);
+  cursor: pointer;
+  display: flex;
+  padding: 0;
+}
+
+.nota {
+  margin-top: 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--tx-3);
+}
+
+.resumo {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line-soft);
+  display: grid;
+  gap: 8px;
+}
+.resumo div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12.5px;
+}
+.resumo dt {
+  color: var(--tx-3);
+}
+.resumo dd {
+  color: var(--tx);
+  font-variant-numeric: tabular-nums;
+}
+
+.aviso {
+  margin-top: 14px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  background: var(--s2);
+  border: 1px solid var(--line-soft);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--tx-2);
+}
+
+/* --- prévia --- */
+
+.preview {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* A caixa de entrada simulada: assunto e prévia são a parte mais visível do
+   e-mail na lista do Gmail, e a única que nenhuma prévia de corpo mostra. */
+.caixaEntrada {
+  border: 1px solid var(--line-soft);
+  border-radius: 10px 10px 0 0;
+  background: var(--s2);
+  padding: 10px 13px;
+  display: grid;
+  gap: 4px;
+}
+.ceLinha {
+  display: flex;
+  gap: 10px;
+  font-size: 12.5px;
+  color: var(--tx-2);
+  min-width: 0;
+}
+.ceRot {
+  flex: none;
+  width: 54px;
+  color: var(--tx-3);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding-top: 1px;
+}
+.cePre {
+  color: var(--tx-3);
+}
+
+.modos {
+  display: flex;
+  gap: 6px;
+  padding: 9px 0;
+}
+.modo {
+  height: 28px;
+  padding: 0 11px;
+  border: 1px solid var(--line-soft);
+  background: transparent;
+  color: var(--tx-2);
+  border-radius: 7px;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.modoOn {
+  border-color: var(--brand);
+  background: rgba(255, 106, 43, 0.1);
+  color: var(--tx);
+}
+
+.moldura {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: #f4efe6;
+  display: flex;
+  justify-content: center;
+  padding: 10px;
+}
+.iframe {
+  border: none;
+  height: 100%;
+  min-height: 460px;
+  background: #f4efe6;
+}
+.vazio {
+  align-self: center;
+  color: #7a6f61;
+  font-size: 13px;
+  padding: 40px 20px;
+  text-align: center;
+}
+
+.rodape {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 14px 22px;
+  border-top: 1px solid var(--line-soft);
+}
+.espaco {
+  flex: 1;
+}
+.btnGhost,
+.btnEnviar {
+  height: 34px;
+  padding: 0 15px;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  border: 1px solid var(--line-soft);
+  background: transparent;
+  color: var(--tx-2);
+}
+.btnEnviar {
+  border-color: var(--brand);
+  background: var(--brand);
+  color: #fff;
+}
+.btnGhost:disabled,
+.btnEnviar:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
