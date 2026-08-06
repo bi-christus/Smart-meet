@@ -10,6 +10,7 @@ import { Icon } from "@/components/icons";
 import { RecoveryBanner } from "@/components/recovery-banner";
 import { RecordingProvider } from "@/lib/audio/recording-context";
 import { MiniPlayer } from "@/components/mini-player";
+import { Waveform } from "@/components/waveform";
 import styles from "./app-shell.module.css";
 
 const NAV = [
@@ -60,6 +61,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <RecordingProvider ownerEmail={profile.email}>
       <div className={styles.shell}>
+      {/* uma instância só para o app inteiro — é fixa e atravessa as abas */}
+      <Waveform variant="ambient" />
       <header className={styles.topbar}>
         <Link href="/" className={styles.brand}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -180,7 +183,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             usuário sai da tela de reuniões, e uma gravação interrompida
             aparece em qualquer página. */}
         <RecoveryBanner />
-        {children}
+        {/* key no pathname: remonta a cada troca de aba e reexecuta a animação */}
+        <div key={pathname} className={styles.tabEnter}>
+          {children}
+        </div>
       </main>
       </div>
       <MiniPlayer />

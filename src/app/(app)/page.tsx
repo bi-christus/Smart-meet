@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { Icon } from "@/components/icons";
-import { Waveform } from "@/components/waveform";
 import styles from "./inicio.module.css";
 
 const CARDS = [
@@ -20,7 +19,6 @@ export default function Inicio() {
 
   return (
     <>
-      <Waveform variant="ambient" />
       <div className={styles.page}>
         <div className={styles.head}>
           <h1>Olá, {primeiro} 👋</h1>

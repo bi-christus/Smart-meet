@@ -828,11 +828,13 @@
 /* ---------- modal: aberturas + seções + largura ---------- */
 .modal {
   width: 600px;
-  animation: modalPop 0.22s cubic-bezier(0.34, 1.3, 0.64, 1);
+  animation: modalPop 0.34s cubic-bezier(0.22, 1.15, 0.4, 1) backwards;
 }
 .overlay {
-  animation: ovIn 0.16s ease;
+  animation: ovIn 0.24s ease-out backwards;
 }
+/* só opacidade: o backdrop-filter estático do .overlay já entra junto, porque a
+   opacidade compõe o resultado filtrado. Animá-lo aqui era descartado na build. */
 @keyframes ovIn {
   from {
     opacity: 0;
@@ -841,14 +843,48 @@
     opacity: 1;
   }
 }
+/* sobe desfocado e entra em foco — dá a sensação de vir de trás do overlay */
 @keyframes modalPop {
   from {
     opacity: 0;
-    transform: translateY(12px) scale(0.97);
+    transform: translateY(22px) scale(0.955);
+    filter: blur(7px);
+  }
+  60% {
+    opacity: 1;
+    filter: blur(0);
   }
   to {
     opacity: 1;
     transform: none;
+    filter: blur(0);
+  }
+}
+
+/* o conteúdo do modal assenta logo depois dele */
+.mhead,
+.sectionLabel,
+.mfoot {
+  animation: modalContent 0.4s cubic-bezier(0.4, 0, 0.2, 1) 0.08s backwards;
+}
+@keyframes modalContent {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal,
+  .overlay,
+  .mhead,
+  .sectionLabel,
+  .mfoot {
+    animation: none;
   }
 }
 .sectionLabel {

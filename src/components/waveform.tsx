@@ -48,11 +48,15 @@ export function Waveform({ variant = "hero", energized = false }: Props) {
     if (!ctx) return;
 
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    // dentro do app ela divide a CPU com o resto da tela; a 30fps ninguém nota,
+    // porque é uma camada desfocada e lenta
+    const minFrameMs = variant === "ambient" ? 33 : 0;
     let W = 0;
     let H = 0;
     let raf = 0;
     let start = 0;
     let boost = 0;
+    let lastDraw = 0;
     let grad: CanvasGradient | null = null;
 
     const buildGradient = () => {
@@ -83,6 +87,11 @@ export function Waveform({ variant = "hero", energized = false }: Props) {
     };
 
     const draw = (ts: number) => {
+      // agenda antes de sair pelo limitador, senão o loop morre
+      if (!reduce) raf = requestAnimationFrame(draw);
+      if (minFrameMs > 0 && lastDraw && ts - lastDraw < minFrameMs) return;
+      lastDraw = ts;
+
       if (!start) start = ts;
       const p = ((ts - start) / 1000) * 1.15;
 
@@ -156,9 +165,6 @@ export function Waveform({ variant = "hero", energized = false }: Props) {
       ctx.fillStyle = sg;
       ctx.fillRect(0, 0, W, H);
       ctx.globalCompositeOperation = "source-over";
-
-      // com movimento reduzido desenha um quadro e para
-      if (!reduce) raf = requestAnimationFrame(draw);
     };
 
     resize();
@@ -191,7 +197,7 @@ export function Waveform({ variant = "hero", energized = false }: Props) {
       ro.disconnect();
       mo.disconnect();
     };
-  }, []);
+  }, [variant]);
 
   return (
     <>

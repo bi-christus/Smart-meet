@@ -14,6 +14,8 @@
   padding: 0 18px;
   background: var(--topbar-bg);
   border-bottom: 1px solid var(--topbar-line);
+  /* sem position o z-index era inerte, e o fundo animado passava por cima */
+  position: relative;
   z-index: 40;
 }
 
@@ -295,7 +297,34 @@
 .content {
   flex: 1;
   overflow: auto;
+  /* relative + z-index: sobe o conteúdo acima do fundo animado */
   position: relative;
+  z-index: 1;
+}
+
+/* ---------- passagem de abas ---------- */
+
+@keyframes tabEnter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* backwards, não forwards: o transform some ao terminar, senão viraria bloco
+   de contenção e desalinharia os modais (position: fixed) das páginas */
+.tabEnter {
+  animation: tabEnter 300ms cubic-bezier(0.4, 0, 0.2, 1) backwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tabEnter {
+    animation: none;
+  }
 }
 .loader {
   height: 100vh;
