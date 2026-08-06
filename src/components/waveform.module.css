@@ -1,0 +1,47 @@
+.wave {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  filter: blur(10px);
+  opacity: 0.72;
+  pointer-events: none;
+}
+
+/* dentro do app é só uma textura de fundo — bem mais discreta */
+.ambient {
+  filter: blur(15px);
+  opacity: 0.3;
+}
+
+/* véu entre a waveform e o conteúdo — sem ele o texto morre no laranja */
+.scrim {
+  --sc: rgba(0, 0, 0, 0.66);
+  --sc2: rgba(0, 0, 0, 0.3);
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    820px 660px at 50% 52%,
+    var(--sc),
+    var(--sc2) 58%,
+    transparent 100%
+  );
+}
+:global([data-theme="light"]) .scrim {
+  --sc: rgba(241, 240, 236, 0.74);
+  --sc2: rgba(241, 240, 236, 0.34);
+}
+
+@media (max-width: 560px) {
+  /* barras são mais finas nessa largura — menos blur pra não virar mancha */
+  .wave {
+    filter: blur(6px);
+  }
+  .ambient {
+    filter: blur(9px);
+  }
+}

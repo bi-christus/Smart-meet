@@ -14,10 +14,6 @@
   --glass-top: rgba(255, 255, 255, 0.17);
   --glass-shadow: 0 34px 80px -26px rgba(0, 0, 0, 0.75);
 
-  /* véu entre a waveform e o conteúdo — sem ele o texto morre no laranja */
-  --scrim: rgba(0, 0, 0, 0.66);
-  --scrim-2: rgba(0, 0, 0, 0.3);
-
   /* discreto: a cor forte agora vem da própria waveform */
   background: radial-gradient(
       1000px 700px at 50% 48%,
@@ -38,37 +34,6 @@
   --glass-line: rgba(26, 26, 23, 0.09);
   --glass-top: rgba(255, 255, 255, 0.95);
   --glass-shadow: 0 28px 64px -26px rgba(26, 26, 23, 0.32);
-  --scrim: rgba(241, 240, 236, 0.74);
-  --scrim-2: rgba(241, 240, 236, 0.34);
-}
-
-/* fica acima da waveform (mesmo z-index, vem depois no DOM) e abaixo do .stage */
-.wrap::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background: radial-gradient(
-    820px 660px at 50% 52%,
-    var(--scrim),
-    var(--scrim-2) 58%,
-    transparent 100%
-  );
-}
-
-/* ---------- waveform: tela cheia, desfocada, atrás de tudo ---------- */
-
-.wave {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  display: block;
-  width: 100%;
-  height: 100%;
-  filter: blur(10px);
-  opacity: 0.62;
-  pointer-events: none;
 }
 
 /* ---------- card centralizado + frases embaixo ---------- */
@@ -225,6 +190,41 @@
   background: var(--brand);
 }
 
+/* ---------- animação de entrada no app ---------- */
+
+/* o card sobe, cresce e some enquanto a waveform ganha energia */
+@keyframes cardIgnite {
+  0% {
+    transform: none;
+    opacity: 1;
+    filter: blur(0);
+  }
+  38% {
+    transform: scale(1.03) translateY(-8px);
+    opacity: 1;
+    filter: blur(0);
+  }
+  100% {
+    transform: scale(1.16) translateY(-30px);
+    opacity: 0;
+    filter: blur(9px);
+  }
+}
+@keyframes promoOut {
+  to {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+/* forwards: segura o estado final até a página desmontar, senão pisca de volta */
+.entering .card {
+  animation: cardIgnite 880ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+.entering .promo {
+  animation: promoOut 420ms ease forwards;
+}
+
 .loader {
   min-height: 100vh;
   display: flex;
@@ -262,5 +262,10 @@
   }
   .dots i {
     transition: none;
+  }
+  /* aqui o redirect é imediato, então a classe mal chega a aparecer */
+  .entering .card,
+  .entering .promo {
+    animation: none;
   }
 }

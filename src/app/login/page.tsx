@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import { Waveform } from "@/components/waveform";
 import styles from "./login.module.css";
 
 const PROMOS: [string, string][] = [
@@ -20,6 +21,9 @@ const PROMOS: [string, string][] = [
   ],
 ];
 
+/** Tempo da animação de entrada antes de trocar de tela. */
+const ENTER_MS = 880;
+
 export default function LoginPage() {
   const { user, loading, signInWithGoogle } = useAuth();
   const router = useRouter();
@@ -27,11 +31,25 @@ export default function LoginPage() {
   const [fade, setFade] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Distingue "acabou de entrar" de "já estava logado ao abrir a página". */
+  const [signingIn, setSigningIn] = useState(false);
 
-  // Já autenticado → vai para o app.
+  /** Derivado, não estado: quem acabou de autenticar está saindo da tela. */
+  const entering = signingIn && !loading && !!user;
+
+  // Autenticado → vai para o app. Quem acabou de entrar vê a animação antes.
   useEffect(() => {
-    if (!loading && user) router.replace("/");
-  }, [loading, user, router]);
+    if (loading || !user) return;
+    const instant =
+      !signingIn ||
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (instant) {
+      router.replace("/");
+      return;
+    }
+    const t = setTimeout(() => router.replace("/"), ENTER_MS);
+    return () => clearTimeout(t);
+  }, [loading, user, signingIn, router]);
 
   // Carrossel de mensagens.
   useEffect(() => {
@@ -48,10 +66,14 @@ export default function LoginPage() {
   async function handleSignIn() {
     setError(null);
     setBusy(true);
+    setSigningIn(true);
     try {
       await signInWithGoogle();
+      // Sucesso: segura o botão em "Entrando…" enquanto a animação roda.
       // O redirect é tratado pelo onAuthStateChanged + useEffect acima.
     } catch (e: unknown) {
+      setSigningIn(false);
+      setBusy(false);
       const err = e as { code?: string; message?: string };
       const code = err?.code ?? "";
       console.error("Falha no login com Google:", code, err?.message, e);
@@ -80,12 +102,11 @@ export default function LoginPage() {
           "Não foi possível entrar. [" + (code || err?.message || "erro") + "]",
         );
       }
-    } finally {
-      setBusy(false);
     }
   }
 
-  if (loading || user) {
+  // Quem já chegou logado não vê a tela piscar; quem está entrando fica.
+  if (loading || (user && !signingIn)) {
     return <div className={styles.loader}>Carregando…</div>;
   }
 
@@ -93,8 +114,8 @@ export default function LoginPage() {
 
   return (
     <div className={styles.wrap}>
-      <Waveform />
-      <div className={styles.stage}>
+      <Waveform energized={entering} />
+      <div className={`${styles.stage} ${entering ? styles.entering : ""}`}>
         <div className={styles.card}>
           <div className={styles.brand}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -157,141 +178,4 @@ function GoogleIcon() {
       />
     </svg>
   );
-}
-
-/** Converte #rgb / #rrggbb em rgba(); devolve a cor original se não for hex. */
-function withAlpha(color: string, a: number) {
-  const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(color.trim());
-  if (!m) return color;
-  const h = m[1].length === 3 ? m[1].replace(/./g, (c) => c + c) : m[1];
-  const n = parseInt(h, 16);
-  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
-}
-
-/**
- * Waveform de gravação: barras em cápsula espelhadas na linha de base,
- * com amplitude orgânica e um brilho que varre da esquerda para a direita.
- * As cores saem dos tokens do tema (--brand / --accent-2).
- */
-function Waveform() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    const cv = canvasRef.current;
-    if (!cv) return;
-    const ctx = cv.getContext("2d");
-    if (!ctx) return;
-
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    let W = 0;
-    let H = 0;
-    let raf = 0;
-    let start = 0;
-    let grad: CanvasGradient | null = null;
-
-    const buildGradient = () => {
-      const cs = getComputedStyle(document.documentElement);
-      const brand = cs.getPropertyValue("--brand").trim() || "#ff6a2b";
-      const soft = cs.getPropertyValue("--accent-2").trim() || "#ffb089";
-      const g = ctx.createLinearGradient(0, 0, W, 0);
-      g.addColorStop(0, withAlpha(soft, 0.55));
-      g.addColorStop(0.24, soft);
-      g.addColorStop(0.5, brand);
-      g.addColorStop(0.76, soft);
-      g.addColorStop(1, withAlpha(soft, 0.55));
-      grad = g;
-    };
-
-    const resize = () => {
-      const r = cv.getBoundingClientRect();
-      W = Math.max(1, Math.round(r.width));
-      H = Math.max(1, Math.round(r.height));
-      // sem DPR: a camada é desfocada, resolução extra só custaria pixel à toa
-      cv.width = W;
-      cv.height = H;
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      buildGradient();
-    };
-
-    const draw = (ts: number) => {
-      if (!start) start = ts;
-      const p = ((ts - start) / 1000) * 1.15;
-
-      ctx.clearRect(0, 0, W, H);
-
-      const cy = H / 2;
-      // ~55 barras na largura: grossas o bastante pra sobreviver ao blur
-      const step = Math.max(11, W / 55);
-      const barW = step * 0.5;
-      const n = Math.max(12, Math.floor((W - barW) / step) + 1);
-      const x0 = (W - ((n - 1) * step + barW)) / 2;
-      const maxH = H * 0.5;
-      const rounded = typeof ctx.roundRect === "function";
-
-      ctx.fillStyle = grad ?? "#ff6a2b";
-      for (let i = 0; i < n; i++) {
-        const u = n === 1 ? 0.5 : i / (n - 1);
-        // graves lentos + detalhe agudo = textura de voz
-        const slow =
-          Math.sin(u * 5.1 + p * 1.15) * 0.55 + Math.sin(u * 9.7 - p * 0.74) * 0.45;
-        const fast =
-          Math.sin(u * 39.7 + p * 2.9) * 0.5 + Math.sin(u * 71.3 - p * 3.6) * 0.5;
-        // respiração geral, como alguém falando
-        const pulse = 0.7 + 0.3 * Math.sin(p * 1.5 - u * 3.1);
-        // sino: cheio no meio, some suavemente nas pontas
-        const bell = Math.pow(Math.sin(Math.PI * u), 0.4);
-        const amp =
-          Math.max(0.12, 0.42 + 0.3 * slow + 0.17 * fast) * pulse * bell;
-        const h = Math.max(1.5, amp * maxH);
-
-        ctx.beginPath();
-        if (rounded) {
-          ctx.roundRect(x0 + i * step, cy - h, barW, h * 2, barW / 2);
-        } else {
-          ctx.rect(x0 + i * step, cy - h, barW, h * 2);
-        }
-        ctx.fill();
-      }
-
-      // varredura de luz — só onde já existem barras
-      const sweep = (((p * 0.22) % 1.5) - 0.25) * W;
-      const sg = ctx.createLinearGradient(sweep - 130, 0, sweep + 130, 0);
-      sg.addColorStop(0, "rgba(255, 255, 255, 0)");
-      sg.addColorStop(0.5, "rgba(255, 255, 255, 0.24)");
-      sg.addColorStop(1, "rgba(255, 255, 255, 0)");
-      ctx.globalCompositeOperation = "source-atop";
-      ctx.fillStyle = sg;
-      ctx.fillRect(0, 0, W, H);
-      ctx.globalCompositeOperation = "source-over";
-
-      if (!reduce) raf = requestAnimationFrame(draw);
-    };
-
-    resize();
-    raf = requestAnimationFrame(draw);
-
-    const ro = new ResizeObserver(() => {
-      resize();
-      if (reduce) raf = requestAnimationFrame(draw);
-    });
-    ro.observe(cv);
-
-    // troca de tema/acento → recalcula o gradiente
-    const mo = new MutationObserver(() => {
-      buildGradient();
-      if (reduce) raf = requestAnimationFrame(draw);
-    });
-    mo.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["data-theme", "data-accent"],
-    });
-
-    return () => {
-      cancelAnimationFrame(raf);
-      ro.disconnect();
-      mo.disconnect();
-    };
-  }, []);
-
-  return <canvas ref={canvasRef} className={styles.wave} aria-hidden="true" />;
 }
