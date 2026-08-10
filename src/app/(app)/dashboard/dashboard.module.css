@@ -1,137 +1,536 @@
 .page {
-  max-width: 1100px;
-  margin: 0 auto;
-  padding: 32px 24px 60px;
+  height: calc(100vh - 56px);
+  overflow: auto;
+  padding-bottom: 30px;
 }
-.head h1 {
-  font-family: var(--font-serif), Georgia, serif;
-  font-weight: 600;
-  font-size: 30px;
+
+/**
+ * Paleta categórica dos gráficos.
+ *
+ * Não são os tokens de marca do app: os tokens foram escolhidos para interface
+ * (fundo, borda, destaque), e cor de série tem outro trabalho — precisa manter
+ * pares vizinhos separáveis também para quem tem daltonismo. Estes oito passos
+ * foram validados nas duas superfícies do app (escuro #151517, claro #f6f5f1):
+ * separação CVD mínima ΔE 8,4 e visão normal ΔE 19,3 no escuro.
+ *
+ * A ordem é FIXA e um setor recebe sempre o mesmo passo — filtrar setores não
+ * pode repintar os que sobraram.
+ *
+ * No claro, quatro passos ficam abaixo de 3:1 contra o fundo: por isso toda
+ * série carrega rótulo visível (número no fim da barra, legenda nomeada) e
+ * nunca depende só da cor.
+ */
+.viz {
+  --serie-1: #3987e5;
+  --serie-2: #d95926;
+  --serie-3: #199e70;
+  --serie-4: #c98500;
+  --serie-5: #d55181;
+  --serie-6: #008300;
+  --serie-7: #9085e9;
+  --serie-8: #e66767;
 }
-.head p {
-  color: var(--tx-2);
-  font-size: 14px;
-  margin-top: 4px;
+:global([data-theme="light"]) .viz {
+  --serie-1: #2a78d6;
+  --serie-2: #eb6834;
+  --serie-3: #1baf7a;
+  --serie-4: #eda100;
+  --serie-5: #e87ba4;
+  --serie-6: #008300;
+  --serie-7: #4a3aa7;
+  --serie-8: #e34948;
 }
-.sectors {
+
+/* ---------- cabeçalho e filtros ---------- */
+.head {
   display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 16px 22px 0;
+}
+.headMain {
+  min-width: 0;
+  flex: 1;
+}
+.headMain h1 {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  color: var(--tx);
+}
+.headMain p {
+  font-size: 12px;
+  color: var(--tx-3);
+  margin-top: 3px;
+  max-width: 620px;
+  line-height: 1.5;
+}
+.periodo {
+  min-width: 150px;
+}
+
+.filtros {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  padding: 14px 22px 0;
+  color: var(--tx-3);
+}
+.filtro {
+  min-width: 178px;
+}
+.limpar {
+  display: inline-flex;
+  align-items: center;
   gap: 6px;
-  overflow-x: auto;
-  margin: 18px 0 0;
-  scrollbar-width: none;
-}
-.sectors::-webkit-scrollbar {
-  display: none;
-}
-.sectorBtn {
-  height: 30px;
-  padding: 0 12px;
-  border: 1px solid var(--line-soft);
-  background: var(--card);
+  height: 32px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  background: var(--s1);
+  border-radius: 9px;
   color: var(--tx-2);
-  border-radius: 8px;
   font-family: inherit;
   font-size: 12.5px;
   cursor: pointer;
-  white-space: nowrap;
 }
-.sectorBtn.on {
-  border-color: var(--brand);
-  background: rgba(255, 106, 43, 0.1);
-  color: var(--accent-2);
+.limpar:hover {
+  color: var(--accent);
+  border-color: var(--brand-line);
+}
+.contagem {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--tx-3);
 }
 
-.tiles {
+/* ---------- faixa de indicadores ---------- */
+.kstrip {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(158px, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 12px;
-  margin: 22px 0;
+  padding: 14px 22px 0;
 }
-.tile {
-  background: var(--card);
+.kcell {
+  background: var(--s1);
   border: 1px solid var(--line-soft);
-  border-radius: 14px;
-  padding: 18px;
+  border-radius: var(--r-lg);
+  padding: 12px 14px;
 }
-.tileNum {
-  font-family: var(--font-serif), Georgia, serif;
-  font-weight: 600;
-  font-size: 34px;
+.kDanger {
+  border-color: rgba(251, 113, 133, 0.42);
+}
+.kWarn {
+  border-color: rgba(245, 177, 61, 0.42);
+}
+.kl {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--tx-3);
+  line-height: 1.3;
+}
+.kv {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  margin-top: 8px;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.6px;
   line-height: 1;
+  color: var(--tx);
   font-variant-numeric: tabular-nums;
 }
-.tileLabel {
-  font-size: 12.5px;
+.kv small {
+  font-size: 11.5px;
+  font-weight: 600;
   color: var(--tx-3);
-  margin-top: 8px;
+  letter-spacing: 0;
 }
-.warn {
-  color: #ff9b8a;
-}
-.good {
-  color: #7ee0bd;
+.kf {
+  margin-top: 7px;
+  font-size: 11px;
+  color: var(--tx-3);
+  line-height: 1.35;
 }
 
-.panels {
+/* ---------- painéis ---------- */
+.paineis {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 16px;
+  gap: 14px;
+  padding: 16px 22px 0;
 }
-@media (max-width: 760px) {
-  .panels {
-    grid-template-columns: 1fr;
-  }
-}
-.panel {
-  background: var(--card);
+.painel {
+  background: var(--s1);
   border: 1px solid var(--line-soft);
-  border-radius: 16px;
-  padding: 20px;
+  border-radius: var(--r-lg);
+  padding: 16px;
+  min-width: 0;
 }
-.panelTitle {
-  font-size: 14px;
-  font-weight: 600;
-  margin-bottom: 16px;
+.painelLargo {
+  grid-column: 1 / -1;
+}
+.painelHead {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.painelHead h3 {
+  font-size: 13.5px;
+  font-weight: 700;
   color: var(--tx);
 }
-.bars {
+.painelHead p {
+  font-size: 11.5px;
+  color: var(--tx-3);
+  margin-top: 3px;
+  line-height: 1.45;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--s3);
+  color: var(--tx-2);
+  font-size: 10.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  flex: none;
+}
+.chipDanger {
+  background: var(--danger-bg);
+  color: var(--danger-tx);
+}
+.chipWarn {
+  background: var(--warn-bg);
+  color: var(--warn-tx);
+}
+
+.nota {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 9px 11px;
+  background: var(--s2);
+  border: 1px solid var(--line-soft);
+  border-radius: 9px;
+  font-size: 11.5px;
+  color: var(--tx-3);
+  line-height: 1.5;
+}
+.nota b {
+  color: var(--tx-2);
+}
+.nota svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+.vazioPainel {
+  padding: 26px 10px;
+  text-align: center;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--tx-3);
+}
+.vazioTela {
+  margin: 60px auto;
+  max-width: 420px;
+  text-align: center;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--tx-3);
+}
+
+/* ---------- barras por responsável ---------- */
+.barras {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 9px;
 }
-.barRow {
-  display: grid;
-  grid-template-columns: 108px 1fr 30px;
+.barraLinha {
+  display: flex;
   align-items: center;
   gap: 10px;
 }
-.barLabel {
-  font-size: 12.5px;
+.barraNome {
+  width: 104px;
+  flex: none;
+  font-size: 12px;
+  font-weight: 600;
   color: var(--tx-2);
-  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.barTrack {
-  height: 10px;
-  background: rgba(255, 255, 255, 0.05);
+.barraTrilho {
+  flex: 1;
+  height: 20px;
   border-radius: 5px;
+  background: var(--s3);
   overflow: hidden;
+  display: flex;
+  /* 2px de superfície entre segmentos: sem o vão, duas cores viram uma só. */
+  gap: 2px;
 }
-.barFill {
+.barraSeg {
   height: 100%;
-  border-radius: 5px;
   min-width: 3px;
 }
-.barVal {
-  font-size: 12px;
-  color: var(--tx-3);
+.barraNum {
+  width: 22px;
   text-align: right;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--tx);
   font-variant-numeric: tabular-nums;
 }
-.empty {
+.barraHoras {
+  width: 66px;
+  text-align: right;
+  font-size: 11px;
   color: var(--tx-3);
+  font-variant-numeric: tabular-nums;
+}
+.barraHorasZero {
+  color: var(--line);
+}
+
+.legenda {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 13px;
+  font-size: 11px;
+  color: var(--tx-3);
+}
+.legenda span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.legenda i {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  display: block;
+  flex: none;
+}
+.swEntrada {
+  background: var(--brand);
+}
+.swEntrega {
+  background: var(--ok);
+}
+
+/* ---------- rosca ---------- */
+.rosca {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  flex-wrap: wrap;
+  padding: 4px 0;
+}
+.roscaSvg {
+  width: 136px;
+  height: 136px;
+  flex: none;
+}
+.roscaNum {
+  font-size: 27px;
+  font-weight: 800;
+  fill: var(--tx);
+}
+.roscaCap {
+  font-size: 10.5px;
+  fill: var(--tx-3);
+}
+.roscaLista {
+  flex: 1;
+  min-width: 190px;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+.roscaItem {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.roscaDot {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  flex: none;
+}
+.roscaLabel {
+  flex: 1;
+  font-size: 12.5px;
+  color: var(--tx-2);
+}
+.roscaItem b {
+  font-size: 14px;
+  color: var(--tx);
+  font-variant-numeric: tabular-nums;
+}
+.roscaPct {
+  width: 36px;
+  text-align: right;
+  font-size: 11px;
+  color: var(--tx-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- gráficos ---------- */
+.chart {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+.grade {
+  stroke: var(--line-soft);
+}
+.eixo {
+  font-size: 9.5px;
+  fill: var(--tx-3);
+}
+.percentil {
+  font-size: 9.5px;
+  font-weight: 700;
+}
+.barEntrada {
+  fill: var(--brand);
+  fill-opacity: 0.9;
+}
+.barEntrega {
+  fill: var(--ok);
+  fill-opacity: 0.88;
+}
+.barEntrada:hover,
+.barEntrega:hover {
+  fill-opacity: 1;
+}
+.ponto {
+  fill: var(--accent);
+  fill-opacity: 0.72;
+  stroke: var(--s1);
+  stroke-width: 0.8;
+}
+.ponto:hover {
+  fill-opacity: 1;
+}
+
+.filaTitulo {
+  margin: 14px 0 2px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--tx-3);
+}
+.filaTitulo b {
+  color: var(--warn);
+  font-size: 12px;
+}
+.filaArea {
+  fill: var(--warn);
+  fill-opacity: 0.12;
+}
+.filaLinha {
+  fill: none;
+  stroke: var(--warn);
+  stroke-width: 2;
+}
+/* Alvo de hover maior que o traço — a linha sozinha é fina demais para mirar. */
+.alvo {
+  fill: transparent;
+}
+.alvo:hover {
+  fill: var(--warn);
+  fill-opacity: 0.25;
+}
+
+/* ---------- tabela de prazos ---------- */
+.tabelaWrap {
+  overflow-x: auto;
+}
+.tabela {
+  width: 100%;
+  border-collapse: collapse;
   font-size: 13px;
-  text-align: center;
-  padding: 24px 10px;
+}
+.tabela th {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--tx-3);
+  white-space: nowrap;
+}
+.tabela td {
+  padding: 10px;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--tx-2);
+}
+.tabela tbody tr:hover td {
+  background: var(--s2);
+}
+.linkCard {
+  font-weight: 600;
+  color: var(--tx);
+}
+.linkCard:hover {
+  color: var(--accent);
+}
+.setorCel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.setorCel i {
+  width: 8px;
+  height: 8px;
+  border-radius: 3px;
+  flex: none;
+}
+.prazoCel {
+  text-align: right;
+  white-space: nowrap;
+}
+.prazoCel .chip {
+  margin-left: 8px;
+}
+
+@media (max-width: 1180px) {
+  .kstrip {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 900px) {
+  .paineis {
+    grid-template-columns: 1fr;
+  }
+  .kstrip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .contagem {
+    margin-left: 0;
+  }
 }

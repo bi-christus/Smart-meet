@@ -113,6 +113,49 @@ const PATHS: Record<string, ReactNode> = {
   ),
   pause: <path d="M8 5v14M16 5v14" />,
   play: <path d="M7 5l12 7-12 7z" />,
+  recorrencias: (
+    <>
+      <path d="M17 2l4 4-4 4" />
+      <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+      <path d="M7 22l-4-4 4-4" />
+      <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+    </>
+  ),
+  filter: <path d="M3 4h18l-7 8v7l-4 2v-9z" />,
+  info: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 11v5M12 8h.01" />
+    </>
+  ),
+  warn: (
+    <>
+      <path d="M10.3 4.3 2.6 18a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0z" />
+      <path d="M12 9v4M12 17h.01" />
+    </>
+  ),
+  link: (
+    <>
+      <path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1" />
+      <path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1" />
+    </>
+  ),
+  trend: (
+    <>
+      <path d="M3 3v18h18" />
+      <path d="M7 15l4-5 3 3 5-7" />
+    </>
+  ),
+  users: (
+    <>
+      <path d="M16 20v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="3.2" />
+      <path d="M22 20v-2a4 4 0 0 0-3-3.87" />
+      <path d="M16 4.13A4 4 0 0 1 16 11.9" />
+    </>
+  ),
+  chevronLeft: <path d="M15 6l-6 6 6 6" />,
+  chevronRight: <path d="M9 6l6 6-6 6" />,
 };
 
 export function Icon({ name, size = 24 }: { name: string; size?: number }) {

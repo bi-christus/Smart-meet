@@ -1,127 +1,396 @@
 .page {
-  max-width: 900px;
-  margin: 0 auto;
-  padding: 32px 24px 60px;
-}
-.head h1 {
-  font-family: var(--font-serif), Georgia, serif;
-  font-weight: 600;
-  font-size: 30px;
-}
-.head p {
-  color: var(--tx-2);
-  font-size: 14px;
-  margin-top: 4px;
+  height: calc(100vh - 56px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
-.groups {
-  margin-top: 26px;
+/* ---------- cabeçalho ---------- */
+.head {
   display: flex;
-  flex-direction: column;
-  gap: 26px;
-}
-.groupHead {
-  display: flex;
-  align-items: baseline;
-  gap: 9px;
-  margin-bottom: 12px;
-}
-.groupTitle {
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.6px;
-  color: var(--tx-2);
-}
-.groupTitleWarn {
-  color: #ff9b8a;
-}
-.groupCount {
-  font-size: 11px;
-  color: var(--tx-3);
-}
-.items {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.item {
-  display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 14px;
-  padding: 11px 14px;
-  background: var(--card);
-  border: 1px solid var(--line-soft);
-  border-radius: 12px;
+  flex-wrap: wrap;
+  padding: 16px 22px 0;
 }
-.date {
-  flex: none;
-  width: 46px;
-  text-align: center;
+.headMain {
+  min-width: 0;
 }
-.dateDay {
-  font-family: var(--font-serif), Georgia, serif;
-  font-weight: 600;
-  font-size: 20px;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
+.headMain h1 {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  color: var(--tx);
 }
-.dateMon {
-  font-size: 10px;
-  text-transform: uppercase;
+.headMain p {
+  font-size: 12px;
   color: var(--tx-3);
   margin-top: 3px;
 }
-.overdueDay {
-  color: #ff9b8a;
-}
-.itemMain {
-  flex: 1;
-  min-width: 0;
-}
-.itemTitle {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--tx);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.itemMeta {
+.headTools {
   display: flex;
-  gap: 8px;
-  margin-top: 5px;
   align-items: center;
+  gap: 12px;
   flex-wrap: wrap;
+  margin-left: auto;
 }
-.sector {
-  font-size: 10.5px;
+.filtroSetor {
+  min-width: 180px;
+}
+
+.legenda {
+  display: flex;
+  gap: 14px;
+  font-size: 12px;
   color: var(--tx-2);
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--line-soft);
-  padding: 2px 8px;
-  border-radius: 20px;
 }
-.colDot {
-  width: 8px;
-  height: 8px;
+.legenda span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.dotReuniao,
+.dotPrazo {
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   flex: none;
 }
-.colName {
-  font-size: 11.5px;
+.dotReuniao {
+  background: var(--brand);
+}
+.dotPrazo {
+  background: var(--warn);
+}
+
+.seg {
+  display: inline-flex;
+  background: var(--s1);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 3px;
+  gap: 2px;
+}
+.seg button {
+  height: 28px;
+  padding: 0 12px;
+  border: none;
+  background: none;
+  border-radius: 7px;
+  color: var(--tx-2);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.seg button:hover {
+  color: var(--tx);
+}
+.segOn {
+  background: var(--brand);
+  color: #fff !important;
+}
+
+/* ---------- navegação do período ---------- */
+.navBar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 22px 12px;
+}
+.navBtn {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  background: var(--s1);
+  border-radius: 8px;
+  color: var(--tx-2);
+  cursor: pointer;
+}
+.navBtn:hover {
+  color: var(--accent);
+  border-color: var(--brand-line);
+}
+.navTitulo {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--tx);
+  text-transform: capitalize;
+  min-width: 190px;
+}
+.hojeBtn {
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--brand-line);
+  background: var(--brand-soft);
+  color: var(--accent);
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* ---------- grade ---------- */
+.scroll {
+  flex: 1;
+  overflow: auto;
+  padding: 0 22px 26px;
+}
+.grade {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--line-soft);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r);
+  overflow: hidden;
+}
+.gradeHead {
+  background: var(--s1);
+  padding: 8px 10px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
   color: var(--tx-3);
 }
-.assignee {
+.dia {
+  background: var(--s1);
+  min-height: 104px;
+  padding: 7px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+/* Vista de semana: uma linha só, então a célula pode respirar. */
+.gradeSemana .dia {
+  min-height: 340px;
+}
+.diaFora {
+  background: var(--bg);
+}
+.diaFora .diaNum {
+  opacity: 0.4;
+}
+.diaHoje {
+  background: var(--brand-soft);
+  box-shadow: inset 0 0 0 1px var(--brand-line);
+}
+.diaNum {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 11.5px;
-  color: var(--tx-3);
-  margin-left: auto;
+  font-weight: 600;
+  color: var(--tx-2);
+  font-variant-numeric: tabular-nums;
+}
+.diaHoje .diaNum {
+  color: var(--accent);
+  font-weight: 800;
+}
+.hojeTag {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.chip {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 4px 7px;
+  border: none;
+  border-left: 2px solid transparent;
+  border-radius: 5px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.35;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
-.empty {
-  color: var(--tx-3);
-  font-size: 14px;
+.chip:hover {
+  filter: brightness(1.08);
+}
+.chipReuniao {
+  background: var(--brand-soft);
+  border-left-color: var(--brand);
+  color: var(--accent-2);
+}
+.chipPrazo {
+  background: var(--warn-bg);
+  border-left-color: var(--warn);
+  color: var(--warn-tx);
+}
+
+.vazio {
+  margin-top: 16px;
+  padding: 26px 20px;
   text-align: center;
-  padding: 70px 20px;
+  font-size: 13px;
   line-height: 1.6;
+  color: var(--tx-3);
+  background: var(--s1);
+  border: 1px dashed var(--line);
+  border-radius: var(--r-lg);
+}
+.vazioTela {
+  margin: 60px auto;
+  max-width: 420px;
+  text-align: center;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--tx-3);
+}
+
+/* ---------- modal de espiada ---------- */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 60px 20px;
+  z-index: 80;
+  backdrop-filter: blur(2px);
+}
+.modal {
+  width: min(460px, 94vw);
+  background: var(--s1);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.modalHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.modalBody {
+  padding: 18px 22px 24px;
+}
+.modalBody h3 {
+  font-size: 15.5px;
+  font-weight: 700;
+  color: var(--tx);
+  line-height: 1.4;
+}
+.fechar {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: var(--s2);
+  border-radius: 8px;
+  color: var(--tx-2);
+  cursor: pointer;
+}
+.fechar:hover {
+  color: var(--tx);
+}
+
+.tag,
+.tagNeutra,
+.tagVencida,
+.tagHoje {
+  display: inline-flex;
+  align-items: center;
+  height: 21px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+.tagReuniao {
+  background: var(--brand-soft);
+  color: var(--accent-2);
+}
+.tagPrazo {
+  background: var(--warn-bg);
+  color: var(--warn-tx);
+}
+.tagNeutra {
+  background: var(--s3);
+  color: var(--tx-2);
+}
+.tagVencida {
+  background: var(--danger-bg);
+  color: var(--danger-tx);
+}
+.tagHoje {
+  background: var(--warn-bg);
+  color: var(--warn-tx);
+}
+
+.detalhes {
+  margin: 14px 0 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.detalhes > div {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.detalhes dt {
+  width: 96px;
+  flex: none;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--tx-3);
+}
+.detalhes dd {
+  font-size: 13px;
+  color: var(--tx-2);
+}
+
+.irPara {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--s2);
+  color: var(--tx);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.irPara:hover {
+  border-color: var(--brand-line);
+  color: var(--accent);
+}
+
+@media (max-width: 900px) {
+  .headTools {
+    margin-left: 0;
+    width: 100%;
+  }
+  .dia {
+    min-height: 82px;
+  }
+  .gradeSemana .dia {
+    min-height: 150px;
+  }
 }

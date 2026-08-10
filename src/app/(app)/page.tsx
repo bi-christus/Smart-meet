@@ -9,8 +9,9 @@ const CARDS = [
   { id: "reunioes", label: "Reuniões", desc: "Áudio → transcrição → ata", href: "/reunioes" },
   { id: "relatorios", label: "Relatórios IA", desc: "Valide atas e gere documentos", href: "/relatorios" },
   { id: "kanban", label: "Kanban", desc: "Demandas por setor", href: "/kanban" },
+  { id: "recorrencias", label: "Recorrências", desc: "Manutenção programada", href: "/recorrencias" },
   { id: "dashboard", label: "Dashboard", desc: "Indicadores e visões", href: "/dashboard" },
-  { id: "cronograma", label: "Cronograma", desc: "Prazos e marcos", href: "/cronograma" },
+  { id: "cronograma", label: "Cronograma", desc: "Reuniões e prazos", href: "/cronograma" },
 ];
 
 export default function Inicio() {

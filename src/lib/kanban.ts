@@ -13,16 +13,11 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 
-export type KanbanColumn = { id: string; title: string; color: string };
-
-/** Colunas padrão (seed inicial por setor). */
-export const DEFAULT_COLUMNS: KanbanColumn[] = [
-  { id: "backlog", title: "A fazer", color: "#78776f" },
-  { id: "andamento", title: "Em andamento", color: "#54b8ff" },
-  { id: "aguardando", title: "Aguardando", color: "#f5b13d" },
-  { id: "validacao", title: "Validação", color: "#c084fc" },
-  { id: "concluido", title: "Concluído", color: "#34d399" },
-];
+// Moradia em módulo puro: o gerador de recorrências lê as colunas no servidor,
+// onde importar este arquivo (e o SDK do cliente junto) não é possível.
+import { DEFAULT_COLUMNS, type KanbanColumn } from "./kanban-columns";
+export { DEFAULT_COLUMNS };
+export type { KanbanColumn };
 
 export type Priority = "alta" | "media" | "baixa";
 export const PRIORITY_LABEL: Record<Priority, string> = {
@@ -32,24 +27,32 @@ export const PRIORITY_LABEL: Record<Priority, string> = {
 };
 
 /** Tipo da demanda. */
-export type DemandType = "implementacao" | "correcao" | "melhoria" | "relatorio";
+export type DemandType =
+  | "implementacao"
+  | "correcao"
+  | "melhoria"
+  | "relatorio"
+  | "manutencao";
 export const DEMAND_TYPES: DemandType[] = [
   "implementacao",
   "correcao",
   "melhoria",
   "relatorio",
+  "manutencao",
 ];
 export const DEMAND_TYPE_LABEL: Record<DemandType, string> = {
   implementacao: "Nova implementação",
   correcao: "Correção",
   melhoria: "Melhoria",
   relatorio: "Relatório",
+  manutencao: "Manutenção",
 };
 export const DEMAND_TYPE_COLOR: Record<DemandType, string> = {
   implementacao: "#54b8ff", // info
   correcao: "#fb7185", // danger
   melhoria: "#c084fc", // roxo
   relatorio: "#f5b13d", // âmbar
+  manutencao: "#2dd4bf", // verde-água — é o tipo que a recorrência abre
 };
 
 export type ChecklistItem = {
@@ -94,8 +97,19 @@ export type Card = {
   checklist?: ChecklistItem[];
   comments?: Comment[];
   order: number;
+  /** Quando o card entrou na coluna atual (ms) — base do aging e da entrega. */
   enteredAt?: number;
+  /**
+   * Timestamp do Firestore, gravado na criação. Só as métricas leem: é a data
+   * de ENTRADA da demanda no sistema, e sem ela não há como medir fluxo.
+   */
+  createdAt?: { seconds: number } | null;
   createdBy?: string;
+  /** De onde o card veio, para quem abrir daqui a meses. */
+  origem?: "reuniao" | "recorrencia";
+  /** Recorrência que abriu este card, e a data prevista do ciclo. */
+  recId?: string;
+  recDate?: string;
   /**
    * Contador de versão, incrementado a cada edição pelo modal. Serve para
    * detectar que o card mudou entre o momento em que uma mudança automática
@@ -261,6 +275,61 @@ export function subscribeColumns(
     },
     (e) => onError?.(e),
   );
+}
+
+/**
+ * Colunas de vários setores de uma vez (Dashboard e Cronograma).
+ *
+ * Existe porque "concluído" não é um id fixo: cada setor edita as suas colunas,
+ * e a última do quadro é o que define uma demanda entregue. Contar atraso com
+ * `columnId !== "concluido"` chapado erra em todo setor que renomeou a coluna.
+ */
+export function subscribeColumnsForSectors(
+  sectors: string[],
+  onData: (cols: ColumnDoc[]) => void,
+  onError?: (e: Error) => void,
+): () => void {
+  if (sectors.length === 0) {
+    onData([]);
+    return () => {};
+  }
+  return onSnapshot(
+    query(
+      collection(db, "columns"),
+      where("sector", "in", sectors.slice(0, 30)),
+    ),
+    (snap) => {
+      const cols = snap.docs.map((d) => ({
+        id: d.id,
+        ...(d.data() as Omit<ColumnDoc, "id">),
+      }));
+      cols.sort((a, b) => a.order - b.order);
+      onData(cols);
+    },
+    (e) => onError?.(e),
+  );
+}
+
+/**
+ * Agrupa as colunas por setor, caindo no padrão para quem ainda não
+ * personalizou — assim quem consome nunca precisa tratar "setor sem colunas".
+ */
+export function columnsBySector(
+  cols: ColumnDoc[],
+  sectors: string[],
+): Record<string, KanbanColumn[]> {
+  const out: Record<string, KanbanColumn[]> = {};
+  cols.forEach((c) => {
+    (out[c.sector] = out[c.sector] ?? []).push({
+      id: c.colId,
+      title: c.title,
+      color: c.color,
+    });
+  });
+  sectors.forEach((s) => {
+    if (!out[s]?.length) out[s] = DEFAULT_COLUMNS;
+  });
+  return out;
 }
 
 export async function seedDefaultColumns(sector: string): Promise<void> {

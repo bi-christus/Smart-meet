@@ -12,8 +12,11 @@
  * salvar a demanda sem solicitante e nunca mais voltar. Por isso criar é de
  * qualquer usuário — mas APAGAR continua só no Admin, porque remover um
  * solicitante em uso deixa cards apontando para um nome que sumiu.
+ *
+ * Os dois campos são independentes: escolher o setor não filtra nem limpa a
+ * pessoa, e vice-versa.
  */
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import {
   garantirSetorSolicitante,
   garantirSolicitante,
@@ -46,14 +49,6 @@ export function SolicitantePicker({
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
-  const doSetor = useMemo(
-    () =>
-      setorValue
-        ? solicitantes.filter((s) => s.setor === setorValue)
-        : solicitantes,
-    [solicitantes, setorValue],
-  );
-
   async function criar() {
     const n = nome.trim();
     if (!n) return;
@@ -64,9 +59,8 @@ export function SolicitantePicker({
         const nomeFinal = await garantirSetorSolicitante(n, setores);
         // Seleciona o que acabou de criar: o próximo passo é sempre usá-lo.
         onSetor(nomeFinal);
-        onRequester("");
       } else {
-        const nomeFinal = await garantirSolicitante(n, setorValue, solicitantes);
+        const nomeFinal = await garantirSolicitante(n, solicitantes);
         onRequester(nomeFinal);
       }
       setNome("");
@@ -132,10 +126,7 @@ export function SolicitantePicker({
           <select
             className={sel}
             value={setorValue}
-            onChange={(e) => {
-              onSetor(e.target.value);
-              onRequester("");
-            }}
+            onChange={(e) => onSetor(e.target.value)}
           >
             <option value="">—</option>
             {setores.map((s) => (
@@ -174,9 +165,7 @@ export function SolicitantePicker({
                   void criar();
                 }
               }}
-              placeholder={
-                setorValue ? `Nome — ${setorValue}` : "Escolha o setor antes…"
-              }
+              placeholder="Nome do solicitante…"
               maxLength={80}
               autoFocus
             />
@@ -184,7 +173,7 @@ export function SolicitantePicker({
               type="button"
               className={styles.salvar}
               onClick={() => void criar()}
-              disabled={salvando || !nome.trim() || !setorValue}
+              disabled={salvando || !nome.trim()}
             >
               <Icon name="check" size={13} />
             </button>
@@ -196,7 +185,7 @@ export function SolicitantePicker({
             onChange={(e) => onRequester(e.target.value)}
           >
             <option value="">—</option>
-            {doSetor.map((s) => (
+            {solicitantes.map((s) => (
               <option key={s.id} value={s.name}>
                 {s.name}
               </option>

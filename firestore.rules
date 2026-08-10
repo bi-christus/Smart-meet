@@ -24,6 +24,12 @@ rules_version = '2';
 //  - /logs deixa de aceitar escrita do cliente — auditoria forjável não serve
 //    como auditoria. Quem grava é o servidor.
 //
+// O QUE MUDOU (2026-08-07):
+//  - /recorrencias e /ocorrencias, da aba Recorrências. A regra é escopada por
+//    setor e editável por gestor; a ocorrência (a data que já virou card) é
+//    somente leitura no cliente, porque quem a cria é a rota de geração, numa
+//    transação que garante um card por data prevista.
+//
 // Nota sobre consultas: as telas sempre filtram por setor (`==` ou `in`), e o
 // admin consulta DEFAULT_SECTORS. Por isso o escopo por setor na leitura não
 // quebra nenhuma query existente.
@@ -145,15 +151,39 @@ service cloud.firestore {
     // precisa de quem enxerga o cadastro inteiro.
     match /solicitantes/{doc} {
       allow read: if isAuthorized();
-      allow create: if isAuthorized()
-                    && novo('name') != ''
-                    && novo('setor') != '';
+      allow create: if isAuthorized() && novo('name') != '';
       allow update, delete: if isAdmin();
     }
     match /solicitanteSetores/{doc} {
       allow read: if isAuthorized();
       allow create: if isAuthorized() && novo('name') != '';
       allow update, delete: if isAdmin();
+    }
+
+    // ---- recorrências (manutenção programada por setor) ----
+    // A REGRA é do setor: quem enxerga o setor lê; gestor e admin escrevem.
+    // Operador não edita o plano de manutenção — ele executa o card que nasce
+    // dele, e mudar o ritmo é decisão de quem responde pelo setor.
+    match /recorrencias/{doc} {
+      allow read: if isAuthorized() && canSeeSector(cur('sector'));
+      allow create: if isGestorOrAdmin()
+                    && canSeeSector(novo('sector'))
+                    && novo('name') != ''
+                    && novo('sector') != '';
+      allow update: if isGestorOrAdmin()
+                    && canSeeSector(cur('sector'))
+                    && canSeeSector(novo('sector'));
+      allow delete: if isGestorOrAdmin() && canSeeSector(cur('sector'));
+    }
+
+    // ---- ocorrências (a data prevista que já virou card) ----
+    // Só leitura do cliente. Quem escreve é a rota /api/recorrencias/gerar,
+    // pelo Admin SDK: é ela que garante um card por data, dentro de uma
+    // transação. Deixar o navegador criar ocorrência devolveria a duplicata
+    // que a transação existe para impedir.
+    match /ocorrencias/{doc} {
+      allow read: if isAuthorized() && canSeeSector(cur('sector'));
+      allow write: if false;
     }
 
     // ---- colunas do kanban (por setor) ----

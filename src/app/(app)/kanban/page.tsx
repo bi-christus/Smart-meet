@@ -129,14 +129,12 @@ function NovoCadastro({
   onSalvar,
   salvando,
   placeholder,
-  desabilitado,
 }: {
   valor: string;
   onChange: (v: string) => void;
   onSalvar: () => void | Promise<void>;
   salvando: boolean;
   placeholder: string;
-  desabilitado?: boolean;
 }) {
   return (
     <div className={styles.novoCadastroLinha}>
@@ -158,7 +156,7 @@ function NovoCadastro({
         type="button"
         className={styles.novoCadastroOk}
         onClick={() => void onSalvar()}
-        disabled={salvando || !valor.trim() || desabilitado}
+        disabled={salvando || !valor.trim()}
         aria-label="Cadastrar"
       >
         <Icon name="check" size={13} />
@@ -216,6 +214,8 @@ export default function KanbanPage() {
   // O filtro de responsável é preso ao setor: trocar de quadro o descarta.
   const [assigneeSel, setAssigneeSel] = useState({ sector: "", value: "" });
   const [edit, setEdit] = useState<EditState>(null);
+  /** Card que outra tela pediu para abrir, enquanto o setor não carregou. */
+  const [alvoDireto, setAlvoDireto] = useState<string | null>(null);
   const [colEdit, setColEdit] = useState<ColEditState>(null);
   const [relatorio, setRelatorio] = useState(false);
   const [dragCardId, setDragCardId] = useState<string | null>(null);
@@ -267,6 +267,30 @@ export default function KanbanPage() {
       seedDefaultColumns(sector).catch(console.error);
     }
   }, [colsLoaded, fireColumns.length, sector, canManage]);
+
+  /**
+   * Abertura direta vinda de outra tela (`/kanban?setor=B.I.&card=<id>`) — é
+   * assim que o Cronograma e as Recorrências levam para o card.
+   *
+   * Lido de `window.location` e não de `useSearchParams` porque o hook obriga a
+   * página a virar dinâmica e a ter Suspense no prerender; aqui o valor só
+   * interessa uma vez, na montagem.
+   */
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const setorQ = q.get("setor");
+    const cardQ = q.get("card");
+    if (setorQ) setSector(setorQ);
+    if (cardQ) setAlvoDireto(cardQ);
+  }, []);
+
+  useEffect(() => {
+    if (!alvoDireto) return;
+    const c = cards.find((x) => x.id === alvoDireto);
+    if (!c) return; // ainda carregando o setor certo
+    setEdit({ mode: "edit", card: c });
+    setAlvoDireto(null);
+  }, [alvoDireto, cards]);
 
   useEffect(() => {
     const u = subscribeUsers(setUsers, () => {});
@@ -869,37 +893,22 @@ function CardModal({
     return opts;
   }
 
-  // Solicitante e Setor solicitante vêm do CADASTRO (aba Admin), não dos usuários.
+  // Solicitante e Setor solicitante vêm do CADASTRO (aba Admin), não dos
+  // usuários — e são campos independentes: a pessoa não pertence a um setor,
+  // então um não filtra nem limpa o outro.
   const reqSetorOptions: SelectOption[] = [
     { value: "", label: "— Não definido —" },
     ...reqSetores.map((s) => ({ value: s.name, label: s.name })),
   ];
   const solicOptions: SelectOption[] = (() => {
-    const base = requesterSector
-      ? solicitantes.filter((s) => s.setor === requesterSector)
-      : solicitantes;
     const opts: SelectOption[] = [{ value: "", label: "— Não definido —" }];
-    base.forEach((s) => opts.push({ value: s.name, label: s.name }));
-    // valor legado/fora do filtro atual continua visível para não sumir
-    if (requester && !base.some((s) => s.name === requester)) {
+    solicitantes.forEach((s) => opts.push({ value: s.name, label: s.name }));
+    // valor legado (nome já apagado do cadastro) continua visível para não sumir
+    if (requester && !solicitantes.some((s) => s.name === requester)) {
       opts.push({ value: requester, label: requester });
     }
     return opts;
   })();
-  function pickSolicitante(name: string) {
-    setRequester(name);
-    if (name && !requesterSector) {
-      const s = solicitantes.find((x) => x.name === name);
-      if (s?.setor) setRequesterSector(s.setor);
-    }
-  }
-  function pickReqSetor(name: string) {
-    setRequesterSector(name);
-    if (name && requester) {
-      const s = solicitantes.find((x) => x.name === requester);
-      if (s && s.setor !== name) setRequester("");
-    }
-  }
 
   /**
    * Cadastra o setor ou o solicitante sem sair do formulário.
@@ -917,9 +926,9 @@ function CardModal({
     try {
       if (criando === "setor") {
         const nome = await garantirSetorSolicitante(n, reqSetores);
-        pickReqSetor(nome);
+        setRequesterSector(nome);
       } else {
-        const nome = await garantirSolicitante(n, requesterSector, solicitantes);
+        const nome = await garantirSolicitante(n, solicitantes);
         setRequester(nome);
       }
       setNovoNome("");
@@ -1133,7 +1142,7 @@ function CardModal({
             <Select
               value={requesterSector}
               options={reqSetorOptions}
-              onChange={pickReqSetor}
+              onChange={setRequesterSector}
               placeholder="— Não definido —"
               ariaLabel="Setor solicitante"
             />
@@ -1160,18 +1169,13 @@ function CardModal({
               onChange={setNovoNome}
               onSalvar={salvarCadastro}
               salvando={salvandoCadastro}
-              placeholder={
-                requesterSector
-                  ? `Nome — ${requesterSector}`
-                  : "Escolha o setor antes…"
-              }
-              desabilitado={!requesterSector}
+              placeholder="Nome do solicitante…"
             />
           ) : (
             <Select
               value={requester}
               options={solicOptions}
-              onChange={pickSolicitante}
+              onChange={setRequester}
               placeholder="— Não definido —"
               ariaLabel="Solicitante"
             />

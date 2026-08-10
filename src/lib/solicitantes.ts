@@ -12,10 +12,15 @@ import { db } from "./firebase";
  * Solicitantes e setores solicitantes — QUEM pede as demandas. São um cadastro
  * próprio (não os usuários do sistema): um solicitante pode não ter acesso ao
  * Smart Meet. Apenas admins gerenciam (a aba Admin é admin-only).
+ *
+ * Os dois cadastros são INDEPENDENTES: a pessoa não pertence a um setor. Quem
+ * pede uma demanda pode pedi-la por qualquer setor (e a mesma pessoa muda de
+ * área), então amarrar os dois só fazia a lista de nomes sumir quando o setor
+ * escolhido não batia com o cadastro. Na demanda, cada campo é gravado por si.
  */
 
 export type SolicitanteSetor = { id: string; name: string };
-export type Solicitante = { id: string; name: string; setor: string };
+export type Solicitante = { id: string; name: string };
 
 function byName<T extends { name: string }>(a: T, b: T): number {
   return a.name.localeCompare(b.name, "pt-BR");
@@ -76,13 +81,9 @@ export function subscribeSolicitantes(
   );
 }
 
-export async function addSolicitante(
-  name: string,
-  setor: string,
-): Promise<void> {
+export async function addSolicitante(name: string): Promise<void> {
   await addDoc(collection(db, "solicitantes"), {
     name: name.trim(),
-    setor: setor.trim(),
     createdAt: serverTimestamp(),
   });
 }
@@ -119,20 +120,17 @@ export async function garantirSetorSolicitante(
   return n;
 }
 
-/** Idem para a pessoa, considerando duplicata apenas DENTRO do mesmo setor. */
+/** Idem para a pessoa — duplicata é o mesmo nome no cadastro inteiro. */
 export async function garantirSolicitante(
   nome: string,
-  setor: string,
   existentes: Solicitante[],
 ): Promise<string> {
   const n = nome.trim();
   if (!n) throw new Error("Informe o nome do solicitante.");
-  if (!setor.trim()) throw new Error("Escolha o setor solicitante antes.");
   const igual = existentes.find(
-    (s) =>
-      s.setor === setor && s.name.trim().toLowerCase() === n.toLowerCase(),
+    (s) => s.name.trim().toLowerCase() === n.toLowerCase(),
   );
   if (igual) return igual.name;
-  await addSolicitante(n, setor);
+  await addSolicitante(n);
   return n;
 }

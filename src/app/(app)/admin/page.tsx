@@ -150,7 +150,6 @@ function SolicitantesAdmin() {
   const [pessoas, setPessoas] = useState<Solicitante[]>([]);
   const [newSetor, setNewSetor] = useState("");
   const [newName, setNewName] = useState("");
-  const [newPessoaSetor, setNewPessoaSetor] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -192,9 +191,13 @@ function SolicitantesAdmin() {
   async function addPessoa() {
     const n = newName.trim();
     if (!n || busy) return;
+    if (pessoas.some((p) => p.name.toLowerCase() === n.toLowerCase())) {
+      setNewName("");
+      return;
+    }
     setBusy(true);
     try {
-      await addSolicitante(n, newPessoaSetor);
+      await addSolicitante(n);
       setNewName("");
     } catch (e) {
       console.error(e);
@@ -267,18 +270,6 @@ function SolicitantesAdmin() {
               if (e.key === "Enter") addPessoa();
             }}
           />
-          <select
-            className={styles.select}
-            value={newPessoaSetor}
-            onChange={(e) => setNewPessoaSetor(e.target.value)}
-          >
-            <option value="">— Setor —</option>
-            {setores.map((s) => (
-              <option key={s.id} value={s.name}>
-                {s.name}
-              </option>
-            ))}
-          </select>
           <button
             className={styles.btnPrimary}
             onClick={addPessoa}
@@ -293,12 +284,7 @@ function SolicitantesAdmin() {
           <div className={styles.solList}>
             {pessoas.map((p) => (
               <div key={p.id} className={styles.solItem}>
-                <span>
-                  {p.name}
-                  {p.setor ? (
-                    <span className={styles.solSetor}> · {p.setor}</span>
-                  ) : null}
-                </span>
+                <span>{p.name}</span>
                 <button
                   className={styles.iconBtn}
                   title="Remover"

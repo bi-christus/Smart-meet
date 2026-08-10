@@ -3,6 +3,10 @@
     {
       "path": "/api/drive/sync",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/recorrencias/gerar",
+      "schedule": "10 6 * * *"
     }
   ]
 }
