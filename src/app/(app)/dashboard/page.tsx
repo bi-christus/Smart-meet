@@ -592,27 +592,23 @@ function Vazio({ children }: { children: React.ReactNode }) {
 /** Rótulo do card cujo setor solicitante ficou em branco. */
 const SEM_ORIGEM = "Sem setor solicitante";
 
-/** "Ana, João +2" — nomes bastantes para reconhecer, curto bastante para caber. */
-function listaCurta(nomes: string[], teto = 2): string {
-  const ordenados = [...nomes].sort((a, b) => a.localeCompare(b, "pt-BR"));
-  const resto = ordenados.length - teto;
-  return resto > 0
-    ? `${ordenados.slice(0, teto).join(", ")} +${resto}`
-    : ordenados.join(", ");
-}
-
 /**
- * Carga de cada responsável, segmentada por DE ONDE a demanda veio.
+ * Carga de cada responsável, segmentada por QUAL SETOR pediu.
  *
  * A pergunta que o gestor faz olhando para uma barra grande não é "quantas
- * são", é "quantas são de quem" — três demandas do mesmo setor solicitante se
- * negociam de uma vez com aquele setor, três de setores diferentes não. Por
- * isso o segmento é o setor solicitante e não o setor interno do quadro, que
- * na prática é sempre o mesmo em quem olha um recorte só.
+ * são", é "quais setores puxam mais desta pessoa" — três demandas do mesmo
+ * setor solicitante se negociam de uma vez com aquele setor, três de setores
+ * diferentes não. Por isso o segmento é o setor solicitante e não o setor
+ * interno do quadro, que na prática é sempre o mesmo em quem olha um recorte
+ * só.
  *
- * Os segmentos levam 2px de respiro entre si, e a linha abaixo repete origem,
- * contagem e nomes em texto: no tema claro a paleta categórica fica abaixo de
- * 3:1 contra o fundo, e cor sozinha não responde nada.
+ * O nome de quem pediu fica FORA, de propósito: aqui a unidade de negociação é
+ * o setor, e listar pessoas transformava a leitura em "quem me pediu o quê",
+ * que é assunto do card. Decisão do Ítalo em 10/08/2026.
+ *
+ * Os segmentos levam 2px de respiro entre si, e a linha abaixo repete setor e
+ * contagem em texto: no tema claro a paleta categórica fica abaixo de 3:1
+ * contra o fundo, e cor sozinha não responde nada.
  */
 function BarrasResponsavel({
   cards,
@@ -626,23 +622,14 @@ function BarrasResponsavel({
   const linhas = useMemo(() => {
     const por: Record<
       string,
-      {
-        total: number;
-        origens: Record<string, { n: number; quem: Set<string> }>;
-      }
+      { total: number; origens: Record<string, number> }
     > = {};
     cards.forEach((c) => {
       const quem = c.assignee || "__sem__";
       const r = (por[quem] = por[quem] ?? { total: 0, origens: {} });
       r.total++;
       const origem = c.requesterSector?.trim() || SEM_ORIGEM;
-      const o = (r.origens[origem] = r.origens[origem] ?? {
-        n: 0,
-        quem: new Set<string>(),
-      });
-      o.n++;
-      const solicitante = c.requester?.trim();
-      if (solicitante) o.quem.add(solicitante);
+      r.origens[origem] = (r.origens[origem] ?? 0) + 1;
     });
     return Object.entries(por).sort(
       (a, b) =>
@@ -693,7 +680,7 @@ function BarrasResponsavel({
           const horas = horasDe[quem] ?? 0;
           const nome = quem === "__sem__" ? "Sem responsável" : nomeDe(quem);
           const origens = Object.entries(d.origens).sort(
-            (a, b) => b[1].n - a[1].n || a[0].localeCompare(b[0], "pt-BR"),
+            (a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "pt-BR"),
           );
           return (
             <div key={quem} className={styles.barraBloco}>
@@ -702,17 +689,15 @@ function BarrasResponsavel({
                   {nome}
                 </div>
                 <div className={styles.barraTrilho}>
-                  {origens.map(([origem, o]) => (
+                  {origens.map(([origem, n]) => (
                     <div
                       key={origem}
                       className={styles.barraSeg}
                       style={{
-                        width: `${(o.n / max) * 100}%`,
+                        width: `${(n / max) * 100}%`,
                         background: corDaOrigem[origem],
                       }}
-                      title={`${origem} · ${o.n}${
-                        o.quem.size ? ` · ${[...o.quem].join(", ")}` : ""
-                      }`}
+                      title={`${origem} · ${n}`}
                     />
                   ))}
                 </div>
@@ -730,20 +715,11 @@ function BarrasResponsavel({
                   mostrarHoras ? "" : styles.barraOrigensSemHoras
                 }`}
               >
-                {origens.map(([origem, o]) => (
-                  <span
-                    key={origem}
-                    className={styles.origem}
-                    title={
-                      o.quem.size
-                        ? `Solicitantes: ${[...o.quem].join(", ")}`
-                        : "Nenhum solicitante informado"
-                    }
-                  >
+                {origens.map(([origem, n]) => (
+                  <span key={origem} className={styles.origem}>
                     <i style={{ background: corDaOrigem[origem] }} />
                     {origem}
-                    <b>{o.n}</b>
-                    {o.quem.size > 0 && <em>{listaCurta([...o.quem])}</em>}
+                    <b>{n}</b>
                   </span>
                 ))}
               </div>

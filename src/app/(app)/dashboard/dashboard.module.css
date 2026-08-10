@@ -295,9 +295,9 @@
   color: var(--line);
 }
 
-/* Origem da demanda em texto, alinhada ao início da barra (150px do nome +
-   10px do gap). Cor nomeia o segmento, o número diz quantos e o nome em
-   itálico diz quem pediu — a barra sozinha não responde nenhuma das três. */
+/* Setor solicitante em texto, alinhado ao início da barra (150px do nome +
+   10px do gap). A cor nomeia o segmento e o número diz quantos — a barra
+   sozinha não responde nenhuma das duas. */
 .barraOrigens {
   display: flex;
   flex-wrap: wrap;
@@ -326,14 +326,6 @@
 .origem b {
   color: var(--tx-2);
   font-variant-numeric: tabular-nums;
-}
-.origem em {
-  font-style: normal;
-  color: var(--tx-3);
-  opacity: 0.75;
-}
-.origem em::before {
-  content: "· ";
 }
 @media (max-width: 640px) {
   /* No celular a coluna de nome come a barra: 100px corta mais nomes, mas o
