@@ -393,6 +393,12 @@
   color: var(--tx-3);
   border: 1px dashed var(--line-soft);
 }
+/* Entregue: o prazo vira registro, não cobrança. Verde e não vermelho mesmo
+   com a data no passado — a entrega aconteceu, o atraso não existe mais. */
+.due_done {
+  background: var(--ok-bg);
+  color: var(--ok-tx);
+}
 .aging {
   display: inline-flex;
   align-items: center;
@@ -1212,4 +1218,41 @@
 .novoCadastroOk:disabled {
   opacity: .45;
   cursor: not-allowed;
+}
+
+/* Prazo indefinido: a opção vive no rótulo do campo, ao lado do que ela
+   desliga — separada, viraria um checkbox solto que ninguém relaciona à data. */
+.semPrazoOpc {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  text-transform: none;
+  color: var(--tx-3);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.semPrazoOpc:hover {
+  color: var(--tx-2);
+}
+.semPrazoOpc input {
+  width: 13px;
+  height: 13px;
+  accent-color: var(--brand);
+  cursor: pointer;
+}
+/* Mesma altura do input de data que ele substitui: sem isso o formulário
+   inteiro pula 40px para cima ao marcar a opção. */
+.semPrazoAviso {
+  display: flex;
+  align-items: center;
+  height: 40px;
+  padding: 0 11px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: var(--s2);
+  color: var(--tx-3);
+  font-size: 12.5px;
 }

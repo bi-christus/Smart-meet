@@ -68,7 +68,9 @@ const ROTULO = Object.fromEntries(
  *  sobrevive ao modo escuro nem serve a quem não distingue as cores. */
 function celulaPrazo(l: LinhaDemanda): Celula {
   if (l.diasPrazo === null) {
-    return { texto: "sem prazo", cor: ESTADO.neutro };
+    // "sem prazo definido" e não "sem prazo": o gestor precisa ler que a data
+    // ainda NÃO foi combinada, não que alguém esqueceu de preencher o campo.
+    return { texto: "sem prazo definido", cor: ESTADO.neutro };
   }
   if (l.diasPrazo < 0) {
     const d = Math.abs(l.diasPrazo);
@@ -145,7 +147,7 @@ function versaoTexto(d: DadosRelatorio, meta: MetaRelatorio): string {
     l.push(meta.recado, "");
   }
   l.push(
-    `${d.total} abertas · ${d.atrasadas} atrasadas · ${d.semPrazo} sem prazo · ${d.concluidas} concluídas`,
+    `${d.total} abertas · ${d.atrasadas} atrasadas · ${d.semPrazo} sem prazo definido · ${d.concluidas} concluídas`,
   );
   l.push("");
   for (const g of d.grupos) {
@@ -178,7 +180,7 @@ export function montarRelatorio(
 
   const preheader =
     `${d.atrasadas} ${plural(d.atrasadas, "atrasada", "atrasadas")} · ` +
-    `${d.semPrazo} sem prazo · ${d.total} ${plural(d.total, "aberta", "abertas")}`;
+    `${d.semPrazo} sem prazo definido · ${d.total} ${plural(d.total, "aberta", "abertas")}`;
 
   const partes: string[] = [];
   // Teto de linhas por grupo. Não é preferência: o corte real é por orçamento
@@ -209,7 +211,7 @@ export function montarRelatorio(
         },
         {
           valor: numBr(d.semPrazo),
-          rotulo: "SEM PRAZO",
+          rotulo: "SEM PRAZO DEFINIDO",
           cor: d.semPrazo > 0 ? ESTADO.atencao : undefined,
         },
         { valor: numBr(d.concluidas), rotulo: "CONCLUÍDAS" },
@@ -288,7 +290,7 @@ export function montarRelatorio(
         ["Falta", "Demandas", "Do total"],
         [
           linha("Sem responsável", semResp),
-          linha("Sem prazo", d.semPrazo),
+          linha("Sem prazo definido", d.semPrazo),
           linha("Sem data de entrada na etapa", d.semDataEntrada),
         ],
       ),
@@ -344,7 +346,8 @@ export function montarRelatorio(
   partes.push(
     rodape(ctx, [
       `Apurado em ${dataExtenso(new Date(meta.agora))} a partir do quadro de ${escopo}.`,
-      "Concluídas são as demandas em etapas cujo nome indica conclusão — a etapa de entrega ainda não é declarada no quadro.",
+      "Concluídas são as demandas na última etapa do quadro ou em etapa cujo nome indica conclusão. Elas ficam fora de tudo o que se lê acima — entrega feita não atrasa, mesmo com o prazo no passado.",
+      "Sem prazo definido não é atraso nem esquecimento: é demanda cuja data de entrega ainda não foi combinada.",
       "Parada há N dias conta desde a última mudança de etapa; demandas sem esse registro aparecem com traço.",
       "Este relatório ignora os filtros ativos do quadro: ele traz o setor inteiro.",
     ]),

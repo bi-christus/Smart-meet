@@ -273,11 +273,13 @@ export type OccState = "done" | "late" | "doing" | "open" | "gone";
 export function occState(
   occ: Pick<Ocorrencia, "date">,
   card: { columnId: string } | undefined,
-  cols: { firstId: string; doneId: string },
+  cols: { firstId: string; doneIds: Set<string> },
   today: Date,
 ): OccState {
   if (!card) return "gone";
-  if (card.columnId === cols.doneId) return "done";
+  // A entrega é checada ANTES do resto: manutenção feita não atrasa, mesmo que
+  // a data prevista do ciclo já tenha passado.
+  if (cols.doneIds.has(card.columnId)) return "done";
   if (card.columnId === cols.firstId) {
     return daysBetween(occ.date, today) > 0 ? "late" : "open";
   }

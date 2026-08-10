@@ -24,6 +24,7 @@ import {
   updateColumn,
   deleteColumn,
   reorderColumns,
+  colunasEntregues,
   DEFAULT_COLUMNS,
   COLUMN_COLORS,
   PRIORITY_LABEL,
@@ -85,13 +86,17 @@ function fmtShort(d: Date): string {
 }
 function dueInfo(
   due?: string | null,
-): { label: string; tone: "late" | "soon" | "ok" | "none" } | null {
+  entregue?: boolean,
+): { label: string; tone: "late" | "soon" | "ok" | "none" | "done" } | null {
   // Demanda aceita a partir de uma reunião entra sem prazo de propósito — a
   // fila de validação não exige datas para não virar uma fila que ninguém abre.
   // Sem este selo, ela ficaria visualmente igual a uma demanda com tudo em dia.
-  if (!due) return { label: "sem prazo", tone: "none" };
-  const today = startOfToday();
+  if (!due) return { label: "sem prazo definido", tone: "none" };
   const d = parseDue(due);
+  // Card na etapa de entrega não atrasa: o prazo pode ter passado DEPOIS de o
+  // trabalho terminar, e pintar isso de vermelho cobra uma entrega já feita.
+  if (entregue) return { label: `entregue · ${fmtShort(d)}`, tone: "done" };
+  const today = startOfToday();
   const diff = Math.round((d.getTime() - today.getTime()) / 86400000);
   const tone: "late" | "soon" | "ok" =
     diff < 0 ? "late" : diff <= 3 ? "soon" : "ok";
@@ -391,6 +396,10 @@ export default function KanbanPage() {
       }));
   const colsReal = fireColumns.length > 0;
   const canEditCols = canManage && colsReal;
+  /** Etapas em que a demanda já foi entregue — nelas o prazo não cobra nada. */
+  const entregues = colunasEntregues(
+    displayCols.map((c) => ({ id: c.colId, title: c.title })),
+  );
 
   if (!profile) return null;
 
@@ -577,6 +586,7 @@ export default function KanbanPage() {
                       key={c.id}
                       card={c}
                       col={col}
+                      entregue={entregues.has(col.colId)}
                       assignee={c.assignee ? usersMap[c.assignee] : undefined}
                       requester={c.requester ?? undefined}
                       requesterSector={c.requesterSector ?? undefined}
@@ -667,6 +677,7 @@ function GripDots() {
 function CardItem({
   card,
   col,
+  entregue,
   assignee,
   requester,
   requesterSector,
@@ -677,6 +688,7 @@ function CardItem({
 }: {
   card: Card;
   col: ColumnDoc;
+  entregue: boolean;
   assignee?: UserProfile;
   requester?: string;
   requesterSector?: string;
@@ -685,7 +697,7 @@ function CardItem({
   onDragEnd: () => void;
   onClick: () => void;
 }) {
-  const di = dueInfo(card.due);
+  const di = dueInfo(card.due, entregue);
   const startShort = card.startDate ? fmtShort(parseDue(card.startDate)) : "";
   const aging = col.colId === "aguardando" ? agingDays(card.enteredAt) : 0;
   const items = card.checklist ?? [];
@@ -844,6 +856,14 @@ function CardModal({
   const [due, setDue] = useState(
     card?.due ?? (isNew ? plusDays(todayStr(), 7) : ""),
   );
+  /**
+   * Demanda pode nascer sem prazo — e isso é um estado, não um esquecimento.
+   *
+   * Quando o pedido chega antes de a data existir, exigir um prazo faz alguém
+   * inventar um, e prazo inventado vira atraso falso no relatório do gestor.
+   * Marcado aqui, o card sai como "sem prazo definido" em toda a leitura.
+   */
+  const [semPrazo, setSemPrazo] = useState(isNew ? false : !card?.due);
   const [tags, setTags] = useState<string[]>(card?.tags ?? []);
   const [newTag, setNewTag] = useState("");
   const [checklist, setChecklist] = useState<ChecklistItem[]>(() =>
@@ -1003,8 +1023,10 @@ function CardModal({
       setErr("Informe um título.");
       return;
     }
-    if (!startDate || !due) {
-      setErr("Defina a data de início e o prazo de entrega.");
+    if (!semPrazo && !due) {
+      setErr(
+        "Informe o prazo de entrega ou marque “sem prazo definido”.",
+      );
       return;
     }
     setSaving(true);
@@ -1018,7 +1040,7 @@ function CardModal({
         requester: requester || null,
         requesterSector: requesterSector || null,
         startDate: startDate || null,
-        due: due || null,
+        due: semPrazo ? null : due || null,
         priority,
         tags,
         checklist,
@@ -1210,13 +1232,38 @@ function CardModal({
           />
         </div>
         <div className={styles.field}>
-          <label className={styles.label}>Prazo de entrega</label>
-          <input
-            className={styles.inp}
-            type="date"
-            value={due ?? ""}
-            onChange={(e) => setDue(e.target.value)}
-          />
+          {/* `div` e não `label`: o `label` da opção mora aqui dentro, e um
+              dentro do outro é ambíguo para o clique e inválido no HTML. */}
+          <div className={styles.labelLinha}>
+            Prazo de entrega
+            <label className={styles.semPrazoOpc}>
+              <input
+                type="checkbox"
+                checked={semPrazo}
+                onChange={(e) => {
+                  const marcou = e.target.checked;
+                  setSemPrazo(marcou);
+                  // Desmarcar devolve uma data usável em vez de campo vazio:
+                  // quem desmarca quer prazo, não quer procurar o calendário.
+                  setDue(marcou ? "" : plusDays(startDate || todayStr(), 7));
+                }}
+              />
+              sem prazo definido
+            </label>
+          </div>
+          {semPrazo ? (
+            <div className={styles.semPrazoAviso}>
+              A definir — sai como “sem prazo definido” no relatório
+            </div>
+          ) : (
+            <input
+              className={styles.inp}
+              type="date"
+              value={due ?? ""}
+              onChange={(e) => setDue(e.target.value)}
+              aria-label="Prazo de entrega"
+            />
+          )}
         </div>
       </div>
 

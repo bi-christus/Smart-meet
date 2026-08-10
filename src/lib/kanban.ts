@@ -15,8 +15,13 @@ import { db } from "./firebase";
 
 // Moradia em módulo puro: o gerador de recorrências lê as colunas no servidor,
 // onde importar este arquivo (e o SDK do cliente junto) não é possível.
-import { DEFAULT_COLUMNS, type KanbanColumn } from "./kanban-columns";
-export { DEFAULT_COLUMNS };
+import {
+  DEFAULT_COLUMNS,
+  colunaEhTerminal,
+  colunasEntregues,
+  type KanbanColumn,
+} from "./kanban-columns";
+export { DEFAULT_COLUMNS, colunaEhTerminal, colunasEntregues };
 export type { KanbanColumn };
 
 export type Priority = "alta" | "media" | "baixa";
@@ -328,6 +333,23 @@ export function columnsBySector(
   });
   sectors.forEach((s) => {
     if (!out[s]?.length) out[s] = DEFAULT_COLUMNS;
+  });
+  return out;
+}
+
+/**
+ * Etapas de entrega de cada setor, prontas para `has(card.columnId)`.
+ *
+ * Dashboard e Cronograma leem vários quadros de uma vez e precisam saber, card
+ * a card, se aquela demanda já foi entregue — sem isso, prazo vencido de coisa
+ * concluída volta a aparecer como atraso.
+ */
+export function deliveredBySector(
+  colsPorSetor: Record<string, KanbanColumn[]>,
+): Record<string, Set<string>> {
+  const out: Record<string, Set<string>> = {};
+  Object.entries(colsPorSetor).forEach(([s, lista]) => {
+    out[s] = colunasEntregues(lista);
   });
   return out;
 }

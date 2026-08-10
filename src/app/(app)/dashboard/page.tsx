@@ -8,6 +8,7 @@ import {
   subscribeCardsForSectors,
   subscribeColumnsForSectors,
   columnsBySector,
+  deliveredBySector,
   DEMAND_TYPE_COLOR,
   DEMAND_TYPE_LABEL,
   DEMAND_TYPES,
@@ -36,19 +37,25 @@ import styles from "./dashboard.module.css";
  *
  * Toda métrica aqui é do SISTEMA: fila que cresce, prazo que estoura, demanda
  * que fica parada. Nenhuma é ranking de pessoa — "consumo por responsável"
- * mostra carga para redistribuir, e é por isso que ele soma horas de
- * manutenção recorrente junto: quem tem quatro recorrências no nome tem menos
- * mão para demanda nova, mesmo com poucos cards.
+ * mostra carga para redistribuir, segmentada pelo setor solicitante (de onde a
+ * demanda veio, que é com quem se negocia) e somando as horas de manutenção
+ * recorrente: quem tem quatro recorrências no nome tem menos mão para demanda
+ * nova, mesmo com poucos cards.
+ *
+ * DEMANDA ENTREGUE SAI DE TUDO. Card na etapa de entrega não entra em "em
+ * aberto", não conta como vencido e não pesa na carga de ninguém — o prazo dele
+ * pode ter passado DEPOIS de o trabalho acabar. A regra de "o que é entrega"
+ * mora em `lib/kanban-columns`, uma só para o app inteiro.
  *
  * SOBRE A PRECISÃO DOS NÚMEROS DE FLUXO: o app não guarda o histórico de
  * movimentação dos cards. As séries são derivadas do que existe —
  *   entrada  = data de criação do card;
- *   entrega  = quando o card entrou na última coluna do quadro (`enteredAt`);
+ *   entrega  = quando o card entrou na etapa de entrega (`enteredAt`);
  *   cycle time = diferença entre as duas.
- * É aproximação, e está escrito na tela. Um card que voltou de coluna depois
- * de concluído conta a partir do último movimento; nada disso muda a leitura
- * que importa (a tendência), mas muda o número exato — e prometer prazo com
- * número exato que não existe seria pior do que não medir.
+ * É aproximação. Um card que voltou de coluna depois de concluído conta a
+ * partir do último movimento; nada disso muda a leitura que importa (a
+ * tendência), mas muda o número exato — e prometer prazo com número exato que
+ * não existe seria pior do que não medir.
  */
 
 type Periodo = 12 | 26 | 52;
@@ -132,17 +139,21 @@ export default function DashboardPage() {
     return m;
   }, [sectors]);
 
-  const finalDe = useMemo(() => {
-    const m: Record<string, string> = {};
-    Object.entries(colsPorSetor).forEach(([s, lista]) => {
-      m[s] = lista[lista.length - 1]?.id ?? "";
-    });
-    return m;
-  }, [colsPorSetor]);
+  /**
+   * Demanda entregue não conta como aberta — e, principalmente, não atrasa.
+   *
+   * Todo número desta tela (vencidas, prazos, fila) se apoia nisto: o card na
+   * etapa de entrega sai da conta mesmo com a data de prazo no passado, porque
+   * a data passou DEPOIS de o trabalho terminar.
+   */
+  const entreguesPorSetor = useMemo(
+    () => deliveredBySector(colsPorSetor),
+    [colsPorSetor],
+  );
 
   const concluido = useMemo(
-    () => (c: Card) => c.columnId === finalDe[c.sector],
-    [finalDe],
+    () => (c: Card) => !!entreguesPorSetor[c.sector]?.has(c.columnId),
+    [entreguesPorSetor],
   );
 
   const pessoas = useMemo(() => {
@@ -200,11 +211,6 @@ export default function DashboardPage() {
     () => recs.filter((r) => noRecorte.includes(r.sector)),
     [recs, noRecorte],
   );
-  const cargaRec = useMemo(
-    () => recsNoRecorte.reduce((s, r) => s + recLoadHours(r), 0),
-    [recsNoRecorte],
-  );
-
   const prazos = useMemo(() => {
     const vencidas = abertos.filter(
       (c) => c.due && daysBetween(c.due, hoje) > 0,
@@ -225,7 +231,6 @@ export default function DashboardPage() {
         <div className={styles.head}>
           <div className={styles.headMain}>
             <h1>Dashboard</h1>
-            <p>Fluxo, carga e prazos do setor.</p>
           </div>
         </div>
         <div className={styles.vazioTela}>
@@ -250,10 +255,6 @@ export default function DashboardPage() {
       <div className={styles.head}>
         <div className={styles.headMain}>
           <h1>Dashboard — {fSetor || "todos os setores"}</h1>
-          <p>
-            Fluxo, carga por responsável e prazos do recorte. Métricas de
-            sistema, nunca ranking de pessoas.
-          </p>
         </div>
         <div className={styles.periodo}>
           <Select
@@ -354,62 +355,34 @@ export default function DashboardPage() {
           unidade="/4 sem"
           rodape="concluídas nas últimas 4 semanas"
         />
-        <Kpi
-          icone="recorrencias"
-          rotulo="Carga recorrente"
-          valor={hh(cargaRec)}
-          unidade="h/mês"
-          rodape={`${recsNoRecorte.length} ${
-            recsNoRecorte.length === 1
-              ? "recorrência programada"
-              : "recorrências programadas"
-          }`}
-        />
       </div>
 
       <div className={styles.paineis}>
         <section className={styles.painel}>
-          <PainelHead
-            titulo="Consumo por responsável"
-            sub="Demandas em aberto de cada um, empilhadas pelo setor · h/mês = manutenção recorrente sob sua responsabilidade"
-          />
+          <PainelHead titulo="Consumo por responsável" />
           <BarrasResponsavel
             cards={abertos}
             recs={recsNoRecorte}
             nomeDe={nomeDe}
-            corDoSetor={corDoSetor}
           />
         </section>
 
         <section className={styles.painel}>
-          <PainelHead
-            titulo="Demandas por tipo"
-            sub="Distribuição do que está em aberto no recorte"
-          />
+          <PainelHead titulo="Demandas por tipo" />
           <Rosca cards={abertos} />
         </section>
 
         <section className={styles.painel}>
           <PainelHead
             titulo="Demanda que entra × demanda que sai"
-            sub="Se a entrada supera a entrega por semanas seguidas, a fila cresce — e nenhum esforço individual resolve"
+            chip={`fila ${fluxo.fila[fluxo.fila.length - 1] ?? 0}`}
           />
           <FluxoSemanal fluxo={fluxo} />
-          <div className={styles.nota}>
-            <Icon name="info" size={13} />
-            <span>
-              Aproximação: <b>entrada</b> é a data de criação do card e{" "}
-              <b>entrega</b> é a chegada à última coluna do quadro. O app ainda
-              não guarda o histórico de movimentação, então a tendência é
-              confiável, o número exato não.
-            </span>
-          </div>
         </section>
 
         <section className={styles.painel}>
           <PainelHead
             titulo="Cycle time e previsibilidade"
-            sub="Cada ponto é uma demanda concluída · percentis 50/85/95 (base para prometer prazo)"
             chip={
               fluxo.amostra >= MIN_AMOSTRA
                 ? `p50 ${fluxo.p50}d · p85 ${fluxo.p85}d`
@@ -417,21 +390,11 @@ export default function DashboardPage() {
             }
           />
           <CycleTime fluxo={fluxo} />
-          {fluxo.amostra >= MIN_AMOSTRA && (
-            <div className={styles.nota}>
-              <Icon name="info" size={13} />
-              <span>
-                Prazo se promete por percentil, não por média: “85% das demandas
-                saem em até <b>{fluxo.p85} dias</b>”.
-              </span>
-            </div>
-          )}
         </section>
 
         <section className={`${styles.painel} ${styles.painelLargo}`}>
           <PainelHead
             titulo="Prazos — vencidas e a vencer"
-            sub="Demandas em aberto com prazo vencido ou nos próximos 14 dias"
             chip={`${prazos.vencidas} ${prazos.vencidas === 1 ? "vencida" : "vencidas"}`}
             chipTom={prazos.vencidas ? "danger" : undefined}
           />
@@ -554,12 +517,10 @@ function calcularFluxo(
 
 function PainelHead({
   titulo,
-  sub,
   chip,
   chipTom,
 }: {
   titulo: string;
-  sub: string;
   chip?: string;
   chipTom?: "danger";
 }) {
@@ -567,7 +528,6 @@ function PainelHead({
     <div className={styles.painelHead}>
       <div>
         <h3>{titulo}</h3>
-        <p>{sub}</p>
       </div>
       {chip && (
         <span
@@ -618,32 +578,60 @@ function Vazio({ children }: { children: React.ReactNode }) {
   return <div className={styles.vazioPainel}>{children}</div>;
 }
 
+/** Rótulo do card cujo setor solicitante ficou em branco. */
+const SEM_ORIGEM = "Sem setor solicitante";
+
+/** "Ana, João +2" — nomes bastantes para reconhecer, curto bastante para caber. */
+function listaCurta(nomes: string[], teto = 2): string {
+  const ordenados = [...nomes].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  const resto = ordenados.length - teto;
+  return resto > 0
+    ? `${ordenados.slice(0, teto).join(", ")} +${resto}`
+    : ordenados.join(", ");
+}
+
 /**
- * Carga de cada responsável, segmentada pelo setor da demanda.
+ * Carga de cada responsável, segmentada por DE ONDE a demanda veio.
  *
- * Os segmentos levam 2px de respiro entre si e o total vai escrito no fim da
- * barra: no tema claro a paleta categórica fica abaixo de 3:1 contra o fundo,
- * e cor sozinha deixaria de responder "quantos são".
+ * A pergunta que o gestor faz olhando para uma barra grande não é "quantas
+ * são", é "quantas são de quem" — três demandas do mesmo setor solicitante se
+ * negociam de uma vez com aquele setor, três de setores diferentes não. Por
+ * isso o segmento é o setor solicitante e não o setor interno do quadro, que
+ * na prática é sempre o mesmo em quem olha um recorte só.
+ *
+ * Os segmentos levam 2px de respiro entre si, e a linha abaixo repete origem,
+ * contagem e nomes em texto: no tema claro a paleta categórica fica abaixo de
+ * 3:1 contra o fundo, e cor sozinha não responde nada.
  */
 function BarrasResponsavel({
   cards,
   recs,
   nomeDe,
-  corDoSetor,
 }: {
   cards: Card[];
   recs: Recorrencia[];
   nomeDe: (e: string) => string;
-  corDoSetor: Record<string, string>;
 }) {
   const linhas = useMemo(() => {
-    const por: Record<string, { total: number; setores: Record<string, number> }> =
-      {};
+    const por: Record<
+      string,
+      {
+        total: number;
+        origens: Record<string, { n: number; quem: Set<string> }>;
+      }
+    > = {};
     cards.forEach((c) => {
       const quem = c.assignee || "__sem__";
-      const r = (por[quem] = por[quem] ?? { total: 0, setores: {} });
+      const r = (por[quem] = por[quem] ?? { total: 0, origens: {} });
       r.total++;
-      r.setores[c.sector] = (r.setores[c.sector] ?? 0) + 1;
+      const origem = c.requesterSector?.trim() || SEM_ORIGEM;
+      const o = (r.origens[origem] = r.origens[origem] ?? {
+        n: 0,
+        quem: new Set<string>(),
+      });
+      o.n++;
+      const solicitante = c.requester?.trim();
+      if (solicitante) o.quem.add(solicitante);
     });
     return Object.entries(por).sort(
       (a, b) =>
@@ -661,10 +649,23 @@ function BarrasResponsavel({
     return m;
   }, [recs]);
 
-  const setoresUsados = useMemo(
-    () => [...new Set(cards.map((c) => c.sector))].sort(),
+  /**
+   * Cor por setor solicitante, na ordem alfabética dos que aparecem — a mesma
+   * ordem da legenda, para os dois lados baterem. "Sem setor solicitante" fica
+   * fora da paleta: campo vazio não merece cor de série.
+   */
+  const origensUsadas = useMemo(
+    () =>
+      [...new Set(cards.map((c) => c.requesterSector?.trim() || SEM_ORIGEM))]
+        .filter((o) => o !== SEM_ORIGEM)
+        .sort((a, b) => a.localeCompare(b, "pt-BR")),
     [cards],
   );
+  const corDaOrigem = useMemo(() => {
+    const m: Record<string, string> = { [SEM_ORIGEM]: "var(--tx-3)" };
+    origensUsadas.forEach((o, i) => (m[o] = `var(--serie-${(i % 8) + 1})`));
+    return m;
+  }, [origensUsadas]);
 
   if (!linhas.length)
     return <Vazio>Nenhuma demanda em aberto neste recorte.</Vazio>;
@@ -676,42 +677,66 @@ function BarrasResponsavel({
       <div className={styles.barras}>
         {linhas.map(([quem, d]) => {
           const horas = horasDe[quem] ?? 0;
+          const nome = quem === "__sem__" ? "Sem responsável" : nomeDe(quem);
+          const origens = Object.entries(d.origens).sort(
+            (a, b) => b[1].n - a[1].n || a[0].localeCompare(b[0], "pt-BR"),
+          );
           return (
-            <div key={quem} className={styles.barraLinha}>
-              <div className={styles.barraNome} title={quem === "__sem__" ? "Sem responsável" : nomeDe(quem)}>
-                {quem === "__sem__" ? "Sem responsável" : nomeDe(quem)}
-              </div>
-              <div className={styles.barraTrilho}>
-                {Object.entries(d.setores)
-                  .sort((a, b) => b[1] - a[1])
-                  .map(([setor, n]) => (
+            <div key={quem} className={styles.barraBloco}>
+              <div className={styles.barraLinha}>
+                <div className={styles.barraNome} title={nome}>
+                  {nome}
+                </div>
+                <div className={styles.barraTrilho}>
+                  {origens.map(([origem, o]) => (
                     <div
-                      key={setor}
+                      key={origem}
                       className={styles.barraSeg}
                       style={{
-                        width: `${(n / max) * 100}%`,
-                        background: corDoSetor[setor] ?? "var(--serie-1)",
+                        width: `${(o.n / max) * 100}%`,
+                        background: corDaOrigem[origem],
                       }}
-                      title={`${setor} · ${n}`}
+                      title={`${origem} · ${o.n}${
+                        o.quem.size ? ` · ${[...o.quem].join(", ")}` : ""
+                      }`}
                     />
                   ))}
+                </div>
+                <div className={styles.barraNum}>{d.total}</div>
+                <div
+                  className={`${styles.barraHoras} ${horas ? "" : styles.barraHorasZero}`}
+                >
+                  {hh(horas)} h/mês
+                </div>
               </div>
-              <div className={styles.barraNum}>{d.total}</div>
-              <div
-                className={`${styles.barraHoras} ${horas ? "" : styles.barraHorasZero}`}
-              >
-                {hh(horas)} h/mês
+              <div className={styles.barraOrigens}>
+                {origens.map(([origem, o]) => (
+                  <span
+                    key={origem}
+                    className={styles.origem}
+                    title={
+                      o.quem.size
+                        ? `Solicitantes: ${[...o.quem].join(", ")}`
+                        : "Nenhum solicitante informado"
+                    }
+                  >
+                    <i style={{ background: corDaOrigem[origem] }} />
+                    {origem}
+                    <b>{o.n}</b>
+                    {o.quem.size > 0 && <em>{listaCurta([...o.quem])}</em>}
+                  </span>
+                ))}
               </div>
             </div>
           );
         })}
       </div>
-      {setoresUsados.length > 1 && (
+      {origensUsadas.length > 1 && (
         <div className={styles.legenda}>
-          {setoresUsados.map((s) => (
-            <span key={s}>
-              <i style={{ background: corDoSetor[s] ?? "var(--serie-1)" }} />
-              {s}
+          {origensUsadas.map((o) => (
+            <span key={o}>
+              <i style={{ background: corDaOrigem[o] }} />
+              {o}
             </span>
           ))}
         </div>
@@ -803,11 +828,16 @@ function Rosca({ cards }: { cards: Card[] }) {
 }
 
 /**
- * Entradas × entregas por semana, e a fila logo abaixo.
+ * Entradas × entregas por semana, com a fila acumulada por cima.
  *
- * Dois gráficos empilhados compartilhando o eixo x, e não um só com dois eixos
- * y: escala dupla deixa o autor escolher onde as linhas se cruzam, e é a
- * maneira mais fácil de fazer um gráfico honesto contar a história errada.
+ * Um gráfico só: as colunas e a linha respondem à mesma pergunta ("a fila
+ * cresce ou encolhe?") e liam-se pior separadas, obrigando a saltar de um eixo
+ * x para outro para cruzar a semana da entrada com a fila daquela semana.
+ *
+ * A fila tem eixo PRÓPRIO, à direita e rotulado. Ela é acumulada e cresce numa
+ * ordem de grandeza acima do movimento semanal — na escala das colunas, viraria
+ * uma linha colada no topo, sem informação. Dois eixos exigem estar declarados,
+ * e é por isso que o da direita carrega números e a legenda diz de quem ele é.
  */
 function FluxoSemanal({ fluxo }: { fluxo: Fluxo }) {
   const { semanas, entradas, entregas, fila } = fluxo;
@@ -820,52 +850,66 @@ function FluxoSemanal({ fluxo }: { fluxo: Fluxo }) {
     );
 
   const W = 560;
-  const H = 168;
+  const H = 196;
   const pl = 30;
-  const pr = 10;
-  const pt = 10;
+  const pr = 34;
+  const pt = 12;
   const pb = 22;
   const n = semanas.length;
+  const base = H - pb;
   const max = Math.max(1, ...entradas, ...entregas);
+  const maxFila = Math.max(1, ...fila);
   const passo = (W - pl - pr) / n;
   const bw = Math.max(3, Math.min(10, (passo - 6) / 2));
-  const Y = (v: number) => pt + (1 - v / max) * (H - pt - pb);
-
-  const HF = 62;
-  const maxFila = Math.max(1, ...fila);
-  const Yf = (v: number) => 8 + (1 - v / maxFila) * (HF - 8 - 14);
+  const Y = (v: number) => pt + (1 - v / max) * (base - pt);
+  const Yf = (v: number) => pt + (1 - v / maxFila) * (base - pt);
   const X = (i: number) => pl + i * passo + passo / 2;
 
-  const grade = [0, 1, 2, 3].map((g) => (max * g) / 3);
-  const areaFila =
-    `M ${X(0).toFixed(1)} ${(HF - 14).toFixed(1)} ` +
-    fila.map((v, i) => `L ${X(i).toFixed(1)} ${Yf(v).toFixed(1)}`).join(" ") +
-    ` L ${X(n - 1).toFixed(1)} ${(HF - 14).toFixed(1)} Z`;
+  const linhaFila = fila
+    .map((v, i) => `${i ? "L" : "M"} ${X(i).toFixed(1)} ${Yf(v).toFixed(1)}`)
+    .join(" ");
 
   return (
     <>
-      <svg viewBox={`0 0 ${W} ${H}`} className={styles.chart} role="img" aria-label="Entradas e entregas por semana">
-        {grade.map((v, i) => (
-          <g key={i}>
-            <line
-              x1={pl}
-              y1={Y(v)}
-              x2={W - pr}
-              y2={Y(v)}
-              className={styles.grade}
-            />
-            <text x={pl - 6} y={Y(v) + 3.5} textAnchor="end" className={styles.eixo}>
-              {Math.round(v)}
-            </text>
-          </g>
-        ))}
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className={styles.chart}
+        role="img"
+        aria-label="Entradas, entregas e fila acumulada por semana"
+      >
+        {[0, 1, 2, 3].map((g) => {
+          const v = (max * g) / 3;
+          return (
+            <g key={g}>
+              <line
+                x1={pl}
+                y1={Y(v)}
+                x2={W - pr}
+                y2={Y(v)}
+                className={styles.grade}
+              />
+              <text
+                x={pl - 6}
+                y={Y(v) + 3.5}
+                textAnchor="end"
+                className={styles.eixo}
+              >
+                {Math.round(v)}
+              </text>
+              <text x={W - pr + 6} y={Y(v) + 3.5} className={styles.eixoFila}>
+                {Math.round((maxFila * g) / 3)}
+              </text>
+            </g>
+          );
+        })}
+
         {semanas.map((s, i) => (
           <g key={s.rotulo}>
             <rect
               x={X(i) - bw - 1}
               y={Y(entradas[i])}
               width={bw}
-              height={H - pb - Y(entradas[i])}
+              height={base - Y(entradas[i])}
               rx={3}
               className={styles.barEntrada}
             >
@@ -875,17 +919,39 @@ function FluxoSemanal({ fluxo }: { fluxo: Fluxo }) {
               x={X(i) + 1}
               y={Y(entregas[i])}
               width={bw}
-              height={H - pb - Y(entregas[i])}
+              height={base - Y(entregas[i])}
               rx={3}
               className={styles.barEntrega}
             >
               <title>{`${s.rotulo} · ${entregas[i]} entrega(s)`}</title>
             </rect>
             {i % Math.ceil(n / 6) === 0 && (
-              <text x={X(i)} y={H - 7} textAnchor="middle" className={styles.eixo}>
+              <text
+                x={X(i)}
+                y={H - 7}
+                textAnchor="middle"
+                className={styles.eixo}
+              >
                 {s.rotulo}
               </text>
             )}
+          </g>
+        ))}
+
+        {/* A linha vem depois das colunas: desenhada antes, sumiria atrás delas
+            exatamente nas semanas de mais movimento — as que interessam. */}
+        <path d={linhaFila} className={styles.filaHalo} />
+        <path d={linhaFila} className={styles.filaLinha} />
+        {fila.map((v, i) => (
+          <g key={i}>
+            <circle cx={X(i)} cy={Yf(v)} r={2.6} className={styles.filaPonto} />
+            {/* Alvo de hover maior que o traço, e o resumo da semana INTEIRA
+                nele: sobrepondo as colunas, ele roubaria o hover delas. */}
+            <circle cx={X(i)} cy={Yf(v)} r={7} className={styles.alvo}>
+              <title>
+                {`${semanas[i].rotulo} · ${entradas[i]} entrada(s) · ${entregas[i]} entrega(s) · fila de ${v}`}
+              </title>
+            </circle>
           </g>
         ))}
       </svg>
@@ -899,31 +965,11 @@ function FluxoSemanal({ fluxo }: { fluxo: Fluxo }) {
           <i className={styles.swEntrega} />
           Entregas
         </span>
+        <span>
+          <i className={styles.swFila} />
+          Fila acumulada (eixo à direita)
+        </span>
       </div>
-
-      <div className={styles.filaTitulo}>
-        Fila acumulada <b>{fila[fila.length - 1]}</b>
-      </div>
-      <svg viewBox={`0 0 ${W} ${HF}`} className={styles.chart} role="img" aria-label="Fila acumulada por semana">
-        <path d={areaFila} className={styles.filaArea} />
-        <path
-          d={fila
-            .map((v, i) => `${i ? "L" : "M"} ${X(i).toFixed(1)} ${Yf(v).toFixed(1)}`)
-            .join(" ")}
-          className={styles.filaLinha}
-        />
-        {fila.map((v, i) => (
-          <circle key={i} cx={X(i)} cy={Yf(v)} r={7} className={styles.alvo}>
-            <title>{`${semanas[i].rotulo} · fila de ${v}`}</title>
-          </circle>
-        ))}
-        <text x={pl - 6} y={12} textAnchor="end" className={styles.eixo}>
-          {maxFila}
-        </text>
-        <text x={pl - 6} y={HF - 14} textAnchor="end" className={styles.eixo}>
-          0
-        </text>
-      </svg>
     </>
   );
 }

@@ -7,6 +7,9 @@
  * "parada há N dias" divergiriam entre o que se viu e o que se enviou.
  */
 import type { Card, ColumnDoc, Priority } from "@/lib/kanban";
+// De `kanban-columns` e não de `kanban`: este arquivo roda na rota de envio, e
+// importar `lib/kanban` arrastaria o SDK do Firebase cliente para o servidor.
+import { colunasEntregues } from "@/lib/kanban-columns";
 import type { PrefsRelatorio } from "./config";
 
 export type LinhaDemanda = {
@@ -64,17 +67,6 @@ const ORDEM_PRIORIDADE = [
   "Prioridade baixa",
 ];
 
-/**
- * Uma etapa conta como entregue?
- *
- * Heurística por nome enquanto o quadro não tem o campo explícito. É frágil de
- * propósito assumido: o rodapé do relatório declara que a contagem de
- * concluídas usa o nome da coluna, para o gestor saber o que está lendo.
- */
-export function colunaEhTerminal(titulo: string): boolean {
-  return /conclu|entregue|finaliz|pronto|feito|encerrad/i.test(titulo);
-}
-
 function diasEntre(a: number, b: number): number {
   return Math.floor((a - b) / DIA);
 }
@@ -99,8 +91,10 @@ export function agregar(
 ): DadosRelatorio {
   const hoje = inicioDoDia(agora);
   const tituloDaColuna = new Map(colunas.map((c) => [c.colId, c.title]));
-  const terminais = new Set(
-    colunas.filter((c) => colunaEhTerminal(c.title)).map((c) => c.colId),
+  // Demanda entregue sai do relatório inteiro: ela não atrasa, não está em
+  // risco e não pesa na carga de ninguém. `colunas` vem na ordem do quadro.
+  const terminais = colunasEntregues(
+    colunas.map((c) => ({ id: c.colId, title: c.title })),
   );
 
   const concluidas = cards.filter((c) => terminais.has(c.columnId)).length;

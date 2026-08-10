@@ -108,7 +108,7 @@
 /* ---------- faixa de indicadores ---------- */
 .kstrip {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
   padding: 14px 22px 0;
 }
@@ -188,12 +188,6 @@
   font-weight: 700;
   color: var(--tx);
 }
-.painelHead p {
-  font-size: 11.5px;
-  color: var(--tx-3);
-  margin-top: 3px;
-  line-height: 1.45;
-}
 
 .chip {
   display: inline-flex;
@@ -217,27 +211,6 @@
   color: var(--warn-tx);
 }
 
-.nota {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin-top: 12px;
-  padding: 9px 11px;
-  background: var(--s2);
-  border: 1px solid var(--line-soft);
-  border-radius: 9px;
-  font-size: 11.5px;
-  color: var(--tx-3);
-  line-height: 1.5;
-}
-.nota b {
-  color: var(--tx-2);
-}
-.nota svg {
-  flex: none;
-  margin-top: 2px;
-}
-
 .vazioPainel {
   padding: 26px 10px;
   text-align: center;
@@ -258,7 +231,12 @@
 .barras {
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 12px;
+}
+.barraBloco {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
 }
 .barraLinha {
   display: flex;
@@ -308,6 +286,49 @@
   color: var(--line);
 }
 
+/* Origem da demanda em texto, alinhada ao início da barra (104px do nome +
+   10px do gap). Cor nomeia o segmento, o número diz quantos e o nome em
+   itálico diz quem pediu — a barra sozinha não responde nenhuma das três. */
+.barraOrigens {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-left: 114px;
+  padding-right: 96px;
+}
+.origem {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--tx-3);
+  min-width: 0;
+}
+.origem i {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  flex: none;
+}
+.origem b {
+  color: var(--tx-2);
+  font-variant-numeric: tabular-nums;
+}
+.origem em {
+  font-style: normal;
+  color: var(--tx-3);
+  opacity: 0.75;
+}
+.origem em::before {
+  content: "· ";
+}
+@media (max-width: 640px) {
+  .barraOrigens {
+    margin-left: 0;
+    padding-right: 0;
+  }
+}
+
 .legenda {
   display: flex;
   gap: 14px;
@@ -333,6 +354,14 @@
 }
 .swEntrega {
   background: var(--ok);
+}
+/* Traço e não quadrado: a fila é linha no gráfico, e a legenda tem de dizer
+   qual das duas formas ela representa antes de dizer qual cor. */
+.swFila {
+  height: 3px !important;
+  width: 14px !important;
+  border-radius: 2px;
+  background: var(--warn);
 }
 
 /* ---------- rosca ---------- */
@@ -433,26 +462,33 @@
   fill-opacity: 1;
 }
 
-.filaTitulo {
-  margin: 14px 0 2px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.4px;
-  text-transform: uppercase;
-  color: var(--tx-3);
-}
-.filaTitulo b {
-  color: var(--warn);
-  font-size: 12px;
-}
-.filaArea {
+/* Eixo da fila, à direita. Cor da própria série: com dois eixos no mesmo
+   gráfico, número sem dono é número que se lê na escala errada. */
+.eixoFila {
+  font-size: 9.5px;
   fill: var(--warn);
-  fill-opacity: 0.12;
+}
+/* Traço da cor do painel por baixo da linha: ela cruza as colunas, e sem essa
+   folga se confunde com a barra por onde passa justo nas semanas cheias. */
+.filaHalo {
+  fill: none;
+  stroke: var(--s1);
+  stroke-width: 5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  opacity: 0.85;
 }
 .filaLinha {
   fill: none;
   stroke: var(--warn);
-  stroke-width: 2;
+  stroke-width: 2.2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.filaPonto {
+  fill: var(--warn);
+  stroke: var(--s1);
+  stroke-width: 1.2;
 }
 /* Alvo de hover maior que o traço — a linha sozinha é fina demais para mirar. */
 .alvo {
@@ -521,6 +557,11 @@
 @media (max-width: 1180px) {
   .kstrip {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 1400px) {
+  .barraOrigens {
+    padding-right: 0;
   }
 }
 @media (max-width: 900px) {

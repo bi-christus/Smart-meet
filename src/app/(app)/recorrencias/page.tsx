@@ -8,6 +8,7 @@ import {
   subscribeCardsForSectors,
   subscribeColumnsForSectors,
   columnsBySector,
+  colunasEntregues,
   type Card,
   type ColumnDoc,
   type KanbanColumn,
@@ -151,7 +152,7 @@ export default function RecorrenciasPage() {
   const extremos = useMemo(
     () => ({
       firstId: colunas[0]?.id ?? "",
-      doneId: colunas[colunas.length - 1]?.id ?? "",
+      doneIds: colunasEntregues(colunas),
     }),
     [colunas],
   );

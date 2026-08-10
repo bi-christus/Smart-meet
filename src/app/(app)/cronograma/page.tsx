@@ -8,6 +8,7 @@ import {
   subscribeCardsForSectors,
   subscribeColumnsForSectors,
   columnsBySector,
+  deliveredBySector,
   type Card,
   type ColumnDoc,
   type KanbanColumn,
@@ -114,6 +115,10 @@ export default function CronogramaPage() {
     () => columnsBySector(cols, sectors),
     [cols, sectors],
   );
+  const entreguesPorSetor = useMemo(
+    () => deliveredBySector(colsPorSetor),
+    [colsPorSetor],
+  );
 
   const hoje = useMemo(() => startOfDay(), []);
 
@@ -148,9 +153,9 @@ export default function CronogramaPage() {
     cards.forEach((c) => {
       if (!c.due || !noFiltro(c.sector)) return;
       const doQuadro = colsPorSetor[c.sector] ?? [];
-      const finalId = doQuadro[doQuadro.length - 1]?.id;
-      // Prazo cumprido não é compromisso: o card na coluna final sai da agenda.
-      if (c.columnId === finalId) return;
+      // Prazo cumprido não é compromisso: demanda entregue sai da agenda — e
+      // com ela o selo "vencida há N dias" que aparecia sobre trabalho pronto.
+      if (entreguesPorSetor[c.sector]?.has(c.columnId)) return;
       out.push({
         tipo: "prazo",
         date: c.due,
@@ -161,7 +166,7 @@ export default function CronogramaPage() {
       });
     });
     return out;
-  }, [meetings, cards, filtroSetor, colsPorSetor]);
+  }, [meetings, cards, filtroSetor, colsPorSetor, entreguesPorSetor]);
 
   const porDia = useMemo(() => {
     const m: Record<string, Item[]> = {};
