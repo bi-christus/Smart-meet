@@ -357,8 +357,19 @@ export default function DashboardPage() {
         />
       </div>
 
+      {/**
+       * A ordem dos painéis é de altura, não só de assunto.
+       *
+       * Consumo por responsável cresce com o número de pessoas do setor e não
+       * tem teto — ao lado de qualquer painel de altura fixa, ele decide a
+       * altura da linha inteira. Por isso vai sozinho, na largura toda: assim
+       * as origens de cada demanda cabem numa linha só, em vez de quebrarem.
+       *
+       * Na dupla ficam os dois painéis de altura parecida (rosca e cycle time);
+       * os dois gráficos largos ficam inteiros embaixo, onde 52 semanas cabem.
+       */}
       <div className={styles.paineis}>
-        <section className={styles.painel}>
+        <section className={`${styles.painel} ${styles.painelLargo}`}>
           <PainelHead titulo="Consumo por responsável" />
           <BarrasResponsavel
             cards={abertos}
@@ -374,14 +385,6 @@ export default function DashboardPage() {
 
         <section className={styles.painel}>
           <PainelHead
-            titulo="Demanda que entra × demanda que sai"
-            chip={`fila ${fluxo.fila[fluxo.fila.length - 1] ?? 0}`}
-          />
-          <FluxoSemanal fluxo={fluxo} />
-        </section>
-
-        <section className={styles.painel}>
-          <PainelHead
             titulo="Cycle time e previsibilidade"
             chip={
               fluxo.amostra >= MIN_AMOSTRA
@@ -390,6 +393,14 @@ export default function DashboardPage() {
             }
           />
           <CycleTime fluxo={fluxo} />
+        </section>
+
+        <section className={`${styles.painel} ${styles.painelLargo}`}>
+          <PainelHead
+            titulo="Demanda que entra × demanda que sai"
+            chip={`fila ${fluxo.fila[fluxo.fila.length - 1] ?? 0}`}
+          />
+          <FluxoSemanal fluxo={fluxo} />
         </section>
 
         <section className={`${styles.painel} ${styles.painelLargo}`}>
@@ -671,6 +682,9 @@ function BarrasResponsavel({
     return <Vazio>Nenhuma demanda em aberto neste recorte.</Vazio>;
 
   const max = Math.max(...linhas.map((l) => l[1].total));
+  // Setor sem nenhuma recorrência programada não ganha uma coluna de "0 h/mês"
+  // repetida linha a linha: zero em todo mundo não distingue ninguém.
+  const mostrarHoras = linhas.some(([quem]) => (horasDe[quem] ?? 0) > 0);
 
   return (
     <>
@@ -703,13 +717,19 @@ function BarrasResponsavel({
                   ))}
                 </div>
                 <div className={styles.barraNum}>{d.total}</div>
-                <div
-                  className={`${styles.barraHoras} ${horas ? "" : styles.barraHorasZero}`}
-                >
-                  {hh(horas)} h/mês
-                </div>
+                {mostrarHoras && (
+                  <div
+                    className={`${styles.barraHoras} ${horas ? "" : styles.barraHorasZero}`}
+                  >
+                    {hh(horas)} h/mês
+                  </div>
+                )}
               </div>
-              <div className={styles.barraOrigens}>
+              <div
+                className={`${styles.barraOrigens} ${
+                  mostrarHoras ? "" : styles.barraOrigensSemHoras
+                }`}
+              >
                 {origens.map(([origem, o]) => (
                   <span
                     key={origem}
@@ -849,18 +869,23 @@ function FluxoSemanal({ fluxo }: { fluxo: Fluxo }) {
       </Vazio>
     );
 
-  const W = 560;
-  const H = 196;
-  const pl = 30;
-  const pr = 34;
+  // Painel de largura inteira: o viewBox acompanha, senão o SVG escala ~3× e o
+  // rótulo de eixo de 9,5px chega na tela com 30. Larguras em unidades de
+  // viewBox só significam alguma coisa em relação a W.
+  const W = 1120;
+  const H = 190;
+  const pl = 34;
+  const pr = 42;
   const pt = 12;
-  const pb = 22;
+  const pb = 24;
   const n = semanas.length;
   const base = H - pb;
   const max = Math.max(1, ...entradas, ...entregas);
   const maxFila = Math.max(1, ...fila);
   const passo = (W - pl - pr) / n;
-  const bw = Math.max(3, Math.min(10, (passo - 6) / 2));
+  // Espessura proporcional ao passo, e não um teto fixo: com 12 semanas num
+  // gráfico largo, barra travada em 10 vira um risco perdido em 140px de vão.
+  const bw = Math.max(3, Math.min(passo * 0.32, (passo - 6) / 2));
   const Y = (v: number) => pt + (1 - v / max) * (base - pt);
   const Yf = (v: number) => pt + (1 - v / maxFila) * (base - pt);
   const X = (i: number) => pl + i * passo + passo / 2;
@@ -925,7 +950,9 @@ function FluxoSemanal({ fluxo }: { fluxo: Fluxo }) {
             >
               <title>{`${s.rotulo} · ${entregas[i]} entrega(s)`}</title>
             </rect>
-            {i % Math.ceil(n / 6) === 0 && (
+            {/* Mais rótulos do que cabiam na metade da tela: a série é
+                semanal, e ler a data de 1 em cada 6 obriga a contar barras. */}
+            {i % Math.ceil(n / 12) === 0 && (
               <text
                 x={X(i)}
                 y={H - 7}
@@ -990,12 +1017,19 @@ function CycleTime({ fluxo }: { fluxo: Fluxo }) {
       </Vazio>
     );
 
-  const W = 560;
-  const H = 200;
-  const pl = 30;
-  const pr = 52;
+  // Proporção achatada de propósito. O SVG escala pela largura, então o painel
+  // decide a ALTURA: com o viewBox antigo (560×200) este gráfico ficava 180px
+  // mais alto que a rosca ao lado, e a diferença virava buraco na linha.
+  //
+  // 660 é o meio-termo entre as duas pontas de tela: a fonte do eixo escala
+  // junto, e um viewBox estreito engorda o texto no monitor grande enquanto um
+  // largo o apaga no notebook.
+  const W = 660;
+  const H = 168;
+  const pl = 34;
+  const pr = 70;
   const pt = 10;
-  const pb = 24;
+  const pb = 26;
   const ini = semanas[0].inicio.getTime();
   // Fim da janela = fim da última semana da série. `Date.now()` aqui seria
   // leitura de relógio durante a renderização, e o eixo mudaria sozinho.

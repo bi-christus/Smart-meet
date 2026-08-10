@@ -161,9 +161,18 @@
 }
 
 /* ---------- painéis ---------- */
+/**
+ * `align-items: start` é a regra que impede um painel de virar moldura vazia.
+ *
+ * Por padrão o grid estica todo item até a altura do mais alto da linha. Como
+ * "consumo por responsável" cresce com o número de pessoas do setor, o vizinho
+ * herdava uma altura que o conteúdo dele nunca ia preencher — e um card 80%
+ * vazio lê como bug, não como dado curto. Aqui cada painel para onde acaba.
+ */
 .paineis {
   display: grid;
   grid-template-columns: 1fr 1fr;
+  align-items: start;
   gap: 14px;
   padding: 16px 22px 0;
 }
@@ -244,7 +253,7 @@
   gap: 10px;
 }
 .barraNome {
-  width: 104px;
+  width: 150px;
   flex: none;
   font-size: 12px;
   font-weight: 600;
@@ -286,15 +295,19 @@
   color: var(--line);
 }
 
-/* Origem da demanda em texto, alinhada ao início da barra (104px do nome +
+/* Origem da demanda em texto, alinhada ao início da barra (150px do nome +
    10px do gap). Cor nomeia o segmento, o número diz quantos e o nome em
    itálico diz quem pediu — a barra sozinha não responde nenhuma das três. */
 .barraOrigens {
   display: flex;
   flex-wrap: wrap;
   gap: 4px 12px;
-  margin-left: 114px;
+  margin-left: 160px;
   padding-right: 96px;
+}
+/* Sem a coluna de h/mês, o recuo à direita reserva só o total. */
+.barraOrigensSemHoras {
+  padding-right: 30px;
 }
 .origem {
   display: inline-flex;
@@ -323,6 +336,11 @@
   content: "· ";
 }
 @media (max-width: 640px) {
+  /* No celular a coluna de nome come a barra: 100px corta mais nomes, mas o
+     `title` guarda o nome inteiro e a barra volta a ter o que mostrar. */
+  .barraNome {
+    width: 100px;
+  }
   .barraOrigens {
     margin-left: 0;
     padding-right: 0;
@@ -361,13 +379,17 @@
   height: 3px !important;
   width: 14px !important;
   border-radius: 2px;
-  background: var(--warn);
+  background: var(--serie-7);
 }
 
 /* ---------- rosca ---------- */
+/* Centralizado e com a lista limitada: solta num painel largo, a legenda
+   esticava o rótulo para uma ponta e o número para a outra, e ninguém lia a
+   linha inteira para casar "Melhoria" com "2". */
 .rosca {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 22px;
   flex-wrap: wrap;
   padding: 4px 0;
@@ -389,6 +411,7 @@
 .roscaLista {
   flex: 1;
   min-width: 190px;
+  max-width: 380px;
   display: flex;
   flex-direction: column;
   gap: 11px;
@@ -462,11 +485,19 @@
   fill-opacity: 1;
 }
 
-/* Eixo da fila, à direita. Cor da própria série: com dois eixos no mesmo
-   gráfico, número sem dono é número que se lê na escala errada. */
+/**
+ * A fila usa `--serie-7` (índigo), não `--warn`.
+ *
+ * Âmbar era a escolha semântica — fila crescendo é alerta — mas `--warn` e
+ * `--brand` (as barras de entrada) são o mesmo matiz laranja, e uma linha
+ * cruzando barras da própria cor não é uma série, é ruído. A paleta categórica
+ * existe justamente por ter sido validada para separar vizinhos, inclusive
+ * para daltonismo: índigo contra laranja e verde é a separação máxima que ela
+ * oferece. O alerta continua sendo dado pelo número no chip do painel.
+ */
 .eixoFila {
   font-size: 9.5px;
-  fill: var(--warn);
+  fill: var(--serie-7);
 }
 /* Traço da cor do painel por baixo da linha: ela cruza as colunas, e sem essa
    folga se confunde com a barra por onde passa justo nas semanas cheias. */
@@ -480,13 +511,13 @@
 }
 .filaLinha {
   fill: none;
-  stroke: var(--warn);
+  stroke: var(--serie-7);
   stroke-width: 2.2;
   stroke-linejoin: round;
   stroke-linecap: round;
 }
 .filaPonto {
-  fill: var(--warn);
+  fill: var(--serie-7);
   stroke: var(--s1);
   stroke-width: 1.2;
 }
@@ -495,7 +526,7 @@
   fill: transparent;
 }
 .alvo:hover {
-  fill: var(--warn);
+  fill: var(--serie-7);
   fill-opacity: 0.25;
 }
 
@@ -564,10 +595,16 @@
     padding-right: 0;
   }
 }
-@media (max-width: 900px) {
+/* Uma coluna já a partir do notebook, e não só no celular: os gráficos são SVG
+   com viewBox, então largura vira tamanho de fonte. Espremidos em meia tela de
+   1000px, os rótulos de eixo ficam ilegíveis muito antes de o card ficar
+   estreito demais. */
+@media (max-width: 1080px) {
   .paineis {
     grid-template-columns: 1fr;
   }
+}
+@media (max-width: 900px) {
   .kstrip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
