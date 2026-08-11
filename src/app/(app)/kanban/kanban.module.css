@@ -502,6 +502,28 @@
   outline-offset: 3px;
   border-radius: 4px;
 }
+/* campo cobrado: o título não tem moldura nenhuma, então enquanto ele estiver
+   faltando ele precisa de uma — senão o aviso do rodapé aponta para o nada */
+.mtitleErro,
+.mtitleErro:focus {
+  outline: 2px solid var(--danger);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+.mtitleErro::placeholder {
+  color: var(--danger-tx);
+}
+.inpErro,
+.inpErro:focus {
+  outline: 2px solid var(--danger);
+  outline-offset: 0;
+  border-color: var(--danger);
+}
+.campoAviso {
+  margin: -8px 0 14px;
+  font-size: 12px;
+  color: var(--danger-tx);
+}
 .field {
   margin-bottom: 14px;
 }
@@ -960,9 +982,14 @@
   color: var(--danger);
   background: var(--danger-bg);
 }
-.tagInput {
+/* o campo carrega a lista de sugestões: o box é a âncora do menu */
+.tagBox {
+  position: relative;
   flex: 1;
-  min-width: 130px;
+  min-width: 170px;
+}
+.tagInput {
+  width: 100%;
   height: 32px;
   padding: 0 10px;
   background: var(--s1);
@@ -975,6 +1002,63 @@
 .tagInput:focus {
   outline: 2px solid var(--brand);
   outline-offset: 0;
+}
+
+/* ---------- menção de tag: a lista que o "#" abre ---------- */
+.tagMenu {
+  position: absolute;
+  top: calc(100% + 5px);
+  left: 0;
+  right: 0;
+  z-index: 5;
+  max-height: 232px;
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--s2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+.tagOpcao {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  color: var(--tx);
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.tagOpcaoAtiva {
+  background: var(--s3);
+}
+.tagOpcao .tagDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+.tagOpcaoNome {
+  flex: 1;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tagOpcaoUso {
+  flex: none;
+  font-size: 11px;
+  color: var(--tx-3);
+}
+.tagMenuVazio {
+  padding: 8px 9px;
+  font-size: 12.5px;
+  color: var(--tx-3);
 }
 
 /* ---------- descrição do item de checklist ---------- */

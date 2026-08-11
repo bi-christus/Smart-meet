@@ -59,6 +59,14 @@ function uid(): string {
     : `id_${Date.now()}_${Math.round(Math.random() * 1e9)}`;
 }
 
+/** Texto comparável: sem acento e em minúsculas — "Manutenção" acha por "manut". */
+function semAcento(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
 function startOfToday(): Date {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
@@ -342,6 +350,24 @@ export default function KanbanPage() {
           ),
     [baseFiltered, assigneeF],
   );
+
+  /**
+   * Catálogo de tags do quadro — é o que o "#" oferece no formulário.
+   *
+   * Sai de `cards` e não de `baseFiltered`: o catálogo não pode encolher porque
+   * alguém digitou algo na busca. Ordena por uso e depois em ordem alfabética —
+   * a tag que o setor repete toda semana aparece primeiro, e o resto tem ordem
+   * estável em vez da ordem de chegada do Firestore.
+   */
+  const tagsDoQuadro = useMemo(() => {
+    const uso = new Map<string, number>();
+    cards.forEach((c) =>
+      (c.tags ?? []).forEach((t) => uso.set(t, (uso.get(t) ?? 0) + 1)),
+    );
+    return [...uso.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "pt-BR"))
+      .map(([tag, n]) => ({ tag, n }));
+  }, [cards]);
 
   // Só entram no filtro os responsáveis que têm demandas neste quadro.
   const assigneeFilterOptions: SelectOption[] = useMemo(() => {
@@ -630,6 +656,7 @@ export default function KanbanPage() {
           usersMap={usersMap}
           solicitantes={solicitantes}
           reqSetores={reqSetores}
+          tagsDoQuadro={tagsDoQuadro}
           onClose={() => setEdit(null)}
         />
       )}
@@ -819,6 +846,7 @@ function CardModal({
   usersMap,
   solicitantes,
   reqSetores,
+  tagsDoQuadro,
   onClose,
 }: {
   state: NonNullable<EditState>;
@@ -829,6 +857,8 @@ function CardModal({
   usersMap: Record<string, UserProfile>;
   solicitantes: Solicitante[];
   reqSetores: SolicitanteSetor[];
+  /** tags já usadas no quadro, da mais usada para a menos, com a contagem */
+  tagsDoQuadro: { tag: string; n: number }[];
   onClose: () => void;
 }) {
   const isNew = state.mode === "new";
@@ -866,6 +896,9 @@ function CardModal({
   const [semPrazo, setSemPrazo] = useState(isNew ? false : !card?.due);
   const [tags, setTags] = useState<string[]>(card?.tags ?? []);
   const [newTag, setNewTag] = useState("");
+  /** Escape fecha a lista de tags sem apagar o que já foi digitado. */
+  const [menuTagFechado, setMenuTagFechado] = useState(false);
+  const [tagAtiva, setTagAtiva] = useState(0);
   const [checklist, setChecklist] = useState<ChecklistItem[]>(() =>
     (card?.checklist ?? []).map((it) => ({ ...it, id: it.id ?? uid() })),
   );
@@ -875,6 +908,19 @@ function CardModal({
   const [posting, setPosting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  /**
+   * Qual campo travou o salvamento.
+   *
+   * Sem isto o aviso era só uma linha de 12px no rodapé: numa demanda com
+   * checklist o modal passa da altura da tela, o título fica dez rolagens
+   * acima — e ele nem parece um campo, é um texto grande sem moldura. O
+   * usuário lia "informe um título", não achava título nenhum, e a demanda
+   * não saía. Agora o campo é levado até os olhos, marcado, e o aviso some
+   * sozinho assim que ele é corrigido.
+   */
+  const [campoErro, setCampoErro] = useState<null | "titulo" | "prazo">(null);
+  const tituloRef = useRef<HTMLInputElement>(null);
+  const prazoRef = useRef<HTMLInputElement>(null);
 
   const col = columns.find((c) => c.colId === columnId);
   const doneCount = checklist.filter((i) => i.done).length;
@@ -962,17 +1008,84 @@ function CardModal({
     }
   }
 
-  function addTag() {
-    const t = newTag.trim();
-    if (!t || tags.includes(t)) {
+  // --- tags: menção com "#" ---------------------------------------------
+  //
+  // O "#" abre o catálogo do quadro; o que vem depois filtra. Sem isso a mesma
+  // tag nascia três vezes ("Smart", "smart", "Smart Meet") e o filtro por tag
+  // deixava de encontrar metade das demandas.
+
+  /** O que foi digitado depois do "#" — null quando não há menção aberta. */
+  const buscaTag = newTag.trimStart().startsWith("#")
+    ? newTag.trimStart().slice(1).trim()
+    : null;
+
+  const sugestoesTag = useMemo(() => {
+    if (buscaTag === null) return [];
+    const q = semAcento(buscaTag);
+    const candidatas = tagsDoQuadro.filter(
+      (t) => !tags.includes(t.tag) && (!q || semAcento(t.tag).includes(q)),
+    );
+    // Quem começa com o que foi digitado vem antes de quem só contém: digitar
+    // "s" tem de oferecer "Smart" antes de "Requisição do RH". `sort` é estável,
+    // então dentro de cada grupo a ordem de uso continua valendo.
+    if (q) {
+      candidatas.sort(
+        (a, b) =>
+          Number(semAcento(b.tag).startsWith(q)) -
+          Number(semAcento(a.tag).startsWith(q)),
+      );
+    }
+    return candidatas.slice(0, 8);
+  }, [buscaTag, tagsDoQuadro, tags]);
+
+  /** A lista está na tela — mesmo vazia, ela explica que o Enter cria a tag. */
+  const menuTagVisivel = buscaTag !== null && !menuTagFechado;
+  /** Só quando há o que escolher é que as setas e o Enter mudam de comportamento. */
+  const menuTagAberto = menuTagVisivel && sugestoesTag.length > 0;
+  // O índice é preso à lista a cada render: apagar uma letra encurta as
+  // sugestões, e um índice antigo escolheria a tag errada no Enter.
+  const idxTag = Math.min(tagAtiva, sugestoesTag.length - 1);
+
+  function incluirTag(t: string) {
+    const limpa = t.trim();
+    if (!limpa || tags.includes(limpa)) {
       setNewTag("");
       return;
     }
-    setTags((cur) => [...cur, t]);
+    setTags((cur) => [...cur, limpa]);
     setNewTag("");
+    setMenuTagFechado(false);
+    setTagAtiva(0);
+  }
+  /** Enter fora do menu: cria a tag digitada, com ou sem o "#" na frente. */
+  function addTag() {
+    incluirTag(newTag.replace(/^\s*#+/, "").trim());
   }
   function removeTag(t: string) {
     setTags((cur) => cur.filter((x) => x !== t));
+  }
+
+  function teclaNaTag(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Escape" && menuTagAberto) {
+      // O Escape do modal fecha o diálogo inteiro. Aqui ele só fecha a lista —
+      // e o `stopPropagation` é o que impede a demanda de ser perdida.
+      e.preventDefault();
+      e.stopPropagation();
+      setMenuTagFechado(true);
+      return;
+    }
+    if (menuTagAberto && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+      e.preventDefault();
+      const passo = e.key === "ArrowDown" ? 1 : -1;
+      const n = sugestoesTag.length;
+      setTagAtiva((cur) => (Math.min(cur, n - 1) + passo + n) % n);
+      return;
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (menuTagAberto) incluirTag(sugestoesTag[idxTag].tag);
+      else addTag();
+    }
   }
   function addItem() {
     const t = newItem.trim();
@@ -1017,18 +1130,44 @@ function CardModal({
     }
   }
 
+  /** Leva o campo que travou o salvamento até os olhos de quem clicou. */
+  function cobrar(
+    campo: "titulo" | "prazo",
+    mensagem: string,
+    ref: { current: HTMLInputElement | null },
+  ) {
+    setErr(mensagem);
+    setCampoErro(campo);
+    const el = ref.current;
+    if (!el) return;
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    // `preventScroll` porque a rolagem suave acima já está a caminho: sem ele o
+    // foco dá um pulo seco e desfaz o movimento no meio.
+    el.focus({ preventScroll: true });
+  }
+
+  /** Some com a cobrança assim que o campo cobrado é preenchido. */
+  function corrigiu(campo: "titulo" | "prazo") {
+    if (campoErro !== campo) return;
+    setCampoErro(null);
+    setErr(null);
+  }
+
   async function submit() {
     setErr(null);
     if (!title.trim()) {
-      setErr("Informe um título.");
+      cobrar("titulo", "Informe um título.", tituloRef);
       return;
     }
     if (!semPrazo && !due) {
-      setErr(
+      cobrar(
+        "prazo",
         "Informe o prazo de entrega ou marque “sem prazo definido”.",
+        prazoRef,
       );
       return;
     }
+    setCampoErro(null);
     setSaving(true);
     try {
       const base = {
@@ -1108,12 +1247,23 @@ function CardModal({
       </div>
 
       <input
-        className={styles.mtitle}
+        ref={tituloRef}
+        className={`${styles.mtitle} ${campoErro === "titulo" ? styles.mtitleErro : ""}`}
         value={title}
-        onChange={(e) => setTitle(e.target.value)}
+        onChange={(e) => {
+          setTitle(e.target.value);
+          if (e.target.value.trim()) corrigiu("titulo");
+        }}
         placeholder="Título da demanda"
+        aria-label="Título da demanda"
+        aria-invalid={campoErro === "titulo"}
         autoFocus
       />
+      {campoErro === "titulo" && (
+        <div className={styles.campoAviso}>
+          Toda demanda começa pelo título — é ele que aparece no card.
+        </div>
+      )}
 
       <div className={styles.row2}>
         <div className={styles.field}>
@@ -1243,6 +1393,7 @@ function CardModal({
                 onChange={(e) => {
                   const marcou = e.target.checked;
                   setSemPrazo(marcou);
+                  if (marcou) corrigiu("prazo");
                   // Desmarcar devolve uma data usável em vez de campo vazio:
                   // quem desmarca quer prazo, não quer procurar o calendário.
                   setDue(marcou ? "" : plusDays(startDate || todayStr(), 7));
@@ -1257,10 +1408,15 @@ function CardModal({
             </div>
           ) : (
             <input
-              className={styles.inp}
+              ref={prazoRef}
+              className={`${styles.inp} ${campoErro === "prazo" ? styles.inpErro : ""}`}
               type="date"
               value={due ?? ""}
-              onChange={(e) => setDue(e.target.value)}
+              onChange={(e) => {
+                setDue(e.target.value);
+                if (e.target.value) corrigiu("prazo");
+              }}
+              aria-invalid={campoErro === "prazo"}
               aria-label="Prazo de entrega"
             />
           )}
@@ -1296,19 +1452,65 @@ function CardModal({
             </button>
           </span>
         ))}
-        <input
-          className={styles.tagInput}
-          value={newTag}
-          onChange={(e) => setNewTag(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              addTag();
+        <div className={styles.tagBox}>
+          <input
+            className={styles.tagInput}
+            value={newTag}
+            onChange={(e) => {
+              setNewTag(e.target.value);
+              setMenuTagFechado(false);
+              setTagAtiva(0);
+            }}
+            onKeyDown={teclaNaTag}
+            onBlur={() => setMenuTagFechado(true)}
+            placeholder="# para buscar, ou escreva e Enter"
+            aria-label="Adicionar tag"
+            role="combobox"
+            aria-expanded={menuTagVisivel}
+            aria-controls="menu-tags"
+            aria-autocomplete="list"
+            aria-activedescendant={
+              menuTagAberto ? `tag-op-${idxTag}` : undefined
             }
-          }}
-          placeholder="Adicionar tag + Enter"
-          aria-label="Adicionar tag"
-        />
+          />
+          {menuTagVisivel && (
+            <div className={styles.tagMenu} id="menu-tags" role="listbox">
+              {sugestoesTag.length === 0 ? (
+                <div className={styles.tagMenuVazio}>
+                  {buscaTag
+                    ? `Nenhuma tag com “${buscaTag}”. Enter cria uma nova.`
+                    : "Este quadro ainda não tem tags. Enter cria a primeira."}
+                </div>
+              ) : (
+                sugestoesTag.map((s, i) => (
+                  <button
+                    key={s.tag}
+                    id={`tag-op-${i}`}
+                    type="button"
+                    role="option"
+                    aria-selected={i === idxTag}
+                    className={`${styles.tagOpcao} ${i === idxTag ? styles.tagOpcaoAtiva : ""}`}
+                    // `onMouseDown` prevenido: sem isso o blur do campo fecha a
+                    // lista antes de o clique chegar, e escolher com o mouse
+                    // simplesmente não funcionava.
+                    onMouseDown={(e) => e.preventDefault()}
+                    onMouseEnter={() => setTagAtiva(i)}
+                    onClick={() => incluirTag(s.tag)}
+                  >
+                    <span
+                      className={styles.tagDot}
+                      style={{ background: tagColor(s.tag) }}
+                    />
+                    <span className={styles.tagOpcaoNome}>{s.tag}</span>
+                    <span className={styles.tagOpcaoUso}>
+                      {s.n} demanda{s.n === 1 ? "" : "s"}
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className={styles.sectionLabel}>Descrição</div>
