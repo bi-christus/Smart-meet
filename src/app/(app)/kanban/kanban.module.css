@@ -1189,11 +1189,17 @@
 }
 /* "editar" e "salvar": ação de texto, discreta — o comentário é o conteúdo,
    o botão não pode competir com ele. */
+.cAcoes {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 10px;
+  flex: none;
+}
 .cEdit {
   background: none;
   border: none;
   padding: 0;
-  margin-left: auto;
   cursor: pointer;
   font-family: inherit;
   font-size: 11px;
@@ -1219,12 +1225,15 @@
   gap: 12px;
   margin-top: 6px;
 }
-.cEditAcoes .cEdit {
-  margin-left: 0;
-}
 .cEditCancelar {
   composes: cEdit;
   color: var(--tx-3);
+}
+/* "excluir" não some no meio dos outros dois, mas também não grita: o comentário
+   é o conteúdo. A confirmação é que segura o dedo, não a cor. */
+.cExcluir {
+  composes: cEdit;
+  color: var(--danger-tx);
 }
 .noComments {
   font-size: 12.5px;

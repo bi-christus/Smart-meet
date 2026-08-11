@@ -266,6 +266,23 @@ export async function addComment(
   await updateDoc(doc(db, "cards", id), { comments: arrayUnion(comment) });
 }
 
+/** Alvo de uma mudança em comentário já gravado. */
+export type CommentRef = { id?: string; author: string; at: number };
+
+/**
+ * Acha o comentário na lista que veio do banco.
+ *
+ * O `id` é o casamento bom, mas cai em autor+data quando o comentário é antigo
+ * e nasceu sem id — foi assim que os primeiros foram gravados.
+ */
+function acharComentario(lista: Comment[], alvo: CommentRef): number {
+  return lista.findIndex((c) =>
+    alvo.id && c.id
+      ? c.id === alvo.id
+      : c.author === alvo.author && c.at === alvo.at,
+  );
+}
+
 /**
  * Reescreve o texto de um comentário já publicado.
  *
@@ -274,15 +291,12 @@ export async function addComment(
  * outra pessoa escreveu enquanto este card estava aberto. A transação relê a
  * lista no instante da escrita e mexe só no comentário alvo.
  *
- * O alvo é casado pelo `id`, mas cai em autor+data quando o comentário é antigo
- * e nasceu sem id — foi assim que os primeiros foram gravados.
- *
  * Devolve a marca de edição gravada, para a tela mostrar o que está no banco em
  * vez de um segundo relógio próprio.
  */
 export async function editComment(
   cardId: string,
-  alvo: { id?: string; author: string; at: number },
+  alvo: CommentRef,
   text: string,
 ): Promise<number> {
   const ref = doc(db, "cards", cardId);
@@ -293,11 +307,7 @@ export async function editComment(
     const snap = await tx.get(ref);
     if (!snap.exists()) return;
     const atuais = ((snap.data().comments ?? []) as Comment[]).slice();
-    const bate = (c: Comment) =>
-      alvo.id && c.id
-        ? c.id === alvo.id
-        : c.author === alvo.author && c.at === alvo.at;
-    const i = atuais.findIndex(bate);
+    const i = acharComentario(atuais, alvo);
     // Sumiu entre abrir e salvar (card recriado, comentário removido): não é
     // caso de recriar o comentário no fim da lista, fora do lugar e do tempo.
     if (i < 0) return;
@@ -305,6 +315,34 @@ export async function editComment(
     tx.update(ref, { comments: atuais });
   });
   return editedAt;
+}
+
+/**
+ * Apaga um comentário. Some de vez — comentário não tem lixeira.
+ *
+ * Mesma transação da edição, e pelo mesmo motivo. `arrayRemove` seria menos
+ * código, mas ele casa o objeto inteiro campo a campo: um comentário editado
+ * por outra aba (que ganhou `editedAt`) deixaria de casar, e a remoção não
+ * aconteceria sem ninguém perceber.
+ *
+ * Tira UM, não todos os que batem: se dois comentários antigos e sem id
+ * dividissem autor e milissegundo, apagar os dois seria apagar o que ninguém
+ * pediu.
+ */
+export async function removeComment(
+  cardId: string,
+  alvo: CommentRef,
+): Promise<void> {
+  const ref = doc(db, "cards", cardId);
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) return;
+    const atuais = ((snap.data().comments ?? []) as Comment[]).slice();
+    const i = acharComentario(atuais, alvo);
+    if (i < 0) return;
+    atuais.splice(i, 1);
+    tx.update(ref, { comments: atuais });
+  });
 }
 
 export async function deleteCardById(id: string): Promise<void> {

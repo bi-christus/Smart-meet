@@ -19,6 +19,7 @@ import {
   moveCard,
   addComment,
   editComment,
+  removeComment,
   subscribeColumns,
   seedDefaultColumns,
   addColumn,
@@ -1008,6 +1009,8 @@ function CardModal({
     null,
   );
   const [textoEditado, setTextoEditado] = useState("");
+  /** Comentário sendo apagado — para o botão parar de convidar ao duplo clique. */
+  const [comentarioSaindo, setComentarioSaindo] = useState<string | null>(null);
   /**
    * Trava de gravação de comentário.
    *
@@ -1372,6 +1375,36 @@ function CardModal({
     } finally {
       gravandoComentario.current = false;
       setPosting(false);
+    }
+  }
+
+  /**
+   * Apaga um comentário, com confirmação.
+   *
+   * Confirmação porque não há desfazer: o texto sai do array e não fica cópia
+   * em lugar nenhum — mesmo padrão de excluir a demanda e a coluna.
+   */
+  async function excluirComentario(c: Comment) {
+    if (!card) return;
+    if (!confirm("Remover este comentário? Esta ação não pode ser desfeita."))
+      return;
+    const chave = chaveComentario(c);
+    setComentarioSaindo(chave);
+    try {
+      await removeComment(card.id, {
+        id: c.id,
+        author: c.author,
+        at: c.at,
+      });
+      setComments((cur) => cur.filter((x) => chaveComentario(x) !== chave));
+      // Se era este que estava sendo reescrito, a edição perdeu o alvo — deixar
+      // a caixa aberta faria o fechamento do card tentar salvar num vazio.
+      if (comentarioEmEdicao === chave) setComentarioEmEdicao(null);
+    } catch (e) {
+      console.error(e);
+      setErr("Não foi possível remover o comentário.");
+    } finally {
+      setComentarioSaindo(null);
     }
   }
 
@@ -1904,15 +1937,28 @@ function CardModal({
                             {c.editedAt ? " · editado" : ""}
                           </span>
                           {meu && !editando && (
-                            <button
-                              type="button"
-                              className={styles.cEdit}
-                              onClick={() =>
-                                void abrirEdicaoComentario(chave, c.text)
-                              }
-                            >
-                              editar
-                            </button>
+                            <span className={styles.cAcoes}>
+                              <button
+                                type="button"
+                                className={styles.cEdit}
+                                onClick={() =>
+                                  void abrirEdicaoComentario(chave, c.text)
+                                }
+                                disabled={comentarioSaindo === chave}
+                              >
+                                editar
+                              </button>
+                              <button
+                                type="button"
+                                className={styles.cExcluir}
+                                onClick={() => void excluirComentario(c)}
+                                disabled={comentarioSaindo === chave}
+                              >
+                                {comentarioSaindo === chave
+                                  ? "removendo…"
+                                  : "excluir"}
+                              </button>
+                            </span>
                           )}
                         </div>
                         {editando ? (
