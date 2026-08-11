@@ -24,6 +24,11 @@ import {
 export { DEFAULT_COLUMNS, colunaEhTerminal, colunasEntregues };
 export type { KanbanColumn };
 
+// Mesmo motivo: a regra de tag-referência é pura e tem teste próprio.
+import { resolverTags, type TagRef } from "./tags-ref";
+export { resolverTags };
+export type { TagRef };
+
 export type Priority = "alta" | "media" | "baixa";
 export const PRIORITY_LABEL: Record<Priority, string> = {
   alta: "Alta",
@@ -99,6 +104,8 @@ export type Card = {
   due?: string | null; // prazo de entrega (yyyy-mm-dd)
   priority?: Priority;
   tags?: string[];
+  /** Quais das `tags` são referência, e para quem. Ausente = todas são texto. */
+  tagRefs?: TagRef[];
   checklist?: ChecklistItem[];
   comments?: Comment[];
   order: number;
@@ -135,6 +142,7 @@ export type CardInput = {
   due: string | null;
   priority: Priority;
   tags: string[];
+  tagRefs: TagRef[];
   checklist: ChecklistItem[];
 };
 
@@ -198,6 +206,7 @@ export async function createCard(
     due: input.due || null,
     priority: input.priority,
     tags: input.tags,
+    tagRefs: input.tagRefs,
     checklist: input.checklist,
     comments: [],
     order: -now,
@@ -212,6 +221,34 @@ export async function updateCard(
   patch: Partial<Omit<Card, "id">>,
 ): Promise<void> {
   await updateDoc(doc(db, "cards", id), patch);
+}
+
+/**
+ * Grava no banco o que `resolverTags` já mostra na tela.
+ *
+ * A tela sozinha bastaria para quem está olhando o quadro, mas quem lê `tags`
+ * fora dele — a busca, o relatório do gestor, o catálogo do cowork — lê o campo
+ * cru. Enquanto o texto antigo estiver gravado, esses três continuam
+ * respondendo pelo nome velho. Por isso o conserto é escrito, não só exibido.
+ *
+ * Idempotente de propósito: dois navegadores com o mesmo quadro aberto escrevem
+ * a mesma correção, e a segunda não tem efeito.
+ */
+export async function corrigirTagsDeCards(
+  correcoes: { id: string; tags: string[]; tagRefs: TagRef[] }[],
+): Promise<void> {
+  if (correcoes.length === 0) return;
+  const batch = writeBatch(db);
+  // 500 é o teto de operações de um lote do Firestore. Passar disso seria um
+  // erro do lote inteiro — e um quadro com mais de 500 tags desatualizadas de
+  // uma vez é raro, mas o resto entra na próxima passada.
+  correcoes.slice(0, 500).forEach((c) => {
+    batch.update(doc(db, "cards", c.id), {
+      tags: c.tags,
+      tagRefs: c.tagRefs,
+    });
+  });
+  await batch.commit();
 }
 
 export async function addComment(

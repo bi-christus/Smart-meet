@@ -32,7 +32,10 @@ import {
   DEMAND_TYPE_LABEL,
   DEMAND_TYPE_COLOR,
   tagColor,
+  resolverTags,
+  corrigirTagsDeCards,
   type Card,
+  type TagRef,
   type CardInput,
   type Priority,
   type ChecklistItem,
@@ -67,7 +70,13 @@ function uid(): string {
  * o quadro já usa, o setor solicitante do cadastro, ou nenhum dos dois.
  */
 type GrupoSugestao = "tag" | "setor" | "demanda";
-type Sugestao = { valor: string; grupo: GrupoSugestao; detalhe?: string };
+type Sugestao = {
+  valor: string;
+  grupo: GrupoSugestao;
+  detalhe?: string;
+  /** Presente em setor e demanda: é o que sobrevive ao rename do alvo. */
+  ref?: TagRef;
+};
 const GRUPO_ROTULO: Record<GrupoSugestao, string> = {
   tag: "Tags do quadro",
   setor: "Setores solicitantes",
@@ -266,6 +275,24 @@ export default function KanbanPage() {
     return () => u();
   }, [sector]);
 
+  /**
+   * Os cards com as tags de referência já no nome atual do alvo.
+   *
+   * Daqui para baixo a tela usa `cardsVivos` no lugar de `cards`: se a demanda
+   * "Portal do aluno" virou "Portal do aluno 2.0", quem a cita mostra o nome
+   * novo no mesmo instante, e a busca por ele encontra as duas pontas — sem
+   * esperar a correção chegar ao banco.
+   *
+   * Fica aqui, colado na assinatura, e não lá embaixo com os outros memos:
+   * quem depende dele são efeitos que vêm logo abaixo, e uma lista de
+   * dependências é avaliada na ordem do arquivo.
+   */
+  const cardsVivos = useMemo(() => {
+    const titulos = new Map(cards.map((c) => [c.id, c.title]));
+    const setores = new Map(reqSetores.map((s) => [s.id, s.name]));
+    return cards.map((c) => resolverTags(c, titulos, setores));
+  }, [cards, reqSetores]);
+
   useEffect(() => {
     setColsLoaded(false);
     if (!sector) {
@@ -314,11 +341,11 @@ export default function KanbanPage() {
 
   useEffect(() => {
     if (!alvoDireto) return;
-    const c = cards.find((x) => x.id === alvoDireto);
+    const c = cardsVivos.find((x) => x.id === alvoDireto);
     if (!c) return; // ainda carregando o setor certo
     setEdit({ mode: "edit", card: c });
     setAlvoDireto(null);
-  }, [alvoDireto, cards]);
+  }, [alvoDireto, cardsVivos]);
 
   useEffect(() => {
     const u = subscribeUsers(setUsers, () => {});
@@ -341,20 +368,44 @@ export default function KanbanPage() {
   }, [users]);
   const activeUsers = useMemo(() => users.filter((u) => u.active), [users]);
 
+  /**
+   * Escreve no banco o que a tela já mostra.
+   *
+   * `resolverTags` conserta a leitura, mas quem lê `tags` de fora do quadro —
+   * a busca do gestor no relatório, o catálogo do cowork — lê o campo cru. Este
+   * efeito é o que faz o conserto sobreviver a quem não está com o quadro
+   * aberto. Roda quando há divergência e para sozinho: o próprio snapshot da
+   * correção volta sem divergência nenhuma.
+   *
+   * `resolverTags` devolve o mesmo objeto quando não mudou nada, então a
+   * comparação por identidade já separa o que precisa de escrita.
+   */
+  useEffect(() => {
+    const correcoes = cardsVivos
+      .filter((c, i) => c !== cards[i])
+      .map((c) => ({ id: c.id, tags: c.tags ?? [], tagRefs: c.tagRefs ?? [] }));
+    if (correcoes.length === 0) return;
+    corrigirTagsDeCards(correcoes).catch((e) =>
+      // Sem alarde na tela: a tela já está certa. Isto é manutenção do dado, e
+      // quem só tem leitura no setor não pode ser interrompido por causa dela.
+      console.error("Não foi possível atualizar as tags renomeadas:", e),
+    );
+  }, [cardsVivos, cards]);
+
   const assigneeF = assigneeSel.sector === sector ? assigneeSel.value : "";
   const setAssigneeF = (value: string) => setAssigneeSel({ sector, value });
 
   // Busca + prioridade (sem o filtro de responsável — é a base das contagens).
   const baseFiltered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return cards.filter(
+    return cardsVivos.filter(
       (c) =>
         (!q ||
           c.title.toLowerCase().includes(q) ||
           (c.tags ?? []).some((t) => t.toLowerCase().includes(q))) &&
         (!prio || c.priority === prio),
     );
-  }, [cards, search, prio]);
+  }, [cardsVivos, search, prio]);
 
   const filtered = useMemo(
     () =>
@@ -369,30 +420,30 @@ export default function KanbanPage() {
   /**
    * Catálogo de tags do quadro — é o que o "#" oferece no formulário.
    *
-   * Sai de `cards` e não de `baseFiltered`: o catálogo não pode encolher porque
+   * Sai do quadro inteiro e não de `baseFiltered`: o catálogo não pode encolher porque
    * alguém digitou algo na busca. Ordena por uso e depois em ordem alfabética —
    * a tag que o setor repete toda semana aparece primeiro, e o resto tem ordem
    * estável em vez da ordem de chegada do Firestore.
    */
   const tagsDoQuadro = useMemo(() => {
     const uso = new Map<string, number>();
-    cards.forEach((c) =>
+    cardsVivos.forEach((c) =>
       (c.tags ?? []).forEach((t) => uso.set(t, (uso.get(t) ?? 0) + 1)),
     );
     return [...uso.entries()]
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "pt-BR"))
       .map(([tag, n]) => ({ tag, n }));
-  }, [cards]);
+  }, [cardsVivos]);
 
   /** As demandas do quadro, para o "#" citar uma existente pelo título. */
   const demandasDoQuadro = useMemo(
     () =>
-      cards.map((c) => ({
+      cardsVivos.map((c) => ({
         id: c.id,
         title: c.title,
         columnId: c.columnId,
       })),
-    [cards],
+    [cardsVivos],
   );
 
   // Só entram no filtro os responsáveis que têm demandas neste quadro.
@@ -925,6 +976,8 @@ function CardModal({
    */
   const [semPrazo, setSemPrazo] = useState(isNew ? false : !card?.due);
   const [tags, setTags] = useState<string[]>(card?.tags ?? []);
+  /** Quais tags são referência. Anda junto de `tags`, ligada pelo texto. */
+  const [tagRefs, setTagRefs] = useState<TagRef[]>(card?.tagRefs ?? []);
   const [newTag, setNewTag] = useState("");
   /** Escape fecha a lista de tags sem apagar o que já foi digitado. */
   const [menuTagFechado, setMenuTagFechado] = useState(false);
@@ -1066,7 +1119,7 @@ function CardModal({
      */
     const pegar = (
       grupo: GrupoSugestao,
-      brutos: { valor: string; detalhe?: string }[],
+      brutos: { valor: string; detalhe?: string; ref?: TagRef }[],
       limite: number,
     ): Sugestao[] => {
       const out: Sugestao[] = [];
@@ -1101,7 +1154,10 @@ function CardModal({
     );
     const setores = pegar(
       "setor",
-      reqSetores.map((s) => ({ valor: s.name })),
+      reqSetores.map((s) => ({
+        valor: s.name,
+        ref: { tipo: "setor" as const, id: s.id, texto: s.name },
+      })),
       6,
     );
     const demandas = pegar(
@@ -1112,6 +1168,7 @@ function CardModal({
         .map((d) => ({
           valor: d.title,
           detalhe: columns.find((c) => c.colId === d.columnId)?.title,
+          ref: { tipo: "demanda" as const, id: d.id, texto: d.title },
         })),
       6,
     );
@@ -1134,13 +1191,22 @@ function CardModal({
   // sugestões, e um índice antigo escolheria a tag errada no Enter.
   const idxTag = Math.min(tagAtiva, sugestoesTag.length - 1);
 
-  function incluirTag(t: string) {
+  /**
+   * Põe a tag no card — com a referência, quando ela veio da lista.
+   *
+   * A tag escrita à mão NÃO ganha referência, mesmo que o texto bata com uma
+   * demanda existente: quem digitou "Portal" digitou uma palavra, e transformar
+   * isso em vínculo faria a palavra mudar sozinha quando a demanda de nome
+   * parecido fosse renomeada.
+   */
+  function incluirTag(t: string, ref?: TagRef) {
     const limpa = t.trim();
     if (!limpa || tags.includes(limpa)) {
       setNewTag("");
       return;
     }
     setTags((cur) => [...cur, limpa]);
+    if (ref) setTagRefs((cur) => [...cur, { ...ref, texto: limpa }]);
     setNewTag("");
     setMenuTagFechado(false);
     setTagAtiva(0);
@@ -1151,6 +1217,9 @@ function CardModal({
   }
   function removeTag(t: string) {
     setTags((cur) => cur.filter((x) => x !== t));
+    // A referência sai junto: uma `tagRef` sem a tag correspondente é lixo que
+    // nada mais resolve, e voltaria a valer se alguém redigitasse o mesmo texto.
+    setTagRefs((cur) => cur.filter((r) => r.texto !== t));
   }
 
   function teclaNaTag(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -1171,7 +1240,8 @@ function CardModal({
     }
     if (e.key === "Enter") {
       e.preventDefault();
-      if (menuTagAberto) incluirTag(sugestoesTag[idxTag].valor);
+      if (menuTagAberto)
+        incluirTag(sugestoesTag[idxTag].valor, sugestoesTag[idxTag].ref);
       else addTag();
     }
   }
@@ -1270,6 +1340,9 @@ function CardModal({
         due: semPrazo ? null : due || null,
         priority,
         tags,
+        // Só as referências das tags que sobraram: remover a tag e deixar a
+        // referência gravada devolveria o vínculo na próxima edição.
+        tagRefs: tagRefs.filter((r) => tags.includes(r.texto)),
         checklist,
       };
       if (isNew) {
@@ -1588,7 +1661,7 @@ function CardModal({
                       // simplesmente não funcionava.
                       onMouseDown={(e) => e.preventDefault()}
                       onMouseEnter={() => setTagAtiva(i)}
-                      onClick={() => incluirTag(s.valor)}
+                      onClick={() => incluirTag(s.valor, s.ref)}
                     >
                       <span
                         className={styles.tagDot}

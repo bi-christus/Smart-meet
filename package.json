@@ -9,10 +9,11 @@
     "lint": "eslint",
     "backup:firestore": "node scripts/backup-firestore.mjs",
     "check:demandas": "node scripts/check-demandas-boundary.mjs",
-    "prebuild": "node scripts/check-demandas-boundary.mjs && node scripts/test-demandas-schema.mjs && node scripts/test-recorrencias.mjs && node scripts/test-entregues.mjs",
+    "prebuild": "node scripts/check-demandas-boundary.mjs && node scripts/test-demandas-schema.mjs && node scripts/test-recorrencias.mjs && node scripts/test-entregues.mjs && node scripts/test-tags-ref.mjs",
     "test:demandas": "node scripts/test-demandas-schema.mjs",
     "test:recorrencias": "node scripts/test-recorrencias.mjs",
-    "test:entregues": "node scripts/test-entregues.mjs"
+    "test:entregues": "node scripts/test-entregues.mjs",
+    "test:tags": "node scripts/test-tags-ref.mjs"
   },
   "dependencies": {
     "firebase": "^12.16.0",
