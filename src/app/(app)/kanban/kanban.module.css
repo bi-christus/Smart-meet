@@ -1182,29 +1182,49 @@
   outline-offset: 0;
   border-color: transparent;
 }
-.commentBtn {
-  height: 38px;
-  padding: 0 14px;
+.commentHint {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--tx-3);
+}
+/* "editar" e "salvar": ação de texto, discreta — o comentário é o conteúdo,
+   o botão não pode competir com ele. */
+.cEdit {
+  background: none;
   border: none;
-  background: var(--brand);
-  color: #fff;
-  border-radius: 9px;
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 600;
+  padding: 0;
+  margin-left: auto;
   cursor: pointer;
-  flex: none;
-  transition: background 0.12s, transform 0.06s;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--brand);
 }
-.commentBtn:hover {
-  background: var(--brand-hover);
+.cEdit:hover {
+  text-decoration: underline;
 }
-.commentBtn:active {
-  transform: scale(0.96);
-}
-.commentBtn:disabled {
-  opacity: 0.5;
+.cEdit:disabled {
+  opacity: 0.6;
   cursor: default;
+  text-decoration: none;
+}
+/* Mesmo campo do comentário novo, mas aqui ele não está num flex que o estica
+   — sem a largura explícita a caixa nasce com o tamanho padrão do textarea. */
+.cEditInput {
+  composes: commentInput;
+  width: 100%;
+}
+.cEditAcoes {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 6px;
+}
+.cEditAcoes .cEdit {
+  margin-left: 0;
+}
+.cEditCancelar {
+  composes: cEdit;
+  color: var(--tx-3);
 }
 .noComments {
   font-size: 12.5px;
@@ -1252,8 +1272,7 @@
   }
   .checkFill,
   .sectorBtn,
-  .iconbtn,
-  .commentBtn {
+  .iconbtn {
     transition: none !important;
   }
   .kcard {
@@ -1261,8 +1280,7 @@
   }
   .kcard:hover,
   .sectorBtn:active,
-  .iconbtn:active,
-  .commentBtn:active {
+  .iconbtn:active {
     transform: none !important;
   }
 }

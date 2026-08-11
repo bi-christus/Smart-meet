@@ -18,6 +18,7 @@ import {
   deleteCardById,
   moveCard,
   addComment,
+  editComment,
   subscribeColumns,
   seedDefaultColumns,
   addColumn,
@@ -154,6 +155,18 @@ function relTime(ts: number): string {
   if (d === 1) return "ontem";
   if (d < 7) return `há ${d} dias`;
   return fmtShort(new Date(ts));
+}
+
+/**
+ * Identidade de um comentário na tela.
+ *
+ * O `id` só existe nos comentários publicados pelo modal; os que vieram da
+ * ingestão de reunião e os mais antigos nasceram sem ele — daí o autor mais a
+ * data como reserva, que é única na prática (dois comentários da mesma pessoa
+ * no mesmo milissegundo não acontecem).
+ */
+function chaveComentario(c: Comment): string {
+  return c.id ?? `${c.author}|${c.at}`;
 }
 
 /** Valor sentinela do filtro de responsável (e-mails sempre têm "@"). */
@@ -989,6 +1002,19 @@ function CardModal({
   const [comments, setComments] = useState<Comment[]>(card?.comments ?? []);
   const [newComment, setNewComment] = useState("");
   const [posting, setPosting] = useState(false);
+  /** Qual comentário está sendo reescrito (chave), e o texto em edição. */
+  const [comentarioEmEdicao, setComentarioEmEdicao] = useState<string | null>(
+    null,
+  );
+  const [textoEditado, setTextoEditado] = useState("");
+  /**
+   * Trava de gravação de comentário.
+   *
+   * `useRef` e não estado: entre o Ctrl+Enter e o clique em fechar não há
+   * re-render que atualize `posting` a tempo, e sem esta trava o mesmo texto
+   * era publicado duas vezes.
+   */
+  const gravandoComentario = useRef(false);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   /**
@@ -1266,26 +1292,108 @@ function CardModal({
     setChecklist((c) => c.filter((_, idx) => idx !== i));
   }
 
-  async function postComment() {
+  // --- comentários: escrever basta, o botão não ------------------------
+  //
+  // Comentário não tem rascunho: ou está gravado, ou não existe. Antes era
+  // preciso clicar em "Comentar" — e quem escrevia e fechava o card perdia o
+  // texto sem nenhum aviso. Agora fechar o card grava o que estiver escrito,
+  // e o Ctrl+Enter continua valendo para quem quer publicar sem sair daqui.
+
+  /** Publica o comentário novo. `false` = não gravou, então não pode fechar. */
+  async function publicarComentario(): Promise<boolean> {
     const text = newComment.trim();
-    if (!text || !card || posting) return;
+    if (!text || !card) return true;
     const comment: Comment = {
       id: uid(),
       author: actorEmail,
       text,
       at: Date.now(),
     };
-    setPosting(true);
     try {
       await addComment(card.id, comment);
       setComments((c) => [...c, comment]);
       setNewComment("");
+      return true;
     } catch (e) {
       console.error(e);
-      setErr("Não foi possível comentar.");
+      setErr("Não foi possível salvar o comentário.");
+      return false;
+    }
+  }
+
+  /** Grava a reescrita em andamento, se houver alguma. */
+  async function salvarEdicaoComentario(): Promise<boolean> {
+    if (!card || comentarioEmEdicao === null) return true;
+    const alvo = comments.find((c) => chaveComentario(c) === comentarioEmEdicao);
+    const text = textoEditado.trim();
+    // Apagar tudo não é editar: sem texto, o comentário fica como estava — para
+    // remover a fala de alguém não basta esvaziar um campo por acidente.
+    if (!alvo || !text || text === alvo.text) {
+      setComentarioEmEdicao(null);
+      return true;
+    }
+    try {
+      const editedAt = await editComment(
+        card.id,
+        { id: alvo.id, author: alvo.author, at: alvo.at },
+        text,
+      );
+      setComments((cur) =>
+        cur.map((c) =>
+          chaveComentario(c) === comentarioEmEdicao
+            ? { ...c, text, editedAt }
+            : c,
+        ),
+      );
+      setComentarioEmEdicao(null);
+      return true;
+    } catch (e) {
+      console.error(e);
+      setErr("Não foi possível salvar a edição do comentário.");
+      return false;
+    }
+  }
+
+  /** Tudo o que está escrito na área de comentários vai para o banco. */
+  async function gravarComentarios(): Promise<boolean> {
+    if (gravandoComentario.current) {
+      setErr(
+        "O comentário ainda está sendo salvo — tente de novo em instantes.",
+      );
+      return false;
+    }
+    gravandoComentario.current = true;
+    setPosting(true);
+    try {
+      const editou = await salvarEdicaoComentario();
+      const publicou = await publicarComentario();
+      return editou && publicou;
     } finally {
+      gravandoComentario.current = false;
       setPosting(false);
     }
+  }
+
+  /** Abre a reescrita de um comentário sem perder a que já estava aberta. */
+  async function abrirEdicaoComentario(chave: string, texto: string) {
+    if (comentarioEmEdicao !== null && comentarioEmEdicao !== chave) {
+      if (!(await salvarEdicaoComentario())) return;
+    }
+    setComentarioEmEdicao(chave);
+    setTextoEditado(texto);
+  }
+
+  /**
+   * Fecha o card gravando o comentário escrito.
+   *
+   * Vale também no "Cancelar" e no Escape: comentário nunca fez parte do
+   * formulário — ele já era gravado na hora, direto no card. Cancelar desfaz a
+   * edição da demanda, não apaga o que alguém acabou de escrever. Se a gravação
+   * falha, o modal FICA ABERTO: fechar aqui seria jogar o texto fora.
+   */
+  async function fechar() {
+    if (!(await gravarComentarios())) return;
+    onClose();
   }
 
   /** Leva o campo que travou o salvamento até os olhos de quem clicou. */
@@ -1369,6 +1477,13 @@ function CardModal({
           await updateCard(card.id, patch as Partial<Omit<Card, "id">>);
         }
       }
+      // O comentário vai junto — e se ele não gravar, o modal fica aberto com o
+      // texto na tela. A demanda já está salva; clicar em Salvar de novo só
+      // repete a tentativa do comentário.
+      if (!(await gravarComentarios())) {
+        setSaving(false);
+        return;
+      }
       onClose();
     } catch (e) {
       console.error(e);
@@ -1392,7 +1507,7 @@ function CardModal({
 
   return (
     <Modal
-      onClose={onClose}
+      onClose={() => void fechar()}
       ariaLabel={isNew ? "Nova demanda" : "Editar demanda"}
       overlayClassName={styles.overlay}
       className={styles.modal}
@@ -1763,6 +1878,11 @@ function CardModal({
                 .map((c, i) => {
                   const u = usersMap[c.author];
                   const name = u?.name || c.author;
+                  const chave = chaveComentario(c);
+                  // Só o autor reescreve o próprio comentário: editar a fala de
+                  // outra pessoa mudaria o registro do que ela disse.
+                  const meu = c.author === actorEmail;
+                  const editando = comentarioEmEdicao === chave;
                   return (
                     <div key={c.id ?? i} className={styles.comment}>
                       <span
@@ -1776,9 +1896,70 @@ function CardModal({
                           <span className={styles.cName}>
                             {name.split(" ")[0]}
                           </span>
-                          <span className={styles.cTime}>{relTime(c.at)}</span>
+                          <span className={styles.cTime}>
+                            {relTime(c.at)}
+                            {c.editedAt ? " · editado" : ""}
+                          </span>
+                          {meu && !editando && (
+                            <button
+                              type="button"
+                              className={styles.cEdit}
+                              onClick={() =>
+                                void abrirEdicaoComentario(chave, c.text)
+                              }
+                            >
+                              editar
+                            </button>
+                          )}
                         </div>
-                        <div className={styles.cText}>{c.text}</div>
+                        {editando ? (
+                          <>
+                            <textarea
+                              className={styles.cEditInput}
+                              value={textoEditado}
+                              onChange={(e) => setTextoEditado(e.target.value)}
+                              aria-label="Editar comentário"
+                              autoFocus
+                              onKeyDown={(e) => {
+                                if (e.key === "Escape") {
+                                  // Só sai da edição; o Escape do modal
+                                  // fecharia a demanda inteira.
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setComentarioEmEdicao(null);
+                                  return;
+                                }
+                                if (
+                                  e.key === "Enter" &&
+                                  (e.metaKey || e.ctrlKey)
+                                ) {
+                                  e.preventDefault();
+                                  void gravarComentarios();
+                                }
+                              }}
+                            />
+                            <div className={styles.cEditAcoes}>
+                              <button
+                                type="button"
+                                className={styles.cEdit}
+                                onClick={() => void gravarComentarios()}
+                                disabled={posting}
+                              >
+                                {posting ? "salvando…" : "salvar"}
+                              </button>
+                              <button
+                                type="button"
+                                className={styles.cEditCancelar}
+                                onClick={() => setComentarioEmEdicao(null)}
+                                disabled={posting}
+                              >
+                                descartar edição
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <div className={styles.cText}>{c.text}</div>
+                        )}
                       </div>
                     </div>
                   );
@@ -1790,22 +1971,20 @@ function CardModal({
               className={styles.commentInput}
               value={newComment}
               onChange={(e) => setNewComment(e.target.value)}
-              placeholder="Escreva um comentário… (Ctrl+Enter envia)"
+              placeholder="Escreva um comentário…"
               aria-label="Novo comentário"
               onKeyDown={(e) => {
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                   e.preventDefault();
-                  postComment();
+                  void gravarComentarios();
                 }
               }}
             />
-            <button
-              className={styles.commentBtn}
-              onClick={postComment}
-              disabled={posting || !newComment.trim()}
-            >
-              {posting ? "…" : "Comentar"}
-            </button>
+          </div>
+          <div className={styles.commentHint} aria-live="polite">
+            {posting
+              ? "Salvando comentário…"
+              : "Salvo sozinho ao fechar o card — Ctrl+Enter salva agora."}
           </div>
         </>
       )}
@@ -1819,10 +1998,18 @@ function CardModal({
           </button>
         )}
         <div className={styles.spacer} />
-        <button className={styles.btnGhost} onClick={onClose} disabled={saving}>
+        <button
+          className={styles.btnGhost}
+          onClick={() => void fechar()}
+          disabled={saving || posting}
+        >
           Cancelar
         </button>
-        <button className={styles.btnSave} onClick={submit} disabled={saving}>
+        <button
+          className={styles.btnSave}
+          onClick={submit}
+          disabled={saving || posting}
+        >
           {saving ? "Salvando…" : isNew ? "Criar demanda" : "Salvar"}
         </button>
       </div>

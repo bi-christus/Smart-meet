@@ -10,6 +10,7 @@ import {
   serverTimestamp,
   writeBatch,
   arrayUnion,
+  runTransaction,
 } from "firebase/firestore";
 import { db } from "./firebase";
 
@@ -71,7 +72,14 @@ export type ChecklistItem = {
   done: boolean;
   desc?: string;
 };
-export type Comment = { id?: string; author: string; text: string; at: number };
+export type Comment = {
+  id?: string;
+  author: string;
+  text: string;
+  at: number;
+  /** Quando o texto foi reescrito. Ausente = comentário como foi publicado. */
+  editedAt?: number;
+};
 
 /** Paleta de tags (cor estável por nome). */
 export const TAG_COLORS = [
@@ -256,6 +264,47 @@ export async function addComment(
   comment: Comment,
 ): Promise<void> {
   await updateDoc(doc(db, "cards", id), { comments: arrayUnion(comment) });
+}
+
+/**
+ * Reescreve o texto de um comentário já publicado.
+ *
+ * Transação, e não `updateDoc` com a lista que o modal tem na mão: `comments` é
+ * um array, e gravar a cópia da tela apagaria, em silêncio, o comentário que
+ * outra pessoa escreveu enquanto este card estava aberto. A transação relê a
+ * lista no instante da escrita e mexe só no comentário alvo.
+ *
+ * O alvo é casado pelo `id`, mas cai em autor+data quando o comentário é antigo
+ * e nasceu sem id — foi assim que os primeiros foram gravados.
+ *
+ * Devolve a marca de edição gravada, para a tela mostrar o que está no banco em
+ * vez de um segundo relógio próprio.
+ */
+export async function editComment(
+  cardId: string,
+  alvo: { id?: string; author: string; at: number },
+  text: string,
+): Promise<number> {
+  const ref = doc(db, "cards", cardId);
+  // Fora da transação: ela pode ser repetida pelo Firestore, e a hora da edição
+  // é a de quem editou, não a da última tentativa de gravar.
+  const editedAt = Date.now();
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) return;
+    const atuais = ((snap.data().comments ?? []) as Comment[]).slice();
+    const bate = (c: Comment) =>
+      alvo.id && c.id
+        ? c.id === alvo.id
+        : c.author === alvo.author && c.at === alvo.at;
+    const i = atuais.findIndex(bate);
+    // Sumiu entre abrir e salvar (card recriado, comentário removido): não é
+    // caso de recriar o comentário no fim da lista, fora do lugar e do tempo.
+    if (i < 0) return;
+    atuais[i] = { ...atuais[i], text, editedAt };
+    tx.update(ref, { comments: atuais });
+  });
+  return editedAt;
 }
 
 export async function deleteCardById(id: string): Promise<void> {
