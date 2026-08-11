@@ -46,6 +46,7 @@ import {
 } from "@/lib/kanban";
 import { Icon } from "@/components/icons";
 import { Select, type SelectOption } from "@/components/select";
+import { Combobox } from "@/components/combobox";
 import { Modal } from "@/components/modal";
 import { RelatorioModal } from "./relatorio-modal";
 import styles from "./kanban.module.css";
@@ -1587,12 +1588,13 @@ function CardModal({
               placeholder="Nome do setor…"
             />
           ) : (
-            <Select
+            <Combobox
               value={requesterSector}
               options={reqSetorOptions}
               onChange={setRequesterSector}
-              placeholder="— Não definido —"
+              placeholder="Digite para buscar…"
               ariaLabel="Setor solicitante"
+              vazioTexto="Nenhum setor com esse nome. Use “+ novo” para cadastrar."
             />
           )}
         </div>
@@ -1620,12 +1622,13 @@ function CardModal({
               placeholder="Nome do solicitante…"
             />
           ) : (
-            <Select
+            <Combobox
               value={requester}
               options={solicOptions}
               onChange={setRequester}
-              placeholder="— Não definido —"
+              placeholder="Digite para buscar…"
               ariaLabel="Solicitante"
+              vazioTexto="Ninguém com esse nome. Use “+ novo” para cadastrar."
             />
           )}
         </div>
