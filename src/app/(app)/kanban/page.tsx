@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { subscribeUsers, DEFAULT_SECTORS, type UserProfile } from "@/lib/users";
 import {
@@ -58,6 +58,21 @@ function uid(): string {
     ? crypto.randomUUID()
     : `id_${Date.now()}_${Math.round(Math.random() * 1e9)}`;
 }
+
+/**
+ * De onde veio cada sugestão do "#".
+ *
+ * O grupo não muda o que é gravado — tudo vira tag de texto. Ele existe para
+ * quem está escolhendo saber o que está escolhendo: "Infra" pode ser a tag que
+ * o quadro já usa, o setor solicitante do cadastro, ou nenhum dos dois.
+ */
+type GrupoSugestao = "tag" | "setor" | "demanda";
+type Sugestao = { valor: string; grupo: GrupoSugestao; detalhe?: string };
+const GRUPO_ROTULO: Record<GrupoSugestao, string> = {
+  tag: "Tags do quadro",
+  setor: "Setores solicitantes",
+  demanda: "Demandas do quadro",
+};
 
 /** Texto comparável: sem acento e em minúsculas — "Manutenção" acha por "manut". */
 function semAcento(s: string): string {
@@ -369,6 +384,17 @@ export default function KanbanPage() {
       .map(([tag, n]) => ({ tag, n }));
   }, [cards]);
 
+  /** As demandas do quadro, para o "#" citar uma existente pelo título. */
+  const demandasDoQuadro = useMemo(
+    () =>
+      cards.map((c) => ({
+        id: c.id,
+        title: c.title,
+        columnId: c.columnId,
+      })),
+    [cards],
+  );
+
   // Só entram no filtro os responsáveis que têm demandas neste quadro.
   const assigneeFilterOptions: SelectOption[] = useMemo(() => {
     const counts = new Map<string, number>();
@@ -657,6 +683,7 @@ export default function KanbanPage() {
           solicitantes={solicitantes}
           reqSetores={reqSetores}
           tagsDoQuadro={tagsDoQuadro}
+          demandasDoQuadro={demandasDoQuadro}
           onClose={() => setEdit(null)}
         />
       )}
@@ -847,6 +874,7 @@ function CardModal({
   solicitantes,
   reqSetores,
   tagsDoQuadro,
+  demandasDoQuadro,
   onClose,
 }: {
   state: NonNullable<EditState>;
@@ -859,6 +887,8 @@ function CardModal({
   reqSetores: SolicitanteSetor[];
   /** tags já usadas no quadro, da mais usada para a menos, com a contagem */
   tagsDoQuadro: { tag: string; n: number }[];
+  /** demandas do quadro, para citar uma existente pelo título */
+  demandasDoQuadro: { id: string; title: string; columnId: string }[];
   onClose: () => void;
 }) {
   const isNew = state.mode === "new";
@@ -1022,21 +1052,79 @@ function CardModal({
   const sugestoesTag = useMemo(() => {
     if (buscaTag === null) return [];
     const q = semAcento(buscaTag);
-    const candidatas = tagsDoQuadro.filter(
-      (t) => !tags.includes(t.tag) && (!q || semAcento(t.tag).includes(q)),
+    // A comparação é toda sem acento e sem maiúscula: é o que impede "Infra",
+    // "infra" e "INFRA" de virarem três tags diferentes no mesmo quadro.
+    const usadas = new Set(tags.map(semAcento));
+    const vistos = new Set<string>();
+
+    /**
+     * Filtra um grupo, tira o que já apareceu antes e corta no limite.
+     *
+     * `vistos` é marcado antes do corte de propósito: se uma tag ficou de fora
+     * por limite, o setor de mesmo nome não pode entrar no lugar dela como se
+     * fosse outra coisa — na hora de escolher, as duas dariam a mesma tag.
+     */
+    const pegar = (
+      grupo: GrupoSugestao,
+      brutos: { valor: string; detalhe?: string }[],
+      limite: number,
+    ): Sugestao[] => {
+      const out: Sugestao[] = [];
+      for (const b of brutos) {
+        const valor = b.valor.trim();
+        const chave = semAcento(valor);
+        if (!chave || usadas.has(chave) || vistos.has(chave)) continue;
+        vistos.add(chave);
+        if (q && !chave.includes(q)) continue;
+        out.push({ ...b, valor, grupo });
+      }
+      // Quem começa com o que foi digitado vem antes de quem só contém: digitar
+      // "s" tem de oferecer "Smart" antes de "Requisição do RH". `sort` é
+      // estável, então dentro de cada grupo a ordem de origem continua valendo.
+      if (q) {
+        out.sort(
+          (a, b) =>
+            Number(semAcento(b.valor).startsWith(q)) -
+            Number(semAcento(a.valor).startsWith(q)),
+        );
+      }
+      return out.slice(0, limite);
+    };
+
+    const doQuadro = pegar(
+      "tag",
+      tagsDoQuadro.map((t) => ({
+        valor: t.tag,
+        detalhe: `${t.n} demanda${t.n === 1 ? "" : "s"}`,
+      })),
+      6,
     );
-    // Quem começa com o que foi digitado vem antes de quem só contém: digitar
-    // "s" tem de oferecer "Smart" antes de "Requisição do RH". `sort` é estável,
-    // então dentro de cada grupo a ordem de uso continua valendo.
-    if (q) {
-      candidatas.sort(
-        (a, b) =>
-          Number(semAcento(b.tag).startsWith(q)) -
-          Number(semAcento(a.tag).startsWith(q)),
-      );
-    }
-    return candidatas.slice(0, 8);
-  }, [buscaTag, tagsDoQuadro, tags]);
+    const setores = pegar(
+      "setor",
+      reqSetores.map((s) => ({ valor: s.name })),
+      6,
+    );
+    const demandas = pegar(
+      "demanda",
+      demandasDoQuadro
+        // A demanda não se cita: sobraria uma tag com o próprio título.
+        .filter((d) => d.id !== card?.id)
+        .map((d) => ({
+          valor: d.title,
+          detalhe: columns.find((c) => c.colId === d.columnId)?.title,
+        })),
+      6,
+    );
+    return [...doQuadro, ...setores, ...demandas];
+  }, [
+    buscaTag,
+    tagsDoQuadro,
+    reqSetores,
+    demandasDoQuadro,
+    columns,
+    card?.id,
+    tags,
+  ]);
 
   /** A lista está na tela — mesmo vazia, ela explica que o Enter cria a tag. */
   const menuTagVisivel = buscaTag !== null && !menuTagFechado;
@@ -1083,7 +1171,7 @@ function CardModal({
     }
     if (e.key === "Enter") {
       e.preventDefault();
-      if (menuTagAberto) incluirTag(sugestoesTag[idxTag].tag);
+      if (menuTagAberto) incluirTag(sugestoesTag[idxTag].valor);
       else addTag();
     }
   }
@@ -1463,7 +1551,7 @@ function CardModal({
             }}
             onKeyDown={teclaNaTag}
             onBlur={() => setMenuTagFechado(true)}
-            placeholder="# para buscar, ou escreva e Enter"
+            placeholder="# busca tags, setores e demandas"
             aria-label="Adicionar tag"
             role="combobox"
             aria-expanded={menuTagVisivel}
@@ -1478,34 +1566,40 @@ function CardModal({
               {sugestoesTag.length === 0 ? (
                 <div className={styles.tagMenuVazio}>
                   {buscaTag
-                    ? `Nenhuma tag com “${buscaTag}”. Enter cria uma nova.`
-                    : "Este quadro ainda não tem tags. Enter cria a primeira."}
+                    ? `Nada com “${buscaTag}” em tags, setores ou demandas. Enter cria a tag assim mesmo.`
+                    : "Nenhuma tag, setor ou demanda para sugerir. Enter cria a primeira."}
                 </div>
               ) : (
                 sugestoesTag.map((s, i) => (
-                  <button
-                    key={s.tag}
-                    id={`tag-op-${i}`}
-                    type="button"
-                    role="option"
-                    aria-selected={i === idxTag}
-                    className={`${styles.tagOpcao} ${i === idxTag ? styles.tagOpcaoAtiva : ""}`}
-                    // `onMouseDown` prevenido: sem isso o blur do campo fecha a
-                    // lista antes de o clique chegar, e escolher com o mouse
-                    // simplesmente não funcionava.
-                    onMouseDown={(e) => e.preventDefault()}
-                    onMouseEnter={() => setTagAtiva(i)}
-                    onClick={() => incluirTag(s.tag)}
-                  >
-                    <span
-                      className={styles.tagDot}
-                      style={{ background: tagColor(s.tag) }}
-                    />
-                    <span className={styles.tagOpcaoNome}>{s.tag}</span>
-                    <span className={styles.tagOpcaoUso}>
-                      {s.n} demanda{s.n === 1 ? "" : "s"}
-                    </span>
-                  </button>
+                  <Fragment key={`${s.grupo}-${s.valor}`}>
+                    {(i === 0 || sugestoesTag[i - 1].grupo !== s.grupo) && (
+                      <div className={styles.tagGrupo}>
+                        {GRUPO_ROTULO[s.grupo]}
+                      </div>
+                    )}
+                    <button
+                      id={`tag-op-${i}`}
+                      type="button"
+                      role="option"
+                      aria-selected={i === idxTag}
+                      className={`${styles.tagOpcao} ${i === idxTag ? styles.tagOpcaoAtiva : ""}`}
+                      // `onMouseDown` prevenido: sem isso o blur do campo fecha
+                      // a lista antes de o clique chegar, e escolher com o mouse
+                      // simplesmente não funcionava.
+                      onMouseDown={(e) => e.preventDefault()}
+                      onMouseEnter={() => setTagAtiva(i)}
+                      onClick={() => incluirTag(s.valor)}
+                    >
+                      <span
+                        className={styles.tagDot}
+                        style={{ background: tagColor(s.valor) }}
+                      />
+                      <span className={styles.tagOpcaoNome}>{s.valor}</span>
+                      {s.detalhe && (
+                        <span className={styles.tagOpcaoUso}>{s.detalhe}</span>
+                      )}
+                    </button>
+                  </Fragment>
                 ))
               )}
             </div>
