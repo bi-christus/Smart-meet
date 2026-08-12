@@ -236,3 +236,35 @@ a:hover {
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* ---------- movimento reduzido ---------- */
+
+/* Rede de seguranca: quem pede menos movimento no sistema operacional nao pode
+   depender de cada .module.css lembrar de se guardar. Antes deste bloco, 5 dos
+   7 loops infinitos do app escapavam — inclusive o ponto REC do mini player,
+   que fica na tela o tempo todo durante uma gravacao.
+   Os blocos locais que ja existem continuam valendo: eles fazem o tratamento
+   fino, como trocar o shimmer do skeleton por uma cor solida em vez de apenas
+   conge-lo.
+
+   `animation-duration: 0.01ms` e nao `animation: none`, de proposito. O app tem
+   animacoes de entrada com `animation-fill-mode: both` cujo primeiro quadro e
+   invisivel (`kanban.module.css`: `.col` com `colIn`, `.board` com `boardIn`,
+   ambas comecando em `opacity: 0`). Com `none`, o elemento ficaria preso no
+   opacity base e a coluna sumiria da tela; com duracao de 0.01ms a animacao
+   roda, termina, e o `both` aplica o estado final. Isso vale para qualquer
+   keyframe do app sem precisar auditar os 27 um a um.
+
+   Isto pode ser agressivo porque o projeto nao tem NENHUM listener de
+   `animationend` / `transitionend` — cortar movimento aqui nao interrompe
+   logica nenhuma, so pixel. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
