@@ -18,6 +18,7 @@ import {
   type DriveOutputKind,
 } from "@/lib/meetings";
 import { Icon } from "@/components/icons";
+import { OverlayPortal } from "@/components/overlay-portal";
 import { syncDrive } from "@/lib/drive-upload";
 import { useRecording } from "@/lib/audio/recording-context";
 import { uploadManager } from "@/lib/audio/uploader";
@@ -770,41 +771,43 @@ export default function ReunioesPage() {
       )}
 
       {delMeeting && (
-        <div
-          className={styles.overlay}
-          onClick={() => !deleting && setDelMeeting(null)}
-        >
+        <OverlayPortal>
           <div
-            className={styles.confirmBox}
-            onClick={(e) => e.stopPropagation()}
+            className={styles.overlay}
+            onClick={() => !deleting && setDelMeeting(null)}
           >
-            <div className={styles.delIcon}>
-              <Icon name="trash" size={22} />
-            </div>
-            <div className={styles.modalTitle}>Apagar gravação?</div>
-            <p className={styles.delWarn}>
-              Você vai apagar <b>“{delMeeting.title}”</b>. Esta ação é{" "}
-              <b>permanente</b>: a gravação será removida do sistema e{" "}
-              <b>não poderá ser recuperada</b>.
-            </p>
-            <div className={styles.mactions}>
-              <button
-                className={styles.btnGhost}
-                onClick={() => setDelMeeting(null)}
-                disabled={deleting}
-              >
-                Cancelar
-              </button>
-              <button
-                className={styles.btnDangerSolid}
-                onClick={doDelete}
-                disabled={deleting}
-              >
-                {deleting ? "Apagando…" : "Apagar permanentemente"}
-              </button>
+            <div
+              className={styles.confirmBox}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className={styles.delIcon}>
+                <Icon name="trash" size={22} />
+              </div>
+              <div className={styles.modalTitle}>Apagar gravação?</div>
+              <p className={styles.delWarn}>
+                Você vai apagar <b>“{delMeeting.title}”</b>. Esta ação é{" "}
+                <b>permanente</b>: a gravação será removida do sistema e{" "}
+                <b>não poderá ser recuperada</b>.
+              </p>
+              <div className={styles.mactions}>
+                <button
+                  className={styles.btnGhost}
+                  onClick={() => setDelMeeting(null)}
+                  disabled={deleting}
+                >
+                  Cancelar
+                </button>
+                <button
+                  className={styles.btnDangerSolid}
+                  onClick={doDelete}
+                  disabled={deleting}
+                >
+                  {deleting ? "Apagando…" : "Apagar permanentemente"}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        </OverlayPortal>
       )}
     </div>
   );
@@ -973,92 +976,94 @@ function NewMeetingModal({
         : "Envio de arquivo";
 
   return (
-    <div className={styles.overlay} onClick={onClose}>
-      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-        <div className={styles.modalTitle}>Registrar reunião</div>
-        <div className={styles.hint}>
-          🎧 <b>{sendLabel}</b>
-          {confirm.durationMin ? ` · ${confirm.durationMin} min` : ""}.{" "}
-          {confirm.recordingId
-            ? "O áudio já foi enviado ao Drive durante a gravação — se ainda faltar algum trecho, ele sobe sozinho em segundo plano."
-            : confirm.file
-              ? "O envio ao Drive começa ao confirmar e continua em segundo plano, retomando sozinho se a rede cair."
-              : ""}{" "}
-          A ata automática por IA chega na <b>Fase 4</b>.
-        </div>
-
-        <div className={styles.field}>
-          <label className={styles.label}>Título</label>
-          <input
-            className={styles.input}
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            autoFocus
-          />
-        </div>
-
-        <div className={styles.row2}>
-          <div className={styles.field}>
-            <label className={styles.label}>Setor</label>
-            <select
-              className={styles.select}
-              value={sec}
-              onChange={(e) => setSec(e.target.value)}
-              disabled={sectorLocked}
-              title={
-                sectorLocked
-                  ? "O áudio já está sendo enviado para a pasta deste setor."
-                  : undefined
-              }
-            >
-              {sectors.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
+    <OverlayPortal>
+      <div className={styles.overlay} onClick={onClose}>
+        <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+          <div className={styles.modalTitle}>Registrar reunião</div>
+          <div className={styles.hint}>
+            🎧 <b>{sendLabel}</b>
+            {confirm.durationMin ? ` · ${confirm.durationMin} min` : ""}.{" "}
+            {confirm.recordingId
+              ? "O áudio já foi enviado ao Drive durante a gravação — se ainda faltar algum trecho, ele sobe sozinho em segundo plano."
+              : confirm.file
+                ? "O envio ao Drive começa ao confirmar e continua em segundo plano, retomando sozinho se a rede cair."
+                : ""}{" "}
+            A ata automática por IA chega na <b>Fase 4</b>.
           </div>
+
           <div className={styles.field}>
-            <label className={styles.label}>Data</label>
+            <label className={styles.label}>Título</label>
             <input
               className={styles.input}
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              autoFocus
             />
           </div>
-        </div>
 
-        <div className={styles.field}>
-          <label className={styles.label}>Observações para a IA (opcional)</label>
-          <textarea
-            className={styles.input}
-            rows={3}
-            value={observacoes}
-            onChange={(e) => setObservacoes(e.target.value)}
-            maxLength={4000}
-            placeholder="Ex.: não citar nomes de pessoas nesta reunião — usar o setor no lugar."
-          />
-          <div className={styles.hintSmall}>
-            Vale para a ata e os demais documentos. Use para o que a IA não tem
-            como saber sozinha: trocar um nome por um setor, corrigir uma
-            grafia, pedir foco num assunto.
+          <div className={styles.row2}>
+            <div className={styles.field}>
+              <label className={styles.label}>Setor</label>
+              <select
+                className={styles.select}
+                value={sec}
+                onChange={(e) => setSec(e.target.value)}
+                disabled={sectorLocked}
+                title={
+                  sectorLocked
+                    ? "O áudio já está sendo enviado para a pasta deste setor."
+                    : undefined
+                }
+              >
+                {sectors.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className={styles.field}>
+              <label className={styles.label}>Data</label>
+              <input
+                className={styles.input}
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className={styles.field}>
+            <label className={styles.label}>Observações para a IA (opcional)</label>
+            <textarea
+              className={styles.input}
+              rows={3}
+              value={observacoes}
+              onChange={(e) => setObservacoes(e.target.value)}
+              maxLength={4000}
+              placeholder="Ex.: não citar nomes de pessoas nesta reunião — usar o setor no lugar."
+            />
+            <div className={styles.hintSmall}>
+              Vale para a ata e os demais documentos. Use para o que a IA não tem
+              como saber sozinha: trocar um nome por um setor, corrigir uma
+              grafia, pedir foco num assunto.
+            </div>
+          </div>
+
+          {err && <div className={styles.err}>{err}</div>}
+
+          <div className={styles.mactions}>
+            <div className={styles.spacer} />
+            <button className={styles.btnGhost} onClick={onClose} disabled={saving}>
+              Cancelar
+            </button>
+            <button className={styles.btnSave} onClick={submit} disabled={saving}>
+              {saving ? "Registrando…" : "Registrar"}
+            </button>
           </div>
         </div>
-
-        {err && <div className={styles.err}>{err}</div>}
-
-        <div className={styles.mactions}>
-          <div className={styles.spacer} />
-          <button className={styles.btnGhost} onClick={onClose} disabled={saving}>
-            Cancelar
-          </button>
-          <button className={styles.btnSave} onClick={submit} disabled={saving}>
-            {saving ? "Registrando…" : "Registrar"}
-          </button>
-        </div>
       </div>
-    </div>
+    </OverlayPortal>
   );
 }
 
@@ -1136,158 +1141,160 @@ function MeetingModal({
   }
 
   return (
-    <div className={styles.overlay} onClick={onClose}>
-      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-        <div className={styles.modalTitle}>Reunião</div>
+    <OverlayPortal>
+      <div className={styles.overlay} onClick={onClose}>
+        <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+          <div className={styles.modalTitle}>Reunião</div>
 
-        <div className={styles.field}>
-          <label className={styles.label}>Título</label>
-          <input
-            className={styles.input}
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-          />
-        </div>
-
-        <div className={styles.row2}>
           <div className={styles.field}>
-            <label className={styles.label}>Setor</label>
-            <select
-              className={styles.select}
-              value={sector}
-              onChange={(e) => setSector(e.target.value)}
-            >
-              {sectors.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className={styles.field}>
-            <label className={styles.label}>Data</label>
+            <label className={styles.label}>Título</label>
             <input
               className={styles.input}
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
             />
           </div>
-        </div>
 
-        <div className={styles.field}>
-          <label className={styles.label}>Participantes</label>
-          <div className={styles.secGrid}>
-            {avail.map((u) => (
-              <button
-                key={u.email}
-                type="button"
-                className={`${styles.secToggle} ${participants.includes(u.email) ? styles.sel : ""}`}
-                onClick={() => toggleP(u.email)}
+          <div className={styles.row2}>
+            <div className={styles.field}>
+              <label className={styles.label}>Setor</label>
+              <select
+                className={styles.select}
+                value={sector}
+                onChange={(e) => setSector(e.target.value)}
               >
-                {u.name?.split(" ")[0] || u.email}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className={styles.hint}>
-          🎧 Origem: <b>{SEND_LABEL[meeting.send ?? "file"]}</b>
-          {meeting.durationMin ? ` · ${meeting.durationMin} min` : ""}. A
-          transcrição e a ata automáticas chegam na <b>Fase 4</b> — por ora você
-          pode colá-las abaixo.
-        </div>
-
-        {meeting.driveLink && canSeeAudio && (
-          <a
-            href={meeting.driveLink}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={styles.driveBtn}
-          >
-            <Icon name="upload" size={14} /> Abrir áudio no Drive
-          </a>
-        )}
-
-        {canSeeAudio &&
-          meeting.driveOutputs &&
-          meeting.driveOutputs.length > 0 && (
-            <div className={styles.outLinks}>
-              {meeting.driveOutputs
-                .filter((o) => o.link)
-                .map((o, i) => (
-                  <a
-                    key={i}
-                    href={o.link}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={styles.driveBtn}
-                  >
-                    <Icon name={OUTPUT_ICON[o.kind]} size={14} /> Abrir{" "}
-                    {DRIVE_OUTPUT_LABEL[o.kind]}
-                  </a>
+                {sectors.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
                 ))}
+              </select>
             </div>
+            <div className={styles.field}>
+              <label className={styles.label}>Data</label>
+              <input
+                className={styles.input}
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className={styles.field}>
+            <label className={styles.label}>Participantes</label>
+            <div className={styles.secGrid}>
+              {avail.map((u) => (
+                <button
+                  key={u.email}
+                  type="button"
+                  className={`${styles.secToggle} ${participants.includes(u.email) ? styles.sel : ""}`}
+                  onClick={() => toggleP(u.email)}
+                >
+                  {u.name?.split(" ")[0] || u.email}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className={styles.hint}>
+            🎧 Origem: <b>{SEND_LABEL[meeting.send ?? "file"]}</b>
+            {meeting.durationMin ? ` · ${meeting.durationMin} min` : ""}. A
+            transcrição e a ata automáticas chegam na <b>Fase 4</b> — por ora você
+            pode colá-las abaixo.
+          </div>
+
+          {meeting.driveLink && canSeeAudio && (
+            <a
+              href={meeting.driveLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={styles.driveBtn}
+            >
+              <Icon name="upload" size={14} /> Abrir áudio no Drive
+            </a>
           )}
 
-        <div className={styles.tabs}>
-          <button
-            className={`${styles.tab} ${tab === "ata" ? styles.on : ""}`}
-            onClick={() => setTab("ata")}
-          >
-            Ata
-          </button>
-          <button
-            className={`${styles.tab} ${tab === "transcript" ? styles.on : ""}`}
-            onClick={() => setTab("transcript")}
-          >
-            Transcrição
-          </button>
-        </div>
-        {tab === "ata" ? (
-          <textarea
-            className={styles.textarea}
-            value={ata}
-            onChange={(e) => setAta(e.target.value)}
-            placeholder="Ata da reunião…"
-          />
-        ) : (
-          <textarea
-            className={styles.textarea}
-            value={transcript}
-            onChange={(e) => setTranscript(e.target.value)}
-            placeholder="Transcrição do áudio…"
-          />
-        )}
+          {canSeeAudio &&
+            meeting.driveOutputs &&
+            meeting.driveOutputs.length > 0 && (
+              <div className={styles.outLinks}>
+                {meeting.driveOutputs
+                  .filter((o) => o.link)
+                  .map((o, i) => (
+                    <a
+                      key={i}
+                      href={o.link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={styles.driveBtn}
+                    >
+                      <Icon name={OUTPUT_ICON[o.kind]} size={14} /> Abrir{" "}
+                      {DRIVE_OUTPUT_LABEL[o.kind]}
+                    </a>
+                  ))}
+              </div>
+            )}
 
-        <div className={styles.field} style={{ marginTop: 14 }}>
-          <label className={styles.label}>Status</label>
-          <select
-            className={styles.select}
-            value={status}
-            onChange={(e) => setStatus(e.target.value as MeetingStatus)}
-          >
-            <option value="aguardando">Aguardando</option>
-            <option value="processando">Processando</option>
-            <option value="processado">Processado</option>
-          </select>
-        </div>
+          <div className={styles.tabs}>
+            <button
+              className={`${styles.tab} ${tab === "ata" ? styles.on : ""}`}
+              onClick={() => setTab("ata")}
+            >
+              Ata
+            </button>
+            <button
+              className={`${styles.tab} ${tab === "transcript" ? styles.on : ""}`}
+              onClick={() => setTab("transcript")}
+            >
+              Transcrição
+            </button>
+          </div>
+          {tab === "ata" ? (
+            <textarea
+              className={styles.textarea}
+              value={ata}
+              onChange={(e) => setAta(e.target.value)}
+              placeholder="Ata da reunião…"
+            />
+          ) : (
+            <textarea
+              className={styles.textarea}
+              value={transcript}
+              onChange={(e) => setTranscript(e.target.value)}
+              placeholder="Transcrição do áudio…"
+            />
+          )}
 
-        {err && <div className={styles.err}>{err}</div>}
+          <div className={styles.field} style={{ marginTop: 14 }}>
+            <label className={styles.label}>Status</label>
+            <select
+              className={styles.select}
+              value={status}
+              onChange={(e) => setStatus(e.target.value as MeetingStatus)}
+            >
+              <option value="aguardando">Aguardando</option>
+              <option value="processando">Processando</option>
+              <option value="processado">Processado</option>
+            </select>
+          </div>
 
-        <div className={styles.mactions}>
-          <button className={styles.btnDanger} onClick={remove}>
-            <Icon name="trash" size={15} /> Excluir
-          </button>
-          <div className={styles.spacer} />
-          <button className={styles.btnGhost} onClick={onClose} disabled={saving}>
-            Cancelar
-          </button>
-          <button className={styles.btnSave} onClick={save} disabled={saving}>
-            {saving ? "Salvando…" : "Salvar"}
-          </button>
+          {err && <div className={styles.err}>{err}</div>}
+
+          <div className={styles.mactions}>
+            <button className={styles.btnDanger} onClick={remove}>
+              <Icon name="trash" size={15} /> Excluir
+            </button>
+            <div className={styles.spacer} />
+            <button className={styles.btnGhost} onClick={onClose} disabled={saving}>
+              Cancelar
+            </button>
+            <button className={styles.btnSave} onClick={save} disabled={saving}>
+              {saving ? "Salvando…" : "Salvar"}
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+    </OverlayPortal>
   );
 }

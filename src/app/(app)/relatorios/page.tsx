@@ -24,6 +24,7 @@ import {
 } from "@/lib/meetings";
 import { subscribePropostas, type Proposta } from "@/lib/demandas";
 import { Icon } from "@/components/icons";
+import { OverlayPortal } from "@/components/overlay-portal";
 import { PropostaForm } from "./proposta-form";
 import { DocViewer } from "./doc-viewer";
 import styles from "./relatorios.module.css";
@@ -257,128 +258,130 @@ function ReportModal({
   }
 
   return (
-    <div className={styles.overlay} onClick={onClose}>
-      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-        <header className={styles.modalHead}>
-          <div>
-            <div className={styles.modalTitle}>{meeting.title}</div>
-            <div className={styles.metaLine}>
-              {fmtDate(meeting.date)} · {meeting.sector}
-              {meeting.createdBy ? ` · enviado por ${meeting.createdBy}` : ""}
-            </div>
-          </div>
-          <button className={styles.close} onClick={onClose} aria-label="Fechar">
-            ✕
-          </button>
-        </header>
-
-        <div className={styles.modalBody}>
-          {erro && <p className={styles.erro}>{erro}</p>}
-
-          <section className={styles.bloco}>
-            <h3 className={styles.blocoTitulo}>Documentos gerados</h3>
-            {meeting.driveOutputs && meeting.driveOutputs.length > 0 ? (
-              <div className={styles.outLinks}>
-                {meeting.driveOutputs
-                  .filter((o) => o.link)
-                  .map((o, i) => (
-                    // Abre DENTRO do app: ler a ata não deveria exigir sair do
-                    // sistema nem ter acesso ao Drive Compartilhado.
-                    <button
-                      key={i}
-                      className={styles.outLink}
-                      onClick={() => setDoc(o.kind)}
-                    >
-                      <Icon name={OUTPUT_ICON[o.kind]} size={14} />{" "}
-                      {DRIVE_OUTPUT_LABEL[o.kind]}
-                    </button>
-                  ))}
+    <OverlayPortal>
+      <div className={styles.overlay} onClick={onClose}>
+        <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+          <header className={styles.modalHead}>
+            <div>
+              <div className={styles.modalTitle}>{meeting.title}</div>
+              <div className={styles.metaLine}>
+                {fmtDate(meeting.date)} · {meeting.sector}
+                {meeting.createdBy ? ` · enviado por ${meeting.createdBy}` : ""}
               </div>
-            ) : (
-              <p className={styles.vazioBloco}>
-                Nenhum documento vinculado ainda.
-              </p>
-            )}
-            {(meeting.ata ?? "").trim().length > 0 && (
-              <div className={styles.ata}>{meeting.ata}</div>
-            )}
-            <div className={styles.blocoAcao}>
-              {ataOk ? (
-                <span className={styles.validatedNote}>
-                  <Icon name="check" size={15} /> Ata validada
-                </span>
-              ) : (
-                <button
-                  className={styles.btnSave}
-                  onClick={validarAta}
-                  disabled={validando}
-                >
-                  {validando ? "Validando…" : "Validar ata"}
-                </button>
-              )}
             </div>
-          </section>
+            <button className={styles.close} onClick={onClose} aria-label="Fechar">
+              ✕
+            </button>
+          </header>
 
-          <section className={styles.bloco}>
-            <h3 className={styles.blocoTitulo}>
-              Demandas propostas
-              {pendentes.length > 0 && (
-                <span className={styles.blocoContagem}>
-                  {pendentes.length} a decidir
-                </span>
-              )}
-            </h3>
+          <div className={styles.modalBody}>
+            {erro && <p className={styles.erro}>{erro}</p>}
 
-            {propostas.length === 0 ? (
-              <p className={styles.vazioBloco}>
-                Esta reunião não gerou demandas. Reunião informativa não gera —
-                é resultado normal, não falha.
-              </p>
-            ) : (
-              <>
-                {pendentes.map((p) => (
-                  <PropostaForm
-                    key={p.id}
-                    proposta={p}
-                    sector={meeting.sector}
-                    onErro={setErro}
-                  />
-                ))}
-                {decididas.length > 0 && (
-                  <div className={styles.decididas}>
-                    {decididas.map((p) => (
-                      <div key={p.id} className={styles.decidida}>
-                        <span
-                          className={`${styles.selo} ${
-                            p.status === "aceita"
-                              ? styles.seloOk
-                              : styles.seloNao
-                          }`}
-                        >
-                          {p.status === "aceita" ? "Aceita" : "Recusada"}
-                        </span>
-                        <span>
-                          {p.proposta.title}
-                          {p.decisao?.motivo ? ` — ${p.decisao.motivo}` : ""}
-                        </span>
-                      </div>
+            <section className={styles.bloco}>
+              <h3 className={styles.blocoTitulo}>Documentos gerados</h3>
+              {meeting.driveOutputs && meeting.driveOutputs.length > 0 ? (
+                <div className={styles.outLinks}>
+                  {meeting.driveOutputs
+                    .filter((o) => o.link)
+                    .map((o, i) => (
+                      // Abre DENTRO do app: ler a ata não deveria exigir sair do
+                      // sistema nem ter acesso ao Drive Compartilhado.
+                      <button
+                        key={i}
+                        className={styles.outLink}
+                        onClick={() => setDoc(o.kind)}
+                      >
+                        <Icon name={OUTPUT_ICON[o.kind]} size={14} />{" "}
+                        {DRIVE_OUTPUT_LABEL[o.kind]}
+                      </button>
                     ))}
-                  </div>
+                </div>
+              ) : (
+                <p className={styles.vazioBloco}>
+                  Nenhum documento vinculado ainda.
+                </p>
+              )}
+              {(meeting.ata ?? "").trim().length > 0 && (
+                <div className={styles.ata}>{meeting.ata}</div>
+              )}
+              <div className={styles.blocoAcao}>
+                {ataOk ? (
+                  <span className={styles.validatedNote}>
+                    <Icon name="check" size={15} /> Ata validada
+                  </span>
+                ) : (
+                  <button
+                    className={styles.btnSave}
+                    onClick={validarAta}
+                    disabled={validando}
+                  >
+                    {validando ? "Validando…" : "Validar ata"}
+                  </button>
                 )}
-              </>
-            )}
-          </section>
-        </div>
-      </div>
+              </div>
+            </section>
 
-      {doc && (
-        <DocViewer
-          meetingId={meeting.id}
-          kind={doc}
-          sector={meeting.sector}
-          onClose={() => setDoc(null)}
-        />
-      )}
-    </div>
+            <section className={styles.bloco}>
+              <h3 className={styles.blocoTitulo}>
+                Demandas propostas
+                {pendentes.length > 0 && (
+                  <span className={styles.blocoContagem}>
+                    {pendentes.length} a decidir
+                  </span>
+                )}
+              </h3>
+
+              {propostas.length === 0 ? (
+                <p className={styles.vazioBloco}>
+                  Esta reunião não gerou demandas. Reunião informativa não gera —
+                  é resultado normal, não falha.
+                </p>
+              ) : (
+                <>
+                  {pendentes.map((p) => (
+                    <PropostaForm
+                      key={p.id}
+                      proposta={p}
+                      sector={meeting.sector}
+                      onErro={setErro}
+                    />
+                  ))}
+                  {decididas.length > 0 && (
+                    <div className={styles.decididas}>
+                      {decididas.map((p) => (
+                        <div key={p.id} className={styles.decidida}>
+                          <span
+                            className={`${styles.selo} ${
+                              p.status === "aceita"
+                                ? styles.seloOk
+                                : styles.seloNao
+                            }`}
+                          >
+                            {p.status === "aceita" ? "Aceita" : "Recusada"}
+                          </span>
+                          <span>
+                            {p.proposta.title}
+                            {p.decisao?.motivo ? ` — ${p.decisao.motivo}` : ""}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </section>
+          </div>
+        </div>
+
+        {doc && (
+          <DocViewer
+            meetingId={meeting.id}
+            kind={doc}
+            sector={meeting.sector}
+            onClose={() => setDoc(null)}
+          />
+        )}
+      </div>
+    </OverlayPortal>
   );
 }

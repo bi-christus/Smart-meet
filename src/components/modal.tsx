@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, type ReactNode } from "react";
+import { OverlayPortal } from "./overlay-portal";
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -61,19 +62,21 @@ export function Modal({
   }
 
   return (
-    <div className={overlayClassName} onClick={onClose}>
-      <div
-        ref={ref}
-        role="dialog"
-        aria-modal="true"
-        aria-label={ariaLabel}
-        className={className}
-        style={width ? { width } : undefined}
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={onKeyDown}
-      >
-        {children}
+    <OverlayPortal>
+      <div className={overlayClassName} onClick={onClose}>
+        <div
+          ref={ref}
+          role="dialog"
+          aria-modal="true"
+          aria-label={ariaLabel}
+          className={className}
+          style={width ? { width } : undefined}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={onKeyDown}
+        >
+          {children}
+        </div>
       </div>
-    </div>
+    </OverlayPortal>
   );
 }

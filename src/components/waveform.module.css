@@ -1,18 +1,43 @@
+/**
+ * A camada é um borrão de fundo — e borrão não precisa de resolução.
+ *
+ * Antes o elemento ocupava a janela inteira e levava `blur(15px)`. Como o
+ * canvas é redesenhado 30 vezes por segundo, cada quadro invalidava o filtro, e
+ * o navegador refazia uma gaussiana sobre a tela toda 30 vezes por segundo, em
+ * todas as abas, para sempre. Era isso que engasgava a troca de abas: na hora
+ * em que o React remonta a página, a thread principal já estava ocupada
+ * borrando fundo.
+ *
+ * Agora o elemento MEDE pouco mais de 1/4 da janela e sobe com `scale(4)`. O
+ * filtro roda sobre 1/16 da área, com raio 4x menor, e a ampliação devolve o
+ * mesmo borrão na tela. O `waveform.tsx` desenha no mesmo 1/4 — ver `ESCALA`.
+ */
 .wave {
   position: fixed;
+  /* `inset: 0` + `margin: auto` com medida fixa = centralizado nos dois eixos.
+     Precisa ser centralizado, e não ancorado no canto: a ampliação parte do
+     centro, então a sobra de 1% se reparte igualmente pelos quatro lados. Com
+     o canto como origem, essa sobra cairia toda na direita e embaixo, e o meio
+     da onda — que é a parte acesa — sairia do meio da tela. */
   inset: 0;
+  margin: auto;
+  width: 25%;
+  height: 25%;
+  /* 4.04 e não 4: o 1% a mais engole o arredondamento de subpixel, que sem ele
+     apareceria como uma faixa sem onda rente à borda. */
+  transform: scale(4.04);
   z-index: 0;
   display: block;
-  width: 100%;
-  height: 100%;
-  filter: blur(10px);
+  /* 2.5 x 4 = os mesmos 10px de antes, depois da ampliação */
+  filter: blur(2.5px);
   opacity: 0.72;
   pointer-events: none;
 }
 
 /* dentro do app é só uma textura de fundo — bem mais discreta */
 .ambient {
-  filter: blur(15px);
+  /* 3.75 x 4 = os 15px de antes */
+  filter: blur(3.75px);
   opacity: 0.3;
 }
 
@@ -39,9 +64,9 @@
 @media (max-width: 560px) {
   /* barras são mais finas nessa largura — menos blur pra não virar mancha */
   .wave {
-    filter: blur(6px);
+    filter: blur(1.5px);
   }
   .ambient {
-    filter: blur(9px);
+    filter: blur(2.25px);
   }
 }

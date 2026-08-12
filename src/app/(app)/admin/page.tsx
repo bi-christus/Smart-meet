@@ -24,6 +24,7 @@ import {
   type SolicitanteSetor,
 } from "@/lib/solicitantes";
 import { Icon } from "@/components/icons";
+import { OverlayPortal } from "@/components/overlay-portal";
 import styles from "./admin.module.css";
 
 const SUBTABS = [
@@ -445,94 +446,96 @@ function UserModal({
   }
 
   return (
-    <div className={styles.overlay} onClick={onClose}>
-      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-        <div className={styles.modalTitle}>
-          {isNew ? "Adicionar usuário" : "Editar usuário"}
-        </div>
+    <OverlayPortal>
+      <div className={styles.overlay} onClick={onClose}>
+        <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+          <div className={styles.modalTitle}>
+            {isNew ? "Adicionar usuário" : "Editar usuário"}
+          </div>
 
-        <div className={styles.field}>
-          <label className={styles.label}>E-mail (login Google)</label>
-          <input
-            className={styles.input}
-            type="email"
-            placeholder="pessoa@christus.edu.br"
-            value={email}
-            disabled={!isNew}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-        </div>
+          <div className={styles.field}>
+            <label className={styles.label}>E-mail (login Google)</label>
+            <input
+              className={styles.input}
+              type="email"
+              placeholder="pessoa@christus.edu.br"
+              value={email}
+              disabled={!isNew}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
 
-        <div className={styles.field}>
-          <label className={styles.label}>Nome</label>
-          <input
-            className={styles.input}
-            placeholder="Nome completo"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-        </div>
+          <div className={styles.field}>
+            <label className={styles.label}>Nome</label>
+            <input
+              className={styles.input}
+              placeholder="Nome completo"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </div>
 
-        <div className={styles.field}>
-          <label className={styles.label}>Cargo</label>
-          <input
-            className={styles.input}
-            placeholder="Ex.: Analista de B.I."
-            value={cargo}
-            onChange={(e) => setCargo(e.target.value)}
-          />
-        </div>
+          <div className={styles.field}>
+            <label className={styles.label}>Cargo</label>
+            <input
+              className={styles.input}
+              placeholder="Ex.: Analista de B.I."
+              value={cargo}
+              onChange={(e) => setCargo(e.target.value)}
+            />
+          </div>
 
-        <div className={styles.field}>
-          <label className={styles.label}>Papel</label>
-          <select
-            className={styles.select}
-            value={role}
-            onChange={(e) => setRole(e.target.value as Role)}
-          >
-            {ROLES.map((r) => (
-              <option key={r} value={r}>
-                {ROLE_LABEL[r]}
-              </option>
-            ))}
-          </select>
-        </div>
+          <div className={styles.field}>
+            <label className={styles.label}>Papel</label>
+            <select
+              className={styles.select}
+              value={role}
+              onChange={(e) => setRole(e.target.value as Role)}
+            >
+              {ROLES.map((r) => (
+                <option key={r} value={r}>
+                  {ROLE_LABEL[r]}
+                </option>
+              ))}
+            </select>
+          </div>
 
-        <div className={styles.field}>
-          <label className={styles.label}>Setores</label>
-          <div className={styles.secGrid}>
-            {DEFAULT_SECTORS.map((s) => (
-              <button
-                key={s}
-                type="button"
-                className={`${styles.secToggle} ${sectors.includes(s) ? styles.sel : ""}`}
-                onClick={() => toggleSector(s)}
-              >
-                {s}
-              </button>
-            ))}
+          <div className={styles.field}>
+            <label className={styles.label}>Setores</label>
+            <div className={styles.secGrid}>
+              {DEFAULT_SECTORS.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  className={`${styles.secToggle} ${sectors.includes(s) ? styles.sel : ""}`}
+                  onClick={() => toggleSector(s)}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {err && <div className={styles.err}>{err}</div>}
+
+          <div className={styles.modalActions}>
+            <button
+              className={styles.btnGhost}
+              onClick={onClose}
+              disabled={saving}
+            >
+              Cancelar
+            </button>
+            <button
+              className={styles.btnSave}
+              onClick={submit}
+              disabled={saving}
+            >
+              {saving ? "Salvando…" : isNew ? "Adicionar" : "Salvar"}
+            </button>
           </div>
         </div>
-
-        {err && <div className={styles.err}>{err}</div>}
-
-        <div className={styles.modalActions}>
-          <button
-            className={styles.btnGhost}
-            onClick={onClose}
-            disabled={saving}
-          >
-            Cancelar
-          </button>
-          <button
-            className={styles.btnSave}
-            onClick={submit}
-            disabled={saving}
-          >
-            {saving ? "Salvando…" : isNew ? "Adicionar" : "Salvar"}
-          </button>
-        </div>
       </div>
-    </div>
+    </OverlayPortal>
   );
 }
