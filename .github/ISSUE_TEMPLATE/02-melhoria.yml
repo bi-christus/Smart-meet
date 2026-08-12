@@ -1,0 +1,77 @@
+name: Melhoria
+description: Algo que já funciona, mas pode funcionar melhor
+title: "melhorar "
+labels: ["tipo: melhoria"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Quem vai executar isto pode ser um agente de outro modelo, sem nenhum contexto
+        da conversa que originou a tarefa. Escreva pensando nessa pessoa: `arquivo:linha`,
+        comandos exatos, e um critério de pronto que dá para verificar.
+
+  - type: textarea
+    id: hoje
+    attributes:
+      label: Como é hoje
+      description: O comportamento atual, com `arquivo:linha`. Descreva o que existe, sem julgar ainda.
+    validations:
+      required: true
+
+  - type: textarea
+    id: incomodo
+    attributes:
+      label: Qual é o incômodo
+      description: |
+        O custo real de deixar como está — para quem usa, ou para quem mantém.
+        Se não dá para nomear o custo, provavelmente a melhoria não vale o risco da mudança.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposta
+    attributes:
+      label: O que fazer
+      description: A mudança proposta. Se há mais de um caminho, diga qual você escolheu e por quê.
+    validations:
+      required: true
+
+  - type: textarea
+    id: aceite
+    attributes:
+      label: Critério de pronto
+      value: |
+        - [ ]
+        - [ ] `npm run lint` passa
+        - [ ] `npx next typegen && npx tsc --noEmit` passa
+        - [ ] `npm run prebuild` passa
+    validations:
+      required: true
+
+  - type: dropdown
+    id: prioridade
+    attributes:
+      label: Prioridade
+      description: A label `P0`/`P1`/`P2` é aplicada na triagem — este campo é o que a justifica.
+      options:
+        - "P0 — bloqueia outras Issues"
+        - "P1 — importante, entra na sequência normal"
+        - "P2 — desejável, sem data"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Área
+      options:
+        - kanban
+        - observabilidade
+        - qualidade
+        - testes
+        - motion
+        - processo
+        - infra
+        - seguranca
+    validations:
+      required: true

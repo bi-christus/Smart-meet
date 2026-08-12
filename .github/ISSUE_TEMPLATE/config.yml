@@ -1,0 +1,3 @@
+# Issue em branco fica desligada de propósito: o corpo estruturado é o que faz a tarefa
+# ser executável por um agente que não participou da conversa que a originou.
+blank_issues_enabled: false
