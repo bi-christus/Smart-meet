@@ -1,4 +1,14 @@
 {
-  "indexes": [],
+  "indexes": [
+    {
+      "//": "Histórico da demanda: filtra por setor (exigência da regra de leitura) e ordena do mais recente para o mais antigo. Sem este índice a timeline abre vazia com erro de índice ausente no console.",
+      "collectionGroup": "historico",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "sector", "order": "ASCENDING" },
+        { "fieldPath": "em", "order": "DESCENDING" }
+      ]
+    }
+  ],
   "fieldOverrides": []
 }

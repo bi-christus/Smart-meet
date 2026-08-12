@@ -17,6 +17,9 @@ import { NextResponse } from "next/server";
 
 import { HttpError, adminDb, requireUser } from "@/lib/server/drive-server";
 import { TIPOS_DEMANDA, type TipoDemanda } from "@/lib/server/demandas-schema";
+// Módulo puro (sem SDK do cliente): serve os dois lados, e é o que mantém o
+// histórico escrito aqui com a mesma forma do que o quadro escreve.
+import { dataBR, type Mudanca } from "@/lib/historico-core";
 
 export const runtime = "nodejs";
 
@@ -213,6 +216,33 @@ export async function POST(req: Request) {
     const agoraMs = agora.getTime();
     const cardRef = db.collection("cards").doc();
 
+    /**
+     * O estado inicial como o histórico vai mostrar.
+     *
+     * Nome e não e-mail, etapa e não `colId`: o registro tem de continuar
+     * legível quando o responsável for desativado ou a coluna for renomeada —
+     * mesma escolha do quadro (ver `criarRotulos` em kanban/page.tsx).
+     */
+    const responsavel = limpo(ed.assignee, 120);
+    const nomeResp = responsavel
+      ? ((await db.collection("users").doc(responsavel.toLowerCase()).get())
+          .data()?.name as string | undefined) || responsavel
+      : "";
+    const prazoInicial = dataOuNulo(ed.due);
+    const mudancasIniciaisDoCard: Mudanca[] = [
+      {
+        campo: "coluna",
+        de: null,
+        para: colunas.find((c) => c.colId === columnId)?.title ?? columnId,
+      },
+      ...(nomeResp
+        ? [{ campo: "responsavel" as const, de: null, para: nomeResp }]
+        : []),
+      ...(prazoInicial
+        ? [{ campo: "prazo" as const, de: null, para: dataBR(prazoInicial) }]
+        : []),
+    ];
+
     const camposEditados = Object.keys(ed ?? {});
     await encerrar(
       "aceita",
@@ -245,6 +275,18 @@ export async function POST(req: Request) {
           origem: "reuniao",
           propostaId,
           meetingIds: [p.meetingId],
+          histCount: 1,
+        });
+        // Primeira linha da timeline do card. Sem ela, a demanda nascida de uma
+        // reunião abriria o histórico vazio — e "não tem registro" leria como
+        // "ninguém mexeu", quando na verdade ela veio de uma decisão tomada
+        // aqui, por alguém, num instante que o sistema conhece.
+        tx.create(cardRef.collection("historico").doc(), {
+          sector: sectorAlvo,
+          autor: caller.email,
+          em: agora,
+          acao: "criada",
+          mudancas: mudancasIniciaisDoCard,
         });
       },
     );

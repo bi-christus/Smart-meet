@@ -154,6 +154,14 @@ const PATHS: Record<string, ReactNode> = {
       <path d="M16 4.13A4 4 0 0 1 16 11.9" />
     </>
   ),
+  /* relógio com a seta voltando: "o que já aconteceu aqui" */
+  history: (
+    <>
+      <path d="M3.2 9.5A9 9 0 1 1 3 12" />
+      <path d="M2.5 4.5v5h5" />
+      <path d="M12 8v4.3l3 1.7" />
+    </>
+  ),
   chevronLeft: <path d="M15 6l-6 6 6 6" />,
   chevronRight: <path d="M9 6l6 6-6 6" />,
 };

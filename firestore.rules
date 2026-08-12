@@ -30,6 +30,12 @@ rules_version = '2';
 //    somente leitura no cliente, porque quem a cria é a rota de geração, numa
 //    transação que garante um card por data prevista.
 //
+// O QUE MUDOU (2026-08-12):
+//  - /cards/{id}/historico, a trilha de mudanças da demanda. É a primeira
+//    coleção que o CLIENTE escreve e que serve de registro, então as regras
+//    fecham o que dá: autor = o do token, data = a do servidor, e nada de
+//    update. O bloco tem a nota completa sobre até onde isso vale como prova.
+//
 // Nota sobre consultas: as telas sempre filtram por setor (`==` ou `in`), e o
 // admin consulta DEFAULT_SECTORS. Por isso o escopo por setor na leitura não
 // quebra nenhuma query existente.
@@ -212,6 +218,64 @@ service cloud.firestore {
                     && novo('createdBy').lower() == cur('createdBy').lower();
 
       // Apagar demanda é ação de gestor, e só no próprio setor.
+      allow delete: if isGestorOrAdmin() && canSeeSector(cur('sector'));
+    }
+
+    // ---- histórico da demanda ----
+    // A trilha de mudanças que o card mostra no canto superior direito. Regras
+    // v2 não cascateiam, então este bloco é obrigatório mesmo estando dentro de
+    // /cards.
+    //
+    // O que está fechado, e por quê:
+    //  - `autor` TEM de ser o do token: ninguém registra em nome de outro.
+    //  - `em` TEM de ser a hora do servidor (`serverTimestamp()` no cliente):
+    //    sem isto, "quando" seria o relógio do navegador de quem escreveu, e um
+    //    evento poderia nascer datado de mês passado.
+    //  - `update` é NEGADO para todos. Evento gravado não se reescreve — um
+    //    histórico editável responde a pergunta errada.
+    //  - `hasOnly` trava a forma: dado que o cliente escreve tem o schema como
+    //    defesa, mesmo padrão de /users/{id}/prefs.
+    //
+    // O que NÃO está fechado, dito na cara: quem tem acesso ao setor pode criar
+    // um evento descrevendo algo que não fez. Essa mesma pessoa poderia apenas
+    // fazer a mudança de verdade, então a brecha não dá poder novo. Auditoria
+    // à prova de insider é /logs, que só o servidor escreve.
+    //
+    // Ler e apagar olham o `sector` DO PRÓPRIO EVENTO, como em /cards — e por
+    // isso as consultas do app filtram por setor (ver `historico.ts`). A
+    // alternativa, perguntar o setor ao card pai com um `get()`, seria um
+    // acesso a documento por evento avaliado: numa listagem de 100 eventos ou
+    // numa varrida de exclusão, é o tipo de coisa que estoura o teto de
+    // acessos das regras e derruba a tela inteira em vez de negar uma linha.
+    //
+    // Quem garante que esse `sector` é verdadeiro é a CRIAÇÃO, que acontece uma
+    // vez por evento e pode pagar o `get()` com folga.
+    match /cards/{doc}/historico/{evento} {
+      function cardPai() {
+        return /databases/$(database)/documents/cards/$(doc);
+      }
+
+      allow read: if isAuthorized() && canSeeSector(cur('sector'));
+
+      allow create: if isAuthorized()
+                    && canSeeSector(novo('sector'))
+                    && souEu(novo('autor'))
+                    && request.resource.data.em == request.time
+                    && request.resource.data.keys()
+                         .hasOnly(['sector', 'autor', 'em', 'acao', 'mudancas'])
+                    && novo('acao') in ['criada', 'editada', 'movida']
+                    // O card e o primeiro evento nascem no MESMO lote, e o pai
+                    // ainda não existe para o `get()` — daí o primeiro braço.
+                    // Depois disso, o setor do evento tem de ser o do card: é
+                    // isto que impede um evento de se esconder num setor
+                    // diferente do da demanda em que está pendurado.
+                    && (!exists(cardPai())
+                        || get(cardPai()).data.sector == novo('sector'));
+
+      allow update: if false;
+
+      // Só para a varrida de `apagarHistorico`, que roda antes de excluir a
+      // demanda — mesma autoridade que já pode excluir o card inteiro.
       allow delete: if isGestorOrAdmin() && canSeeSector(cur('sector'));
     }
 

@@ -7,12 +7,23 @@ import {
   updateDoc,
   deleteDoc,
   doc,
+  increment,
   serverTimestamp,
   writeBatch,
   arrayUnion,
   runTransaction,
 } from "firebase/firestore";
 import { db } from "./firebase";
+
+// A trilha de mudanças da demanda. Mora em módulo próprio, mas as escritas
+// passam por aqui de propósito — ver `updateCard`.
+import {
+  anexarEvento,
+  apagarHistorico,
+  type ContextoHistorico,
+} from "./historico";
+import type { Acao, Mudanca } from "./historico-core";
+export type { ContextoHistorico };
 
 // Moradia em módulo puro: o gerador de recorrências lê as colunas no servidor,
 // onde importar este arquivo (e o SDK do cliente junto) não é possível.
@@ -136,6 +147,16 @@ export type Card = {
    * foi calculada e o momento em que seria aplicada.
    */
   rev?: number;
+  /**
+   * Quantos eventos o card tem em `historico`.
+   *
+   * Denormalizado porque o quadro precisa dele: o selo no canto do card mostra
+   * quantas vezes a demanda mudou, e contar de verdade custaria uma leitura da
+   * subcoleção por card em cada atualização do quadro inteiro. Ausente nos
+   * cards anteriores ao histórico — que é a resposta certa: eles não têm
+   * evento nenhum.
+   */
+  histCount?: number;
 };
 
 export type CardInput = {
@@ -195,13 +216,25 @@ export function subscribeCardsForSectors(
   );
 }
 
+/**
+ * Abre a demanda e a primeira linha do histórico dela, no mesmo lote.
+ *
+ * `mudancas` é o estado inicial já traduzido (ver `mudancasIniciais`) — é o que
+ * responde "com quem ela nasceu, e para quando".
+ */
 export async function createCard(
   sector: string,
   input: CardInput,
   createdBy: string,
-): Promise<void> {
+  mudancas: Mudanca[],
+): Promise<string> {
   const now = Date.now();
-  await addDoc(collection(db, "cards"), {
+  // Id gerado aqui, e não pelo `addDoc`: o evento do histórico precisa do id do
+  // card para entrar no MESMO lote — e o lote é o que garante que a demanda
+  // nunca nasça sem o registro de que nasceu.
+  const ref = doc(collection(db, "cards"));
+  const batch = writeBatch(db);
+  batch.set(ref, {
     sector,
     columnId: input.columnId,
     title: input.title.trim(),
@@ -221,14 +254,47 @@ export async function createCard(
     enteredAt: now,
     createdAt: serverTimestamp(),
     createdBy,
+    histCount: 1,
   });
+  anexarEvento(batch, ref.id, { autor: createdBy, sector }, "criada", mudancas);
+  await batch.commit();
+  return ref.id;
 }
 
+/**
+ * Grava a edição do card E o registro dela.
+ *
+ * O registro é PARÂMETRO OBRIGATÓRIO, não uma chamada separada que quem escreve
+ * a tela precisa lembrar de fazer. Trilha que depende de disciplina no ponto de
+ * uso apodrece no primeiro caminho novo que alguém abrir — e apodrece calada,
+ * porque a tela continua funcionando perfeitamente sem ela.
+ *
+ * Lote e não duas escritas: o card e a linha do histórico entram juntos ou não
+ * entram. Se a mudança gravasse e o registro falhasse, o histórico passaria a
+ * mentir por omissão, que é o único jeito de um histórico ser pior do que nada.
+ *
+ * `mudancas` vazio (uma reordenação de checklist, por exemplo) grava o card sem
+ * criar linha nenhuma — ver `diffCard`.
+ */
 export async function updateCard(
   id: string,
   patch: Partial<Omit<Card, "id">>,
+  registro: { ctx: ContextoHistorico; acao: Acao; mudancas: Mudanca[] },
 ): Promise<void> {
-  await updateDoc(doc(db, "cards", id), patch);
+  const ref = doc(db, "cards", id);
+  const batch = writeBatch(db);
+  const registrou = anexarEvento(
+    batch,
+    id,
+    registro.ctx,
+    registro.acao,
+    registro.mudancas,
+  );
+  // O incremento entra no MESMO update do card: duas escritas no mesmo
+  // documento dentro de um lote não são combinadas, e a segunda mandaria um
+  // patch sem os campos da primeira.
+  batch.update(ref, registrou ? { ...patch, histCount: increment(1) } : patch);
+  await batch.commit();
 }
 
 /**
@@ -345,18 +411,45 @@ export async function removeComment(
   });
 }
 
-export async function deleteCardById(id: string): Promise<void> {
+/**
+ * Apaga a demanda — e o histórico dela antes, porque o Firestore não apaga
+ * subcoleção junto com o pai. Ver `apagarHistorico` para a ordem.
+ */
+export async function deleteCardById(
+  id: string,
+  sector: string,
+): Promise<void> {
+  await apagarHistorico(id, sector);
   await deleteDoc(doc(db, "cards", id));
 }
 
-/** Move um card para outra coluna (reinicia o aging e vai para o topo). */
-export async function moveCard(id: string, columnId: string): Promise<void> {
+/**
+ * Move um card para outra coluna (reinicia o aging e vai para o topo).
+ *
+ * Arrastar é a mudança mais frequente do quadro e a que menos deixa rastro na
+ * memória de quem arrastou — é justamente a que mais precisa do registro.
+ */
+export async function moveCard(
+  id: string,
+  columnId: string,
+  registro: { ctx: ContextoHistorico; mudancas: Mudanca[] },
+): Promise<void> {
   const now = Date.now();
-  await updateDoc(doc(db, "cards", id), {
+  const batch = writeBatch(db);
+  const registrou = anexarEvento(
+    batch,
+    id,
+    registro.ctx,
+    "movida",
+    registro.mudancas,
+  );
+  batch.update(doc(db, "cards", id), {
     columnId,
     order: -now,
     enteredAt: now,
+    ...(registrou ? { histCount: increment(1) } : {}),
   });
+  await batch.commit();
 }
 
 // ---------------------------------------------------------------------------

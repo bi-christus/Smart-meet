@@ -45,6 +45,15 @@ import {
   type DemandType,
   type Comment,
 } from "@/lib/kanban";
+import { carregarHistorico } from "@/lib/historico";
+import {
+  ACAO_ROTULO,
+  diffCard,
+  linhaDaMudanca,
+  mudancasIniciais,
+  type Evento,
+  type Rotulos,
+} from "@/lib/historico-core";
 import { Icon } from "@/components/icons";
 import { Select, type SelectOption } from "@/components/select";
 import { Combobox } from "@/components/combobox";
@@ -147,6 +156,32 @@ function agingDays(enteredAt?: number): number {
   if (!enteredAt) return 0;
   return Math.floor((Date.now() - enteredAt) / 86400000);
 }
+function dataHora(ts: number): string {
+  const d = new Date(ts);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+/**
+ * Como o histórico transforma id em nome de gente.
+ *
+ * Resolvido na HORA DE GRAVAR, e não na hora de ler: o e-mail pode ser
+ * desativado e a coluna renomeada, e o registro precisa continuar dizendo o que
+ * aconteceu naquele dia — com o nome que a coisa tinha naquele dia. É a mesma
+ * escolha de `tags-ref`, pelo motivo oposto: lá o vínculo é que tem de
+ * sobreviver ao rename; aqui é a fotografia.
+ */
+function criarRotulos(
+  usersMap: Record<string, UserProfile>,
+  columns: { colId: string; title: string }[],
+): Rotulos {
+  return {
+    pessoa: (email) => usersMap[email]?.name || email,
+    coluna: (colId) => columns.find((c) => c.colId === colId)?.title || colId,
+    prioridade: (p) => PRIORITY_LABEL[p as Priority] ?? p,
+    tipo: (t) => DEMAND_TYPE_LABEL[t as DemandType] ?? t,
+  };
+}
+
 function relTime(ts: number): string {
   const m = Math.floor((Date.now() - ts) / 60000);
   if (m < 1) return "agora";
@@ -266,6 +301,8 @@ export default function KanbanPage() {
   // O filtro de responsável é preso ao setor: trocar de quadro o descarta.
   const [assigneeSel, setAssigneeSel] = useState({ sector: "", value: "" });
   const [edit, setEdit] = useState<EditState>(null);
+  /** Demanda com o histórico aberto — independente do modal de edição. */
+  const [histCard, setHistCard] = useState<Card | null>(null);
   /** Card que outra tela pediu para abrir, enquanto o setor não carregou. */
   const [alvoDireto, setAlvoDireto] = useState<string | null>(null);
   const [colEdit, setColEdit] = useState<ColEditState>(null);
@@ -518,8 +555,13 @@ export default function KanbanPage() {
   const entregues = colunasEntregues(
     displayCols.map((c) => ({ id: c.colId, title: c.title })),
   );
+  const rotulos = criarRotulos(usersMap, displayCols);
 
   if (!profile) return null;
+
+  // Preso a uma const aqui embaixo do guarda: `onColDrop` é declaração de
+  // função, e o estreitamento de `profile` não atravessa até lá dentro.
+  const autorAtual = profile.email;
 
   if (sectors.length === 0) {
     return (
@@ -534,7 +576,16 @@ export default function KanbanPage() {
     if (dragCardId) {
       const c = cards.find((x) => x.id === dragCardId);
       if (c && c.columnId !== col.colId)
-        moveCard(dragCardId, col.colId).catch(console.error);
+        moveCard(dragCardId, col.colId, {
+          ctx: { autor: autorAtual, sector },
+          // Pelo mesmo `diffCard` da edição: arrastar e trocar a etapa no modal
+          // são a mesma mudança, e precisam sair iguais na timeline.
+          mudancas: diffCard(
+            { columnId: c.columnId },
+            { columnId: col.colId },
+            rotulos,
+          ),
+        }).catch(console.error);
     } else if (dragColId && colsReal && dragColId !== col.id) {
       const ids = fireColumns.map((c) => c.id);
       const from = ids.indexOf(dragColId);
@@ -719,6 +770,7 @@ export default function KanbanPage() {
                         setOverCol(null);
                       }}
                       onClick={() => setEdit({ mode: "edit", card: c })}
+                      onHistorico={() => setHistCard(c)}
                     />
                   ))
                 )}
@@ -750,7 +802,17 @@ export default function KanbanPage() {
           reqSetores={reqSetores}
           tagsDoQuadro={tagsDoQuadro}
           demandasDoQuadro={demandasDoQuadro}
+          rotulos={rotulos}
           onClose={() => setEdit(null)}
+        />
+      )}
+
+      {histCard && (
+        <HistoricoModal
+          card={histCard}
+          sector={sector}
+          usersMap={usersMap}
+          onClose={() => setHistCard(null)}
         />
       )}
 
@@ -805,6 +867,7 @@ function CardItem({
   onDragStart,
   onDragEnd,
   onClick,
+  onHistorico,
 }: {
   card: Card;
   col: ColumnDoc;
@@ -816,6 +879,7 @@ function CardItem({
   onDragStart: (e: React.DragEvent) => void;
   onDragEnd: () => void;
   onClick: () => void;
+  onHistorico: () => void;
 }) {
   const di = dueInfo(card.due, entregue);
   const startShort = card.startDate ? fmtShort(parseDue(card.startDate)) : "";
@@ -824,6 +888,19 @@ function CardItem({
   const done = items.filter((i) => i.done).length;
   const tags = card.tags ?? [];
   const comments = card.comments?.length ?? 0;
+  /**
+   * Quantas vezes esta demanda mudou.
+   *
+   * Menos 1 porque o primeiro evento é o nascimento dela — toda demanda tem um,
+   * e um selo "1" em todo card do quadro não informa nada. O selo só aparece
+   * quando há mudança de verdade para ver.
+   *
+   * Nas demandas anteriores ao histórico isto conta um a menos: elas não têm
+   * evento de nascimento, e a primeira edição delas cai no lugar dele. É o erro
+   * certo a cometer — some sozinho na segunda edição, e o contrário
+   * (contar um a mais em TODO card, para sempre) não some nunca.
+   */
+  const mudou = Math.max(0, (card.histCount ?? 0) - 1);
 
   const knownType =
     !!card.type && DEMAND_TYPES.includes(card.type as DemandType);
@@ -858,6 +935,27 @@ function CardItem({
           </span>
         )}
         <div style={{ flex: 1 }} />
+        {/* Canto superior direito: a porta do histórico. Fica no card, e não
+            só dentro do modal, porque a pergunta que ela responde ("quando isto
+            mudou de dono?") nasce olhando para o quadro, não editando a
+            demanda. `stopPropagation` para o clique não abrir a edição junto. */}
+        <button
+          type="button"
+          className={styles.kHist}
+          onClick={(e) => {
+            e.stopPropagation();
+            onHistorico();
+          }}
+          title={
+            mudou
+              ? `${mudou} ${mudou === 1 ? "mudança registrada" : "mudanças registradas"} — ver histórico`
+              : "Ver o histórico desta demanda"
+          }
+          aria-label={`Ver histórico de ${card.title}`}
+        >
+          <Icon name="history" size={13} />
+          {mudou > 0 && <span className={styles.kHistN}>{mudou}</span>}
+        </button>
         <span className={styles.grip}>
           <GripDots />
         </span>
@@ -930,6 +1028,135 @@ function CardItem({
   );
 }
 
+/**
+ * A timeline da demanda.
+ *
+ * Leitura única na abertura, sem assinatura em tempo real: evento gravado não
+ * muda mais, então não há nada para escutar. Quem quiser ver o que acabou de
+ * acontecer fecha e abre — e é o que se faz naturalmente.
+ */
+function HistoricoModal({
+  card,
+  sector,
+  usersMap,
+  onClose,
+}: {
+  card: Card;
+  sector: string;
+  usersMap: Record<string, UserProfile>;
+  onClose: () => void;
+}) {
+  const [eventos, setEventos] = useState<Evento[] | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+
+  useEffect(() => {
+    // A trava existe porque a resposta pode chegar depois de o modal fechar —
+    // e `setState` num componente desmontado é um vazamento silencioso.
+    let vivo = true;
+    carregarHistorico(card.id, sector)
+      .then((e) => {
+        if (vivo) setEventos(e);
+      })
+      .catch((e) => {
+        console.error("Erro ao carregar o histórico:", e);
+        if (vivo) setErro("Não foi possível carregar o histórico.");
+      });
+    return () => {
+      vivo = false;
+    };
+  }, [card.id, sector]);
+
+  return (
+    <Modal
+      onClose={onClose}
+      ariaLabel={`Histórico da demanda ${card.title}`}
+      overlayClassName={styles.overlay}
+      className={styles.modal}
+      width={480}
+    >
+      <div className={styles.mhead}>
+        <span className={styles.mchip}>
+          <Icon name="history" size={12} /> Histórico
+        </span>
+        <span className={styles.mchip}>{sector}</span>
+      </div>
+      <div className={styles.histTitulo}>{card.title}</div>
+
+      {erro ? (
+        <div className={styles.err}>{erro}</div>
+      ) : eventos === null ? (
+        <div className={styles.histVazio}>Carregando…</div>
+      ) : eventos.length === 0 ? (
+        <div className={styles.histVazio}>
+          Nenhuma mudança registrada ainda. Demandas abertas antes desta versão
+          começam a registrar a partir da próxima alteração.
+        </div>
+      ) : (
+        <div className={styles.histLista}>
+          {eventos.map((ev) => {
+            const u = usersMap[ev.autor];
+            const nome = u?.name || ev.autor || "alguém";
+            return (
+              <div key={ev.id} className={styles.histItem}>
+                <span
+                  className={styles.cAvatar}
+                  style={{ background: u?.color || "#555" }}
+                  title={nome}
+                >
+                  {(nome[0] || "?").toUpperCase()}
+                </span>
+                <div className={styles.cBody}>
+                  <div className={styles.cHead}>
+                    <span className={styles.cName}>{nome.split(" ")[0]}</span>
+                    <span className={styles.histAcao}>
+                      {ACAO_ROTULO[ev.acao]}
+                    </span>
+                  </div>
+                  <div className={styles.cTime} title={dataHora(ev.em)}>
+                    {relTime(ev.em)} · {dataHora(ev.em)}
+                  </div>
+                  {ev.mudancas.length > 0 && (
+                    <div className={styles.histMudancas}>
+                      {ev.mudancas.map((m, i) => {
+                        const l = linhaDaMudanca(m);
+                        return (
+                          <div key={`${m.campo}-${i}`} className={styles.histLinha}>
+                            <span className={styles.histCampo}>{l.rotulo}</span>
+                            {l.nota ? (
+                              <span className={styles.histNota}>{l.nota}</span>
+                            ) : (
+                              <>
+                                <span className={styles.histDe}>
+                                  {l.de ?? "—"}
+                                </span>
+                                <Icon name="chevronRight" size={11} />
+                                <span className={styles.histPara}>
+                                  {l.para ?? "—"}
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div className={styles.mactions}>
+        <div className={styles.spacer} />
+        <button className={styles.btnGhost} onClick={onClose}>
+          Fechar
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 function CardModal({
   state,
   sector,
@@ -941,6 +1168,7 @@ function CardModal({
   reqSetores,
   tagsDoQuadro,
   demandasDoQuadro,
+  rotulos,
   onClose,
 }: {
   state: NonNullable<EditState>;
@@ -955,6 +1183,8 @@ function CardModal({
   tagsDoQuadro: { tag: string; n: number }[];
   /** demandas do quadro, para citar uma existente pelo título */
   demandasDoQuadro: { id: string; title: string; columnId: string }[];
+  /** como o histórico traduz id em nome, na hora de gravar */
+  rotulos: Rotulos;
   onClose: () => void;
 }) {
   const isNew = state.mode === "new";
@@ -1487,9 +1717,13 @@ function CardModal({
         tagRefs: tagRefs.filter((r) => tags.includes(r.texto)),
         checklist,
       };
+      const ctx = { autor: actorEmail, sector };
       if (isNew) {
         const input: CardInput = base;
-        await createCard(sector, input, actorEmail);
+        // O estado inicial vira a primeira linha da timeline: sem ela, a
+        // demanda que já nasce com dono e prazo apareceria como se tivesse
+        // nascido vazia e ganhado tudo depois, sem que ninguém tivesse mexido.
+        await createCard(sector, input, actorEmail, mudancasIniciais(base, rotulos));
       } else if (card) {
         // Só os campos que REALMENTE mudaram. Enviar o formulário inteiro fazia
         // o último a salvar apagar, em silêncio, a edição de quem salvou antes
@@ -1508,7 +1742,13 @@ function CardModal({
           // Contador de versão: quem for aplicar mudança automática no futuro
           // precisa saber se o card mudou desde que o leu.
           patch.rev = (card.rev ?? 0) + 1;
-          await updateCard(card.id, patch as Partial<Omit<Card, "id">>);
+          // O diff sai de `card` contra `base`, e não do `patch`: o patch já
+          // perdeu o valor ANTERIOR, que é metade do que o histórico conta.
+          await updateCard(card.id, patch as Partial<Omit<Card, "id">>, {
+            ctx,
+            acao: "editada",
+            mudancas: diffCard(card, base, rotulos),
+          });
         }
       }
       // O comentário vai junto — e se ele não gravar, o modal fica aberto com o
@@ -1531,7 +1771,7 @@ function CardModal({
     if (!confirm("Remover esta demanda? Esta ação não pode ser desfeita."))
       return;
     try {
-      await deleteCardById(card.id);
+      await deleteCardById(card.id, sector);
       onClose();
     } catch (e) {
       console.error(e);

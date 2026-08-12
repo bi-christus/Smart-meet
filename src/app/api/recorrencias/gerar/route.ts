@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { HttpError, adminDb, requireUser } from "@/lib/server/drive-server";
 import { DEFAULT_COLUMNS } from "@/lib/kanban-columns";
 import { startOfDay } from "@/lib/datas";
+import { dataBR } from "@/lib/historico-core";
 import {
   cardDescriptionFor,
   cardTitleFor,
@@ -45,17 +46,48 @@ function uid(): string {
  * Colunas do setor, na ordem. Setor que ainda não personalizou cai no padrão —
  * o mesmo que o Kanban mostra antes do primeiro seed.
  */
+/**
+ * Colunas do setor, na ordem do quadro.
+ *
+ * Devolve o título junto do id porque o histórico do card grava o NOME da
+ * etapa: "Aguardando", não "aguardando". O registro precisa continuar legível
+ * mesmo depois de o setor renomear a coluna.
+ */
 async function colunasDoSetor(
   db: FirebaseFirestore.Firestore,
   sector: string,
-): Promise<string[]> {
+): Promise<{ colId: string; title: string }[]> {
   const snap = await db.collection("columns").where("sector", "==", sector).get();
-  if (snap.empty) return DEFAULT_COLUMNS.map((c) => c.id);
+  if (snap.empty)
+    return DEFAULT_COLUMNS.map((c) => ({ colId: c.id, title: c.title }));
   return snap.docs
-    .map((d) => d.data() as { colId?: string; order?: number })
+    .map((d) => d.data() as { colId?: string; title?: string; order?: number })
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-    .map((c) => String(c.colId ?? ""))
-    .filter(Boolean);
+    .map((c) => ({
+      colId: String(c.colId ?? ""),
+      title: String(c.title ?? c.colId ?? ""),
+    }))
+    .filter((c) => c.colId);
+}
+
+/**
+ * Nome de exibição de um e-mail, com cache por execução.
+ *
+ * O cron pode abrir dezenas de cards por rodada, quase sempre do mesmo punhado
+ * de responsáveis — sem o cache seria uma leitura de /users por card.
+ */
+async function nomeDe(
+  db: FirebaseFirestore.Firestore,
+  cache: Map<string, string>,
+  email: string,
+): Promise<string> {
+  const chave = email.toLowerCase();
+  const guardado = cache.get(chave);
+  if (guardado !== undefined) return guardado;
+  const snap = await db.collection("users").doc(chave).get();
+  const nome = (snap.data()?.name as string | undefined) || email;
+  cache.set(chave, nome);
+  return nome;
 }
 
 async function executar(req: Request, corpo: Corpo) {
@@ -103,7 +135,8 @@ async function executar(req: Request, corpo: Corpo) {
   }
 
   const criados: string[] = [];
-  const colunasPorSetor = new Map<string, string[]>();
+  const colunasPorSetor = new Map<string, { colId: string; title: string }[]>();
+  const nomesPorEmail = new Map<string, string>();
 
   for (const { id, data } of noEscopo) {
     if (criados.length >= LIMITE_POR_EXECUCAO) break;
@@ -131,12 +164,22 @@ async function executar(req: Request, corpo: Corpo) {
     if (!colunasPorSetor.has(rec.sector)) {
       colunasPorSetor.set(rec.sector, await colunasDoSetor(db, rec.sector));
     }
-    const colunas = colunasPorSetor.get(rec.sector) as string[];
+    const colunas = colunasPorSetor.get(rec.sector) as {
+      colId: string;
+      title: string;
+    }[];
     // Coluna configurada que não existe mais (o setor renomeou/apagou) não pode
     // fazer o card nascer invisível: cai na primeira coluna do quadro.
-    const columnId = colunas.includes(rec.columnId)
-      ? rec.columnId
-      : (colunas[0] ?? DEFAULT_COLUMNS[0].id);
+    const coluna =
+      colunas.find((c) => c.colId === rec.columnId) ??
+      colunas[0] ?? {
+        colId: DEFAULT_COLUMNS[0].id,
+        title: DEFAULT_COLUMNS[0].title,
+      };
+    const columnId = coluna.colId;
+    const nomeDono = rec.owner
+      ? await nomeDe(db, nomesPorEmail, rec.owner)
+      : "";
 
     for (const iso of datas) {
       if (criados.length >= LIMITE_POR_EXECUCAO) break;
@@ -177,6 +220,24 @@ async function executar(req: Request, corpo: Corpo) {
             origem: "recorrencia",
             recId: id,
             recDate: iso,
+            histCount: 1,
+          });
+          // Primeira linha da timeline. Aqui o autor é quem LIGOU a regra (ou o
+          // cron, em nome dele): o card não apareceu sozinho, apareceu porque
+          // alguém programou que ele apareceria — e é isso que o histórico
+          // precisa dizer para quem abrir o card sem saber de onde ele veio.
+          tx.create(cardRef.collection("historico").doc(), {
+            sector: rec.sector,
+            autor,
+            em: agora,
+            acao: "criada",
+            mudancas: [
+              { campo: "coluna", de: null, para: coluna.title },
+              ...(nomeDono
+                ? [{ campo: "responsavel", de: null, para: nomeDono }]
+                : []),
+              { campo: "prazo", de: null, para: dataBR(iso) },
+            ],
           });
           tx.create(occRef, {
             recId: id,
