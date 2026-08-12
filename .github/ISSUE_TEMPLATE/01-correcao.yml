@@ -1,0 +1,84 @@
+name: Correção
+description: Algo está errado ou quebrado e precisa voltar a funcionar
+title: "corrigir "
+labels: ["tipo: correcao"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Quem vai executar isto pode ser um agente de outro modelo, sem nenhum contexto
+        da conversa que originou a tarefa. Escreva pensando nessa pessoa: `arquivo:linha`,
+        comandos exatos, e um critério de pronto que dá para verificar.
+
+  - type: textarea
+    id: sintoma
+    attributes:
+      label: O que está acontecendo
+      description: O sintoma como ele aparece para quem usa o sistema — não a causa.
+      placeholder: "Ao abrir qualquer card, o topo do modal fica escondido atrás da barra do topo."
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduzir
+    attributes:
+      label: Como reproduzir
+      description: Passo a passo. Se depende de um estado específico (setor, papel, dado), diga qual.
+      placeholder: |
+        1. Entrar como gestor do setor B.I.
+        2. Abrir a aba Kanban
+        3. Clicar em qualquer card
+    validations:
+      required: true
+
+  - type: textarea
+    id: causa
+    attributes:
+      label: Causa, se já investigada
+      description: |
+        Opcional, mas vale ouro. Cite `arquivo:linha`. Se ainda não investigou, deixe vazio —
+        melhor vazio do que um palpite que manda quem executar para o lugar errado.
+      placeholder: "`app-shell.module.css:301` cria contexto de empilhamento com z-index 1."
+    validations:
+      required: false
+
+  - type: textarea
+    id: aceite
+    attributes:
+      label: Critério de pronto
+      description: Lista verificável. Cada item precisa ter resposta sim ou não, sem interpretação.
+      value: |
+        - [ ]
+        - [ ] `npm run lint` passa
+        - [ ] `npx next typegen && npx tsc --noEmit` passa
+        - [ ] `npm run prebuild` passa
+    validations:
+      required: true
+
+  - type: dropdown
+    id: prioridade
+    attributes:
+      label: Prioridade
+      description: A label `P0`/`P1`/`P2` é aplicada na triagem — este campo é o que a justifica.
+      options:
+        - "P0 — já está quebrado em produção, ou bloqueia outras Issues"
+        - "P1 — importante, entra na sequência normal"
+        - "P2 — desejável, sem data"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Área
+      options:
+        - kanban
+        - observabilidade
+        - qualidade
+        - testes
+        - motion
+        - processo
+        - infra
+        - seguranca
+    validations:
+      required: true

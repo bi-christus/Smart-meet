@@ -1,0 +1,90 @@
+name: Nova função
+description: Algo que o sistema ainda não faz
+title: "criar "
+labels: ["tipo: nova-funcao"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Quem vai executar isto pode ser um agente de outro modelo, sem nenhum contexto
+        da conversa que originou a tarefa. Escreva pensando nessa pessoa: `arquivo:linha`,
+        comandos exatos, e um critério de pronto que dá para verificar.
+
+  - type: textarea
+    id: problema
+    attributes:
+      label: Que problema isto resolve
+      description: |
+        O problema, não a solução. Quem sente, quando, e o que essa pessoa faz hoje na
+        ausência desta função. Função sem problema nomeado é função que ninguém usa.
+    validations:
+      required: true
+
+  - type: textarea
+    id: comportamento
+    attributes:
+      label: Como deve funcionar
+      description: O comportamento esperado, incluindo os casos de borda — vazio, erro, sem permissão.
+    validations:
+      required: true
+
+  - type: textarea
+    id: fora
+    attributes:
+      label: O que NÃO entra
+      description: |
+        O limite do escopo. Este campo é o que impede a Issue de crescer sozinha até não
+        caber mais em um PR.
+    validations:
+      required: true
+
+  - type: textarea
+    id: dados
+    attributes:
+      label: Dados e regras do Firestore
+      description: |
+        Coleção nova? Campo novo em coleção existente? Toda coleção nova precisa da sua
+        regra escopada por setor. Se não mexe em dado, escreva "não mexe".
+    validations:
+      required: true
+
+  - type: textarea
+    id: aceite
+    attributes:
+      label: Critério de pronto
+      value: |
+        - [ ]
+        - [ ] Regra do Firestore publicada antes do deploy do app, se houver coleção nova
+        - [ ] `npm run lint` passa
+        - [ ] `npx next typegen && npx tsc --noEmit` passa
+        - [ ] `npm run prebuild` passa
+    validations:
+      required: true
+
+  - type: dropdown
+    id: prioridade
+    attributes:
+      label: Prioridade
+      description: A label `P0`/`P1`/`P2` é aplicada na triagem — este campo é o que a justifica.
+      options:
+        - "P0 — bloqueia outras Issues"
+        - "P1 — importante, entra na sequência normal"
+        - "P2 — desejável, sem data"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Área
+      options:
+        - kanban
+        - observabilidade
+        - qualidade
+        - testes
+        - motion
+        - processo
+        - infra
+        - seguranca
+    validations:
+      required: true
