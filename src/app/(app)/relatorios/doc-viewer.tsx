@@ -19,6 +19,7 @@ import { auth } from "@/lib/firebase";
 import { subscribeUsers, type UserProfile } from "@/lib/users";
 import { DRIVE_OUTPUT_LABEL, type DriveOutputKind } from "@/lib/meetings";
 import { Icon } from "@/components/icons";
+import { SkeletonTexto, classeAparece } from "@/components/skeleton";
 import styles from "./relatorios.module.css";
 
 type Estado =
@@ -36,34 +37,14 @@ type Estado =
  */
 const Documento = memo(function Documento({ md }: { md: string }) {
   return (
-    <article className={styles.doc}>
+    // `classeAparece`: o texto entra com um crossfade curto no lugar exato onde
+    // o esqueleto estava. Sem deslocamento — o conteúdo chega onde já havia
+    // forma, e qualquer movimento aqui seria animação anunciando a si mesma.
+    <article className={`${styles.doc} ${classeAparece}`}>
       <ReactMarkdown remarkPlugins={[remarkGfm]}>{md}</ReactMarkdown>
     </article>
   );
 });
-
-/** Esqueleto do texto enquanto o Drive responde. */
-function Esqueleto() {
-  return (
-    <div className={styles.skeleton} aria-live="polite" aria-busy="true">
-      <span className={styles.srOnly}>Carregando o documento…</span>
-      <div className={`${styles.skLine} ${styles.skTitulo}`} />
-      <div className={`${styles.skLine} ${styles.skCurta}`} />
-      <div className={styles.skGap} />
-      <div className={styles.skLine} />
-      <div className={styles.skLine} />
-      <div className={`${styles.skLine} ${styles.skMedia}`} />
-      <div className={styles.skGap} />
-      <div className={`${styles.skLine} ${styles.skSubtitulo}`} />
-      <div className={styles.skLine} />
-      <div className={styles.skLine} />
-      <div className={`${styles.skLine} ${styles.skMedia}`} />
-      <div className={styles.skGap} />
-      <div className={styles.skLine} />
-      <div className={`${styles.skLine} ${styles.skCurta}`} />
-    </div>
-  );
-}
 
 export function DocViewer({
   meetingId,
@@ -316,7 +297,7 @@ export function DocViewer({
         {avisoShare && <p className={styles.shareAviso}>{avisoShare}</p>}
 
         <div className={styles.leitorCorpo}>
-          {estado.fase === "carregando" && <Esqueleto />}
+          {estado.fase === "carregando" && <SkeletonTexto />}
           {estado.fase === "erro" && <p className={styles.erro}>{estado.msg}</p>}
           {estado.fase === "ok" && <Documento md={estado.markdown} />}
         </div>
