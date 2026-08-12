@@ -1,0 +1,18 @@
+# Todo arquivo de texto vive em LF no repositorio E no disco.
+#
+# `eol=lf` sobrepoe o `core.autocrlf=true` que vem da instalacao do Git for
+# Windows — conferido por medicao. Sem isto, todo checkout nesta maquina
+# reescreve os arquivos com CR, e qualquer ferramenta que le o disco em vez do
+# indice (formatador, diff de editor) enxerga o arquivo inteiro como alterado.
+* text=auto eol=lf
+
+# Binarios explicitos, para nao depender da heuristica do `text=auto`.
+*.png -text
+*.ico -text
+*.jpg -text
+*.jpeg -text
+*.gif -text
+*.webp -text
+*.woff -text
+*.woff2 -text
+*.pdf -text
