@@ -58,6 +58,11 @@ import { Icon } from "@/components/icons";
 import { Select, type SelectOption } from "@/components/select";
 import { Combobox } from "@/components/combobox";
 import { Modal } from "@/components/modal";
+import { EmptyState } from "@/components/empty-state";
+import { ErrorState } from "@/components/error-state";
+import { SkeletonCard } from "@/components/skeleton";
+import { juntarFontes } from "@/lib/async-data-core";
+import { useAsyncData } from "@/lib/use-async-data";
 import { RelatorioModal } from "./relatorio-modal";
 import styles from "./kanban.module.css";
 
@@ -67,6 +72,20 @@ const PRIORITY_COLOR: Record<Priority, string> = {
   baixa: "#78776f",
 };
 const KNOWN_PRIORITIES: Priority[] = ["alta", "media", "baixa"];
+
+/**
+ * Listas vazias constantes, para os cálculos rodarem antes de os dados
+ * chegarem. Fora do componente porque `?? []` no corpo cria um array novo a
+ * cada render, e os `useMemo` que dependem dele recalculariam sempre.
+ */
+const SEM_CARDS: Card[] = [];
+const SEM_USERS: UserProfile[] = [];
+const SEM_SOLICITANTES: Solicitante[] = [];
+const SEM_SETORES: SolicitanteSetor[] = [];
+const SEM_COLUNAS: ColumnDoc[] = [];
+
+/** Assinatura que nem chegou a abrir: não há nada para fechar depois. */
+const NADA_A_FECHAR = () => undefined;
 
 function uid(): string {
   return typeof crypto !== "undefined" && crypto.randomUUID
@@ -290,12 +309,53 @@ export default function KanbanPage() {
   );
 
   const [sector, setSector] = useState("");
-  const [cards, setCards] = useState<Card[]>([]);
-  const [users, setUsers] = useState<UserProfile[]>([]);
-  const [solicitantes, setSolicitantes] = useState<Solicitante[]>([]);
-  const [reqSetores, setReqSetores] = useState<SolicitanteSetor[]>([]);
-  const [fireColumns, setFireColumns] = useState<ColumnDoc[]>([]);
-  const [colsLoaded, setColsLoaded] = useState(false);
+
+  /**
+   * As cinco assinaturas do quadro.
+   *
+   * O falso vazio aqui era o mais visto do app: sete colunas piscando "Nenhuma
+   * demanda" a cada troca de setor, num quadro que muitas vezes tem trezentas.
+   * E quatro dos cinco erros iam para lugar nenhum — uma conta sem acesso ao
+   * setor via exatamente a mesma tela de um setor recém-criado.
+   *
+   * A chave é o setor: trocou, reassina e volta a "ainda não sei", sem nenhum
+   * `setState` dentro de efeito para zerar nada.
+   */
+  const fCards = useAsyncData<Card>(sector, (onData, onErro) => {
+    // Sem setor escolhido não há o que assinar, e a resposta certa é uma lista
+    // vazia — não uma espera eterna.
+    if (!sector) {
+      onData([]);
+      return NADA_A_FECHAR;
+    }
+    return subscribeCards(sector, onData, onErro);
+  });
+  const fCols = useAsyncData<ColumnDoc>(sector, (onData, onErro) => {
+    if (!sector) {
+      onData([]);
+      return NADA_A_FECHAR;
+    }
+    return subscribeColumns(sector, onData, onErro);
+  });
+  const fUsers = useAsyncData<UserProfile>("todos", (onData, onErro) =>
+    subscribeUsers(onData, onErro),
+  );
+  const fSolicitantes = useAsyncData<Solicitante>("todos", (onData, onErro) =>
+    subscribeSolicitantes(onData, onErro),
+  );
+  const fReqSetores = useAsyncData<SolicitanteSetor>(
+    "todos",
+    (onData, onErro) => subscribeSolicitanteSetores(onData, onErro),
+  );
+
+  const cards = fCards.data ?? SEM_CARDS;
+  const users = fUsers.data ?? SEM_USERS;
+  const solicitantes = fSolicitantes.data ?? SEM_SOLICITANTES;
+  const reqSetores = fReqSetores.data ?? SEM_SETORES;
+  const fireColumns = fCols.data ?? SEM_COLUNAS;
+  /** Agora vem do tipo, e não de um booleano à parte que podia discordar. */
+  const colsLoaded = fCols.data !== undefined;
+
   const [search, setSearch] = useState("");
   const [prio, setPrio] = useState<"" | Priority>("");
   // O filtro de responsável é preso ao setor: trocar de quadro o descarta.
@@ -333,17 +393,6 @@ export default function KanbanPage() {
     if (boardRef.current) boardRef.current.scrollLeft = 0;
   }, [sector]);
 
-  useEffect(() => {
-    if (!sector) {
-      setCards([]);
-      return;
-    }
-    const u = subscribeCards(sector, setCards, (e) =>
-      console.error("Erro ao carregar cards:", e),
-    );
-    return () => u();
-  }, [sector]);
-
   /**
    * Os cards com as tags de referência já no nome atual do alvo.
    *
@@ -361,23 +410,6 @@ export default function KanbanPage() {
     const setores = new Map(reqSetores.map((s) => [s.id, s.name]));
     return cards.map((c) => resolverTags(c, titulos, setores));
   }, [cards, reqSetores]);
-
-  useEffect(() => {
-    setColsLoaded(false);
-    if (!sector) {
-      setFireColumns([]);
-      return;
-    }
-    const u = subscribeColumns(
-      sector,
-      (cols) => {
-        setFireColumns(cols);
-        setColsLoaded(true);
-      },
-      (e) => console.error("Erro ao carregar colunas:", e),
-    );
-    return () => u();
-  }, [sector]);
 
   useEffect(() => {
     if (
@@ -415,20 +447,6 @@ export default function KanbanPage() {
     setEdit({ mode: "edit", card: c });
     setAlvoDireto(null);
   }, [alvoDireto, cardsVivos]);
-
-  useEffect(() => {
-    const u = subscribeUsers(setUsers, () => {});
-    return () => u();
-  }, []);
-
-  useEffect(() => {
-    const a = subscribeSolicitantes(setSolicitantes, () => {});
-    const b = subscribeSolicitanteSetores(setReqSetores, () => {});
-    return () => {
-      a();
-      b();
-    };
-  }, []);
 
   const usersMap = useMemo(() => {
     const m: Record<string, UserProfile> = {};
@@ -555,6 +573,32 @@ export default function KanbanPage() {
       });
     return opts;
   }, [baseFiltered, usersMap, assigneeF]);
+
+  /**
+   * O estado do quadro — cards e colunas, as duas fontes que ele desenha.
+   *
+   * As listas auxiliares (pessoas, solicitantes, setores solicitantes) ficam de
+   * fora de propósito: elas só enfeitam o card com nome e cor, e segurar o
+   * quadro inteiro por causa delas seria esperar por um dado que ninguém veio
+   * ver. Quando falham, o aviso logo abaixo é que aparece.
+   */
+  const quadro = juntarFontes([fCards, fCols]);
+  const reabrirQuadro = () => {
+    fCards.tentarDeNovo();
+    fCols.tentarDeNovo();
+  };
+
+  /**
+   * As três listas que não seguram o quadro, mas cujo erro também não pode
+   * sumir. Sem elas o card mostra e-mail no lugar do nome e o formulário abre
+   * sem as opções — coisas que a pessoa percebe e não tem como explicar.
+   */
+  const auxiliares = juntarFontes([fUsers, fSolicitantes, fReqSetores]);
+  const reabrirAuxiliares = () => {
+    fUsers.tentarDeNovo();
+    fSolicitantes.tentarDeNovo();
+    fReqSetores.tentarDeNovo();
+  };
 
   const displayCols: ColumnDoc[] = fireColumns.length
     ? fireColumns
@@ -707,6 +751,22 @@ export default function KanbanPage() {
         </button>
       </div>
 
+      {auxiliares.erro && (
+        <div className={styles.avisoAux} role="status">
+          <Icon name="warn" size={14} />
+          <span>
+            Não foi possível carregar a lista de pessoas e solicitantes. Os
+            cards podem mostrar e-mail no lugar do nome.
+          </span>
+          <button type="button" onClick={reabrirAuxiliares}>
+            Tentar de novo
+          </button>
+        </div>
+      )}
+
+      {quadro.erro ? (
+        <ErrorState error={quadro.erro} onRetry={reabrirQuadro} />
+      ) : (
       <div className={styles.board} ref={boardRef}>
         {displayCols.map((col) => {
           const colCards = filtered.filter((c) => c.columnId === col.colId);
@@ -744,7 +804,11 @@ export default function KanbanPage() {
                   </span>
                 )}
                 <span className={styles.colTitle}>{col.title}</span>
-                <span className={styles.colCount}>{colCards.length}</span>
+                {/* A contagem espera junto com a lista: "0" antes da resposta
+                    é a mesma afirmação falsa de "Nenhuma demanda", em número. */}
+                {!quadro.carregando && (
+                  <span className={styles.colCount}>{colCards.length}</span>
+                )}
                 <div style={{ flex: 1 }} />
                 <button
                   className={styles.iconbtn}
@@ -764,8 +828,20 @@ export default function KanbanPage() {
                 )}
               </div>
               <div className={styles.collist}>
-                {colCards.length === 0 ? (
-                  <div className={styles.colempty}>Nenhuma demanda</div>
+                {/* Esqueleto DENTRO da coluna, e não no lugar do quadro: as
+                    sete colunas precisam manter a forma e a largura enquanto
+                    esperam, senão a espera vira um solavanco quando o dado
+                    chega. Dois cards bastam para dar a medida sem encher a
+                    tela de cinza. */}
+                {quadro.carregando ? (
+                  <SkeletonCard cards={2} texto="Carregando as demandas…" />
+                ) : colCards.length === 0 ? (
+                  <EmptyState
+                    size="compact"
+                    icon="kanban"
+                    title="Nenhuma demanda"
+                    description="Arraste um card para cá ou use o + no topo da coluna."
+                  />
                 ) : (
                   colCards.map((c) => (
                     <CardItem
@@ -796,7 +872,10 @@ export default function KanbanPage() {
           );
         })}
 
-        {canEditCols && (
+        {/* Só depois de as colunas responderem: antes disso as que estão na
+            tela são o palpite padrão, e oferecer "Nova coluna" ao lado delas
+            convidaria a criar a oitava de um quadro que já tem sete. */}
+        {canEditCols && colsLoaded && (
           <button
             className={styles.addColBtn}
             onClick={() => setColEdit({ mode: "new" })}
@@ -806,6 +885,7 @@ export default function KanbanPage() {
         )}
         <div style={{ flex: "none", width: 6 }} />
       </div>
+      )}
 
       {edit && (
         <CardModal
