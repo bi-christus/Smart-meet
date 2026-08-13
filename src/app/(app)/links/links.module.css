@@ -1,0 +1,247 @@
+.page {
+  height: calc(100vh - 56px);
+  overflow: auto;
+  padding-bottom: 30px;
+}
+
+/* ---------- cabeçalho ---------- */
+.head {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 16px 22px 0;
+}
+.headMain {
+  min-width: 0;
+  flex: 1;
+}
+.headMain h1 {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  color: var(--tx);
+}
+.headMain p {
+  font-size: 12px;
+  color: var(--tx-3);
+  margin-top: 3px;
+  max-width: 660px;
+  line-height: 1.5;
+}
+.headTools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+/* O `<Select>` ocupa 100% do pai, então a largura é decidida aqui. */
+.filtroSetor {
+  min-width: 180px;
+}
+
+.searchwrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.searchwrap svg {
+  position: absolute;
+  left: 10px;
+  width: 15px;
+  height: 15px;
+  color: var(--tx-3);
+  pointer-events: none;
+}
+.search {
+  height: 34px;
+  width: 220px;
+  padding: 0 12px 0 32px;
+  background: var(--s1);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--tx);
+}
+.search:focus {
+  outline: 2px solid var(--brand);
+  outline-offset: 0;
+}
+
+/* ---------- grade ---------- */
+.corpo {
+  padding: 16px 22px 0;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+/* ---------- o card do link ---------- */
+.card {
+  background: var(--s2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  /* Só a borda responde ao ponteiro. Escala ou deslocamento aqui seria a grade
+     inteira se mexendo enquanto o olho a varre — e são dezenas de cards.
+     Nenhum bloco local de movimento reduzido: não há `animation` nesta folha,
+     e o global do `globals.css` já zera transição para quem pediu menos. */
+  transition: border-color 0.18s;
+}
+.card:hover {
+  border-color: var(--brand-line);
+}
+
+.cardHead {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 13px 14px 12px;
+}
+
+/* O quadrado colorido é a âncora visual do card: o fundo e o branco de dentro
+   vêm inline, de `corDoLink`. */
+.icone {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  line-height: 1;
+}
+
+.cardTitulo {
+  flex: 1;
+  min-width: 0;
+}
+.cardTitulo a {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  /* Link sem título vira a própria URL, que é uma palavra só de 80 caracteres:
+     sem isto ela estoura a coluna da grade em vez de quebrar. */
+  overflow-wrap: anywhere;
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--tx);
+  transition: color 0.18s;
+}
+.cardTitulo a:hover {
+  color: var(--accent);
+}
+
+.cardMeta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 6px;
+  min-width: 0;
+}
+.estado {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--s3);
+  color: var(--tx-2);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.dominio {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--tx-3);
+}
+
+/* ---------- rodapé: de onde o link veio ---------- */
+.cardPe {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 9px 14px 10px;
+  border-top: 1px solid var(--line-soft);
+  background: var(--s1);
+}
+.peLinha {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.demanda {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--tx-2);
+  transition: color 0.18s;
+}
+.demanda:hover {
+  color: var(--accent);
+}
+.demanda svg {
+  flex: none;
+  color: var(--tx-3);
+}
+.demanda span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.setor {
+  margin-left: auto;
+  flex: none;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--tx-3);
+}
+.autoria {
+  font-size: 10.5px;
+  color: var(--tx-3);
+}
+
+/* ---------- sem setor nenhum ---------- */
+.vazioTela {
+  margin: 60px auto;
+  max-width: 420px;
+  text-align: center;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--tx-3);
+}
+
+@media (max-width: 900px) {
+  .headTools {
+    width: 100%;
+  }
+  .searchwrap {
+    flex: 1;
+  }
+  .search {
+    width: 100%;
+  }
+}

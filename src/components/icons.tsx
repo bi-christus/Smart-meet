@@ -140,6 +140,15 @@ const PATHS: Record<string, ReactNode> = {
       <path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1" />
     </>
   ),
+  /* corrente de tres elos: `link` no singular sao dois elos em diagonal, e a
+     aba junta varios — o elo do meio inteiro e o que diz "mais de um" */
+  links: (
+    <>
+      <path d="M8 7.5H6a4.5 4.5 0 0 0 0 9h2" />
+      <rect x="7" y="7.5" width="10" height="9" rx="4.5" />
+      <path d="M16 7.5h2a4.5 4.5 0 0 1 0 9h-2" />
+    </>
+  ),
   trend: (
     <>
       <path d="M3 3v18h18" />

@@ -1494,3 +1494,90 @@
   font-size: 12.5px;
   line-height: 1.5;
 }
+
+/* ---------- links da demanda ----------
+   A geometria é emprestada do checklist de propósito: mesmo passo vertical,
+   mesmo botão de remover, mesma caixa de adicionar. Inventar outra faria duas
+   listas vizinhas parecerem dois formulários diferentes empilhados — e elas se
+   preenchem do mesmo jeito, então têm de se parecer.
+
+   Nada aqui anima. Adicionar e remover item de lista é interação de alta
+   frequência e o Enter é teclado: pelo AGENTS.md §3 e pela Frequency Gate da
+   skill, animar isso só adicionaria lentidão percebida. O `pop` que a tag usa
+   (linha 963) foi considerado e descartado — por isso nenhuma classe daqui
+   entra no bloco de `prefers-reduced-motion`: não há movimento para reduzir. */
+.linkRow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 4px 0;
+}
+/* O quadradinho é o único lugar onde a origem do link aparece. Duas letras e
+   não o ícone de corrente: quatro links do mesmo Google viram quatro correntes
+   brancas que só a cor separa — e cor sozinha não separa nada para quem não a
+   enxerga. Letra funciona nos dois casos, e sobra espaço para ela. */
+.linkIcone {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  /* A tinta NÃO mora aqui: ela depende do fundo, que é cor de marca e varia por
+     link. Quem decide as duas juntas é `seloDoLink` — branco chapado sumia no
+     amarelo do Drive. */
+}
+.linkMain {
+  flex: 1;
+  /* Sem o `min-width: 0` a elipse da URL nunca dispara: o conteúdo define o
+     tamanho mínimo do flex item e a linha estoura a largura do modal. */
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.linkTitulo {
+  composes: checkText;
+  /* `checkText` nasceu para linha horizontal, onde `flex: 1` cresce na largura.
+     Aqui o eixo é vertical e crescer significaria esticar a altura do campo —
+     com `flex-basis: 0` ele chegaria a colapsar para altura nenhuma. */
+  flex: none;
+  width: 100%;
+  padding: 0;
+}
+.linkUrl {
+  font-size: 11px;
+  color: var(--tx-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.linkAbrir {
+  flex: none;
+  display: flex;
+  padding: 2px;
+  color: var(--tx-3);
+  border-radius: 4px;
+}
+.linkAbrir:hover {
+  color: var(--brand);
+}
+.linkDel {
+  composes: checkDel;
+}
+.linkAdd {
+  composes: checkAdd;
+}
+.linkAddBtn {
+  composes: checkAddBtn;
+}
+.linkErro {
+  composes: campoAviso;
+  /* `campoAviso` sobe -8px para grudar no campo acima dele. Este aviso vem
+     ABAIXO da linha de adicionar, então o deslocamento inverte de sinal. */
+  margin: 6px 0 0;
+}

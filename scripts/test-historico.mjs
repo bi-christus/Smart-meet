@@ -160,6 +160,84 @@ checa(
   diffCard({ tags: ["a", "b"] }, { tags: ["b", "a"] }, rotulos).length === 0,
 );
 
+// --- links: colar um endereço na demanda deixa rastro ---------------------
+const PLANILHA = "https://docs.google.com/spreadsheets/d/1a2b/edit";
+const PAINEL = "https://lookerstudio.google.com/reporting/xyz";
+
+const rLinkEntrou = diffCard(
+  { links: [] },
+  { links: [{ url: PLANILHA }] },
+  rotulos,
+);
+checa(
+  "link colado vira linha na timeline",
+  !!doCampo(rLinkEntrou, "links"),
+  rLinkEntrou.map((m) => m.campo).join(", "),
+);
+checa(
+  "e a linha mostra o DOMÍNIO, não a URL de 90 caracteres",
+  doCampo(rLinkEntrou, "links").para === "docs.google.com" &&
+    doCampo(rLinkEntrou, "links").de === null,
+  JSON.stringify(doCampo(rLinkEntrou, "links")),
+);
+
+const rLinkSaiu = diffCard(
+  { links: [{ url: PLANILHA }] },
+  { links: [] },
+  rotulos,
+);
+checa(
+  "link removido também vira linha, e do lado de quem saiu",
+  doCampo(rLinkSaiu, "links").de === "docs.google.com" &&
+    doCampo(rLinkSaiu, "links").para === null,
+  JSON.stringify(doCampo(rLinkSaiu, "links")),
+);
+
+const rLinkTrocou = diffCard(
+  { links: [{ url: PLANILHA }] },
+  { links: [{ url: PAINEL }] },
+  rotulos,
+);
+checa(
+  "trocar um link pelo outro no mesmo salvamento é UMA linha, com os dois lados",
+  doCampo(rLinkTrocou, "links").de === "docs.google.com" &&
+    doCampo(rLinkTrocou, "links").para === "lookerstudio.google.com",
+  JSON.stringify(doCampo(rLinkTrocou, "links")),
+);
+
+checa(
+  "lista de links igual não gera evento nenhum",
+  diffCard(
+    { links: [{ url: PLANILHA }, { url: PAINEL }] },
+    { links: [{ url: PLANILHA }, { url: PAINEL }] },
+    rotulos,
+  ).length === 0,
+);
+checa(
+  "renomear o título de um link não é mudança de para onde a demanda aponta",
+  diffCard(
+    { links: [{ url: PLANILHA, title: "Planilha" }] },
+    { links: [{ url: PLANILHA, title: "Consumo 2026" }] },
+    rotulos,
+  ).length === 0,
+);
+checa(
+  "card sem campo links algum não gera evento",
+  diffCard({ title: "x" }, { title: "x" }, rotulos).length === 0,
+);
+const lLinks = linhaDaMudanca({
+  campo: "links",
+  de: "docs.google.com",
+  para: "lookerstudio.google.com",
+});
+checa(
+  "links: a tela recebe entrada e saída, como nas tags",
+  lLinks.nota.includes("+ lookerstudio.google.com") &&
+    lLinks.nota.includes("− docs.google.com") &&
+    lLinks.de === null,
+  lLinks.nota,
+);
+
 // --- descrição: guarda o fato, não o texto --------------------------------
 const rDesc = diffCard(
   { description: "texto antigo, possivelmente enorme" },
@@ -183,6 +261,7 @@ const iniciais = mudancasIniciais(
     due: "2026-08-30",
     description: "contexto",
     checklist: [{ done: false }],
+    links: [{ url: "https://docs.google.com/spreadsheets/d/1a2b/edit" }],
   },
   rotulos,
 );
@@ -194,10 +273,11 @@ checa(
   iniciais.map((m) => m.campo).join(", "),
 );
 checa(
-  "a criação NÃO repete o conteúdo (título, descrição, checklist)",
+  "a criação NÃO repete o conteúdo (título, descrição, checklist, links)",
   !doCampo(iniciais, "descricao") &&
     !doCampo(iniciais, "checklist") &&
-    !doCampo(iniciais, "titulo"),
+    !doCampo(iniciais, "titulo") &&
+    !doCampo(iniciais, "links"),
   iniciais.map((m) => m.campo).join(", "),
 );
 checa(
