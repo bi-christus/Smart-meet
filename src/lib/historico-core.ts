@@ -27,6 +27,12 @@
  *    clique de distância.
  */
 
+// Módulo puro importando módulo puro: `links-core` também não conhece o SDK, e
+// só o que se lê da URL entra aqui — o domínio, para a linha caber na timeline.
+// Com extensão, como `recorrencias-core` importa `datas`: quem roda este arquivo
+// pelo strip de tipos do Node exige o caminho completo.
+import { dominioDe } from "./links-core.ts";
+
 export type CampoRastreado =
   | "titulo"
   | "descricao"
@@ -39,6 +45,7 @@ export type CampoRastreado =
   | "prioridade"
   | "tipo"
   | "tags"
+  | "links"
   | "checklist";
 
 export const CAMPO_ROTULO: Record<CampoRastreado, string> = {
@@ -53,6 +60,7 @@ export const CAMPO_ROTULO: Record<CampoRastreado, string> = {
   prioridade: "Prioridade",
   tipo: "Tipo",
   tags: "Tags",
+  links: "Links",
   checklist: "Checklist",
 };
 
@@ -68,6 +76,7 @@ const ORDEM: CampoRastreado[] = [
   "solicitante",
   "setorSolicitante",
   "tags",
+  "links",
   "checklist",
   "descricao",
 ];
@@ -111,6 +120,8 @@ export type EstadoCard = {
   priority?: string;
   type?: string;
   tags?: string[];
+  /** Só a URL: é por ela que o diff compara, e o resto do link não é notícia. */
+  links?: { url: string }[];
   checklist?: { done?: boolean }[];
 };
 
@@ -234,6 +245,25 @@ export function diffCard(
     };
   }
 
+  // Links: mesmo molde das tags, e pelo mesmo motivo — o que entrou e o que
+  // saiu. Mas mostrando o DOMÍNIO, não a URL: uma do Drive tem 90 caracteres, e
+  // três delas numa linha só transformariam a timeline em parede de texto.
+  // A comparação é por URL, não pelo objeto: renomear o título de um link é
+  // arrumação, não mudança de para onde a demanda aponta.
+  const urlsAntes = (antes.links ?? []).map((l) => l.url);
+  const urlsDepois = (depois.links ?? []).map((l) => l.url);
+  const linksSairam = urlsAntes.filter((u) => !urlsDepois.includes(u));
+  const linksEntraram = urlsDepois.filter((u) => !urlsAntes.includes(u));
+  if (linksSairam.length || linksEntraram.length) {
+    const legivel = (lista: string[]) =>
+      lista.map((u) => dominioDe(u) || u).join(", ");
+    out.links = {
+      campo: "links",
+      de: linksSairam.length ? legivel(linksSairam) : null,
+      para: linksEntraram.length ? legivel(linksEntraram) : null,
+    };
+  }
+
   // Checklist: o placar. Concluir um item é o progresso que o quadro cobra;
   // corrigir a redação de um item não é notícia.
   const placarAntes = contarFeitos(antes.checklist);
@@ -289,16 +319,16 @@ export type LinhaMudanca = {
 /**
  * Traduz uma mudança para o que se lê na timeline.
  *
- * Fica aqui, e não no JSX, porque é regra: "tags" não tem par de valores, tem
- * entrada e saída; "descrição" não tem valor nenhum. Escondido no componente,
- * isso não teria teste.
+ * Fica aqui, e não no JSX, porque é regra: "tags" e "links" não têm par de
+ * valores, têm entrada e saída; "descrição" não tem valor nenhum. Escondido no
+ * componente, isso não teria teste.
  */
 export function linhaDaMudanca(m: Mudanca): LinhaMudanca {
   const rotulo = CAMPO_ROTULO[m.campo];
   if (m.campo === "descricao") {
     return { rotulo, de: null, para: null, nota: "reescrita" };
   }
-  if (m.campo === "tags") {
+  if (m.campo === "tags" || m.campo === "links") {
     const partes: string[] = [];
     if (m.para) partes.push(`+ ${m.para}`);
     if (m.de) partes.push(`− ${m.de}`);

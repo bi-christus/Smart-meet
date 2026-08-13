@@ -41,6 +41,11 @@ import { resolverTags, type TagRef } from "./tags-ref";
 export { resolverTags };
 export type { TagRef };
 
+// Idem para os links: normalizar URL, reconhecer serviço e escolher cor não
+// dependem do banco. Reexportado daqui porque quem monta o card lê um módulo só.
+import type { CardLink } from "./links-core";
+export type { CardLink };
+
 export type Priority = "alta" | "media" | "baixa";
 export const PRIORITY_LABEL: Record<Priority, string> = {
   alta: "Alta",
@@ -126,6 +131,14 @@ export type Card = {
   /** Quais das `tags` são referência, e para quem. Ausente = todas são texto. */
   tagRefs?: TagRef[];
   checklist?: ChecklistItem[];
+  /**
+   * Endereços que a demanda usa. Campo do card, e não coleção nova: a regra de
+   * update de `/cards` já cobre quem pode escrever, e a aba Links lê pelo mesmo
+   * `subscribeCardsForSectors` — que já vem escopado por setor. Coleção separada
+   * custaria regra própria, índice próprio e uma segunda assinatura por setor
+   * para mostrar uma lista que nunca passa de meia dúzia de itens por card.
+   */
+  links?: CardLink[];
   comments?: Comment[];
   order: number;
   /** Quando o card entrou na coluna atual (ms) — base do aging e da entrega. */
@@ -173,6 +186,7 @@ export type CardInput = {
   tags: string[];
   tagRefs: TagRef[];
   checklist: ChecklistItem[];
+  links: CardLink[];
 };
 
 /** Assina os cards de um setor em tempo real. */
@@ -249,6 +263,7 @@ export async function createCard(
     tags: input.tags,
     tagRefs: input.tagRefs,
     checklist: input.checklist,
+    links: input.links,
     comments: [],
     order: -now,
     enteredAt: now,

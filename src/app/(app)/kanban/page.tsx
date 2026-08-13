@@ -37,6 +37,7 @@ import {
   resolverTags,
   corrigirTagsDeCards,
   type Card,
+  type CardLink,
   type TagRef,
   type CardInput,
   type Priority,
@@ -45,6 +46,17 @@ import {
   type DemandType,
   type Comment,
 } from "@/lib/kanban";
+import {
+  normalizarUrl,
+  dominioDe,
+  servicoDe,
+  seloDoLink,
+  monogramaDe,
+  rotuloDoLink,
+  jaTem,
+  novoIdLink,
+  SERVICO_ROTULO,
+} from "@/lib/links-core";
 import { carregarHistorico } from "@/lib/historico";
 import {
   ACAO_ROTULO,
@@ -985,6 +997,7 @@ function CardItem({
   const done = items.filter((i) => i.done).length;
   const tags = card.tags ?? [];
   const comments = card.comments?.length ?? 0;
+  const links = card.links?.length ?? 0;
   /**
    * Quantas vezes esta demanda mudou.
    *
@@ -1100,6 +1113,12 @@ function CardItem({
           <span className={styles.mini}>
             <Icon name="chat" size={12} />
             {comments}
+          </span>
+        )}
+        {links > 0 && (
+          <span className={styles.mini}>
+            <Icon name="link" size={12} />
+            {links}
           </span>
         )}
         <div style={{ flex: 1 }} />
@@ -1328,6 +1347,16 @@ function CardModal({
     (card?.checklist ?? []).map((it) => ({ ...it, id: it.id ?? uid() })),
   );
   const [newItem, setNewItem] = useState("");
+  /**
+   * Links da demanda.
+   *
+   * Só entram normalizados: guardar o texto cru deixaria "docs.google.com/…"
+   * sem esquema — que o navegador lê como caminho relativo e abre dentro do
+   * próprio Smart Meeting, num 404. Quem digita não vê essa diferença.
+   */
+  const [links, setLinks] = useState<CardLink[]>(() => card?.links ?? []);
+  const [novoLink, setNovoLink] = useState("");
+  const [erroLink, setErroLink] = useState<string | null>(null);
   const [comments, setComments] = useState<Comment[]>(card?.comments ?? []);
   const [newComment, setNewComment] = useState("");
   const [posting, setPosting] = useState(false);
@@ -1623,6 +1652,37 @@ function CardModal({
     setChecklist((c) => c.filter((_, idx) => idx !== i));
   }
 
+  function addLink() {
+    const url = normalizarUrl(novoLink);
+    if (!url) {
+      setErroLink(
+        "Endereço inválido. Cole um link começando com http:// ou https://.",
+      );
+      return;
+    }
+    // O mesmo endereço duas vezes não é erro de quem cola — é o resultado
+    // normal de colar de novo o que já estava lá. Recusar em silêncio pareceria
+    // que o campo não funciona, então a recusa é dita.
+    if (jaTem(links, url)) {
+      setErroLink("Esse link já está na demanda.");
+      return;
+    }
+    const agora = Date.now();
+    setLinks((c) => [
+      ...c,
+      { id: novoIdLink(url, agora), url, addedBy: actorEmail, addedAt: agora },
+    ]);
+    setNovoLink("");
+    setErroLink(null);
+  }
+  function removeLink(id: string) {
+    setLinks((c) => c.filter((l) => l.id !== id));
+  }
+  /** O rótulo é de quem lê depois: "Planilha de custos" acha; a URL, não. */
+  function editTituloLink(id: string, title: string) {
+    setLinks((c) => c.map((l) => (l.id === id ? { ...l, title } : l)));
+  }
+
   // --- comentários: escrever basta, o botão não ------------------------
   //
   // Comentário não tem rascunho: ou está gravado, ou não existe. Antes era
@@ -1813,6 +1873,7 @@ function CardModal({
         // referência gravada devolveria o vínculo na próxima edição.
         tagRefs: tagRefs.filter((r) => tags.includes(r.texto)),
         checklist,
+        links,
       };
       const ctx = { autor: actorEmail, sector };
       if (isNew) {
@@ -2175,6 +2236,103 @@ function CardModal({
         onChange={(e) => setDescription(e.target.value)}
         placeholder="Contexto, requisitos, links…"
       />
+
+      {/* O campo acima já promete "links" — e é ali que eles vinham parando, no
+          meio da prosa: sem poder abrir num clique, sem rótulo, e apagados sem
+          querer na primeira reescrita da descrição. Esta seção é a mesma coisa
+          em forma de dado: cada endereço vira uma linha que abre, se nomeia e
+          se remove sozinha. Fica fora do `!isNew` de propósito — a demanda
+          costuma nascer de um arquivo que já existe. */}
+      <div className={styles.sectionLabel}>
+        Links{links.length > 0 ? ` · ${links.length}` : ""}
+      </div>
+      {links.map((l) => (
+        <div key={l.id} className={styles.linkRow}>
+          {/* Fundo e tinta saem juntos: branco chapado desaparece no amarelo
+              do Drive, e o monograma é a única pista visual da linha. */}
+          <span
+            className={styles.linkIcone}
+            style={{
+              background: seloDoLink(l.url).fundo,
+              color: seloDoLink(l.url).tinta,
+            }}
+            title={SERVICO_ROTULO[servicoDe(l.url)]}
+            aria-hidden="true"
+          >
+            {monogramaDe(l.url)}
+          </span>
+          <div className={styles.linkMain}>
+            <input
+              className={styles.linkTitulo}
+              value={l.title ?? ""}
+              onChange={(e) => editTituloLink(l.id, e.target.value)}
+              placeholder={dominioDe(l.url)}
+              aria-label={`Rótulo do link ${l.url}`}
+            />
+            {/* A URL inteira no `title`: o texto corta na largura do modal, e
+                saber para onde o link vai antes de clicar é o que separa um
+                link de confiança de um que ninguém abre. */}
+            <span className={styles.linkUrl} title={l.url}>
+              {l.url}
+            </span>
+          </div>
+          {/* `noopener` não é formalidade: sem ele a página aberta recebe
+              `window.opener` e pode trocar o endereço desta aba por outro.
+
+              E o portão roda DE NOVO aqui, sobre o que veio do banco. Quem
+              grava passou por `normalizarUrl`, mas o campo aceita escrita de
+              qualquer pessoa do setor e do console do Firestore — e o React
+              não recusa um `javascript:` em `href`, só avisa. Sem `href` o
+              elemento deixa de ser link, que é a falha certa: não abre nada. */}
+          <a
+            className={styles.linkAbrir}
+            href={normalizarUrl(l.url) || undefined}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Abrir em nova aba"
+            aria-label={`Abrir ${rotuloDoLink(l)} em nova aba`}
+          >
+            <Icon name="link" size={14} />
+          </a>
+          <button
+            type="button"
+            className={styles.linkDel}
+            onClick={() => removeLink(l.id)}
+            title="Remover link"
+            aria-label={`Remover ${rotuloDoLink(l)}`}
+          >
+            <Icon name="x" size={14} />
+          </button>
+        </div>
+      ))}
+      <div className={styles.linkAdd}>
+        <input
+          value={novoLink}
+          onChange={(e) => {
+            setNovoLink(e.target.value);
+            // O aviso morre no primeiro toque de tecla: mantê-lo enquanto a
+            // pessoa já está corrigindo o endereço é acusar quem obedeceu.
+            if (erroLink) setErroLink(null);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              addLink();
+            }
+          }}
+          placeholder="Colar link…"
+          inputMode="url"
+          aria-label="Colar link da demanda"
+        />
+        <button type="button" className={styles.linkAddBtn} onClick={addLink}>
+          Adicionar
+        </button>
+      </div>
+      {erroLink && (
+        <div className={styles.linkErro} role="alert">
+          {erroLink}
+        </div>
+      )}
 
       <div className={styles.sectionLabel}>
         Checklist
