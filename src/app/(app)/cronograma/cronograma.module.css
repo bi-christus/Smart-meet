@@ -126,6 +126,15 @@
   text-transform: capitalize;
   min-width: 190px;
 }
+/* Quando hoje cai em sabado ou domingo, nenhuma celula pode se dizer "hoje": a
+   coluna do dia deixou de existir. Destacar a segunda seguinte seria um
+   calendario mentindo sobre que dia e, entao a ausencia do destaque vem
+   explicada por escrito, ao lado do periodo. */
+.navNota {
+  font-size: 11.5px;
+  color: var(--tx-3);
+}
+
 .hojeBtn {
   height: 28px;
   padding: 0 12px;
@@ -146,9 +155,94 @@
   overflow: auto;
   padding: 0 22px 26px;
 }
+
+/* ---------- faixa do que caiu em fim de semana ---------- */
+/* A grade encolheu para segunda a sexta, mas o que JA estava marcado em sabado
+   ou domingo continua marcado. Sem esta faixa esses compromissos sumiriam da
+   tela sem uma palavra — a mesma mentira por omissao que os ultimos commits
+   desta tela existem para tirar, so que em silencio total.
+
+   Cor de `--warn`, igual a `.aviso` de recorrencias e a `.avisoAux` do Kanban:
+   e aviso, nao erro. Quem marcou aquilo num sabado nao fez nada errado — o dado
+   e anterior a regra. Vermelho (`--danger`) acusaria a pessoa. */
+.fds {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 10px 13px;
+  border: 1px solid color-mix(in srgb, var(--warn) 34%, transparent);
+  background: var(--warn-bg);
+  border-radius: 9px;
+  color: var(--warn-tx);
+  font-size: 12px;
+}
+.fds > svg {
+  flex: none;
+  margin-top: 1px;
+}
+.fdsCorpo {
+  flex: 1;
+  min-width: 0;
+}
+.fdsTexto {
+  line-height: 1.5;
+}
+.fdsLista {
+  list-style: none;
+}
+.fdsDia {
+  display: block;
+  margin-top: 9px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  opacity: 0.82;
+}
+.fdsItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 4px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: none;
+  color: inherit;
+  font-family: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  /* Mesma janela dos outros alvos desta tela. Sem transform: a faixa fica logo
+     acima da grade e um pulinho aqui empurraria o olho para longe dela. */
+  transition: background 0.18s, border-color 0.18s;
+}
+.fdsItem:hover {
+  background: color-mix(in srgb, var(--warn) 15%, transparent);
+  border-color: color-mix(in srgb, var(--warn) 32%, transparent);
+}
+.fdsTitulo {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fdsMeta {
+  margin-left: auto;
+  flex: none;
+  padding-left: 10px;
+  opacity: 0.78;
+}
+
+/* Cinco colunas, e nao sete: ninguem na Rede trabalha sabado e domingo, e
+   desenhar dois dias mortos por semana gastava 28% da largura para nao dizer
+   nada. O `gap: 1px` sobre `--line-soft` continua sendo a borda entre celulas —
+   ele nao conta colunas, so pinta o vao, entao segue valendo. */
 .grade {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 1px;
   background: var(--line-soft);
   border: 1px solid var(--line-soft);

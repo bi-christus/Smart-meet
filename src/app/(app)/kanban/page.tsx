@@ -65,6 +65,12 @@ import {
   SERVICO_ROTULO,
 } from "@/lib/links-core";
 import { carregarHistorico } from "@/lib/historico";
+import {
+  MES_LONGO,
+  ehFimDeSemanaISO,
+  proximoDiaUtilISO,
+  rotuloDoDiaISO,
+} from "@/lib/datas";
 import { codigoDe, fraseDeFalha } from "@/lib/erro-ui-core";
 import { auth } from "@/lib/firebase";
 import {
@@ -168,6 +174,35 @@ function plusDays(dateStr: string, n: number): string {
 function fmtShort(d: Date): string {
   const p = (n: number) => String(n).padStart(2, "0");
   return `${p(d.getDate())}/${p(d.getMonth() + 1)}`;
+}
+/**
+ * "13 de setembro" — por extenso, e não 13/09.
+ *
+ * A frase que recusa um sábado é lida uma vez, no meio de um formulário; ali o
+ * número seco obriga quem lê a traduzir o mês de volta para saber de que dia se
+ * está falando. Nos chips do card, onde a data aparece dezenas de vezes, o
+ * curto continua sendo o certo — são leituras diferentes.
+ */
+function diaEMes(iso: string): string {
+  const d = parseDue(iso);
+  return `${d.getDate()} de ${MES_LONGO[d.getMonth()]}`;
+}
+/**
+ * "13 de setembro é um sábado. O prazo mais próximo é segunda-feira, 15 de
+ * setembro."
+ *
+ * Duas orações porque são duas informações: por que está recusado, e o que
+ * fazer. Dizer só "escolha um dia útil" manda a pessoa contar no calendário —
+ * e o `<input type="date">` não sabe desabilitar sábado e domingo, então ela
+ * contaria de novo no clique seguinte.
+ */
+function fraseFimDeSemana(campo: "inicio" | "prazo", iso: string): string {
+  const alvo = campo === "inicio" ? "O início" : "O prazo";
+  const util = proximoDiaUtilISO(iso);
+  return (
+    `${diaEMes(iso)} é um ${rotuloDoDiaISO(iso)}. ` +
+    `${alvo} mais próximo é ${rotuloDoDiaISO(util)}, ${diaEMes(util)}.`
+  );
 }
 function dueInfo(
   due?: string | null,
@@ -1742,12 +1777,34 @@ function CardModal({
   const [requesterSector, setRequesterSector] = useState(
     card?.requesterSector ?? "",
   );
+  /**
+   * Início e prazo já nascem em dia útil.
+   *
+   * Sete dias a partir de uma quarta caem numa quarta, mas a partir de um
+   * sábado caem num sábado — e o formulário abriria cobrando de quem o abriu
+   * uma data que ele mesmo escolheu. O `todayStr()` do início tem o mesmo
+   * problema um dia por semana: quem abre o Kanban no sábado.
+   */
   const [startDate, setStartDate] = useState(
-    card?.startDate ?? (isNew ? todayStr() : ""),
+    card?.startDate ?? (isNew ? proximoDiaUtilISO(todayStr()) : ""),
   );
   const [due, setDue] = useState(
-    card?.due ?? (isNew ? plusDays(todayStr(), 7) : ""),
+    card?.due ?? (isNew ? proximoDiaUtilISO(plusDays(todayStr(), 7)) : ""),
   );
+  /**
+   * As datas que já estavam gravadas quando o modal abriu.
+   *
+   * Congeladas na abertura, e não lidas de `card` a cada render, porque o card
+   * chega de uma assinatura e pode ser reescrito por outra pessoa com o modal
+   * aberto: o que define "herdado" é o que ESTA pessoa encontrou ao abrir, não
+   * o que está no banco agora. `useState` com inicializador e não `useRef` — a
+   * comparação acontece durante o render, e ler `.current` ali é justamente o
+   * que o React proíbe.
+   */
+  const [dataAoAbrir] = useState(() => ({
+    inicio: card?.startDate ?? "",
+    prazo: card?.due ?? "",
+  }));
   /**
    * Demanda pode nascer sem prazo — e isso é um estado, não um esquecimento.
    *
@@ -1810,9 +1867,32 @@ function CardModal({
    * não saía. Agora o campo é levado até os olhos, marcado, e o aviso some
    * sozinho assim que ele é corrigido.
    */
-  const [campoErro, setCampoErro] = useState<null | "titulo" | "prazo">(null);
+  const [campoErro, setCampoErro] = useState<
+    null | "titulo" | "inicio" | "prazo"
+  >(null);
   const tituloRef = useRef<HTMLInputElement>(null);
+  const inicioRef = useRef<HTMLInputElement>(null);
   const prazoRef = useRef<HTMLInputElement>(null);
+
+  /**
+   * Data em fim de semana que ESTA edição não criou — ela já estava gravada.
+   *
+   * Existem demandas antigas com prazo em sábado, e a regra do dia útil chegou
+   * depois delas. Barrar o salvamento aqui cobraria de quem abriu a demanda só
+   * para trocar o responsável a correção de um campo que ele não tocou: a
+   * pessoa não consegue salvar o que veio fazer até resolver um problema que
+   * não é dela. Deixar passar calado, por outro lado, seria reintroduzir
+   * exatamente o que a regra veio impedir. O meio-termo é este: a frase e o
+   * conserto de um clique aparecem sempre, em tom de nota e não de recusa, mas
+   * o botão Salvar continua funcionando. Assim que a pessoa MEXE na data, ela
+   * deixa de ser herdada e passa a valer a regra inteira.
+   */
+  const inicioHerdado =
+    !!startDate &&
+    startDate === dataAoAbrir.inicio &&
+    ehFimDeSemanaISO(startDate);
+  const prazoHerdado =
+    !semPrazo && !!due && due === dataAoAbrir.prazo && ehFimDeSemanaISO(due);
 
   const col = columns.find((c) => c.colId === columnId);
   const doneCount = checklist.filter((i) => i.done).length;
@@ -2243,7 +2323,7 @@ function CardModal({
 
   /** Leva o campo que travou o salvamento até os olhos de quem clicou. */
   function cobrar(
-    campo: "titulo" | "prazo",
+    campo: "titulo" | "inicio" | "prazo",
     mensagem: string,
     ref: { current: HTMLInputElement | null },
   ) {
@@ -2258,10 +2338,27 @@ function CardModal({
   }
 
   /** Some com a cobrança assim que o campo cobrado é preenchido. */
-  function corrigiu(campo: "titulo" | "prazo") {
+  function corrigiu(campo: "titulo" | "inicio" | "prazo") {
     if (campoErro !== campo) return;
     setCampoErro(null);
     setErr(null);
+  }
+
+  /**
+   * Cobra o dia útil ao SAIR do campo — marcando, sem puxar o foco de volta.
+   *
+   * A frase é a mesma do Salvar, e é de propósito: quem já leu a recusa uma vez
+   * não deveria reencontrá-la escrita de outro jeito e ter de decidir se são o
+   * mesmo problema. O que muda é só o gesto — aqui não se rola nem se refoca
+   * como em `cobrar()`, porque devolver o foco a quem acabou de tabular para o
+   * campo seguinte é armadilha, e a frase já nasce embaixo do campo, onde os
+   * olhos acabaram de estar.
+   */
+  function saiuDaData(campo: "inicio" | "prazo") {
+    const valor = campo === "inicio" ? startDate : due;
+    const herdado = campo === "inicio" ? inicioHerdado : prazoHerdado;
+    if (!valor || herdado || !ehFimDeSemanaISO(valor)) return;
+    setCampoErro(campo);
   }
 
   async function submit() {
@@ -2270,12 +2367,26 @@ function CardModal({
       cobrar("titulo", "Informe um título.", tituloRef);
       return;
     }
+    // Na ordem em que os campos aparecem na tela: quem for cobrado de dois de
+    // uma vez resolve o de cima primeiro e não vê a página saltar para trás.
+    //
+    // O rodapé leva a linha curta e o campo leva a frase inteira — a mesma
+    // divisão que o título já usa. Repetir "13 de setembro é um sábado" duas
+    // vezes na mesma tela faria a pessoa procurar dois problemas onde há um.
+    if (startDate && !inicioHerdado && ehFimDeSemanaISO(startDate)) {
+      cobrar("inicio", "Escolha um dia útil para o início.", inicioRef);
+      return;
+    }
     if (!semPrazo && !due) {
       cobrar(
         "prazo",
         "Informe o prazo de entrega ou marque “sem prazo definido”.",
         prazoRef,
       );
+      return;
+    }
+    if (!semPrazo && due && !prazoHerdado && ehFimDeSemanaISO(due)) {
+      cobrar("prazo", "Escolha um dia útil para o prazo de entrega.", prazoRef);
       return;
     }
     setCampoErro(null);
@@ -2531,11 +2642,41 @@ function CardModal({
         <div className={styles.field}>
           <label className={styles.label}>Início</label>
           <input
-            className={styles.inp}
+            ref={inicioRef}
+            className={`${styles.inp} ${campoErro === "inicio" ? styles.inpErro : ""}`}
             type="date"
             value={startDate ?? ""}
-            onChange={(e) => setStartDate(e.target.value)}
+            onChange={(e) => {
+              setStartDate(e.target.value);
+              if (!e.target.value || !ehFimDeSemanaISO(e.target.value)) {
+                corrigiu("inicio");
+              }
+            }}
+            onBlur={() => saiuDaData("inicio")}
+            aria-invalid={campoErro === "inicio"}
+            aria-label="Início"
           />
+          {(campoErro === "inicio" || inicioHerdado) &&
+            !!startDate &&
+            ehFimDeSemanaISO(startDate) && (
+              <div
+                className={
+                  inicioHerdado ? styles.avisoDataNota : styles.avisoData
+                }
+              >
+                {fraseFimDeSemana("inicio", startDate)}{" "}
+                <button
+                  type="button"
+                  className={styles.avisoAcao}
+                  onClick={() => {
+                    setStartDate(proximoDiaUtilISO(startDate));
+                    corrigiu("inicio");
+                  }}
+                >
+                  Usar {diaEMes(proximoDiaUtilISO(startDate))}
+                </button>
+              </div>
+            )}
         </div>
         <div className={styles.field}>
           {/* `div` e não `label`: o `label` da opção mora aqui dentro, e um
@@ -2552,7 +2693,13 @@ function CardModal({
                   if (marcou) corrigiu("prazo");
                   // Desmarcar devolve uma data usável em vez de campo vazio:
                   // quem desmarca quer prazo, não quer procurar o calendário.
-                  setDue(marcou ? "" : plusDays(startDate || todayStr(), 7));
+                  // E usável inclui ser dia útil — senão o campo voltaria já
+                  // recusado pela regra que ele mesmo acabou de reativar.
+                  setDue(
+                    marcou
+                      ? ""
+                      : proximoDiaUtilISO(plusDays(startDate || todayStr(), 7)),
+                  );
                 }}
               />
               sem prazo definido
@@ -2570,12 +2717,37 @@ function CardModal({
               value={due ?? ""}
               onChange={(e) => {
                 setDue(e.target.value);
-                if (e.target.value) corrigiu("prazo");
+                if (e.target.value && !ehFimDeSemanaISO(e.target.value)) {
+                  corrigiu("prazo");
+                }
               }}
+              onBlur={() => saiuDaData("prazo")}
               aria-invalid={campoErro === "prazo"}
               aria-label="Prazo de entrega"
             />
           )}
+          {!semPrazo &&
+            (campoErro === "prazo" || prazoHerdado) &&
+            !!due &&
+            ehFimDeSemanaISO(due) && (
+              <div
+                className={
+                  prazoHerdado ? styles.avisoDataNota : styles.avisoData
+                }
+              >
+                {fraseFimDeSemana("prazo", due)}{" "}
+                <button
+                  type="button"
+                  className={styles.avisoAcao}
+                  onClick={() => {
+                    setDue(proximoDiaUtilISO(due));
+                    corrigiu("prazo");
+                  }}
+                >
+                  Usar {diaEMes(proximoDiaUtilISO(due))}
+                </button>
+              </div>
+            )}
         </div>
       </div>
 

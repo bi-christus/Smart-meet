@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { HttpError, adminDb, requireUser } from "@/lib/server/drive-server";
 import { DEFAULT_COLUMNS } from "@/lib/kanban-columns";
-import { startOfDay } from "@/lib/datas";
+import { proximoDiaUtilISO, startOfDay } from "@/lib/datas";
 import { dataBR } from "@/lib/historico-core";
 import {
   cardDescriptionFor,
@@ -187,6 +187,23 @@ async function executar(req: Request, corpo: Corpo) {
       const occRef = db.collection("ocorrencias").doc(`${id}__${iso}`);
       const agora = new Date();
       const agoraMs = agora.getTime();
+      /**
+       * O prazo do card, que pode não ser a data prevista da recorrência.
+       *
+       * Manutenção mensal cai em sábado com frequência, e ninguém na Rede
+       * trabalha no fim de semana: o card nasceria com prazo num dia em que não
+       * há quem o cumpra. Empurra para FRENTE — puxar para a sexta encurtaria o
+       * intervalo combinado e poderia fazer a manutenção nascer já vencida.
+       *
+       * Só o `due` se desloca. `iso` continua sendo a data prevista em tudo o
+       * que identifica a ocorrência — o id `<regra>__<data>`, o campo `date` da
+       * ocorrência, o `recDate` do card e o título. Essa trinca é a chave de
+       * deduplicação que garante um card por data prevista: se ela andasse
+       * junto do prazo, a mesma manutenção de sábado poderia nascer duas vezes
+       * (uma pela data prevista, outra pela segunda) e o cron perderia a
+       * idempotência que a transação existe para dar.
+       */
+      const dueUtil = proximoDiaUtilISO(iso);
 
       try {
         await db.runTransaction(async (tx) => {
@@ -201,8 +218,11 @@ async function executar(req: Request, corpo: Corpo) {
             assignee: rec.owner || null,
             requester: null,
             requesterSector: null,
+            // `startDate` nasce nulo desde sempre: a manutenção não tem data de
+            // começo combinada, tem data de vencer. Nulo não cai em sábado, e
+            // por isso a regra do dia útil não tem o que fazer aqui.
             startDate: null,
-            due: iso,
+            due: dueUtil,
             priority: "media",
             tags: [],
             checklist: (rec.acts ?? []).map((text) => ({
@@ -236,7 +256,10 @@ async function executar(req: Request, corpo: Corpo) {
               ...(nomeDono
                 ? [{ campo: "responsavel", de: null, para: nomeDono }]
                 : []),
-              { campo: "prazo", de: null, para: dataBR(iso) },
+              // O prazo REAL do card, não a data prevista: histórico que diz
+              // 12/09 num card que mostra 14/09 faz quem abrir procurar uma
+              // edição que nunca houve.
+              { campo: "prazo", de: null, para: dataBR(dueUtil) },
             ],
           });
           tx.create(occRef, {
