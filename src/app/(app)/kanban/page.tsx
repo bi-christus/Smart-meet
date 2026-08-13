@@ -311,10 +311,27 @@ export default function KanbanPage() {
   const [dragColId, setDragColId] = useState<string | null>(null);
   const [overCol, setOverCol] = useState<string | null>(null);
   const seededRef = useRef<Set<string>>(new Set());
+  const boardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (sectors.length && !sectors.includes(sector)) setSector(sectors[0]);
   }, [sectors, sector]);
+
+  /**
+   * O que sobrou da chave por setor que o quadro tinha.
+   *
+   * Ela remontava a árvore inteira a cada troca de setor só para
+   * reposicionar a rolagem — e, de brinde, replayava a entrada escalonada das
+   * sete colunas, 660ms toda vez. É o mesmo quadro no mesmo lugar com outro
+   * conteúdo; remontar era resposta grande demais para a pergunta.
+   *
+   * A rolagem continua voltando ao começo, agora dita em uma linha: o setor
+   * novo pode ter menos colunas, e herdar 800px de deslocamento deixaria a
+   * pessoa olhando para o vão à direita do quadro.
+   */
+  useEffect(() => {
+    if (boardRef.current) boardRef.current.scrollLeft = 0;
+  }, [sector]);
 
   useEffect(() => {
     if (!sector) {
@@ -690,7 +707,7 @@ export default function KanbanPage() {
         </button>
       </div>
 
-      <div className={styles.board} key={sector}>
+      <div className={styles.board} ref={boardRef}>
         {displayCols.map((col) => {
           const colCards = filtered.filter((c) => c.columnId === col.colId);
           return (

@@ -1,0 +1,45 @@
+/* A saída do diálogo — o que até agora simplesmente não existia: o modal
+   desaparecia no mesmo quadro, sem nada dizer que ele saiu.
+
+   A SAÍDA É MAIS CURTA QUE A ENTRADA (120ms contra 180ms) de propósito. O que
+   entra pede atenção; o que sai já não tem nada a dizer, e prender a pessoa
+   olhando um elemento se despedir é cobrar tempo por nada.
+
+   A CLASSE VEM DOBRADA (`.saindo.saindo`) porque a entrada mora no CSS de quem
+   chama — `kanban.module.css`, `recorrencias.module.css`… — e as duas regras
+   seriam de mesma especificidade, com a ordem no bundle decidindo quem vence.
+   Repetir a classe leva a especificidade a (0,2,0) e resolve isso sem
+   `!important`, que arrastaria junto o bloco de movimento reduzido. */
+
+@keyframes modalSai {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+}
+
+@keyframes overlaySai {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.saindo.saindo {
+  animation: modalSai 120ms cubic-bezier(0.4, 0, 1, 1) forwards;
+  /* Nos 120ms em que ele ainda está no DOM, não recebe mais clique: o diálogo
+     já foi fechado, e um botão que responde depois disso é um botão que a
+     pessoa não sabe se apertou. */
+  pointer-events: none;
+}
+
+.overlaySaindo.overlaySaindo {
+  animation: overlaySai 120ms linear forwards;
+  pointer-events: none;
+}

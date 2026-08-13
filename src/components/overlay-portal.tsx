@@ -19,9 +19,12 @@ import type { ReactNode } from "react";
  * cabeçalho quando a página rolasse. O contexto de empilhamento está certo; o
  * que estava errado era o diálogo morar dentro dele.
  *
- * De quebra, o portal imuniza contra ancestral com `transform`: nos 300ms da
- * animação de troca de aba, `.tabEnter` tem transform e vira bloco de
- * contenção — e ali dentro `position: fixed` deixa de ser relativo à janela.
+ * NÃO APAGUE ISTO por causa do que vem agora. O `.tabEnter` já teve um
+ * `transform`, e durante os 300ms da troca de aba ele virava bloco de contenção
+ * — ali dentro, `position: fixed` deixava de ser relativo à janela. Esse motivo
+ * morreu junto com o transform (a troca de aba hoje é só opacidade, 120ms). Os
+ * DOIS motivos de cima continuam de pé, e sozinhos já bastam: sem o portal, o
+ * modal volta a nascer por baixo do cabeçalho e do mini player.
  */
 export function OverlayPortal({ children }: { children: ReactNode }) {
   // No prerender do Next não existe `document`. Na prática este retorno nunca

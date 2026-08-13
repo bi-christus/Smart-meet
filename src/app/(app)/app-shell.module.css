@@ -304,21 +304,27 @@
 
 /* ---------- passagem de abas ---------- */
 
+/* Só opacidade, e 120ms.
+
+   Eram 300ms com `translateY(10px)`, numa navegação feita dezenas de vezes por
+   dia entre sete abas (oito para quem é admin). O deslocamento era a parte
+   errada: a página não veio de lugar nenhum, ela trocou de conteúdo — e slide
+   direcional em troca de aba é movimento afirmando algo que não aconteceu.
+   A topbar continua FORA disto, como sempre esteve: ela é a âncora espacial da
+   navegação, e âncora que se mexe deixa de ancorar. */
 @keyframes tabEnter {
   from {
     opacity: 0;
-    transform: translateY(10px);
   }
   to {
     opacity: 1;
-    transform: none;
   }
 }
 
-/* backwards, não forwards: o transform some ao terminar, senão viraria bloco
-   de contenção e desalinharia os modais (position: fixed) das páginas */
+/* `backwards` fica: o primeiro quadro precisa valer antes de a animação
+   começar, senão a página pisca em opacidade cheia e só então esmaece. */
 .tabEnter {
-  animation: tabEnter 300ms cubic-bezier(0.4, 0, 0.2, 1) backwards;
+  animation: tabEnter 120ms cubic-bezier(0.4, 0, 0.2, 1) backwards;
 }
 
 @media (prefers-reduced-motion: reduce) {
