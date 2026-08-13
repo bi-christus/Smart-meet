@@ -1,0 +1,120 @@
+/* Um desenho, dois estados. O `<ErrorState>` monta em cima do `<EmptyState>`
+   porque a anatomia é a mesma — ícone, título, explicação, ação — e o que muda
+   entre "não há nada" e "não deu para saber" é a cor do ícone e a frase, não a
+   forma. Dois CSS separados seriam quarenta linhas iguais que só divergem com
+   o tempo.
+
+   O desenho vem de `recorrencias.module.css` (`.vazioGrande` e satélites), que
+   era o único vazio do app com anatomia completa. Os outros oito eram uma linha
+   de texto cinza no meio da tela. */
+
+.painel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 70px 40px;
+}
+
+/* Coluna de Kanban tem ~300px de largura: 70px de respiro ali empurram o texto
+   para fora do enquadramento. O compacto existe para caber dentro de painel, e
+   não para ser uma segunda opinião sobre o desenho. */
+.compacto {
+  padding: 26px 14px;
+}
+
+.icone {
+  width: 66px;
+  height: 66px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 18px;
+  background: var(--s2);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  color: var(--tx-3);
+}
+.compacto .icone {
+  width: 42px;
+  height: 42px;
+  margin-bottom: 11px;
+  border-radius: 12px;
+}
+
+.titulo {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--tx);
+  margin-bottom: 6px;
+}
+.compacto .titulo {
+  font-size: 13px;
+  margin-bottom: 3px;
+}
+
+.descricao {
+  max-width: 440px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--tx-3);
+}
+.compacto .descricao {
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.descricao b {
+  color: var(--tx-2);
+}
+
+.acao {
+  margin-top: 18px;
+}
+.compacto .acao {
+  margin-top: 11px;
+}
+
+/* O botão é estilizado por descendência, de propósito: quem chama passa o
+   `<button>` com o próprio `onClick` e não precisa saber o nome de classe
+   nenhum — nem repetir a aparência do botão do app em oito lugares. */
+.acao button,
+.acao a {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--s2);
+  color: var(--tx-2);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.18s, border-color 0.18s, background 0.18s;
+}
+.acao button:hover,
+.acao a:hover {
+  color: var(--tx);
+  border-color: var(--brand-line);
+}
+.compacto .acao button,
+.compacto .acao a {
+  height: 28px;
+  padding: 0 11px;
+  font-size: 11.5px;
+}
+
+/* ---------- o tom de erro ---------- */
+
+/* Só o ícone muda de cor. Pintar o painel inteiro de vermelho trataria "a
+   leitura falhou" como acidente grave, quando na maioria das vezes é a rede
+   oscilando — e um painel alarmante que aparece toda hora deixa de ser lido. */
+.erro .icone {
+  color: var(--danger-tx);
+  background: var(--danger-bg);
+  border-color: color-mix(in srgb, var(--danger) 38%, transparent);
+}
