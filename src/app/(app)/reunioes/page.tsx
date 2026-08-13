@@ -19,6 +19,10 @@ import {
 } from "@/lib/meetings";
 import { Icon } from "@/components/icons";
 import { OverlayPortal } from "@/components/overlay-portal";
+import { EmptyState } from "@/components/empty-state";
+import { ErrorState } from "@/components/error-state";
+import { SkeletonRow } from "@/components/skeleton";
+import { useAsyncData } from "@/lib/use-async-data";
 import { syncDrive } from "@/lib/drive-upload";
 import { useRecording } from "@/lib/audio/recording-context";
 import { uploadManager } from "@/lib/audio/uploader";
@@ -29,6 +33,14 @@ const MES = [
   "jan", "fev", "mar", "abr", "mai", "jun",
   "jul", "ago", "set", "out", "nov", "dez",
 ];
+
+/**
+ * Listas vazias constantes, para os cálculos rodarem antes de os dados
+ * chegarem. Fora do componente porque `?? []` no corpo cria um array novo a
+ * cada render, e os `useMemo` que dependem dele recalculariam sempre.
+ */
+const SEM_MEETINGS: Meeting[] = [];
+const SEM_USERS: UserProfile[] = [];
 
 function todayStr(): string {
   const d = new Date();
@@ -117,8 +129,25 @@ export default function ReunioesPage() {
   const [sector, setSector] = useState("");
   const [mode, setMode] = useState<SendMethod>("file");
   const [output, setOutput] = useState<OutputKind[]>(["resumo"]);
-  const [meetings, setMeetings] = useState<Meeting[]>([]);
-  const [users, setUsers] = useState<UserProfile[]>([]);
+  /**
+   * A esteira e o acervo vêm da MESMA assinatura.
+   *
+   * `queue` é um `useMemo` sobre `meetings`, filtrando quem está aguardando ou
+   * processando — não é uma segunda fonte. Logo, um estado de carregamento
+   * governa as duas superfícies: elas entram no esqueleto juntas e saem juntas.
+   * Tratá-las como independentes seria inventar uma espera que não existe.
+   */
+  const fMeetings = useAsyncData<Meeting>(sectors.join("|"), (onData, onErro) =>
+    subscribeMeetings(sectors, onData, onErro),
+  );
+  const fUsers = useAsyncData<UserProfile>("todos", (onData, onErro) =>
+    subscribeUsers(onData, onErro),
+  );
+  const meetings = fMeetings.data ?? SEM_MEETINGS;
+  const users = fUsers.data ?? SEM_USERS;
+  /** Vale para a esteira e para o acervo, pela mesma razão. */
+  const carregando = fMeetings.data === undefined && !fMeetings.erro;
+
   const [filter, setFilter] = useState("todas");
   const [view, setView] = useState<Meeting | null>(null);
   const [confirm, setConfirm] = useState<Confirm>(null);
@@ -150,13 +179,6 @@ export default function ReunioesPage() {
     if (sectors.length && !sectors.includes(sector)) setSector(sectors[0]);
   }, [sectors, sector]);
 
-  useEffect(() => {
-    const u = subscribeMeetings(sectors, setMeetings, (e) =>
-      console.error("Erro ao carregar reuniões:", e),
-    );
-    return () => u();
-  }, [sectors]);
-
   // Reflete o trabalho do Cowork: pergunta ao servidor se algum áudio já virou
   // "Transcrito". Dispara ao abrir a aba, ao focá-la e a cada 45s — mas só
   // enquanto houver reunião aguardando com áudio no Drive. O snapshot do
@@ -183,11 +205,6 @@ export default function ReunioesPage() {
       clearInterval(timer);
     };
   }, [pendingCount]);
-
-  useEffect(() => {
-    const u = subscribeUsers(setUsers, () => {});
-    return () => u();
-  }, []);
 
   // A gravação encerrou (aqui ou pelo mini player em outra aba): abre o modal
   // para completar os dados. O aviso de fechar a aba agora vive no shell.
@@ -595,32 +612,49 @@ export default function ReunioesPage() {
           <div className={styles.queueHead}>
             <div className={styles.queueTitle}>
               <b>Na esteira agora</b>
-              <span className={styles.queueCount}>{queue.length}</span>
-            </div>
-            <div
-              className={`${styles.queueStatus} ${aguard ? styles.qsWarn : styles.qsOk}`}
-            >
-              <Icon name={aguard ? "clock" : "check"} size={15} />
-              {aguard ? (
-                <span>
-                  <b>{aguard} áudio(s)</b> aguardando · {proc} processando
-                </span>
-              ) : proc ? (
-                <span>
-                  <b>{proc}</b> em processamento agora
-                </span>
-              ) : (
-                <span>Esteira em dia — tudo processado.</span>
+              {/* Some enquanto não se sabe: "0" e "Esteira em dia" são
+                  afirmações, e afirmar que está tudo processado antes de
+                  perguntar é o pior jeito de errar nesta tela — quem acabou de
+                  enviar um áudio leria que ele não existe. */}
+              {!carregando && (
+                <span className={styles.queueCount}>{queue.length}</span>
               )}
             </div>
+            {!carregando && (
+              <div
+                className={`${styles.queueStatus} ${aguard ? styles.qsWarn : styles.qsOk}`}
+              >
+                <Icon name={aguard ? "clock" : "check"} size={15} />
+                {aguard ? (
+                  <span>
+                    <b>{aguard} áudio(s)</b> aguardando · {proc} processando
+                  </span>
+                ) : proc ? (
+                  <span>
+                    <b>{proc}</b> em processamento agora
+                  </span>
+                ) : (
+                  <span>Esteira em dia — tudo processado.</span>
+                )}
+              </div>
+            )}
           </div>
           <div className={styles.queueList}>
-            {queue.length === 0 ? (
-              <div className={styles.queueEmpty}>
-                Nada na esteira.
-                <br />
-                Envie um áudio para começar.
-              </div>
+            {fMeetings.erro ? (
+              <ErrorState
+                error={fMeetings.erro}
+                size="compact"
+                onRetry={fMeetings.tentarDeNovo}
+              />
+            ) : carregando ? (
+              <SkeletonRow rows={2} texto="Carregando a esteira…" />
+            ) : queue.length === 0 ? (
+              <EmptyState
+                size="compact"
+                icon="check"
+                title="Nada na esteira"
+                description="Envie um áudio acima para começar."
+              />
             ) : (
               queue.map((m) => (
                 <div
@@ -689,11 +723,29 @@ export default function ReunioesPage() {
           </div>
         </div>
 
-        {acervo.length === 0 ? (
-          <div className={styles.empty}>
-            Nenhuma reunião ainda. Envie um áudio acima para registrar a
-            primeira.
-          </div>
+        {/* Mesma fonte da esteira, então o mesmo `carregando`: as duas saem do
+            esqueleto no mesmo instante, porque é uma assinatura só. */}
+        {fMeetings.erro ? (
+          <ErrorState
+            error={fMeetings.erro}
+            onRetry={fMeetings.tentarDeNovo}
+          />
+        ) : carregando ? (
+          <SkeletonRow rows={4} texto="Carregando o acervo de reuniões…" />
+        ) : acervo.length === 0 ? (
+          <EmptyState
+            icon="reunioes"
+            title={
+              filter === "todas"
+                ? "Nenhuma reunião ainda"
+                : `Nenhuma reunião em ${filter}`
+            }
+            description={
+              filter === "todas"
+                ? "Envie um áudio acima para registrar a primeira. O Cowork transcreve e a ata volta para cá."
+                : "Este setor ainda não tem reunião registrada. Troque o filtro acima para ver as dos outros."
+            }
+          />
         ) : (
           <div className={styles.list}>
             {acervo.map((m) => (

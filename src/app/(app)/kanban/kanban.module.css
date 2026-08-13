@@ -266,6 +266,42 @@
   flex-direction: column;
   gap: 8px;
 }
+/* Aviso das listas que NÃO seguram o quadro.
+
+   Pessoas, solicitantes e setores solicitantes só enfeitam o card com nome e
+   cor. Se falharem, esperar por elas seria segurar trezentas demandas por causa
+   de um rótulo — mas engolir a falha era o que fazia o card mostrar e-mail no
+   lugar do nome sem ninguém entender por quê. Faixa discreta, no fluxo, acima
+   do quadro: informa sem interromper. */
+.avisoAux {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 22px 8px;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--warn) 34%, transparent);
+  background: var(--warn-bg);
+  border-radius: 9px;
+  color: var(--warn-tx);
+  font-size: 12px;
+}
+.avisoAux button {
+  margin-left: auto;
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
+  background: none;
+  border-radius: 7px;
+  padding: 4px 9px;
+  color: inherit;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.18s;
+}
+.avisoAux button:hover {
+  background: color-mix(in srgb, var(--warn) 16%, transparent);
+}
+
 .colempty {
   margin-top: 4px;
   padding: 20px 10px;
