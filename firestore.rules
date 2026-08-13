@@ -36,6 +36,13 @@ rules_version = '2';
 //    fecham o que dá: autor = o do token, data = a do servidor, e nada de
 //    update. O bloco tem a nota completa sobre até onde isso vale como prova.
 //
+// O QUE MUDOU (2026-08-13):
+//  - /users passa a ser LEGÍVEL por qualquer usuário ativo, e não só o próprio
+//    doc e o do admin. Sete telas assinam a coleção INTEIRA para traduzir
+//    e-mail em nome, e consulta de coleção é decidida antes de existir
+//    documento: a regra antiga negava a consulta toda, e o operador via
+//    "fulano@..." onde devia ler gente. O bloco abaixo diz o que isso expõe.
+//
 // Nota sobre consultas: as telas sempre filtram por setor (`==` ou `in`), e o
 // admin consulta DEFAULT_SECTORS. Por isso o escopo por setor na leitura não
 // quebra nenhuma query existente.
@@ -105,8 +112,38 @@ service cloud.firestore {
     }
 
     // ---- usuários ----
+    // A LEITURA é da coleção inteira, não do próprio doc, e isso é escolha.
+    // `subscribeUsers` (src/lib/users.ts) assina /users em sete telas — Kanban,
+    // Dashboard, Cronograma, Recorrências, Reuniões e os dois relatórios — só
+    // para virar e-mail em nome e cor. Consulta de coleção no Firestore é
+    // decidida sem conhecer documento nenhum: regra que depende do id nega a
+    // consulta inteira, não os documentos de fora. Era isso, e não um bug de
+    // tela, que fazia todo não-admin ver e-mail cru no lugar de gente.
+    //
+    // O que fica aberto, dito na cara: qualquer usuário ativo enxerga `role`,
+    // `active`, `sectors`, `uid` e `lastLogin` de todo mundo. Vale aqui porque
+    // isto é ferramenta interna e esses campos SÃO o organograma da equipe —
+    // quem responde por qual setor o app já mostra no responsável de cada card
+    // e no filtro do quadro. Não se expõe nada que a tela não exponha.
+    //
+    // A alternativa descartada foi uma coleção espelho /diretorio, só com nome
+    // e cor: duas fontes de verdade para o mesmo nome, sincronização a manter
+    // em toda edição de usuário e um backfill de todos os já cadastrados —
+    // manutenção permanente para esconder um dado que a própria tela mostra.
+    //
+    // O segundo braço é para quem NÃO é autorizado: sem doc, ou com
+    // `active: false`, `isAuthorized()` é falso, e é justamente esse doc que o
+    // login precisa ler para responder "você não tem acesso" em vez de estourar
+    // erro de permissão (ver `ensureUserProfile`). Não há recursão: `get()` e
+    // `exists()` dentro das regras são leitura privilegiada, não passam por
+    // elas de novo.
+    //
+    // Ele usa `souEu` e não `userId == userEmail()` porque o doc id é minúsculo
+    // e o e-mail do token vem do Google na caixa que ele quiser. Comparar cru
+    // negaria a leitura justo para quem mais depende dela: quem ainda não tem
+    // acesso, e cujo login precisa ler o próprio doc para descobrir isso.
     match /users/{userId} {
-      allow read: if isSignedIn() && (userId == userEmail() || isAdmin());
+      allow read: if isAuthorized() || (isSignedIn() && souEu(userId));
 
       // Super admin cria o próprio doc (bootstrap); admin cria qualquer um.
       allow create: if isAdmin()
