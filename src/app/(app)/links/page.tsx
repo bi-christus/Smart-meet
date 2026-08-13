@@ -425,8 +425,13 @@ function LinkCard({
         </div>
 
         {/* Alvo separado e pequeno, ao lado do título a que ele se refere. O
-            Kanban abre o card pelo par setor+id, como o Cronograma e as
-            Recorrências já fazem (`kanban/page.tsx:447`). */}
+            Kanban abre o card pelo par `?setor=&card=` na URL, como o
+            Cronograma e as Recorrências já fazem.
+
+            Sem número de linha de propósito: a referência anterior apontava
+            para uma linha que já tinha se mexido, e comentário que aponta para
+            o lugar errado é pior do que comentário nenhum — manda o próximo
+            leitor procurar onde não está. O nome do parâmetro não migra. */}
         <Link
           className={styles.irDemanda}
           href={`/kanban?setor=${encodeURIComponent(card.sector)}&card=${card.id}`}
