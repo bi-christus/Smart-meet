@@ -42,6 +42,19 @@ rules_version = '2';
 //    e-mail em nome, e consulta de coleção é decidida antes de existir
 //    documento: a regra antiga negava a consulta toda, e o operador via
 //    "fulano@..." onde devia ler gente. O bloco abaixo diz o que isso expõe.
+//  - As funções de autorização foram reescritas para LER O CADASTRO UMA VEZ.
+//    Antes, uma exclusão de demanda custava 14 acessos a documento para um
+//    gestor e 8 para um admin, contra um teto de 20 por lote — e por isso
+//    apagar demanda só funcionava para o super admin, o único que é
+//    reconhecido sem ler documento nenhum. O orçamento novo está comentado em
+//    cima do bloco de funções, e é o número a conferir antes de acrescentar
+//    qualquer `get()` numa regra.
+//  - /cards ganhou a LIXEIRA (`deletedAt` / `deletedBy`). Excluir demanda
+//    passou a ser um update, e update de card era liberado para qualquer
+//    usuário ativo: sem a regra nova, um operador esvaziaria o quadro inteiro.
+//    Mandar para a lixeira e restaurar exigem gestor ou admin — a mesma
+//    autoridade que já podia apagar de vez. O histórico ganhou os verbos
+//    `excluida` e `restaurada` para que a ida e a volta deixem rastro.
 //
 // Nota sobre consultas: as telas sempre filtram por setor (`==` ou `in`), e o
 // admin consulta DEFAULT_SECTORS. Por isso o escopo por setor na leitura não
@@ -64,35 +77,111 @@ service cloud.firestore {
     function userPath() {
       return /databases/$(database)/documents/users/$(userEmail());
     }
-    function hasProfile() {
+    // ================= ORÇAMENTO DE ACESSOS A DOCUMENTO =================
+    // O número que a próxima pessoa precisa para não estourar de novo.
+    //
+    // As regras têm teto de 10 acessos a documento por operação e 20 por lote
+    // ou transação. Estourar qualquer um dos dois devolve "sem permissão" para
+    // quem TEM permissão — o erro não diz que foi o teto, ele diz que você não
+    // podia. Custo de cada decisão, por papel, depois desta reescrita:
+    //
+    //   super admin ................. 0  (só lê o token; o || corta antes)
+    //   usuário sem doc em /users ... 1  (o exists() nega, o get() nem acontece)
+    //   admin / gestor / operador ... 2  (1 exists + 1 get, sempre)
+    //   regra que olha DOIS setores . 4  (update de /recorrencias e /meetings)
+    //   create em /historico ........ 4  (2 + exists/get do card pai)
+    //
+    // Antes eram 6 a 8 para ler um card e 14 para um gestor apagar um. Com o
+    // teto de 20 por lote, isso bastava para o antigo `deleteCardById` — um
+    // lote de até 400 deleções — negar a exclusão a todo mundo que não fosse o
+    // super admin, o único que não lê documento nenhum para ser reconhecido.
+    //
+    // O desperdício era chamada repetida, não cálculo caro: `isGestorOrAdmin()`
+    // chamava `isAdmin()`, `canSeeSector()` chamava `isAdmin()` DE NOVO, e
+    // `isActive()`, `myRole()` e `mySectors()` liam o mesmo documento uma vez
+    // cada. Função chamada duas vezes é avaliada duas vezes. A documentação
+    // promete cache com "some document access calls MAY be cached", que não é
+    // linguagem de garantia — então a economia daqui vem de CHAMAR MENOS, e o
+    // projeto é para o pior caso, sem cache nenhum.
+    //
+    // A SAÍDA DEFINITIVA é custom claims: `role` e `sectors` assinados dentro
+    // do JWT derrubam este custo a ZERO acesso, para todo papel. Exige uma rota
+    // de servidor no login (Admin SDK, `setCustomUserClaims`) e um jeito de
+    // forçar a renovação do token quando o admin muda o papel de alguém, senão
+    // a permissão velha vale até o token expirar. Fora do escopo deste PR, mas
+    // é para lá que isto vai.
+    // =====================================================================
+
+    // O `exists()` continua aqui de propósito — ele É o segundo acesso.
+    //
+    // Trocar `exists() + get()` por um `get()` só depende de saber o que o
+    // `get()` devolve para documento que não existe: se for `null`, bastava
+    // testar `!= null`; se for erro de avaliação, some a diferença entre "não
+    // pode" e "quebrou". Em quase toda regra dá no mesmo, porque as duas
+    // respostas negam. Só NÃO dá no mesmo em um lugar: a leitura do próprio doc
+    // em /users, que é exatamente o que o login de quem AINDA NÃO TEM acesso
+    // precisa fazer para receber "você não tem acesso" em vez de um erro de
+    // permissão (ver `ensureUserProfile`). Lá a regra é `isAuthorized() || (é o
+    // meu doc)`, e um erro no primeiro braço pode derrubar o segundo junto.
+    //
+    // Sem emulador não dá para verificar qual dos dois é (ele é um JAR e não há
+    // Java neste ambiente — AGENTS.md §6), e o preço de errar é o login de todo
+    // usuário novo. Um acesso a mais é mais barato que essa aposta.
+    function temPerfil() {
       return isSignedIn() && exists(userPath());
     }
-    function profile() {
-      return get(userPath()).data;
+
+    // `papeis` vazio significa "qualquer papel serve": `isAuthorized()` nunca
+    // olhou o papel, e um cadastro com o papel escrito errado não pode perder
+    // por causa desta reescrita o acesso que tem hoje.
+    //
+    // `.get(campo, padrão)` em vez de `p.active`: ler chave ausente é erro de
+    // avaliação, e erro dentro de um `||` é o tipo de coisa que ninguém prevê.
+    // O padrão explícito nega, que é a resposta certa para cadastro incompleto.
+    function perfilOk(papeis, exigeSetor, s) {
+      // O `let` é o que garante UMA leitura: sem ele, cada pergunta sobre o
+      // cadastro (ativo? papel? setores?) seria um `get()` novo — foi assim que
+      // o custo de uma exclusão chegou a 14.
+      let p = get(userPath()).data;
+      let papel = p.get('role', '');
+      return p.get('active', false) == true
+             && (papeis.size() == 0 || papel in papeis)
+             && (!exigeSetor
+                 || papel == 'admin'
+                 || (s != '' && s in p.get('sectors', [])));
     }
-    function isActive() {
-      return hasProfile() && profile().active == true;
-    }
-    function myRole() {
-      return hasProfile() ? profile().role : 'none';
-    }
+
+    // As perguntas de sempre, agora com UMA leitura do cadastro cada. O
+    // `isSuperAdmin()` vem primeiro em todas porque ele responde sem ler
+    // documento nenhum — é o bootstrap, e o único que funciona sem doc.
     function isAdmin() {
-      return isSuperAdmin() || (isActive() && myRole() == 'admin');
+      return isSuperAdmin() || (temPerfil() && perfilOk(['admin'], false, ''));
     }
     function isGestorOrAdmin() {
-      return isAdmin() || (isActive() && myRole() == 'gestor');
+      return isSuperAdmin()
+             || (temPerfil() && perfilOk(['admin', 'gestor'], false, ''));
     }
     // Autorizado a usar o sistema.
     function isAuthorized() {
-      return isSuperAdmin() || isActive();
+      return isSuperAdmin() || (temPerfil() && perfilOk([], false, ''));
+    }
+    // Sem o atalho do super admin, de propósito: é a regra de "o dono do doc
+    // mexe no próprio doc", e o super admin sem cadastro não tem doc para mexer.
+    function isActive() {
+      return temPerfil() && perfilOk([], false, '');
     }
 
-    // Setores do usuário. O admin não depende disto — enxerga tudo.
-    function mySectors() {
-      return hasProfile() ? profile().get('sectors', []) : [];
+    // Autorização E setor na MESMA leitura. Antes eram duas perguntas
+    // (`isAuthorized() && canSeeSector(s)`), e cada uma pagava a sua ida ao
+    // banco; o admin ainda pagava a terceira, porque `canSeeSector` perguntava
+    // "é admin?" outra vez. O admin enxerga todo setor — é o que o `papel ==
+    // 'admin'` dentro de `perfilOk` preserva.
+    function podeNoSetor(s) {
+      return isSuperAdmin() || (temPerfil() && perfilOk([], true, s));
     }
-    function canSeeSector(s) {
-      return isAdmin() || (s != '' && s in mySectors());
+    function gestorNoSetor(s) {
+      return isSuperAdmin()
+             || (temPerfil() && perfilOk(['admin', 'gestor'], true, s));
     }
     // Campo do doc existente / do doc enviado, tolerando ausência.
     function cur(field) {
@@ -208,15 +297,17 @@ service cloud.firestore {
     // Operador não edita o plano de manutenção — ele executa o card que nasce
     // dele, e mudar o ritmo é decisão de quem responde pelo setor.
     match /recorrencias/{doc} {
-      allow read: if isAuthorized() && canSeeSector(cur('sector'));
-      allow create: if isGestorOrAdmin()
-                    && canSeeSector(novo('sector'))
+      allow read: if podeNoSetor(cur('sector'));
+      allow create: if gestorNoSetor(novo('sector'))
                     && novo('name') != ''
                     && novo('sector') != '';
-      allow update: if isGestorOrAdmin()
-                    && canSeeSector(cur('sector'))
-                    && canSeeSector(novo('sector'));
-      allow delete: if isGestorOrAdmin() && canSeeSector(cur('sector'));
+      // Uma das duas regras que leem o cadastro duas vezes (4 acessos; a outra
+      // é o update de /meetings): o setor PODE mudar, e origem e destino
+      // precisam ser enxergados pelo mesmo usuário. Antes eram 12 acessos para
+      // um admin e 20 para um gestor, contra um teto de 10 por operação.
+      allow update: if gestorNoSetor(cur('sector'))
+                    && gestorNoSetor(novo('sector'));
+      allow delete: if gestorNoSetor(cur('sector'));
     }
 
     // ---- ocorrências (a data prevista que já virou card) ----
@@ -225,37 +316,82 @@ service cloud.firestore {
     // transação. Deixar o navegador criar ocorrência devolveria a duplicata
     // que a transação existe para impedir.
     match /ocorrencias/{doc} {
-      allow read: if isAuthorized() && canSeeSector(cur('sector'));
+      allow read: if podeNoSetor(cur('sector'));
       allow write: if false;
     }
 
     // ---- colunas do kanban (por setor) ----
     match /columns/{doc} {
-      allow read: if isAuthorized() && canSeeSector(cur('sector'));
-      allow create: if isGestorOrAdmin() && canSeeSector(novo('sector'));
-      allow update: if isGestorOrAdmin()
-                    && canSeeSector(cur('sector'))
+      allow read: if podeNoSetor(cur('sector'));
+      allow create: if gestorNoSetor(novo('sector'));
+      allow update: if gestorNoSetor(cur('sector'))
                     && novo('sector') == cur('sector');
-      allow delete: if isGestorOrAdmin() && canSeeSector(cur('sector'));
+      allow delete: if gestorNoSetor(cur('sector'));
     }
 
     // ---- cards / demandas ----
+    // A LIXEIRA mora em dois campos do próprio card: `deletedAt` (ms) e
+    // `deletedBy` (e-mail). Ausente ou `null` = demanda viva. Isso faz da
+    // exclusão um UPDATE, e sem o que está escrito abaixo ela cairia no
+    // `allow update: if isAuthorized()` de antes — qualquer operador ativo
+    // esvaziaria o quadro inteiro carimbando `deletedAt`, sem passar por
+    // nenhuma regra de gestor e sem deixar de ser, para o Firestore, uma edição
+    // comum de demanda.
     match /cards/{doc} {
-      allow read: if isAuthorized() && canSeeSector(cur('sector'));
+      // Quem carimba a exclusão tem de ser quem está escrevendo — mesmo
+      // princípio de `createdBy` e do `autor` do histórico: ninguém manda para
+      // a lixeira em nome de outro.
+      //
+      // `null` passa porque `null` é o que a restauração grava (ver
+      // `restaurarDaLixeira` em `kanban.ts`): a marca sai virando null, e não
+      // sumindo do documento, justamente para que esta regra tenha um valor
+      // para examinar.
+      //
+      // O `!mudou(['deletedBy'])` na frente não é folga, é o caso comum. Num
+      // update, `request.resource.data` é o documento RESULTANTE, não o patch:
+      // uma demanda que está na lixeira carrega o `deletedBy` de quem a mandou
+      // para lá em toda escrita seguinte. Sem essa guarda, qualquer edição de
+      // uma demanda excluída — inclusive a correção de tags que o quadro faz
+      // sozinho em lote — passaria a ser negada para todo mundo, menos para a
+      // pessoa que excluiu.
+      function deletedByEhDoToken() {
+        let quem = request.resource.data.get('deletedBy', null);
+        return !mudou(['deletedBy']) || quem == null || souEu(quem);
+      }
 
-      allow create: if isAuthorized()
-                    && canSeeSector(novo('sector'))
+      allow read: if podeNoSetor(cur('sector'));
+
+      allow create: if podeNoSetor(novo('sector'))
                     && souEu(novo('createdBy'));
 
       // `sector` e `createdBy` imutáveis: trocar o setor por update seria a
       // porta dos fundos para escrever em quadro alheio.
-      allow update: if isAuthorized()
-                    && canSeeSector(cur('sector'))
-                    && novo('sector') == cur('sector')
-                    && novo('createdBy').lower() == cur('createdBy').lower();
+      //
+      // O ternário no fim é o que decide QUEM pode: update que mexe em
+      // `deletedAt` ou `deletedBy` é ida para a lixeira ou volta dela, e exige
+      // a mesma autoridade que já podia apagar de vez; qualquer outro update
+      // continua sendo edição comum, de qualquer usuário ativo do setor. É
+      // ternário e não `isAuthorized() && (!mudou(...) || isGestorOrAdmin())`
+      // porque só um dos dois braços é avaliado: a edição do operador — o
+      // update mais frequente do app — continua custando UMA leitura do
+      // cadastro, e não duas.
+      //
+      // As comparações que não custam acesso a documento vêm primeiro de
+      // propósito: um update recusado por mexer no setor é recusado sem ler
+      // nada do banco.
+      allow update: if novo('sector') == cur('sector')
+                    && novo('createdBy').lower() == cur('createdBy').lower()
+                    && deletedByEhDoToken()
+                    && (mudou(['deletedAt', 'deletedBy'])
+                        ? gestorNoSetor(cur('sector'))
+                        : podeNoSetor(cur('sector')));
 
-      // Apagar demanda é ação de gestor, e só no próprio setor.
-      allow delete: if isGestorOrAdmin() && canSeeSector(cur('sector'));
+      // Apagar de vez continua sendo ação de gestor, e só no próprio setor.
+      // O expurgo da lixeira roda no servidor (`api/demandas/expurgar`, Admin
+      // SDK, que ignora estas regras) porque precisa varrer a subcoleção de
+      // histórico junto — mas afrouxar aqui abriria a exclusão definitiva pelo
+      // console para qualquer um, sem passar pelo servidor.
+      allow delete: if gestorNoSetor(cur('sector'));
     }
 
     // ---- histórico da demanda ----
@@ -292,15 +428,19 @@ service cloud.firestore {
         return /databases/$(database)/documents/cards/$(doc);
       }
 
-      allow read: if isAuthorized() && canSeeSector(cur('sector'));
+      allow read: if podeNoSetor(cur('sector'));
 
-      allow create: if isAuthorized()
-                    && canSeeSector(novo('sector'))
+      // `excluida` e `restaurada` são a lixeira: a ida e a volta precisam
+      // deixar rastro, senão a demanda some do quadro sem nada responder quem a
+      // tirou de lá. A lista é fechada de propósito — verbo que a tela não sabe
+      // rotular vira linha muda no histórico (ver `ACAO_ROTULO`).
+      allow create: if podeNoSetor(novo('sector'))
                     && souEu(novo('autor'))
                     && request.resource.data.em == request.time
                     && request.resource.data.keys()
                          .hasOnly(['sector', 'autor', 'em', 'acao', 'mudancas'])
-                    && novo('acao') in ['criada', 'editada', 'movida']
+                    && novo('acao') in ['criada', 'editada', 'movida',
+                                        'excluida', 'restaurada']
                     // O card e o primeiro evento nascem no MESMO lote, e o pai
                     // ainda não existe para o `get()` — daí o primeiro braço.
                     // Depois disso, o setor do evento tem de ser o do card: é
@@ -311,30 +451,31 @@ service cloud.firestore {
 
       allow update: if false;
 
-      // Só para a varrida de `apagarHistorico`, que roda antes de excluir a
-      // demanda — mesma autoridade que já pode excluir o card inteiro.
-      allow delete: if isGestorOrAdmin() && canSeeSector(cur('sector'));
+      // Mesma autoridade que já pode excluir o card inteiro. A varrida da
+      // subcoleção saiu do cliente e virou `api/demandas/expurgar` (Admin SDK),
+      // porque um lote de até 400 deleções não cabe no teto de 20 acessos a
+      // documento por lote — era esse teto, e não falta de permissão, que
+      // negava a exclusão a admin e gestor.
+      allow delete: if gestorNoSetor(cur('sector'));
     }
 
     // ---- reuniões ----
     match /meetings/{doc} {
-      allow read: if isAuthorized() && canSeeSector(cur('sector'));
+      allow read: if podeNoSetor(cur('sector'));
 
-      allow create: if isAuthorized()
-                    && canSeeSector(novo('sector'))
+      allow create: if podeNoSetor(novo('sector'))
                     && souEu(novo('createdBy'));
 
       // O setor da reunião PODE mudar (o modal permite corrigir), mas o destino
       // também precisa ser um setor do usuário — senão daria para empurrar a
       // reunião para um quadro onde ele não entra.
       // driveOutputs/notifiedAt são do servidor: bloqueados aqui.
-      allow update: if isAuthorized()
-                    && canSeeSector(cur('sector'))
-                    && canSeeSector(novo('sector'))
+      allow update: if podeNoSetor(cur('sector'))
+                    && podeNoSetor(novo('sector'))
                     && novo('createdBy').lower() == cur('createdBy').lower()
                     && !mudou(['driveOutputs', 'notifiedAt']);
 
-      allow delete: if isGestorOrAdmin() && canSeeSector(cur('sector'));
+      allow delete: if gestorNoSetor(cur('sector'));
     }
 
     // ---- propostas de demanda geradas a partir de reuniões ----
@@ -343,11 +484,11 @@ service cloud.firestore {
     // quem é o usuário. Deixar o cliente escrever abriria o caminho de forjar
     // uma proposta "aprovada" e transformá-la em card.
     match /demandPropostas/{doc} {
-      allow read: if isAuthorized() && canSeeSector(cur('sectorAlvo'));
+      allow read: if podeNoSetor(cur('sectorAlvo'));
       allow write: if false;
     }
     match /demandLotes/{doc} {
-      allow read: if isAuthorized() && canSeeSector(cur('sectorReuniao'));
+      allow read: if podeNoSetor(cur('sectorReuniao'));
       allow write: if false;
     }
 

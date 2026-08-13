@@ -89,13 +89,39 @@ export type Mudanca = {
   para: string | null;
 };
 
-export type Acao = "criada" | "editada" | "movida";
+export type Acao =
+  | "criada"
+  | "editada"
+  | "movida"
+  | "excluida"
+  | "restaurada";
 
 export const ACAO_ROTULO: Record<Acao, string> = {
   criada: "abriu a demanda",
   editada: "editou a demanda",
   movida: "arrastou o card",
+  excluida: "mandou para a lixeira",
+  restaurada: "trouxe de volta da lixeira",
 };
+
+/**
+ * Ações que viram evento mesmo sem nenhuma mudança de campo.
+ *
+ * "editada" e "movida" só existem por causa de um par de valores: sem o par não
+ * há o que contar, e a linha seria ruído entre as que importam. "criada",
+ * "excluida" e "restaurada" são o contrário — o verbo É o fato inteiro. Mandar
+ * para a lixeira não tem "de → para" que informe alguma coisa: `deletedAt`
+ * saindo de vazio para uma data é o mesmo verbo escrito duas vezes, e ocuparia
+ * a linha da timeline com a repetição.
+ *
+ * Mora aqui, e não no `if` de `anexarEvento`, porque é regra e tem teste. Um
+ * verbo novo esquecido nesta lista faz a ação acontecer SEM deixar rastro — o
+ * modo de falha mais caro do histórico, porque é o único que a tela não mostra:
+ * tudo funciona, e o registro simplesmente não existe.
+ */
+export function registraSemMudancas(acao: Acao): boolean {
+  return acao === "criada" || acao === "excluida" || acao === "restaurada";
+}
 
 export type Evento = {
   id: string;

@@ -244,7 +244,13 @@ que fez.
   Issue e PR) passa normalmente.
 - Ligar branch protection — exige plano pago.
 - Rodar o emulador do Firebase: ele é um JAR e **este ambiente não tem Java**. Teste
-  de regra do Firestore e teste de auth dependem disso.
+  de auth depende disso.
+  > **Regra do Firestore, não.** Isto aqui já foi uma impossibilidade e deixou de
+  > ser. A API `firebaserules.projects.test` avalia um ruleset contra requisições
+  > sintéticas **no servidor do Google**, com `get()`/`exists()` dublados — nada
+  > local, nada de Java. Use `scripts/comparar-regras.mjs`, que roda a mesma
+  > bateria contra as regras da `main` e as suas e mostra só o que mudou de
+  > resposta. **Rode antes de publicar qualquer mudança em `firestore.rules`.**
 - Fazer login no app com conta Google real.
 
 ---
