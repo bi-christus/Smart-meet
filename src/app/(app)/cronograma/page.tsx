@@ -21,7 +21,9 @@ import {
 import {
   addDays,
   daysBetween,
-  DOW_MINI,
+  DOW_LABEL,
+  DOW_MINI_UTEIS,
+  ehFimDeSemana,
   MES_LONGO,
   parseISO,
   startOfDay,
@@ -35,7 +37,7 @@ import { Modal } from "@/components/modal";
 import { Select, type SelectOption } from "@/components/select";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
-import { SkeletonRow } from "@/components/skeleton";
+import { SkeletonRow, classeAparece } from "@/components/skeleton";
 import styles from "./cronograma.module.css";
 
 /**
@@ -139,7 +141,17 @@ export default function CronogramaPage() {
 
   const hoje = useMemo(() => startOfDay(), []);
 
-  // Janela visível: um mês inteiro, ou a semana (segunda a domingo).
+  /**
+   * Janela visível: um mês inteiro, ou a semana — de segunda a DOMINGO.
+   *
+   * O `+6` continua sendo seis mesmo depois de a grade ter encolhido para cinco
+   * colunas, e isto é de propósito. A janela é o período que a página responde
+   * por; a grade é só o desenho dele. Encurtá-la para a sexta jogaria sábado e
+   * domingo para fora do período — e com eles a faixa que avisa que existe
+   * compromisso marcado lá, que é justamente o que não pode sumir. O passo da
+   * navegação também é sete: `offset * 7`, porque a semana seguinte começa sete
+   * dias depois, não cinco.
+   */
   const janela = useMemo(() => {
     if (vista === "semana") {
       const ini = addDays(startOfWeek(hoje), offset * 7);
@@ -197,14 +209,42 @@ export default function CronogramaPage() {
     return m;
   }, [itens]);
 
-  /** Células da grade: sempre semanas completas de segunda a domingo. */
+  /**
+   * Células da grade: semanas de segunda a sexta.
+   *
+   * DOIS PASSOS DIFERENTES convivem nesta conta, e trocá-los é o erro que não
+   * trava nada — só desenha o mês errado com cara de mês certo. A grade tem
+   * CINCO células por linha; o calendário anda SETE dias por linha. Por isso o
+   * dia da célula `i` é `semana * 7 + coluna`, e nunca `i` corrido: com `i`
+   * corrido a segunda linha começaria no sábado.
+   *
+   * O total vem da distância entre duas SEGUNDAS, e não mais do intervalo em
+   * milissegundos ponta a ponta — aquela conta media as sete colunas que já não
+   * existem. Como as duas pontas são segundas, a diferença é múltipla de sete
+   * mesmo com uma virada de horário de verão no meio.
+   */
   const celulas = useMemo(() => {
     const ini = startOfWeek(janela.ini);
-    const fimSemana = addDays(startOfWeek(janela.fim), 6);
-    const total = Math.round((fimSemana.getTime() - ini.getTime()) / 86400000) + 1;
-    return Array.from({ length: total }, (_, i) => addDays(ini, i));
+    const dias = Math.round(
+      (startOfWeek(janela.fim).getTime() - ini.getTime()) / 86400000,
+    );
+    const semanas = dias / 7 + 1;
+    return Array.from({ length: semanas * 5 }, (_, i) =>
+      addDays(ini, Math.floor(i / 5) * 7 + (i % 5)),
+    );
   }, [janela]);
 
+  /**
+   * A contagem do subtítulo — e o que caiu em fim de semana ENTRA nela.
+   *
+   * A tentação era contar só o que a grade desenha, mas o subtítulo fala do
+   * PERÍODO, e sábado e domingo continuam dentro dele: o compromisso marcado lá
+   * está na tela, na faixa logo acima da grade. Descontá-lo faria a página
+   * anunciar "3 compromissos" com quatro à vista — número que não bate com o
+   * desenho é pior do que número nenhum. Pelo mesmo motivo o estado de vazio
+   * (`noPeriodo === 0`) continua honesto: ele só aparece quando não há nada em
+   * lugar nenhum, nem na grade nem na faixa.
+   */
   const noPeriodo = useMemo(
     () =>
       itens.filter((it) => {
@@ -213,6 +253,36 @@ export default function CronogramaPage() {
       }).length,
     [itens, janela],
   );
+
+  /**
+   * O que caiu em sábado ou domingo dentro da janela — o que a grade de cinco
+   * colunas não tem mais onde desenhar.
+   *
+   * Percorre os dias da janela em vez de filtrar `itens` para herdar a ordem já
+   * resolvida em `porDia` (reunião antes de prazo, depois título): a faixa lista
+   * na mesma ordem em que a célula listaria, e ninguém precisa manter duas
+   * regras de ordenação em sincronia.
+   */
+  const fimDeSemana = useMemo(() => {
+    const grupos: { iso: string; rotulo: string; itens: Item[] }[] = [];
+    for (let d = janela.ini; d <= janela.fim; d = addDays(d, 1)) {
+      if (!ehFimDeSemana(d)) continue;
+      const iso = toISO(d);
+      const doDia = porDia[iso];
+      if (!doDia?.length) continue;
+      // O dia da semana por extenso é a informação que EXPLICA a faixa: sem ele
+      // a pessoa vê uma data solta e não entende por que aquilo não está no
+      // quadro. "16 de agosto" não diz nada; "sábado, 16 de agosto" diz tudo.
+      grupos.push({
+        iso,
+        rotulo: `${DOW_LABEL[d.getDay()]}, ${d.getDate()} de ${MES_LONGO[d.getMonth()]}`,
+        itens: doDia,
+      });
+    }
+    return grupos;
+  }, [porDia, janela]);
+
+  const noFimDeSemana = fimDeSemana.reduce((s, g) => s + g.itens.length, 0);
 
   /**
    * A grade lê de três assinaturas, e não de quatro.
@@ -335,6 +405,17 @@ export default function CronogramaPage() {
         >
           <Icon name="chevronRight" size={16} />
         </button>
+        {/* Hoje é sábado ou domingo: a coluna do dia não existe mais, então
+            nenhuma célula recebe o destaque de "hoje". Marcar a segunda seguinte
+            resolveria o vazio visual mentindo sobre que dia é — num calendário,
+            a pior troca possível. A ausência do destaque vem explicada aqui, e
+            só no período que contém hoje (`offset === 0`): em dezembro a frase
+            seria ruído. */}
+        {offset === 0 && ehFimDeSemana(hoje) && (
+          <span className={styles.navNota}>
+            hoje é {DOW_LABEL[hoje.getDay()]} — fora da semana útil
+          </span>
+        )}
         {offset !== 0 && (
           <button className={styles.hojeBtn} onClick={() => setOffset(0)}>
             Hoje
@@ -343,6 +424,63 @@ export default function CronogramaPage() {
       </div>
 
       <div className={styles.scroll}>
+        {/**
+         * A faixa do que caiu em fim de semana.
+         *
+         * Ela SÓ existe depois da resposta. Enquanto `grade.carregando`, uma
+         * faixa piscando "0 em fim de semana" — ou pior, a ausência dela — seria
+         * a mesma afirmação falsa que o subtítulo aprendeu a não fazer: dita com
+         * a autoridade de quem já sabe, antes de saber. E quando não há nada em
+         * sábado ou domingo ela não deixa moldura nem espaço: o `&&` remove o
+         * nó, em vez de renderizar uma caixa vazia.
+         *
+         * `classeAparece` é o crossfade de 150ms que o esqueleto já usa em todo
+         * o app — isto é chegada de dado, o mesmo evento, e merece o mesmo
+         * movimento. Nenhum keyframe novo: o bloco de `prefers-reduced-motion`
+         * do `globals.css` já cobre este, como cobre os outros.
+         */}
+        {!grade.carregando && !grade.erro && fimDeSemana.length > 0 && (
+          <div className={`${styles.fds} ${classeAparece}`}>
+            <Icon name="warn" size={15} />
+            <div className={styles.fdsCorpo}>
+              <p className={styles.fdsTexto}>
+                A grade agora vai de segunda a sexta.{" "}
+                {noFimDeSemana === 1
+                  ? "Este compromisso está marcado"
+                  : `Estes ${noFimDeSemana} compromissos estão marcados`}{" "}
+                em fim de semana — abra para ver ou remarcar.
+              </p>
+              <ul className={styles.fdsLista}>
+                {fimDeSemana.map((g) => (
+                  <li key={g.iso}>
+                    <span className={styles.fdsDia}>{g.rotulo}</span>
+                    {g.itens.map((it, i) => (
+                      <button
+                        key={`${it.tipo}-${i}`}
+                        className={styles.fdsItem}
+                        onClick={() => setPeek(it)}
+                      >
+                        <i
+                          className={
+                            it.tipo === "reuniao"
+                              ? styles.dotReuniao
+                              : styles.dotPrazo
+                          }
+                        />
+                        <span className={styles.fdsTitulo}>{it.title}</span>
+                        <span className={styles.fdsMeta}>
+                          {it.sector} ·{" "}
+                          {it.tipo === "reuniao" ? "reunião" : "prazo"}
+                        </span>
+                      </button>
+                    ))}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
+
         {/**
          * A grade fica na tela mesmo carregando, e o esqueleto vai abaixo dela.
          *
@@ -356,7 +494,7 @@ export default function CronogramaPage() {
           className={`${styles.grade} ${vista === "semana" ? styles.gradeSemana : ""}`}
           aria-busy={grade.carregando || undefined}
         >
-          {DOW_MINI.map((d) => (
+          {DOW_MINI_UTEIS.map((d) => (
             <div key={d} className={styles.gradeHead}>
               {d}
             </div>

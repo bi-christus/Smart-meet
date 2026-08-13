@@ -61,6 +61,16 @@ export const DOW_SHORT = [
 ];
 /** Cabeçalho de calendário — a semana começa na segunda. */
 export const DOW_MINI = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
+/**
+ * O mesmo cabeçalho sem o fim de semana.
+ *
+ * Sai daqui como fatia de `DOW_MINI`, e não como cinco rótulos escritos de
+ * novo, porque é a semana começar na segunda que faz os cinco primeiros serem
+ * exatamente os dias úteis — as duas constantes dependem da mesma decisão e
+ * precisam quebrar juntas se alguém mudar a ordem. `DOW_MINI` fica inteiro:
+ * recortar lá dentro decidiria pelos sete dias na tela de quem ainda os quer.
+ */
+export const DOW_MINI_UTEIS = DOW_MINI.slice(0, 5);
 
 export function parseISO(iso: string): Date {
   const [y, m, d] = String(iso).split("-").map(Number);
@@ -85,6 +95,64 @@ export function startOfDay(d: Date = new Date()): Date {
 /** Segunda-feira da semana de `d`. */
 export function startOfWeek(d: Date): Date {
   return addDays(startOfDay(d), -((d.getDay() + 6) % 7));
+}
+
+/**
+ * Semana útil — a regra, e só ela.
+ *
+ * Ninguém na Rede trabalha sábado nem domingo. Três lugares dependem disso: a
+ * grade do Cronograma, que passa a desenhar de segunda a sexta; o prazo do
+ * formulário de demanda, que recusa fim de semana; e o gerador de recorrências,
+ * que empurra a data prevista. Os três leem daqui. Regra de calendário copiada
+ * em três telas é regra que diverge na primeira exceção — e ninguém descobre,
+ * porque cada tela continua mostrando um número plausível.
+ *
+ * Cada pergunta tem duas funções, uma para `Date` e outra para o ISO curto, com
+ * o sabor no nome. Uma só, aceitando os dois, seria onde o fuso volta a morder:
+ * quem tivesse um `Date` na mão passaria por `new Date(iso)` no meio do caminho
+ * sem perceber — que é exatamente o que o cabeçalho deste arquivo evita.
+ *
+ * (`WEEKDAYS`, em `recorrencias-core.ts`, responde outra pergunta: em que dias
+ * uma regra de recorrência PODE ser marcada. Aqui a pergunta é sobre uma data
+ * que já existe.)
+ */
+export function ehFimDeSemana(d: Date): boolean {
+  const dow = d.getDay();
+  return dow === 0 || dow === 6;
+}
+
+export function ehFimDeSemanaISO(iso: string): boolean {
+  return ehFimDeSemana(parseISO(iso));
+}
+
+/**
+ * O dia útil de `d` em diante — inclusivo: de segunda a sexta devolve o próprio
+ * dia, e só sábado e domingo andam.
+ *
+ * Para FRENTE, de propósito: fim de semana vira a segunda seguinte, nunca a
+ * sexta anterior. Puxar para trás encurtaria o prazo que a pessoa escolheu, e
+ * uma demanda gerada com prazo em dia que já passou nasce vencida — o card
+ * aparece vermelho antes de alguém ter tido chance de abri-lo.
+ *
+ * Devolve sempre à meia-noite local, como `addDays` e `startOfWeek`.
+ */
+export function proximoDiaUtil(d: Date): Date {
+  let x = startOfDay(d);
+  while (ehFimDeSemana(x)) x = addDays(x, 1);
+  return x;
+}
+
+export function proximoDiaUtilISO(iso: string): string {
+  return toISO(proximoDiaUtil(parseISO(iso)));
+}
+
+/** "sábado", "segunda-feira" — o nome do dia para a frase que explica a recusa. */
+export function rotuloDoDia(d: Date): string {
+  return DOW_LABEL[d.getDay()];
+}
+
+export function rotuloDoDiaISO(iso: string): string {
+  return rotuloDoDia(parseISO(iso));
 }
 
 /** Dias decorridos desde `iso`: positivo = passado, negativo = futuro. */

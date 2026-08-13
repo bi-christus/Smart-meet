@@ -1363,6 +1363,48 @@
   font-size: 12.5px;
 }
 
+/* ---------- dia útil no início e no prazo ----------
+   Ninguém na Rede trabalha sábado e domingo, e o `<input type="date">` não sabe
+   desabilitar dia da semana — então a recusa acontece em texto, aqui embaixo do
+   campo.
+
+   NADA AQUI ANIMA, e isso é decisão. Preencher data é interação de alta
+   frequência e boa parte dela é teclado: pelo AGENTS.md §3 e pela Frequency Gate
+   da skill de motion, fazer o aviso deslizar ou desvanecer só atrasaria a
+   leitura da frase que a pessoa precisa ler AGORA para destravar o Salvar. Por
+   isso nenhuma classe daqui entra no bloco de `prefers-reduced-motion`: não há
+   movimento para reduzir. */
+.avisoData {
+  composes: campoAviso;
+  /* `campoAviso` sobe -8px para grudar no campo ACIMA dele, como no título.
+     Este mora dentro do próprio campo, logo abaixo do input — o deslocamento
+     inverte de sinal. */
+  margin: 6px 0 0;
+}
+/* Data que já estava gravada e que esta edição não criou: informa, não recusa.
+   Cor de texto secundário e sem `.inpErro` no campo porque o Salvar continua
+   liberado — quem abriu a demanda para trocar o responsável não deve ser
+   parado por um sábado que outra pessoa escolheu meses atrás. */
+.avisoDataNota {
+  composes: avisoData;
+  color: var(--tx-3);
+}
+/* O conserto de um clique. Botão de texto e não um `<a>`: não navega para lugar
+   nenhum, só troca a data do campo ao lado. */
+.avisoAcao {
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  color: var(--brand);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.avisoAcao:hover {
+  text-decoration: none;
+}
+
 /* ---------- histórico da demanda ---------- */
 
 /* Botão no canto superior direito do card. Discreto por padrão — ele divide o
