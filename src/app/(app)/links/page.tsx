@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { subscribeUsers, DEFAULT_SECTORS, type UserProfile } from "@/lib/users";
@@ -32,8 +32,13 @@ import styles from "./links.module.css";
  * A planilha do orçamento, o dashboard do Power BI, a pasta no Drive: tudo isso
  * já era colado no campo Links de alguma demanda do Kanban, e depois só era
  * reencontrado por quem lembrava em qual card tinha posto. Esta tela não guarda
- * nada de novo — ela lê os mesmos cards e vira o avesso: um card por LINK, com
- * a demanda de origem no rodapé em vez do contrário.
+ * nada de novo — ela lê os mesmos cards e vira o avesso: um card por LINK.
+ *
+ * QUEM MANDA NO CARD É A DEMANDA, e não o link. A primeira versão pôs o rótulo
+ * do link em destaque e a demanda miúda no rodapé; usada de verdade, ela
+ * mostrou que ninguém chega aqui perguntando "onde está a planilha?" — chega
+ * perguntando "onde está a planilha DAQUELA demanda?". O título grande é o
+ * `card.title`; o rótulo do link é a linha de baixo, e é ela que abre a URL.
  *
  * Por isso a única fonte que segura a tela é `cards`. A lista de pessoas entra
  * depois, sem travar nada: um link continua legível com o e-mail de quem o
@@ -47,6 +52,15 @@ import styles from "./links.module.css";
  */
 const SEM_CARDS: Card[] = [];
 const SEM_USERS: UserProfile[] = [];
+
+/**
+ * Sentinela do filtro de responsável, o mesmo do Kanban (`page.tsx:241`).
+ *
+ * "Sem responsável" precisa de um valor, e `""` já é "todos". Este serve porque
+ * não pode colidir com nenhuma opção real: as outras são e-mails, e e-mail tem
+ * sempre um "@".
+ */
+const SEM_RESPONSAVEL = "__sem__";
 
 /** Um link e a demanda de onde ele veio — o card desta tela é este par. */
 type LinkNaTela = { link: CardLink; card: Card };
@@ -109,6 +123,7 @@ export default function LinksPage() {
   const users = fUsers.data ?? SEM_USERS;
 
   const [filtroSetor, setFiltroSetor] = useState("");
+  const [filtroResp, setFiltroResp] = useState("");
   const [busca, setBusca] = useState("");
 
   const usersMap = useMemo(() => {
@@ -116,15 +131,21 @@ export default function LinksPage() {
     users.forEach((u) => (m[u.email] = u));
     return m;
   }, [users]);
-  const nomeDe = (email: string | null) =>
-    email ? (usersMap[email]?.name ?? email) : "—";
+  // `useCallback` porque os rótulos do filtro de responsável saem daqui dentro
+  // de um `useMemo`: função recriada a cada render invalidaria o memo sempre, e
+  // aí ele deixaria de memorizar coisa alguma.
+  const nomeDe = useCallback(
+    (email: string | null) => (email ? (usersMap[email]?.name ?? email) : "—"),
+    [usersMap],
+  );
 
   /**
    * Uma fonte só decide o estado da tela.
    *
-   * `fUsers` fica de fora de propósito: ela traduz e-mail em nome no rodapé do
-   * card e mais nada. Fazer a grade inteira esperar por ela seria esperar por
-   * um dado que o card sabe dispensar.
+   * `fUsers` fica de fora de propósito: ela só troca e-mail por nome — no
+   * rodapé do card e nos rótulos do filtro de responsável. Enquanto ela não
+   * chega, os dois mostram o e-mail e continuam funcionando; fazer a grade
+   * inteira esperar seria esperar por um dado que o card sabe dispensar.
    */
   const tela = juntarFontes([fCards]);
 
@@ -141,6 +162,13 @@ export default function LinksPage() {
     const q = busca.trim().toLowerCase();
     return todos.filter(({ link, card }) => {
       if (filtroSetor && card.sector !== filtroSetor) return false;
+      if (filtroResp) {
+        const casa =
+          filtroResp === SEM_RESPONSAVEL
+            ? !card.assignee
+            : card.assignee === filtroResp;
+        if (!casa) return false;
+      }
       if (!q) return true;
       return (
         rotuloDoLink(link).toLowerCase().includes(q) ||
@@ -148,7 +176,7 @@ export default function LinksPage() {
         card.title.toLowerCase().includes(q)
       );
     });
-  }, [todos, filtroSetor, busca]);
+  }, [todos, filtroSetor, filtroResp, busca]);
 
   const anoAtual = useMemo(() => new Date().getFullYear(), []);
 
@@ -156,6 +184,40 @@ export default function LinksPage() {
     { value: "", label: "Todos os setores" },
     ...sectors.map((s) => ({ value: s, label: s })),
   ];
+
+  /**
+   * Só entram no filtro os responsáveis de demandas QUE TÊM LINK.
+   *
+   * A lista completa de `/users` seria mais fácil e ofereceria dezenas de nomes
+   * que não peneiram nada — inclusive quem nunca abriu o quadro. Opção que
+   * devolve zero em qualquer combinação é ruído com cara de escolha.
+   *
+   * A base é `todos`, e não `visiveis`: o setor e a busca não podem esvaziar
+   * este select, senão trocar um filtro apagaria a opção escolhida no outro.
+   */
+  const respOptions = useMemo<SelectOption[]>(() => {
+    const comLink = new Set<string>();
+    let temSemResponsavel = false;
+    todos.forEach(({ card }) => {
+      if (card.assignee) comLink.add(card.assignee);
+      else temSemResponsavel = true;
+    });
+    const opts: SelectOption[] = [
+      { value: "", label: "Todos os responsáveis" },
+    ];
+    [...comLink]
+      .sort((a, b) => nomeDe(a).localeCompare(nomeDe(b), "pt-BR"))
+      .forEach((email) =>
+        opts.push({
+          value: email,
+          label: nomeDe(email),
+          color: usersMap[email]?.color,
+        }),
+      );
+    if (temSemResponsavel)
+      opts.push({ value: SEM_RESPONSAVEL, label: "Sem responsável" });
+    return opts;
+  }, [todos, nomeDe, usersMap]);
 
   const contagem =
     visiveis.length === todos.length
@@ -205,6 +267,18 @@ export default function LinksPage() {
               ariaLabel="Filtrar por setor"
             />
           </div>
+          {/* Responsável DA DEMANDA, não de quem colou o link — é o sentido que
+              a palavra tem no resto do app, e é por ele que se procura: "os
+              links das minhas demandas". Quem colou continua no rodapé. */}
+          <div className={styles.filtroResp}>
+            <Select
+              value={filtroResp}
+              options={respOptions}
+              onChange={setFiltroResp}
+              placeholder="Todos os responsáveis"
+              ariaLabel="Filtrar por responsável da demanda"
+            />
+          </div>
           <div className={styles.searchwrap}>
             <Icon name="search" size={15} />
             <input
@@ -250,8 +324,9 @@ export default function LinksPage() {
                 title="Nenhum link com esse filtro"
                 description={
                   <>
-                    Nenhum dos {todos.length} links guardados casa com o setor e
-                    a busca escolhidos.
+                    Nenhum dos {todos.length} links guardados casa com o setor,
+                    o responsável e a busca escolhidos — eles continuam lá, é a
+                    peneira que está apertada.
                   </>
                 }
               />
@@ -324,57 +399,52 @@ function LinkCard({
         </span>
 
         <div className={styles.cardTitulo}>
-          {/* `noopener` não é enfeite: sem ele a página aberta recebe
-              `window.opener` e pode redirecionar a aba do Smart Meeting por
-              baixo, com o usuário achando que voltou para o app. */}
-          <a href={destino} target="_blank" rel="noopener noreferrer">
-            {rotulo}
-          </a>
+          {/* Texto, e não link. O destaque mudou de dono, mas quem chega nesta
+              tela quer ABRIR O ENDEREÇO — transformar a área grande do card em
+              navegação para o Kanban faria o clique óbvio levar ao lugar
+              errado. O caminho para a demanda existe, à direita, e é menor de
+              propósito. */}
+          <div className={styles.demandaTitulo} title={card.title}>
+            {card.title}
+          </div>
           <div className={styles.cardMeta}>
             <span className={styles.estado}>{SERVICO_ROTULO[servico]}</span>
-            <span className={styles.dominio} title={link.url}>
-              {subtituloDe(link, rotulo)}
-            </span>
+            {/* `noopener` não é enfeite: sem ele a página aberta recebe
+                `window.opener` e pode redirecionar a aba do Smart Meeting por
+                baixo, com o usuário achando que voltou para o app. */}
+            <a
+              className={styles.linkDoCard}
+              href={destino}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={link.url}
+            >
+              {rotulo}
+            </a>
           </div>
         </div>
+
+        {/* Alvo separado e pequeno, ao lado do título a que ele se refere. O
+            Kanban abre o card pelo par setor+id, como o Cronograma e as
+            Recorrências já fazem (`kanban/page.tsx:447`). */}
+        <Link
+          className={styles.irDemanda}
+          href={`/kanban?setor=${encodeURIComponent(card.sector)}&card=${card.id}`}
+          title="Abrir a demanda no Kanban"
+          aria-label={`Abrir a demanda ${card.title} no Kanban`}
+        >
+          <Icon name="kanban" size={14} />
+        </Link>
       </div>
 
       <div className={styles.cardPe}>
-        <div className={styles.peLinha}>
-          {/* O Kanban não tem rota por card, então o destino honesto é o
-              quadro — melhor do que uma URL que abre o card errado. */}
-          <Link className={styles.demanda} href="/kanban">
-            <Icon name="kanban" size={13} />
-            <span>{card.title}</span>
-          </Link>
-          <span className={styles.setor}>{card.sector}</span>
-        </div>
+        <span className={styles.setor}>{card.sector}</span>
         <span className={styles.autoria}>
           {nomeDe(link.addedBy)} · {dataDe(link.addedAt, anoAtual)}
         </span>
       </div>
     </div>
   );
-}
-
-/**
- * A linha pequena embaixo do título — o domínio, quase sempre.
- *
- * Quase: link colado sem título faz `rotuloDoLink` cair no próprio domínio, e
- * aí escrevê-lo de novo logo abaixo gastaria uma linha inteira para dizer duas
- * vezes a mesma coisa. Nesse caso ela mostra o caminho, que é o pedaço da URL
- * que ainda não foi dito — e a URL completa continua no `title`.
- */
-function subtituloDe(link: CardLink, rotulo: string): string {
-  const dom = dominioDe(link.url);
-  if (!dom || rotulo !== dom) return dom;
-  try {
-    const u = new URL(normalizarUrl(link.url));
-    const resto = `${u.pathname}${u.search}`;
-    return resto && resto !== "/" ? resto : dom;
-  } catch {
-    return dom;
-  }
 }
 
 /** "12 ago" — com o ano só quando não é o corrente, que é quando ele informa. */

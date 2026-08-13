@@ -26,7 +26,6 @@ import {
   hh,
   startOfDay,
   startOfWeek,
-  toISO,
 } from "@/lib/datas";
 import { juntarFontes, type Fonte } from "@/lib/async-data-core";
 import { useAsyncData } from "@/lib/use-async-data";
@@ -442,6 +441,12 @@ export default function DashboardPage() {
           <Rosca cards={abertos} />
         </Painel>
 
+        {/**
+         * O esqueleto deste painel é o de LINHAS, o mesmo de "consumo por
+         * responsável", e não mais o de barras em pé: os dois painéis passaram
+         * a ter a mesma forma, e esqueleto que promete outra troca a espera por
+         * um solavanco quando o conteúdo chega.
+         */}
         <Painel
           titulo="Cycle time e previsibilidade"
           chip={
@@ -450,7 +455,9 @@ export default function DashboardPage() {
               : undefined
           }
           fontes={[fCards, fCols]}
-          esqueleto={<SkeletonChart bars={9} texto="Carregando o cycle time…" />}
+          esqueleto={
+            <SkeletonRow rows={4} texto="Carregando o cycle time por tipo…" />
+          }
         >
           <CycleTime fluxo={fluxo} />
         </Painel>
@@ -490,15 +497,23 @@ export default function DashboardPage() {
 // Cálculo do fluxo
 // ---------------------------------------------------------------------------
 
+/**
+ * Uma conclusão do período: quantos dias levou, e de que tipo era.
+ *
+ * O timestamp da conclusão saiu daqui junto com a nuvem de pontos que o lia —
+ * ver `CycleTime`. Guardar por card um campo que ninguém mais consulta é peso
+ * num `useMemo` que percorre o quadro inteiro a cada troca de filtro.
+ */
+type Conclusao = { dias: number; tipo: DemandType | null };
+
 type Fluxo = {
   semanas: { inicio: Date; rotulo: string }[];
   entradas: number[];
   entregas: number[];
   fila: number[];
-  pontos: { x: number; dias: number }[];
+  pontos: Conclusao[];
   p50: number;
   p85: number;
-  p95: number;
   amostra: number;
   entregas4: number;
 };
@@ -532,7 +547,7 @@ function calcularFluxo(
 
   const entradas = new Array(semanasN).fill(0);
   const entregas = new Array(semanasN).fill(0);
-  const pontos: { x: number; dias: number }[] = [];
+  const pontos: Conclusao[] = [];
   let filaInicial = 0;
 
   cards.forEach((c) => {
@@ -556,8 +571,11 @@ function calcularFluxo(
         entregas[i]++;
         if (nasceu !== null && entregue >= nasceu) {
           pontos.push({
-            x: entregue,
             dias: Math.max(0, Math.round((entregue - nasceu) / 86400000)),
+            // Mesma desconfiança do gráfico de rosca: `type` vem do documento e
+            // um valor que saiu da lista (renomeado, importado torto) viraria um
+            // rótulo `undefined` na tela. Fora da lista é "sem tipo".
+            tipo: c.type && DEMAND_TYPES.includes(c.type) ? c.type : null,
           });
         }
       }
@@ -577,10 +595,9 @@ function calcularFluxo(
     entradas,
     entregas,
     fila,
-    pontos: pontos.sort((a, b) => a.x - b.x),
+    pontos,
     p50: percentil(ordenado, 0.5),
     p85: percentil(ordenado, 0.85),
-    p95: percentil(ordenado, 0.95),
     amostra: pontos.length,
     entregas4: entregas.slice(-4).reduce((a, b) => a + b, 0),
   };
@@ -1116,8 +1133,73 @@ function FluxoSemanal({ fluxo }: { fluxo: Fluxo }) {
   );
 }
 
+/**
+ * Cycle time mediano por tipo de demanda — uma barra deitada por tipo.
+ *
+ * Era uma nuvem de pontos: um ponto por conclusão, x = quando saiu, y = quantos
+ * dias levou, com três tracejados de percentil por cima. Mostrava a dispersão
+ * inteira, e cobrava por isso o preço de ler densidade de pontos — enquanto a
+ * pergunta que se faz neste painel é mais simples e a nuvem não respondia:
+ * QUAL TIPO DE DEMANDA DEMORA MAIS. É a resposta que muda o que se promete ao
+ * setor solicitante quando ele pede uma implementação em vez de uma correção.
+ *
+ * BARRA DEITADA, E NÃO EM PÉ: o rótulo de cada linha é texto de tamanho real
+ * ("Nova implementação", "Manutenção"). Deitado ele cabe inteiro à esquerda; em
+ * pé teria de girar 90° ou ser truncado, e rótulo girado é o jeito mais barato
+ * de tornar um gráfico ilegível. A forma também é a mesma de "consumo por
+ * responsável", que fica duas posições acima na mesma tela — dois gráficos de
+ * comparação entre categorias não deveriam exigir dois modos de leitura.
+ *
+ * MEDIANA, E NÃO MÉDIA: um tipo com quatro conclusões de 3 dias e uma de 90 tem
+ * média 20 — número que não descreve nenhuma das cinco entregas. A metade sai
+ * em 3, e é isso que se pode prometer.
+ *
+ * O NÚMERO DE CONCLUSÕES VAI EM TEXTO, EM TODA LINHA. `MIN_AMOSTRA` segura o
+ * painel inteiro, mas dentro dele um tipo pode ter uma conclusão só — e a barra
+ * dele sai com a mesma autoridade visual das outras. "1 conclusão" ao lado é o
+ * que impede a linha de parecer apurada.
+ *
+ * DESCARTADA a linha de referência do p85 do período cruzando as barras: o p85
+ * do conjunto é, por construção, maior que quase toda mediana de subgrupo, e a
+ * marca ficaria colada na borda direita em praticamente todo recorte — uma
+ * régua que nunca se move não é régua. A previsibilidade continua no chip do
+ * cabeçalho, onde é do período inteiro e sobre a amostra que `MIN_AMOSTRA`
+ * aprovou.
+ */
 function CycleTime({ fluxo }: { fluxo: Fluxo }) {
-  const { pontos, p50, p85, p95, amostra, semanas } = fluxo;
+  const { pontos, amostra } = fluxo;
+
+  const linhas = useMemo(() => {
+    const por: Record<string, number[]> = {};
+    pontos.forEach((p) => {
+      const t = p.tipo ?? "__sem__";
+      (por[t] = por[t] ?? []).push(p.dias);
+    });
+    return Object.entries(por)
+      .map(([chave, dias]) => ({
+        chave,
+        label:
+          chave === "__sem__"
+            ? "Sem tipo"
+            : DEMAND_TYPE_LABEL[chave as DemandType],
+        // Cor do tipo, a MESMA do Kanban e da rosca acima — tipo tem uma cor só
+        // no app inteiro. "Sem tipo" fica fora da paleta, como na rosca.
+        cor:
+          chave === "__sem__"
+            ? "var(--tx-3)"
+            : DEMAND_TYPE_COLOR[chave as DemandType],
+        mediana: percentil(
+          [...dias].sort((a, b) => a - b),
+          0.5,
+        ),
+        n: dias.length,
+      }))
+      .sort(
+        (a, b) =>
+          b.mediana - a.mediana || a.label.localeCompare(b.label, "pt-BR"),
+      );
+  }, [pontos]);
+
   if (amostra === 0)
     return (
       <EmptyState
@@ -1135,81 +1217,52 @@ function CycleTime({ fluxo }: { fluxo: Fluxo }) {
         title="Amostra pequena demais"
         description={
           <>
-            Só {amostra} conclusão(ões) no período. Percentil com amostra assim
-            vira chute — o gráfico aparece a partir de {MIN_AMOSTRA}.
+            Só {amostra} conclusão(ões) no período. Mediana com amostra assim
+            vira chute — as barras aparecem a partir de {MIN_AMOSTRA}.
           </>
         }
       />
     );
 
-  // Proporção achatada de propósito. O SVG escala pela largura, então o painel
-  // decide a ALTURA: com o viewBox antigo (560×200) este gráfico ficava 180px
-  // mais alto que a rosca ao lado, e a diferença virava buraco na linha.
-  //
-  // 660 é o meio-termo entre as duas pontas de tela: a fonte do eixo escala
-  // junto, e um viewBox estreito engorda o texto no monitor grande enquanto um
-  // largo o apaga no notebook.
-  const W = 660;
-  const H = 168;
-  const pl = 34;
-  const pr = 70;
-  const pt = 10;
-  const pb = 26;
-  const ini = semanas[0].inicio.getTime();
-  // Fim da janela = fim da última semana da série. `Date.now()` aqui seria
-  // leitura de relógio durante a renderização, e o eixo mudaria sozinho.
-  const fim = semanas[semanas.length - 1].inicio.getTime() + 6 * 86400000;
-  const maxY = Math.max(p95 + 4, ...pontos.map((p) => p.dias)) || 1;
-  const X = (ms: number) => pl + ((ms - ini) / Math.max(1, fim - ini)) * (W - pl - pr);
-  const Y = (v: number) => pt + (1 - v / maxY) * (H - pt - pb);
-
-  const linhas: [number, string, string][] = [
-    [p50, "var(--ok)", "50%"],
-    [p85, "var(--warn)", "85%"],
-    [p95, "var(--danger)", "95%"],
-  ];
+  // O 1 é guarda de divisão, não piso de escala: um recorte em que todo tipo
+  // fecha no mesmo dia tem mediana 0 em todas as linhas.
+  const max = Math.max(1, ...linhas.map((l) => l.mediana));
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className={styles.chart} role="img" aria-label="Cycle time das demandas concluídas">
-      {[0, 1, 2, 3].map((g) => {
-        const v = (maxY * g) / 3;
-        return (
-          <g key={g}>
-            <line x1={pl} y1={Y(v)} x2={W - pr} y2={Y(v)} className={styles.grade} />
-            <text x={pl - 6} y={Y(v) + 3.5} textAnchor="end" className={styles.eixo}>
-              {Math.round(v)}
-            </text>
-          </g>
-        );
-      })}
-      {linhas.map(([v, cor, rot]) => (
-        <g key={rot}>
-          <line
-            x1={pl}
-            y1={Y(v)}
-            x2={W - pr}
-            y2={Y(v)}
-            stroke={cor}
-            strokeWidth={1.4}
-            strokeDasharray="5 4"
-          />
-          <text x={W - pr + 5} y={Y(v) + 3.5} fill={cor} className={styles.percentil}>
-            {rot} · {v}d
-          </text>
-        </g>
-      ))}
-      {pontos.map((p, i) => (
-        <circle key={i} cx={X(p.x)} cy={Y(p.dias)} r={4} className={styles.ponto}>
-          <title>{`${p.dias} dia(s) · concluída em ${fmtDayMonth(toISO(new Date(p.x)))}`}</title>
-        </circle>
-      ))}
-      <text x={pl} y={H - 6} className={styles.eixo}>
-        {semanas[0].rotulo}
-      </text>
-      <text x={W - pr} y={H - 6} textAnchor="end" className={styles.eixo}>
-        hoje
-      </text>
-    </svg>
+    <>
+      <div className={styles.barras}>
+        {linhas.map((l) => (
+          <div key={l.chave} className={styles.barraLinha}>
+            <div className={styles.barraNome} title={l.label}>
+              {l.label}
+            </div>
+            <div className={styles.barraTrilho}>
+              {/* A barra é o desenho do número que já está escrito na linha ao
+                  lado — para quem usa leitor de tela ela é repetição, e para
+                  quem não distingue as cores o rótulo e o valor em texto já
+                  respondem tudo. */}
+              <div
+                aria-hidden="true"
+                className={styles.cycleFill}
+                style={{
+                  width: `${(l.mediana / max) * 100}%`,
+                  background: l.cor,
+                }}
+              />
+            </div>
+            <div className={styles.cycleDias}>{l.mediana}d</div>
+            <div className={styles.cycleN}>
+              {l.n} {l.n === 1 ? "conclusão" : "conclusões"}
+            </div>
+          </div>
+        ))}
+      </div>
+      <p className={styles.cycleNota}>
+        Mediana de dias entre a criação e a conclusão: metade das demandas de
+        cada tipo sai nesse prazo ou menos. O p50 e o p85 do cabeçalho são do
+        período inteiro, sem separar por tipo.
+      </p>
+    </>
   );
 }
 
