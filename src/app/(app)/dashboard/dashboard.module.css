@@ -94,6 +94,11 @@
   font-family: inherit;
   font-size: 12.5px;
   cursor: pointer;
+  /* Esta tela nao tinha UMA linha de transicao — nem em hover de botao. Mudanca
+     instantanea de estado le como quebrado, entao o minimo entra aqui: 180ms,
+     que e o alvo do AGENTS.md. Nada de animacao de ENTRADA; isto e resposta a
+     um gesto, e responder e obrigacao, nao enfeite. */
+  transition: color 0.18s, border-color 0.18s;
 }
 .limpar:hover {
   color: var(--accent);
@@ -455,13 +460,18 @@
   font-size: 9.5px;
   font-weight: 700;
 }
+/* Nos elementos do grafico a transicao e mais curta: sao dezenas deles, e o
+   ponteiro atravessa varios de uma vez. 150ms confirma a mira sem deixar um
+   rastro aceso atras do cursor. */
 .barEntrada {
   fill: var(--brand);
   fill-opacity: 0.9;
+  transition: fill-opacity 0.15s;
 }
 .barEntrega {
   fill: var(--ok);
   fill-opacity: 0.88;
+  transition: fill-opacity 0.15s;
 }
 .barEntrada:hover,
 .barEntrega:hover {
@@ -472,6 +482,7 @@
   fill-opacity: 0.72;
   stroke: var(--s1);
   stroke-width: 0.8;
+  transition: fill-opacity 0.15s;
 }
 .ponto:hover {
   fill-opacity: 1;
@@ -516,6 +527,7 @@
 /* Alvo de hover maior que o traço — a linha sozinha é fina demais para mirar. */
 .alvo {
   fill: transparent;
+  transition: fill 0.15s, fill-opacity 0.15s;
 }
 .alvo:hover {
   fill: var(--serie-7);
@@ -546,6 +558,7 @@
   padding: 10px;
   border-bottom: 1px solid var(--line-soft);
   color: var(--tx-2);
+  transition: background 0.18s;
 }
 .tabela tbody tr:hover td {
   background: var(--s2);
@@ -553,6 +566,7 @@
 .linkCard {
   font-weight: 600;
   color: var(--tx);
+  transition: color 0.18s;
 }
 .linkCard:hover {
   color: var(--accent);

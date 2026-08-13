@@ -17,6 +17,7 @@ import {
   aplicarDados,
   aplicarErro,
   estadoInicial,
+  juntarFontes,
   lerEstado,
 } from "../src/lib/async-data-core.ts";
 
@@ -88,6 +89,42 @@ const atrasado = aplicarDados(estadoInicial("RH"), "B.I.", [{ id: "velho" }]);
 checa(
   "snapshot atrasado da chave antiga nao pinta na tela da chave atual",
   lerEstado(atrasado, "RH").data === undefined,
+);
+
+// --- painel que le de mais de uma assinatura -------------------------------
+const chegou = { data: [{ id: "c1" }], erro: null };
+const esperando = { data: undefined, erro: null };
+const falhou = { data: undefined, erro: new Error("permission-denied") };
+
+checa(
+  "todas as fontes chegaram: o painel desenha",
+  juntarFontes([chegou, { data: [], erro: null }]).carregando === false,
+);
+checa(
+  "uma fonte que ainda nao respondeu segura o painel inteiro",
+  juntarFontes([chegou, esperando]).carregando === true,
+);
+checa(
+  "fonte vazia NAO e fonte pendente — [] ja e resposta",
+  juntarFontes([{ data: [], erro: null }]).carregando === false,
+);
+checa(
+  "painel sem fonte nenhuma nao fica preso em carregando",
+  juntarFontes([]).carregando === false && juntarFontes([]).erro === null,
+);
+
+// A ordem das duas perguntas e o que impede o esqueleto eterno: quem falhou
+// tambem esta com `data === undefined`, entao perguntar "carregando?" primeiro
+// esconderia o erro para sempre.
+const misto = juntarFontes([esperando, falhou]);
+checa(
+  "com uma fonte falhada e outra pendente, o ERRO ganha — nao o esqueleto",
+  misto.erro?.message === "permission-denied" && misto.carregando === false,
+  JSON.stringify({ erro: misto.erro?.message, carregando: misto.carregando }),
+);
+checa(
+  "e o erro que chega e o da fonte que falhou, nao um generico",
+  juntarFontes([chegou, falhou]).erro?.message === "permission-denied",
 );
 
 console.log(

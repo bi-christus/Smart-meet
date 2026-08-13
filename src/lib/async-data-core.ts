@@ -83,3 +83,30 @@ export function lerEstado<T>(
   if (estado.chave !== chaveAtual) return { data: undefined, erro: null };
   return { data: estado.data, erro: estado.erro };
 }
+
+/** Uma assinatura, do ponto de vista de quem só quer saber se já pode desenhar. */
+export type Fonte = { data: unknown[] | undefined; erro: Error | null };
+
+/**
+ * O estado de um pedaço de tela que lê de MAIS DE UMA assinatura.
+ *
+ * O Dashboard é a razão de isto existir: cinco painéis, quatro assinaturas, e
+ * cada painel consome um subconjunto diferente. Um esqueleto de página inteira
+ * seria o painel de tipos esperando a lista de usuários que ele nem usa — e o
+ * contrário, cada painel decidindo com um `&&` escrito à mão, seria a mesma
+ * regra copiada dezesseis vezes até uma delas divergir.
+ *
+ * O ERRO GANHA DE CARREGANDO, e não o contrário. Uma fonte que falhou também
+ * tem `data === undefined` (`aplicarErro` faz questão disso), então perguntar
+ * "carregando?" primeiro deixaria a tela num esqueleto eterno — o mesmo engano
+ * de antes, trocando a mentira "está vazio" pela mentira "já vem".
+ */
+export function juntarFontes(fontes: Fonte[]): {
+  erro: Error | null;
+  carregando: boolean;
+} {
+  for (const f of fontes) {
+    if (f.erro) return { erro: f.erro, carregando: false };
+  }
+  return { erro: null, carregando: fontes.some((f) => f.data === undefined) };
+}
