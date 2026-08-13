@@ -47,7 +47,6 @@ import {
   diffCard,
   linhaDaMudanca,
   type Evento,
-  type Rotulos,
 } from "@/lib/historico-core";
 import { Icon } from "@/components/icons";
 import { Avatar } from "@/components/avatar";
@@ -63,6 +62,7 @@ import {
   KNOWN_PRIORITIES,
   PRIORITY_COLOR,
   autorDoRegistro,
+  criarRotulos,
   fmtShort,
   parseDue,
   relTime,
@@ -122,27 +122,6 @@ function dataHora(ts: number): string {
   const p = (n: number) => String(n).padStart(2, "0");
   return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
-/**
- * Como o histórico transforma id em nome de gente.
- *
- * Resolvido na HORA DE GRAVAR, e não na hora de ler: o e-mail pode ser
- * desativado e a coluna renomeada, e o registro precisa continuar dizendo o que
- * aconteceu naquele dia — com o nome que a coisa tinha naquele dia. É a mesma
- * escolha de `tags-ref`, pelo motivo oposto: lá o vínculo é que tem de
- * sobreviver ao rename; aqui é a fotografia.
- */
-function criarRotulos(
-  usersMap: Record<string, UserProfile>,
-  columns: { colId: string; title: string }[],
-): Rotulos {
-  return {
-    pessoa: (email) => usersMap[email]?.name || email,
-    coluna: (colId) => columns.find((c) => c.colId === colId)?.title || colId,
-    prioridade: (p) => PRIORITY_LABEL[p as Priority] ?? p,
-    tipo: (t) => DEMAND_TYPE_LABEL[t as DemandType] ?? t,
-  };
-}
-
 /** Valor sentinela do filtro de responsável (e-mails sempre têm "@"). */
 const NO_ASSIGNEE = "__sem__";
 

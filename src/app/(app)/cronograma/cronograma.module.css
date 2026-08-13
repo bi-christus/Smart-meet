@@ -302,7 +302,9 @@
 }
 
 .chip {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 5px;
   width: 100%;
   text-align: left;
   padding: 4px 7px;
@@ -314,15 +316,25 @@
   font-weight: 600;
   line-height: 1.35;
   cursor: pointer;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   /* Mais curta que os botoes: a grade tem dezenas de chips e o ponteiro
      atravessa varios de uma vez. */
   transition: filter 0.15s;
 }
 .chip:hover {
   filter: brightness(1.08);
+}
+.chipTitulo {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* O rosto de quem responde pela demanda, no menor tamanho em que ainda da para
+   reconhecer a cor e a inicial. `flex: none` porque o titulo e quem encolhe:
+   perder o fim do texto e recuperavel na previa, perder o dono nao. */
+.chipAvatar {
+  flex: none;
 }
 .chipReuniao {
   background: var(--brand-soft);
@@ -333,6 +345,70 @@
   background: var(--warn-bg);
   border-left-color: var(--warn);
   color: var(--warn-tx);
+}
+
+/* ---------- arrastar para mudar a data ---------- */
+/* Sem UMA animacao neste bloco, e e de proposito: arrastar e interacao de alta
+   frequencia — o AGENTS.md §3 nomeia exatamente este caso, e a `dropPulse`
+   infinita que o Kanban tem na coluna alvo e o que nao se repete aqui. O que
+   muda e estado estatico: o item que saiu fica translucido, a celula alvo ganha
+   contorno. Nada interpola, nada pisca. */
+.chip[draggable="true"],
+.fdsItem[draggable="true"] {
+  cursor: grab;
+}
+.chip[draggable="true"]:active,
+.fdsItem[draggable="true"]:active {
+  cursor: grabbing;
+}
+.itemSaindo {
+  opacity: 0.35;
+}
+.diaAlvo {
+  outline: 2px dashed var(--brand);
+  outline-offset: -3px;
+  background: var(--brand-soft);
+}
+
+/* A escrita falhou e o item voltou sozinho para o dia de origem — o SDK desfaz
+   a escrita local quando o servidor recusa. Sem esta faixa, o unico sinal seria
+   o chip "pulando de volta", que le como bug e nao como recusa. */
+.erroMover {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 9px 12px;
+  border: 1px solid color-mix(in srgb, var(--danger) 34%, transparent);
+  background: var(--danger-bg);
+  border-radius: 9px;
+  color: var(--danger-tx);
+  font-size: 12px;
+}
+.erroMover > svg {
+  flex: none;
+}
+.erroMover span {
+  flex: 1;
+  line-height: 1.5;
+}
+.erroMover button {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: none;
+  border-radius: 6px;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.18s;
+}
+.erroMover button:hover {
+  opacity: 1;
 }
 
 .vazioTela {
@@ -474,6 +550,125 @@
 .irPara:hover {
   border-color: var(--brand-line);
   color: var(--accent);
+}
+
+/* ---------- previa ao pairar ---------- */
+/* `pointer-events: none` NAO e detalhe: e o que impede a previa de roubar o
+   clique de quem passou o mouse a caminho de abrir o item, e de interromper o
+   proprio hover que a sustenta ao cobrir o chip. Nada aqui dentro e clicavel —
+   e leitura — entao nada se perde.
+
+   `position: fixed` com left/top escritos pelo JS: ela nasce em (0,0) so para
+   ser medida, e o `useLayoutEffect` a encaixa antes da pintura. Largura fixa
+   para a medida ser estavel; a altura varia com o conteudo.
+
+   z-index 79: um abaixo do overlay do modal (80). Se um clique abrir o modal
+   antes de a previa fechar, ela fica POR BAIXO em vez de pairar sobre o
+   dialogo. */
+.previa {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 79;
+  width: 268px;
+  padding: 11px 13px 12px;
+  background: var(--s1);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow);
+  pointer-events: none;
+  /* 150ms: entrada de elemento pequeno numa ferramenta de trabalho — o alvo do
+     AGENTS.md §3 e "ate 300ms, 180ms o ideal", e a previa aparece e some dezenas
+     de vezes por sessao, entao fica na ponta rapida. So `opacity` e `transform`,
+     que nao pedem reflow. A saida nao anima: quando o ponteiro ja saiu, segurar
+     a caixa por mais 120ms e a previa atrapalhando a leitura do que esta atras
+     dela. */
+  animation: previaEntra 0.15s cubic-bezier(0.32, 0.72, 0, 1) backwards;
+}
+@keyframes previaEntra {
+  from {
+    opacity: 0;
+    transform: translateY(3px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.previaTopo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.previaTitulo {
+  margin: 9px 0 10px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--tx);
+}
+.previaLinhas {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.previaLinhas > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.previaLinhas dt {
+  width: 88px;
+  flex: none;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--tx-3);
+}
+.previaLinhas dd {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--tx-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.previaContagens {
+  display: flex;
+  gap: 12px;
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid var(--line-soft);
+  font-size: 11.5px;
+  color: var(--tx-3);
+}
+.previaContagens span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* ---------- reduced motion ---------- */
+/* O bloco do `globals.css` ja corta a duracao de tudo, mas o AGENTS.md §3 pede
+   que a animacao nova traga o proprio: quem le este arquivo tem de encontrar
+   aqui a garantia, sem depender de lembrar que existe uma regra global. */
+@media (prefers-reduced-motion: reduce) {
+  .previa {
+    animation: none !important;
+  }
+  .seg button,
+  .navBtn,
+  .hojeBtn,
+  .fdsItem,
+  .chip,
+  .erroMover button {
+    transition: none !important;
+  }
 }
 
 @media (max-width: 900px) {

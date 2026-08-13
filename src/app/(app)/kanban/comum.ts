@@ -11,7 +11,13 @@
 // `import type` e não `import { type … }`: assim a declaração inteira some na
 // compilação, e este módulo — que só formata texto — não passa a arrastar o SDK
 // do Firestore junto com o tipo.
-import type { Priority } from "@/lib/kanban";
+import {
+  DEMAND_TYPE_LABEL,
+  PRIORITY_LABEL,
+  type DemandType,
+  type Priority,
+} from "@/lib/kanban";
+import type { Rotulos } from "@/lib/historico-core";
 import type { PessoaDoAvatar } from "@/components/avatar";
 import { pickColor, type UserProfile } from "@/lib/users";
 
@@ -58,4 +64,30 @@ export function autorDoRegistro(
   perfil: UserProfile | undefined,
 ): PessoaDoAvatar {
   return perfil ?? { name: nome, email, color: pickColor(email), photo: null };
+}
+
+/**
+ * Como o histórico transforma id em nome de gente, na hora de gravar.
+ *
+ * Mora aqui porque o quadro e o Cronograma gravam no MESMO histórico, e o
+ * `de`/`para` de cada evento é texto congelado — o nome de quando aconteceu,
+ * não um id para resolver depois (ver `historico-core.ts`). Duas definições
+ * desta tradução não quebrariam nada de imediato: as duas telas continuariam
+ * salvando. Só que uma passaria a escrever "Etapa: andamento" onde a outra
+ * escreve "Etapa: Em andamento", e a timeline de uma demanda ficaria com duas
+ * grafias do mesmo fato, sem ninguém saber de onde veio a diferença.
+ *
+ * `columns` é o recorte mínimo de propósito: `ColumnDoc` e `KanbanColumn` são
+ * formatos diferentes do mesmo dado, e as duas telas têm um de cada.
+ */
+export function criarRotulos(
+  usersMap: Record<string, UserProfile>,
+  columns: { colId: string; title: string }[],
+): Rotulos {
+  return {
+    pessoa: (email) => usersMap[email]?.name || email,
+    coluna: (colId) => columns.find((c) => c.colId === colId)?.title || colId,
+    prioridade: (p) => PRIORITY_LABEL[p as Priority] ?? p,
+    tipo: (t) => DEMAND_TYPE_LABEL[t as DemandType] ?? t,
+  };
 }
