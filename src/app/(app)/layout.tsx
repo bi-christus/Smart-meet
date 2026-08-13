@@ -18,10 +18,10 @@ const NAV = [
   { id: "reunioes", label: "Reuniões", href: "/reunioes" },
   { id: "relatorios", label: "Relatórios IA", href: "/relatorios" },
   { id: "kanban", label: "Kanban", href: "/kanban" },
-  { id: "links", label: "Links", href: "/links" },
   { id: "recorrencias", label: "Recorrências", href: "/recorrencias" },
   { id: "dashboard", label: "Dashboard", href: "/dashboard" },
   { id: "cronograma", label: "Cronograma", href: "/cronograma" },
+  { id: "links", label: "Links", href: "/links" },
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {

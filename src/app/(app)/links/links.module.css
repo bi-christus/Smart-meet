@@ -39,6 +39,10 @@
 .filtroSetor {
   min-width: 180px;
 }
+/* Mais largo que o de setor: aqui cabe nome e sobrenome, não uma sigla. */
+.filtroResp {
+  min-width: 200px;
+}
 
 .searchwrap {
   position: relative;
@@ -125,28 +129,50 @@
   flex: 1;
   min-width: 0;
 }
-.cardTitulo a {
+/* O título é a DEMANDA. Duas linhas e corta: título de demanda costuma ser uma
+   frase inteira, e deixá-lo crescer à vontade faria cada card da grade ter uma
+   altura diferente. */
+.demandaTitulo {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  /* Link sem título vira a própria URL, que é uma palavra só de 80 caracteres:
-     sem isto ela estoura a coluna da grade em vez de quebrar. */
+  /* Demanda que traz um código ou uma URL colada no título vira uma palavra só
+     de 80 caracteres: sem isto ela estoura a coluna da grade em vez de quebrar. */
   overflow-wrap: anywhere;
   font-size: 13.5px;
   font-weight: 700;
   line-height: 1.35;
   color: var(--tx);
-  transition: color 0.18s;
 }
-.cardTitulo a:hover {
+
+/* O caminho para a demanda: existe, e é claramente menor que o link. */
+.irDemanda {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  color: var(--tx-3);
+  transition:
+    color 0.18s,
+    background 0.18s;
+}
+.irDemanda:hover {
+  background: var(--s3);
   color: var(--accent);
 }
 
+/* Quebra quando não cabe: o selo não encolhe (a marca cortada não identifica
+   nada), e sem a quebra um selo longo — "Apresentações Google" — espremeria o
+   endereço, que agora é o alvo clicável do card, a três reticências. */
 .cardMeta {
   display: flex;
   align-items: center;
-  gap: 7px;
+  flex-wrap: wrap;
+  gap: 5px 7px;
   margin-top: 6px;
   min-width: 0;
 }
@@ -164,54 +190,32 @@
   text-transform: uppercase;
   white-space: nowrap;
 }
-.dominio {
+/* O endereço em si — segunda linha, e o único alvo que abre a URL. Uma linha
+   só, com reticências: a URL inteira continua no `title`. */
+.linkDoCard {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11px;
-  color: var(--tx-3);
-}
-
-/* ---------- rodapé: de onde o link veio ---------- */
-.cardPe {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 9px 14px 10px;
-  border-top: 1px solid var(--line-soft);
-  background: var(--s1);
-}
-.peLinha {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-.demanda {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 600;
   color: var(--tx-2);
   transition: color 0.18s;
 }
-.demanda:hover {
+.linkDoCard:hover {
   color: var(--accent);
 }
-.demanda svg {
-  flex: none;
-  color: var(--tx-3);
-}
-.demanda span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+
+/* ---------- rodapé: setor, quem colou e quando ---------- */
+.cardPe {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px 10px;
+  border-top: 1px solid var(--line-soft);
+  background: var(--s1);
 }
 .setor {
-  margin-left: auto;
   flex: none;
   font-size: 9.5px;
   font-weight: 700;
@@ -220,6 +224,11 @@
   color: var(--tx-3);
 }
 .autoria {
+  margin-left: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 10.5px;
   color: var(--tx-3);
 }

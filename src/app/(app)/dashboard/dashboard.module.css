@@ -337,6 +337,79 @@
   }
 }
 
+/* ---------- cycle time por tipo ---------- */
+/**
+ * Este painel é irmão do de responsáveis, e reusa a linha inteira dele: nome à
+ * esquerda (`.barraNome`), trilho no meio (`.barraTrilho`), valor na ponta. Só
+ * as duas colunas de número mudam de largura, porque "120d" e "21 conclusões"
+ * não cabem nos 22px e 66px de lá — daí `composes` em vez de classe nova.
+ */
+
+/**
+ * A barra CRESCE uma vez, quando o dado chega.
+ *
+ * O movimento vai no sentido em que o comprimento é lido, e é o que ensina em
+ * 180ms que ali comprimento é medida — o único trabalho que sobra para motion
+ * num painel de números. Não há stagger: cinco tipos entrando em cascata seria
+ * a animação anunciando a si mesma, e o dado chegou todo junto de qualquer
+ * forma.
+ *
+ * `scaleX` e não `width`: largura reflui a linha inteira a cada quadro, e são
+ * até seis destas. De 0 de propósito — barra é comprimento, e sair de 0,9 seria
+ * um empurrão de 10% que ninguém vê e que só custa quadros.
+ *
+ * TROCAR DE FILTRO NÃO REANIMA: cada linha tem `key` pelo tipo da demanda, o nó
+ * permanece entre renderizações e a animação não recomeça. Só linha de tipo
+ * novo — que de fato acabou de chegar — anima. Trocar de SETOR reanima, e deve:
+ * ali a assinatura é refeita, o painel volta ao esqueleto e o dado chega outra
+ * vez.
+ */
+.cycleFill {
+  composes: barraSeg;
+  transform-origin: left center;
+  animation: cycleCresce 0.18s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+@keyframes cycleCresce {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+.cycleDias {
+  composes: barraNum;
+  width: 34px;
+}
+.cycleN {
+  composes: barraHoras;
+  width: 88px;
+  white-space: nowrap;
+}
+/* Frase, e não legenda de cores: os tipos já estão nomeados em cada linha, e o
+   que falta dizer é de que número a barra é o desenho. */
+.cycleNota {
+  margin-top: 13px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--tx-3);
+}
+
+/**
+ * O arquivo não tinha bloco de movimento reduzido porque não tinha uma animação
+ * sequer — só transições de hover, que o bloco global do `globals.css` já corta.
+ * A barra que cresce é a primeira, e é ela que abre este bloco.
+ *
+ * `animation: none` devolve a barra ao comprimento final na hora: o `width`
+ * inline continua lá e, sem animação, não há `transform` nenhum aplicado. Quem
+ * pediu menos movimento vê o mesmo gráfico, já pronto — nunca uma barra zerada.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .cycleFill {
+    animation: none;
+  }
+}
+
 .legenda {
   display: flex;
   gap: 14px;
@@ -449,10 +522,6 @@
   font-size: 9.5px;
   fill: var(--tx-3);
 }
-.percentil {
-  font-size: 9.5px;
-  font-weight: 700;
-}
 /* Nos elementos do grafico a transicao e mais curta: sao dezenas deles, e o
    ponteiro atravessa varios de uma vez. 150ms confirma a mira sem deixar um
    rastro aceso atras do cursor. */
@@ -470,17 +539,6 @@
 .barEntrega:hover {
   fill-opacity: 1;
 }
-.ponto {
-  fill: var(--accent);
-  fill-opacity: 0.72;
-  stroke: var(--s1);
-  stroke-width: 0.8;
-  transition: fill-opacity 0.15s;
-}
-.ponto:hover {
-  fill-opacity: 1;
-}
-
 /**
  * A fila usa `--serie-7` (índigo), não `--warn`.
  *
