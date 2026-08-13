@@ -10,6 +10,27 @@ import {
 } from "firebase/firestore";
 import type { User } from "firebase/auth";
 import { db } from "./firebase";
+import { conferirFoto, corDeAvatar } from "./avatar-core.ts";
+
+// A regra do avatar mora em `avatar-core`, que é puro; aqui ela é reexportada
+// para quem JÁ importa este módulo — o modal da foto, que precisa do `photo` e
+// da escrita na mesma linha de import.
+//
+// Quem NÃO deve vir por aqui é componente de desenho: `<Avatar>` importa direto
+// do módulo puro, e é assim que ele evita arrastar `firebase/firestore` para
+// dentro de todo lugar que mostra o rosto de alguém. As duas portas são de
+// propósito, e a diferença entre elas é quem já paga o SDK.
+export {
+  avatarDe,
+  conferirFoto,
+  corDeAvatar,
+  inicialDe,
+  LADO_FOTO_PX,
+  LIMITE_FOTO_BYTES,
+  tamanhoDataUri,
+  type Avatar,
+  type PessoaDoAvatar,
+} from "./avatar-core.ts";
 
 /** E-mail super admin (bootstrap). Precisa bater com o valor em firestore.rules. */
 export const SUPER_ADMIN_EMAIL = "setorbiunichristus@gmail.com";
@@ -31,6 +52,13 @@ export type UserProfile = {
   active: boolean;
   color: string;
   uid?: string | null;
+  /**
+   * Foto de perfil como data URI, ou ausente/null para quem não escolheu uma.
+   *
+   * Vem junto no `subscribeUsers`, e é essa a razão de o tamanho ser trancado
+   * em `avatar-core.ts`: este campo é baixado por todo cliente em toda tela.
+   */
+  photo?: string | null;
 };
 
 const DEFAULT_COLOR = "#ff6a2b";
@@ -105,22 +133,14 @@ export const DEFAULT_SECTORS = [
   "CVU",
 ];
 
-const AVATAR_COLORS = [
-  "#ff6a2b",
-  "#37d39b",
-  "#f5b13d",
-  "#c77dff",
-  "#54b8ff",
-  "#ff8f6b",
-  "#6e79ff",
-];
-
-/** Cor de avatar estável a partir do e-mail. */
-export function pickColor(seed: string): string {
-  let h = 0;
-  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
-  return AVATAR_COLORS[h % AVATAR_COLORS.length];
-}
+/**
+ * Cor de avatar estável a partir do e-mail.
+ *
+ * A paleta e o hash mudaram de casa para `avatar-core.ts` — é regra de avatar, e
+ * regra tem de caber no módulo puro para ser testada. O nome antigo fica como
+ * apelido porque é por ele que o resto do app pergunta.
+ */
+export const pickColor = corDeAvatar;
 
 export type UserInput = {
   email: string;
@@ -191,4 +211,45 @@ export async function setUserActive(
 
 export async function deleteUser(email: string): Promise<void> {
   await deleteDoc(doc(db, "users", email.toLowerCase()));
+}
+
+// ---------------------------------------------------------------------------
+// Foto de perfil — a única escrita em /users que NÃO é de admin.
+//
+// Quem grava é o dono do doc, pelo braço do `hasOnly(['uid','lastLogin',
+// 'photo'])` em firestore.rules. As duas funções abaixo escrevem só `photo`, e
+// nada mais: mandar qualquer outro campo junto faz a regra negar a escrita
+// inteira, inclusive a foto.
+// ---------------------------------------------------------------------------
+
+/**
+ * Grava a foto do próprio usuário. Lança com a mensagem pronta para a tela
+ * quando a imagem não passa.
+ *
+ * A conferência acontece AQUI, antes de ir ao banco, e a regra do Firestore é a
+ * segunda barreira — não a primeira. A regra não sabe dizer "recorte mais perto
+ * do rosto"; ela responde "sem permissão", que é a mensagem errada para quem
+ * escolheu uma foto grande demais e não fez nada de errado.
+ */
+export async function setUserPhoto(
+  email: string,
+  foto: string,
+): Promise<void> {
+  const conferida = conferirFoto(foto);
+  if (!conferida.ok) throw new Error(conferida.motivo);
+  await updateDoc(doc(db, "users", email.trim().toLowerCase()), {
+    photo: foto.trim(),
+  });
+}
+
+/**
+ * Tira a foto e volta para a inicial.
+ *
+ * Grava `null` em vez de apagar o campo (`deleteField`) pelo mesmo motivo da
+ * lixeira em `kanban.ts`: a regra precisa de um valor para examinar, e `null` é
+ * o que `fotoOk()` aceita explicitamente. Campo que some do documento é campo
+ * que a regra não vê.
+ */
+export async function removeUserPhoto(email: string): Promise<void> {
+  await updateDoc(doc(db, "users", email.trim().toLowerCase()), { photo: null });
 }

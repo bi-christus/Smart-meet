@@ -2,7 +2,12 @@
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
-import { subscribeUsers, DEFAULT_SECTORS, type UserProfile } from "@/lib/users";
+import {
+  subscribeUsers,
+  pickColor,
+  DEFAULT_SECTORS,
+  type UserProfile,
+} from "@/lib/users";
 import {
   subscribeSolicitantes,
   subscribeSolicitanteSetores,
@@ -60,7 +65,7 @@ import {
   SERVICO_ROTULO,
 } from "@/lib/links-core";
 import { carregarHistorico } from "@/lib/historico";
-import { classificarErro, codigoDe } from "@/lib/erro-ui-core";
+import { codigoDe, fraseDeFalha } from "@/lib/erro-ui-core";
 import { auth } from "@/lib/firebase";
 import {
   ACAO_ROTULO,
@@ -71,6 +76,7 @@ import {
   type Rotulos,
 } from "@/lib/historico-core";
 import { Icon } from "@/components/icons";
+import { Avatar, type PessoaDoAvatar } from "@/components/avatar";
 import { Select, type SelectOption } from "@/components/select";
 import { Combobox } from "@/components/combobox";
 import { Modal } from "@/components/modal";
@@ -245,34 +251,20 @@ function chaveComentario(c: Comment): string {
 const NO_ASSIGNEE = "__sem__";
 
 /**
- * A frase que a pessoa lê quando uma AÇÃO dela falha.
+ * O autor de um evento do histórico ou de um comentário, como avatar.
  *
- * Um `setErr("Não foi possível remover.")` escondeu por dias uma negação de
- * permissão em produção: a frase não dizia de quem era o problema nem o que
- * fazer, e o código do Firestore só aparecia para quem soubesse expandir um
- * objeto no console.
- *
- * Quem decide o que dizer continua sendo `classificarErro` — se a tradução
- * fosse escrita aqui, o app teria uma por tela, que é justamente o que aquele
- * módulo existe para impedir. Só que ele foi escrito para LEITURA: o título
- * genérico dele é "Não foi possível carregar", e quem clicou em Salvar não
- * estava carregando nada. Por isso a ação entra na frente e dele se aproveita o
- * que independe do verbo — o título quando ele NOMEIA a causa (permissão,
- * sessão, rede, limite, ajuste), e a última frase da descrição, que é onde mora
- * o que fazer agora, em todas as classes.
- *
- * O código do Firestore não entra na frase. Ele vai para o `console.error`, ao
- * lado do objeto: é a asserção que `scripts/test-erro-ui.mjs` guarda do lado do
- * módulo, e o build quebra se ela cair.
+ * Nem todo autor continua em `/users`: gente sai da empresa e o que ela
+ * escreveu fica. Quando o perfil sumiu, o e-mail é tudo o que sobrou — e a cor
+ * sai do mesmo `pickColor` que o perfil usaria, para o círculo da pessoa não
+ * trocar de cor no dia em que ela for removida do sistema. O `#555` chumbado
+ * que estava aqui pintava TODOS os ex-usuários do mesmo cinza.
  */
-function fraseDeFalha(acao: string, erro: unknown): string {
-  // `navigator` some no prerender, e a resposta muda com ele: sem rede,
-  // "não conseguimos falar com o servidor" vira "você está sem conexão".
-  const online = typeof navigator === "undefined" ? true : navigator.onLine;
-  const m = classificarErro(erro, online);
-  const oQueFazer = m.descricao.split(". ").pop() ?? m.descricao;
-  const causa = m.classe === "desconhecido" ? "" : `${m.titulo}. `;
-  return `${acao} ${causa}${oQueFazer}`;
+function autorDoRegistro(
+  email: string,
+  nome: string,
+  perfil: UserProfile | undefined,
+): PessoaDoAvatar {
+  return perfil ?? { name: nome, email, color: pickColor(email), photo: null };
 }
 
 /** Campo de texto que substitui o select enquanto se cadastra um nome novo. */
@@ -1225,13 +1217,15 @@ function CardItem({
           </span>
         )}
         {assignee && (
-          <span
-            className={styles.miniAvatar}
-            style={{ background: assignee.color || "#555" }}
+          // Aqui o nome do responsável NÃO está escrito no card — só o do
+          // solicitante está. O avatar é a única coisa que diz de quem é a
+          // demanda, então ele leva a frase inteira no `alt`.
+          <Avatar
+            pessoa={assignee}
+            size={22}
+            alt={`Responsável: ${assignee.name}`}
             title={`Responsável: ${assignee.name}`}
-          >
-            {(assignee.name?.[0] || "?").toUpperCase()}
-          </span>
+          />
         )}
       </div>
     </div>
@@ -1308,13 +1302,13 @@ function HistoricoModal({
             const nome = u?.name || ev.autor || "alguém";
             return (
               <div key={ev.id} className={styles.histItem}>
-                <span
-                  className={styles.cAvatar}
-                  style={{ background: u?.color || "#555" }}
+                {/* alt vazio: o primeiro nome está escrito ao lado, no `cName`. */}
+                <Avatar
+                  pessoa={autorDoRegistro(ev.autor, nome, u)}
+                  size={26}
+                  alt=""
                   title={nome}
-                >
-                  {(nome[0] || "?").toUpperCase()}
-                </span>
+                />
                 <div className={styles.cBody}>
                   <div className={styles.cHead}>
                     <span className={styles.cName}>{nome.split(" ")[0]}</span>
@@ -1478,7 +1472,7 @@ function LixeiraModal({
       // assim que ele volta a ser uma demanda viva.
     } catch (e) {
       console.error("[restaurar demanda]", codigoDe(e), e);
-      setAviso(fraseDeFalha("Não foi possível restaurar a demanda.", e));
+      setAviso(fraseDeFalha("Não foi possível restaurar a demanda.", e, navigator.onLine));
     } finally {
       setOcupado(null);
     }
@@ -1513,6 +1507,7 @@ function LixeiraModal({
             ? "Não foi possível apagar a demanda de vez."
             : "Não foi possível esvaziar a lixeira.",
           e,
+          navigator.onLine,
         ),
       );
     } finally {
@@ -2352,7 +2347,7 @@ function CardModal({
       // achá-la — e essa palavra é o que faz a diferença entre "quebrou" e
       // "permission-denied" na hora de pedir ajuda.
       console.error("[salvar demanda]", codigoDe(e), e);
-      setErr(fraseDeFalha("Não foi possível salvar a demanda.", e));
+      setErr(fraseDeFalha("Não foi possível salvar a demanda.", e, navigator.onLine));
       setSaving(false);
     }
   }
@@ -2378,7 +2373,11 @@ function CardModal({
     } catch (e) {
       console.error("[mover demanda para a lixeira]", codigoDe(e), e);
       setErr(
-        fraseDeFalha("Não foi possível mover a demanda para a lixeira.", e),
+        fraseDeFalha(
+          "Não foi possível mover a demanda para a lixeira.",
+          e,
+          navigator.onLine,
+        ),
       );
       setExcluindo(false);
     }
@@ -2863,12 +2862,13 @@ function CardModal({
                   const editando = comentarioEmEdicao === chave;
                   return (
                     <div key={c.id ?? i} className={styles.comment}>
-                      <span
-                        className={styles.cAvatar}
-                        style={{ background: u?.color || "#555" }}
-                      >
-                        {(name[0] || "?").toUpperCase()}
-                      </span>
+                      {/* alt vazio: o primeiro nome vem escrito logo ao lado. */}
+                      <Avatar
+                        pessoa={autorDoRegistro(c.author, name, u)}
+                        size={26}
+                        alt=""
+                        title={name}
+                      />
                       <div className={styles.cBody}>
                         <div className={styles.cHead}>
                           <span className={styles.cName}>

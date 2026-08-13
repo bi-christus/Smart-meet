@@ -12,7 +12,7 @@
     "lint": "eslint",
     "backup:firestore": "node scripts/backup-firestore.mjs",
     "check:demandas": "node scripts/check-demandas-boundary.mjs",
-    "prebuild": "node scripts/check-demandas-boundary.mjs && node scripts/test-demandas-schema.mjs && node scripts/test-recorrencias.mjs && node scripts/test-entregues.mjs && node scripts/test-tags-ref.mjs && node scripts/test-historico.mjs && node scripts/test-async-data.mjs && node scripts/test-erro-ui.mjs && node scripts/test-links.mjs && node scripts/test-lixeira.mjs",
+    "prebuild": "node scripts/check-demandas-boundary.mjs && node scripts/test-demandas-schema.mjs && node scripts/test-recorrencias.mjs && node scripts/test-entregues.mjs && node scripts/test-tags-ref.mjs && node scripts/test-historico.mjs && node scripts/test-async-data.mjs && node scripts/test-erro-ui.mjs && node scripts/test-links.mjs && node scripts/test-lixeira.mjs && node scripts/test-avatar.mjs",
     "test:demandas": "node scripts/test-demandas-schema.mjs",
     "test:recorrencias": "node scripts/test-recorrencias.mjs",
     "test:entregues": "node scripts/test-entregues.mjs",
@@ -22,7 +22,8 @@
     "test:erro-ui": "node scripts/test-erro-ui.mjs",
     "test:links": "node scripts/test-links.mjs",
     "test:regras": "node scripts/comparar-regras.mjs",
-    "test:lixeira": "node scripts/test-lixeira.mjs"
+    "test:lixeira": "node scripts/test-lixeira.mjs",
+    "test:avatar": "node scripts/test-avatar.mjs"
   },
   "dependencies": {
     "firebase": "^12.16.0",

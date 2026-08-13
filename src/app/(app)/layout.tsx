@@ -4,9 +4,11 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
-import { ROLE_LABEL } from "@/lib/users";
+import { ROLE_LABEL, pickColor } from "@/lib/users";
 import { useTheme } from "@/lib/theme";
 import { Icon } from "@/components/icons";
+import { Avatar } from "@/components/avatar";
+import { FotoPerfilModal } from "@/components/foto-perfil-modal";
 import { RecoveryBanner } from "@/components/recovery-banner";
 import { RecordingProvider } from "@/lib/audio/recording-context";
 import { MiniPlayer } from "@/components/mini-player";
@@ -30,6 +32,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [fotoAberta, setFotoAberta] = useState(false);
+  /**
+   * A foto que a pessoa acabou de escolher — `undefined` enquanto ninguém
+   * mexeu nesta sessão, `null` depois de remover.
+   *
+   * O perfil é lido UMA vez, no login (`auth-context`), e não tem assinatura em
+   * tempo real. Sem este estado, quem trocasse a própria foto continuaria vendo
+   * a antiga na topbar até sair e entrar de novo — o app pareceria ter ignorado
+   * o clique em Salvar.
+   */
+  const [fotoLocal, setFotoLocal] = useState<string | null | undefined>(
+    undefined,
+  );
 
   useEffect(() => {
     if (!loading && !user) router.replace("/login");
@@ -58,7 +73,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
 
-  const inicial = (profile.name?.trim()[0] || "U").toUpperCase();
+  const eu =
+    fotoLocal === undefined ? profile : { ...profile, photo: fotoLocal };
 
   return (
     <RecordingProvider ownerEmail={profile.email}>
@@ -92,23 +108,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <button
             className={styles.userBtn}
             onClick={() => setMenuOpen((o) => !o)}
+            // Abaixo de 680px o `.uMeta` some e o avatar fica sozinho: sem este
+            // rótulo, o botão que abre o menu da conta não tem nome nenhum para
+            // quem usa leitor de tela justo no celular.
+            aria-label={`Conta de ${profile.name} — abrir menu`}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
           >
-            {user.photoURL ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                className={styles.uAvatar}
-                src={user.photoURL}
-                alt={profile.name}
-                referrerPolicy="no-referrer"
-              />
-            ) : (
-              <span
-                className={styles.uAvatarFallback}
-                style={{ background: profile.color }}
-              >
-                {inicial}
-              </span>
-            )}
+            {/* alt vazio: o nome já está escrito ao lado, e no celular quem
+                identifica o botão é o aria-label acima. */}
+            <Avatar pessoa={eu} size={30} fotoDoGoogle={user.photoURL} alt="" />
             <span className={styles.uMeta}>
               <span className={styles.uName}>
                 {profile.name?.split(" ")[0]}
@@ -131,6 +140,20 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     {ROLE_LABEL[profile.role]}
                   </span>
                 </div>
+
+                {/* Fica junto do nome e do e-mail, e não lá embaixo com Tema e
+                    Cor: quem procura a própria foto procura na sua identidade,
+                    não nas preferências de aparência do app. */}
+                <button
+                  className={styles.popItem}
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setFotoAberta(true);
+                  }}
+                >
+                  <Icon name="edit" size={15} /> Foto de perfil
+                </button>
+                <div className={styles.popSep} />
 
                 <div className={styles.popLbl}>Tema</div>
                 <div className={styles.themeRow}>
@@ -192,6 +215,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </main>
       </div>
       <MiniPlayer />
+      {fotoAberta && (
+        <FotoPerfilModal
+          pessoa={eu}
+          email={profile.email}
+          temFoto={!!eu.photo}
+          onFoto={(uri) => setFotoLocal(uri)}
+          onClose={() => setFotoAberta(false)}
+        />
+      )}
     </RecordingProvider>
   );
 }
@@ -207,7 +239,15 @@ function AccessPending({
   photo: string | null;
   onLogout: () => void;
 }) {
-  const inicial = ((name || email || "U").trim()[0] || "U").toUpperCase();
+  // Esta pessoa não tem documento em `/users` — é justamente o que a tela diz.
+  // A cor sai do mesmo `pickColor` que o perfil usaria, para o círculo não
+  // mudar de cor no dia em que o acesso for liberado.
+  const pendente = {
+    name: name ?? "",
+    email: email ?? "",
+    color: pickColor(email ?? name ?? ""),
+    photo: null,
+  };
   return (
     <div
       style={{
@@ -229,37 +269,15 @@ function AccessPending({
           backdropFilter: "blur(14px)",
         }}
       >
-        {photo ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={photo}
-            alt=""
-            referrerPolicy="no-referrer"
-            style={{
-              width: 60,
-              height: 60,
-              borderRadius: "50%",
-              border: "2px solid rgba(255,106,43,.5)",
-            }}
-          />
-        ) : (
-          <div
-            style={{
-              width: 60,
-              height: 60,
-              borderRadius: "50%",
-              background: "var(--brand)",
-              color: "#fff",
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontWeight: 700,
-              fontSize: 22,
-            }}
-          >
-            {inicial}
-          </div>
-        )}
+        {/* Aqui o avatar está SOZINHO: o nome só aparece depois, dentro de um
+            parágrafo. Por isso ele leva o nome no `alt`, e não vazio. */}
+        <Avatar
+          pessoa={pendente}
+          size={60}
+          fotoDoGoogle={photo}
+          alt={name || email || "Sua conta"}
+          className={styles.pendingAvatar}
+        />
         <h1
           style={{
             fontFamily: "var(--font-serif), serif",

@@ -55,6 +55,11 @@ rules_version = '2';
 //    Mandar para a lixeira e restaurar exigem gestor ou admin — a mesma
 //    autoridade que já podia apagar de vez. O histórico ganhou os verbos
 //    `excluida` e `restaurada` para que a ida e a volta deixem rastro.
+//  - /users ganhou `photo`, a foto de perfil, e com ela o PRIMEIRO teto de
+//    tamanho destas regras. O dono passa a poder escrever mais um campo do
+//    próprio doc; `role`, `active` e `sectors` seguem fechados. A nota completa
+//    — inclusive por que o número da regra não é o número do módulo — está em
+//    `fotoOk()`.
 //
 // Nota sobre consultas: as telas sempre filtram por setor (`==` ou `in`), e o
 // admin consulta DEFAULT_SECTORS. Por isso o escopo por setor na leitura não
@@ -67,8 +72,20 @@ service cloud.firestore {
     function isSignedIn() {
       return request.auth != null;
     }
+    // MINÚSCULO na origem, e não em cada comparação.
+    //
+    // Todo doc de /users nasce com id em minúsculas — `ensureUserProfile` e
+    // `saveUser` fazem `.toLowerCase()` antes de escrever. Mas o e-mail do token
+    // vem do Google na caixa que ele quiser, e `userPath()` monta o caminho com
+    // ele: sem esta normalização, um token com maiúscula procura o cadastro num
+    // caminho que não existe, `exists()` responde falso, e a pessoa fica
+    // trancada fora do app INTEIRO — não de uma tela, de tudo.
+    //
+    // Isso nunca apareceu porque o Google entrega e-mail já minúsculo em Gmail
+    // e Workspace. É um defeito que espera pelo primeiro provedor que não faça
+    // isso, e o sintoma seria "acesso pendente" para quem tem acesso.
     function userEmail() {
-      return request.auth.token.email;
+      return request.auth.token.email.lower();
     }
     // E-mail super admin (bootstrap). Trocar aqui se mudar o dono do sistema.
     function isSuperAdmin() {
@@ -200,6 +217,43 @@ service cloud.firestore {
       return email.lower() == userEmail().lower();
     }
 
+    // A FOTO DE PERFIL, e as duas trancas que ela exige.
+    //
+    // Ela mora num campo do próprio doc de /users, como data URI, e não no
+    // Storage: habilitar um bucket é ação humana no console (AGENTS.md §6). O
+    // preço dessa escolha é que a foto viaja junto de /users — a mesma coleção
+    // que sete telas assinam INTEIRA — e por isso o teto abaixo não é higiene, é
+    // o que separa "avatar" de "todo cliente baixando megabytes em toda tela".
+    //
+    // 1. TAMANHO. `size()` sobre string em CEL conta CARACTERES, e o valor é
+    //    base64: cada 3 bytes de imagem viram 4 caracteres. O teto do módulo
+    //    (`LIMITE_FOTO_BYTES` = 12288 bytes de IMAGEM, em avatar-core.ts) vira
+    //    aqui ceil(12288/3)*4 = 16384 caracteres de base64, mais 23 do prefixo
+    //    mais longo ('data:image/jpeg;base64,') = 16407. Copiar 12288 para cá
+    //    seria outra régua: negaria 1/4 das fotos que o módulo aprova, e a
+    //    pessoa leria "sem permissão" tendo permissão.
+    //
+    // 2. ALFABETO. A regex é o que faz caractere e byte coincidirem: sem ela,
+    //    16407 caracteres fora do ASCII pesariam até 4× mais na rede de todo
+    //    mundo e `size()` não veria diferença. E ela é lista de PERMISSÃO —
+    //    'image/svg+xml' e 'text/html' ficam de fora de propósito: este valor vai
+    //    para o `src` de um `<img>` que aparece no card, no histórico e no
+    //    comentário, e SVG carrega script. Mesmo raciocínio de `normalizarUrl`
+    //    em links-core.ts: lista de proibição deixa passar o formato que ninguém
+    //    previu.
+    //
+    // Vale para TODO mundo, admin incluído, e isso é de propósito: quem paga a
+    // foto grande é o cliente de quem não a escolheu. `null` passa porque é
+    // assim que se REMOVE a foto — a marca sai virando null, e não sumindo do
+    // documento, mesma escolha do `deletedAt` da lixeira.
+    function fotoOk() {
+      let f = request.resource.data.get('photo', null);
+      return f == null
+             || (f is string
+                 && f.size() <= 16407
+                 && f.matches('^data:image/(jpeg|png);base64,[A-Za-z0-9+/]+={0,2}$'));
+    }
+
     // ---- usuários ----
     // A LEITURA é da coleção inteira, não do próprio doc, e isso é escolha.
     // `subscribeUsers` (src/lib/users.ts) assina /users em sete telas — Kanban,
@@ -210,10 +264,15 @@ service cloud.firestore {
     // tela, que fazia todo não-admin ver e-mail cru no lugar de gente.
     //
     // O que fica aberto, dito na cara: qualquer usuário ativo enxerga `role`,
-    // `active`, `sectors`, `uid` e `lastLogin` de todo mundo. Vale aqui porque
-    // isto é ferramenta interna e esses campos SÃO o organograma da equipe —
-    // quem responde por qual setor o app já mostra no responsável de cada card
-    // e no filtro do quadro. Não se expõe nada que a tela não exponha.
+    // `active`, `sectors`, `uid`, `lastLogin` e a `photo` de todo mundo. Vale
+    // aqui porque isto é ferramenta interna e esses campos SÃO o organograma da
+    // equipe — quem responde por qual setor o app já mostra no responsável de
+    // cada card e no filtro do quadro. Não se expõe nada que a tela não exponha.
+    //
+    // A `photo` é a única dessa lista que a pessoa escolhe colocar, e ela existe
+    // justamente para ser vista por quem abre o quadro. Ainda assim, quem a
+    // envia precisa saber o alcance: ela fica legível para TODO usuário ativo do
+    // app, e não só para o próprio setor.
     //
     // A alternativa descartada foi uma coleção espelho /diretorio, só com nome
     // e cor: duas fontes de verdade para o mesmo nome, sincronização a manter
@@ -235,16 +294,36 @@ service cloud.firestore {
       allow read: if isAuthorized() || (isSignedIn() && souEu(userId));
 
       // Super admin cria o próprio doc (bootstrap); admin cria qualquer um.
-      allow create: if isAdmin()
-        || (isSuperAdmin() && userId == userEmail());
+      // `souEu` pelo mesmo motivo do `update` abaixo — e aqui o preço de errar
+      // é o pior de todos: seria o bootstrap do primeiro admin não acontecendo.
+      allow create: if fotoOk()
+        && (isAdmin()
+            || (isSuperAdmin() && souEu(userId)));
 
       // Admin edita todos; super admin edita o próprio; o dono pode atualizar
-      // apenas campos de sessão (uid / lastLogin) do próprio doc.
-      allow update: if isAdmin()
-        || (isSuperAdmin() && userId == userEmail())
-        || (userId == userEmail() && isActive()
-            && request.resource.data.diff(resource.data).affectedKeys()
-                 .hasOnly(['uid', 'lastLogin']));
+      // os campos de sessão (uid / lastLogin) e A PRÓPRIA FOTO do próprio doc.
+      //
+      // `photo` entra no hasOnly — e só ela. `role`, `active` e `sectors`
+      // continuam de fora, que é a razão de o hasOnly existir: sem ele, o mesmo
+      // caminho que grava a própria foto promoveria a si mesmo a admin, e a
+      // única barreira seria a tela não oferecer o campo.
+      //
+      // `fotoOk()` vem na FRENTE, e fora do ou-lógico, por dois motivos. Ele
+      // vale para todo mundo (ver a nota da função), e não custa acesso a
+      // documento nenhum: uma foto grande demais é recusada sem ler o cadastro,
+      // como as comparações baratas no update de /cards.
+      // `souEu` e não `userId == userEmail()`, pelo motivo que já está escrito
+      // acima do `read`: o doc id é minúsculo e o e-mail do token vem do Google
+      // na caixa que ele quiser. Enquanto o dono só escrevia `lastLogin` — que
+      // falha em silêncio, com `.catch(() => {})` no login — isto era invisível.
+      // Com `photo` no mesmo braço deixa de ser: quem tem maiúscula no e-mail
+      // clicaria em salvar a foto e receberia "sem permissão", tendo permissão.
+      allow update: if fotoOk()
+        && (isAdmin()
+            || (isSuperAdmin() && souEu(userId))
+            || (souEu(userId) && isActive()
+                && request.resource.data.diff(resource.data).affectedKeys()
+                     .hasOnly(['uid', 'lastLogin', 'photo'])));
 
       allow delete: if isAdmin();
     }

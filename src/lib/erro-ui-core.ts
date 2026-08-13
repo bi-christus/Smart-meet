@@ -163,3 +163,41 @@ export function classificarErro(erro: unknown, online = true): MensagemErro {
   }
   return mensagem;
 }
+
+/**
+ * A frase de uma AÇÃO que falhou — salvar, excluir, trocar a foto.
+ *
+ * Um `setErr("Não foi possível remover.")` escondeu por dias uma negação de
+ * permissão em produção: a frase não dizia de quem era o problema nem o que
+ * fazer, e o código do Firestore só aparecia para quem soubesse expandir um
+ * objeto no console. Esta função existe para que isso não se repita.
+ *
+ * `classificarErro` foi escrito para LEITURA: o título genérico dele é "Não foi
+ * possível carregar", e quem clicou em Salvar não estava carregando nada. Daí
+ * esta função, que põe a ação na frente e aproveita do módulo o que independe
+ * do verbo — o título quando ele NOMEIA a causa (permissão, sessão, rede,
+ * limite, ajuste), e a última frase da descrição, que é onde mora o que fazer
+ * agora, em todas as classes.
+ *
+ * Vive aqui, e não em cada tela, porque nasceu duplicada em duas: o modal da
+ * demanda e o da foto de perfil. Duas cópias de uma regra de redação divergem
+ * na primeira vez que alguém melhora uma delas, e ninguém percebe — cada tela
+ * continua funcionando perfeitamente com a versão velha.
+ *
+ * `online` vem de fora pelo mesmo motivo de `classificarErro`, e por um a mais:
+ * o Node tem `navigator` desde a 21, mas sem `onLine` — ler o global aqui daria
+ * "offline" dentro do teste, e a suíte passaria a provar a frase errada.
+ *
+ * O código do Firestore NÃO entra na frase; ele vai para o `console.error`. É a
+ * asserção que este arquivo guarda e que o `prebuild` faz valer.
+ */
+export function fraseDeFalha(
+  acao: string,
+  erro: unknown,
+  online = true,
+): string {
+  const m = classificarErro(erro, online);
+  const oQueFazer = m.descricao.split(". ").pop() ?? m.descricao;
+  const causa = m.classe === "desconhecido" ? "" : `${m.titulo}. `;
+  return `${acao} ${causa}${oQueFazer}`;
+}

@@ -13,7 +13,21 @@
  *
  * Roda com o strip de tipos nativo do Node sobre o .ts real — sem cópia.
  */
-import { classificarErro, codigoDe } from "../src/lib/erro-ui-core.ts";
+import {
+  classificarErro,
+  codigoDe,
+  fraseDeFalha,
+} from "../src/lib/erro-ui-core.ts";
+
+/** Os códigos que o módulo traduz, mais um que ele não conhece. */
+const CODIGOS = [
+  "permission-denied",
+  "unauthenticated",
+  "unavailable",
+  "resource-exhausted",
+  "failed-precondition",
+  "teapot",
+];
 
 let falhas = 0;
 
@@ -156,6 +170,51 @@ for (const code of [
     `'${code}': descricao diz o que fazer`,
     /tente|aguarde|peça|peca|verifique|avise|saia/i.test(m.descricao),
     m.descricao,
+  );
+}
+
+// --- a frase de uma ACAO que falhou ---------------------------------------
+// Ela nasceu duplicada em duas telas. O teste existe para que a proxima copia
+// nao apareca: quem for reescrever a redacao mexe aqui, e as duas mudam juntas.
+
+const salvar = fraseDeFalha("Nao foi possivel salvar a demanda.", { code: "permission-denied" });
+checa(
+  "a acao vem na frente da causa",
+  salvar.startsWith("Nao foi possivel salvar a demanda."),
+  salvar,
+);
+checa(
+  "a causa nomeada entra na frase",
+  /acesso/i.test(salvar),
+  salvar,
+);
+checa(
+  "a frase termina no que fazer agora",
+  /peca|peça/i.test(salvar),
+  salvar,
+);
+
+const generico = fraseDeFalha("Nao foi possivel salvar a demanda.", new Error("boom"));
+checa(
+  "erro sem codigo nao inventa causa: so acao + o que fazer",
+  generico.startsWith("Nao foi possivel salvar a demanda.") &&
+    !/carregar/i.test(generico),
+  generico,
+);
+
+checa(
+  "offline muda a frase da mesma falha",
+  fraseDeFalha("X.", { code: "unavailable" }, false) !==
+    fraseDeFalha("X.", { code: "unavailable" }, true),
+);
+
+// A asserção que importa: nenhum codigo cru do Firestore atravessa para a tela.
+for (const code of CODIGOS) {
+  const f = fraseDeFalha("Nao foi possivel remover.", { code });
+  checa(
+    `'${code}': a frase de acao nao vaza o codigo`,
+    !f.includes(code),
+    f,
   );
 }
 

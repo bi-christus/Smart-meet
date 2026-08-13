@@ -119,6 +119,20 @@ const NA_LIXEIRA = {
   deletedBy: "gestor@px.com.br",
 };
 
+// --- foto de perfil ---------------------------------------------------------
+// O teto da regra e 16407 CARACTERES, que sao os 12288 bytes de imagem de
+// `LIMITE_FOTO_BYTES` convertidos (3 bytes viram 4 caracteres, mais 23 do
+// prefixo). Os valores abaixo cercam esse numero pelos dois lados; o conteudo
+// nao precisa ser uma imagem de verdade, so estar no alfabeto certo.
+const PREFIXO_JPEG = "data:image/jpeg;base64,";
+const FOTO_OK = PREFIXO_JPEG + "A".repeat(400);
+const FOTO_NO_TETO = PREFIXO_JPEG + "A".repeat(16407 - PREFIXO_JPEG.length);
+const FOTO_GRANDE = PREFIXO_JPEG + "A".repeat(16408 - PREFIXO_JPEG.length);
+// Tem "image" no nome, o navegador desenha, e carrega script. E o caso que a
+// lista de permissao existe para recusar.
+const FOTO_SVG = "data:image/svg+xml;base64," + "A".repeat(400);
+const PERFIL = { name: "Alguem", role: "operador", active: true, sectors: ["B.I."] };
+
 const casos = [];
 /** `existente` = como esta gravado; `enviado` = como fica depois da escrita. */
 function caso(quem, rotulo, method, path, existente, enviado, mocksExtra = []) {
@@ -197,6 +211,65 @@ for (const quem of Object.keys(PESSOAS)) {
 
   const U = doc("users/alguem@px.com.br");
   caso(quem, "listar pessoas", "list", U, { name: "Alguem" }, null);
+
+  // --- foto de perfil: o proprio doc ---------------------------------------
+  // `MEU` e o doc de quem esta autenticado; e o unico caminho em que o dono
+  // escreve em /users. O que se prova aqui: a foto entra, o teto vale, o formato
+  // vale, e o `hasOnly` continua barrando `role` na mesma escrita.
+  const MEU = doc(`users/${PESSOAS[quem].email}`);
+  const comFoto = { ...PERFIL, photo: FOTO_OK };
+  caso(quem, "gravar a propria foto", "update", MEU, PERFIL, comFoto);
+  caso(quem, "gravar a propria foto NO TETO", "update", MEU, PERFIL, {
+    ...PERFIL,
+    photo: FOTO_NO_TETO,
+  });
+  caso(quem, "gravar a propria foto ACIMA do teto", "update", MEU, PERFIL, {
+    ...PERFIL,
+    photo: FOTO_GRANDE,
+  });
+  caso(quem, "gravar SVG na propria foto", "update", MEU, PERFIL, {
+    ...PERFIL,
+    photo: FOTO_SVG,
+  });
+  caso(quem, "remover a propria foto", "update", MEU, comFoto, {
+    ...PERFIL,
+    photo: null,
+  });
+  // O `hasOnly` existe para isto: o caminho que grava a foto nao pode ser o que
+  // promove a si mesmo a admin.
+  caso(quem, "gravar foto E virar admin", "update", MEU, PERFIL, {
+    ...comFoto,
+    role: "admin",
+  });
+  caso(quem, "gravar foto E se reativar", "update", MEU, PERFIL, {
+    ...comFoto,
+    active: true,
+    sectors: ["B.I.", "RH"],
+  });
+  // O login (`ensureUserProfile`) escreve exatamente este par. Se ele mudar de
+  // resposta, o acesso de todo mundo muda junto.
+  caso(quem, "atualizar sessao do proprio doc", "update", MEU, PERFIL, {
+    ...PERFIL,
+    uid: "u1",
+    lastLogin: QUANDO,
+  });
+
+  // --- foto de perfil: o doc DE OUTRA PESSOA -------------------------------
+  caso(quem, "gravar a foto de outra pessoa", "update", U, PERFIL, comFoto);
+  caso(quem, "gravar foto grande em outra pessoa", "update", U, PERFIL, {
+    ...PERFIL,
+    photo: FOTO_GRANDE,
+  });
+  caso(quem, "gravar SVG na foto de outra pessoa", "update", U, PERFIL, {
+    ...PERFIL,
+    photo: FOTO_SVG,
+  });
+  caso(quem, "criar pessoa ja com foto", "create", U, null, comFoto);
+  caso(quem, "criar pessoa com foto grande", "create", U, null, {
+    ...PERFIL,
+    photo: FOTO_GRANDE,
+  });
+
   caso(quem, "ler setores", "list", doc("sectors/s1"), { name: "B.I." }, null);
   caso(
     quem,
@@ -249,13 +322,83 @@ for (const quem of Object.keys(PESSOAS)) {
 }
 
 // Forjar autoria tem de continuar negado para todos.
+// --- e-mail com MAIUSCULA no token ----------------------------------------
+// O doc id de /users e minusculo, mas o e-mail do token vem do Google na caixa
+// que ele quiser. Enquanto o dono so escrevia `lastLogin` — que falha em
+// silencio, com `.catch(() => {})` no login — comparar cru era invisivel. Com
+// `photo` no mesmo braco deixa de ser: a pessoa clicaria em salvar a foto e
+// leria "sem permissao", tendo permissao.
+{
+  const MISTO = "Fulano.Silva@px.com.br";
+  const perfil = { role: "operador", active: true, sectors: ["B.I."] };
+  const tokenMisto = { uid: "u1", token: { email: MISTO, email_verified: true } };
+  const docMinusculo = doc(`users/${MISTO.toLowerCase()}`);
+  // Os mocks respondem pelo caminho MINUSCULO, que e onde o doc realmente esta.
+  const mocks = [
+    {
+      function: "exists",
+      args: [{ exactValue: docMinusculo }],
+      result: { value: true },
+    },
+    {
+      function: "get",
+      args: [{ exactValue: docMinusculo }],
+      result: { value: { data: perfil } },
+    },
+  ];
+  const antes = { ...perfil, email: MISTO.toLowerCase(), name: "Fulano" };
+  casos.push({
+    rotulo: "e-mail com maiuscula · gravar a propria foto",
+    tc: {
+      expectation: "ALLOW",
+      request: {
+        auth: tokenMisto,
+        time: QUANDO,
+        path: docMinusculo,
+        method: "update",
+        resource: { data: { ...antes, photo: FOTO_OK } },
+      },
+      resource: { data: antes },
+      functionMocks: mocks,
+      pathEncoding: "PLAIN",
+    },
+  });
+  casos.push({
+    rotulo: "e-mail com maiuscula · atualizar a propria sessao",
+    tc: {
+      expectation: "ALLOW",
+      request: {
+        auth: tokenMisto,
+        time: QUANDO,
+        path: docMinusculo,
+        method: "update",
+        resource: { data: { ...antes, uid: "u1", lastLogin: QUANDO } },
+      },
+      resource: { data: antes },
+      functionMocks: mocks,
+      pathEncoding: "PLAIN",
+    },
+  });
+}
+
 caso("admin", "forjar deletedBy de outra pessoa", "update", doc("cards/c1"), CARD, {
   ...CARD,
   deletedAt: 1786000000000,
   deletedBy: "op@px.com.br",
 });
 
-async function rodar(at, fonte) {
+/**
+ * Quantos casos vao em cada chamada.
+ *
+ * A API recusa a suite inteira com um `INVALID_ARGUMENT` seco quando o corpo
+ * passa do tamanho dela — nada no erro diz que foi tamanho, e ele parece erro de
+ * sintaxe do ruleset. Foi o que aconteceu quando os casos da foto de perfil
+ * entraram trazendo strings de 16 KB cada. Mandar em lotes tira o teto do
+ * caminho: o custo e uma requisicao a mais, e o veredito por caso e o mesmo.
+ */
+const LOTE = 25;
+
+async function lote(at, fonte, pedaco) {
   const r = await fetch(
     `https://firebaserules.googleapis.com/v1/projects/${PROJ}:test`,
     {
@@ -266,7 +409,7 @@ async function rodar(at, fonte) {
       },
       body: JSON.stringify({
         source: { files: [{ name: "firestore.rules", content: fonte }] },
-        testSuite: { testCases: casos.map((c) => c.tc) },
+        testSuite: { testCases: pedaco.map((c) => c.tc) },
       }),
     },
   );
@@ -280,6 +423,14 @@ async function rodar(at, fonte) {
   }
   // SUCCESS com expectativa ALLOW = permitido; FAILURE = negado.
   return j.testResults.map((t) => (t.state === "SUCCESS" ? "permite" : "NEGA"));
+}
+
+async function rodar(at, fonte) {
+  const saida = [];
+  for (let i = 0; i < casos.length; i += LOTE) {
+    saida.push(...(await lote(at, fonte, casos.slice(i, i + LOTE))));
+  }
+  return saida;
 }
 
 /**
