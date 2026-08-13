@@ -30,11 +30,11 @@ import {
   query,
   serverTimestamp,
   where,
-  writeBatch,
   type Timestamp,
   type WriteBatch,
 } from "firebase/firestore";
 import { db } from "./firebase";
+import { registraSemMudancas } from "./historico-core";
 import type { Acao, Evento, Mudanca } from "./historico-core";
 
 export type { Acao, Evento, Mudanca };
@@ -68,6 +68,9 @@ function refHistorico(cardId: string) {
  * Não commita: quem chama é dono do lote e sabe o que mais entra nele. Devolve
  * `false` quando não havia o que registrar, para quem chama não incrementar o
  * contador do card à toa.
+ *
+ * Quais verbos valem por si, sem par de valores, é `registraSemMudancas` quem
+ * diz — regra pura, com teste. Ver o comentário dela.
  */
 export function anexarEvento(
   batch: WriteBatch,
@@ -76,7 +79,7 @@ export function anexarEvento(
   acao: Acao,
   mudancas: Mudanca[],
 ): boolean {
-  if (mudancas.length === 0 && acao !== "criada") return false;
+  if (mudancas.length === 0 && !registraSemMudancas(acao)) return false;
   batch.set(doc(refHistorico(cardId)), {
     sector: ctx.sector,
     autor: ctx.autor,
@@ -135,33 +138,21 @@ export async function carregarHistorico(
     .filter((e) => e.em > 0);
 }
 
-/**
- * Apaga o histórico de um card.
+/*
+ * ONDE FOI PARAR `apagarHistorico`.
  *
- * O Firestore NÃO apaga subcoleção junto com o documento pai: sem esta varrida,
- * excluir a demanda deixaria os eventos no banco para sempre, sem nada que
- * chegue até eles.
+ * Ela varria a subcoleção em lotes de 400 deleções antes de apagar o card — e
+ * era exatamente essa varrida que impedia um admin comum de excluir demanda.
+ * As regras do Firestore têm teto de acessos a documento por requisição (20 num
+ * lote), e cada deleção de evento avalia `isGestorOrAdmin() &&
+ * canSeeSector(...)`, que custa 8 acessos para admin e 14 para gestor. Um lote
+ * de 400 pedia milhares. Só o super admin escapava, porque `isSuperAdmin()`
+ * responde sem ler documento nenhum e curto-circuita as duas funções — por isso
+ * ninguém tinha visto.
  *
- * Roda ANTES de apagar o card, e não depois: a regra de leitura do histórico
- * pergunta o setor ao card pai, e com o pai já apagado a varrida seria negada —
- * o lixo ficaria exatamente onde não deveria. As duas exclusões exigem gestor,
- * então ou as duas podem acontecer, ou nenhuma começa.
+ * Excluir do quadro agora é `moverParaLixeira` (`kanban.ts`): UMA escrita de
+ * documento único, reversível, dentro do orçamento com folga. Apagar de vez, do
+ * fundo da lixeira, é `POST /api/demandas/expurgar`, no Admin SDK — que ignora
+ * estas regras e pode varrer a subcoleção sem teto nenhum. O lugar certo dessa
+ * varrida sempre foi o servidor; o navegador só não tinha como saber.
  */
-export async function apagarHistorico(
-  cardId: string,
-  sector: string,
-): Promise<void> {
-  // Em páginas de 400 para caber no teto de 500 operações de um lote — uma
-  // demanda antiga e movimentada passa de 100 eventos com facilidade.
-  for (;;) {
-    const snap = await getDocs(
-      // `where` pelo mesmo motivo de `carregarHistorico`: a regra é escopada.
-      query(refHistorico(cardId), where("sector", "==", sector), limit(400)),
-    );
-    if (snap.empty) return;
-    const batch = writeBatch(db);
-    snap.docs.forEach((d) => batch.delete(d.ref));
-    await batch.commit();
-    if (snap.size < 400) return;
-  }
-}

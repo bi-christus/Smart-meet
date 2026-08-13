@@ -13,9 +13,11 @@ import {
 } from "@/lib/solicitantes";
 import {
   subscribeCards,
+  subscribeLixeira,
   createCard,
   updateCard,
-  deleteCardById,
+  moverParaLixeira,
+  restaurarDaLixeira,
   moveCard,
   addComment,
   editComment,
@@ -58,6 +60,8 @@ import {
   SERVICO_ROTULO,
 } from "@/lib/links-core";
 import { carregarHistorico } from "@/lib/historico";
+import { classificarErro, codigoDe } from "@/lib/erro-ui-core";
+import { auth } from "@/lib/firebase";
 import {
   ACAO_ROTULO,
   diffCard,
@@ -72,7 +76,7 @@ import { Combobox } from "@/components/combobox";
 import { Modal } from "@/components/modal";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
-import { SkeletonCard } from "@/components/skeleton";
+import { SkeletonCard, SkeletonRow } from "@/components/skeleton";
 import { juntarFontes } from "@/lib/async-data-core";
 import { useAsyncData } from "@/lib/use-async-data";
 import { RelatorioModal } from "./relatorio-modal";
@@ -240,6 +244,37 @@ function chaveComentario(c: Comment): string {
 /** Valor sentinela do filtro de responsável (e-mails sempre têm "@"). */
 const NO_ASSIGNEE = "__sem__";
 
+/**
+ * A frase que a pessoa lê quando uma AÇÃO dela falha.
+ *
+ * Um `setErr("Não foi possível remover.")` escondeu por dias uma negação de
+ * permissão em produção: a frase não dizia de quem era o problema nem o que
+ * fazer, e o código do Firestore só aparecia para quem soubesse expandir um
+ * objeto no console.
+ *
+ * Quem decide o que dizer continua sendo `classificarErro` — se a tradução
+ * fosse escrita aqui, o app teria uma por tela, que é justamente o que aquele
+ * módulo existe para impedir. Só que ele foi escrito para LEITURA: o título
+ * genérico dele é "Não foi possível carregar", e quem clicou em Salvar não
+ * estava carregando nada. Por isso a ação entra na frente e dele se aproveita o
+ * que independe do verbo — o título quando ele NOMEIA a causa (permissão,
+ * sessão, rede, limite, ajuste), e a última frase da descrição, que é onde mora
+ * o que fazer agora, em todas as classes.
+ *
+ * O código do Firestore não entra na frase. Ele vai para o `console.error`, ao
+ * lado do objeto: é a asserção que `scripts/test-erro-ui.mjs` guarda do lado do
+ * módulo, e o build quebra se ela cair.
+ */
+function fraseDeFalha(acao: string, erro: unknown): string {
+  // `navigator` some no prerender, e a resposta muda com ele: sem rede,
+  // "não conseguimos falar com o servidor" vira "você está sem conexão".
+  const online = typeof navigator === "undefined" ? true : navigator.onLine;
+  const m = classificarErro(erro, online);
+  const oQueFazer = m.descricao.split(". ").pop() ?? m.descricao;
+  const causa = m.classe === "desconhecido" ? "" : `${m.titulo}. `;
+  return `${acao} ${causa}${oQueFazer}`;
+}
+
 /** Campo de texto que substitui o select enquanto se cadastra um nome novo. */
 function NovoCadastro({
   valor,
@@ -360,6 +395,29 @@ export default function KanbanPage() {
     (onData, onErro) => subscribeSolicitanteSetores(onData, onErro),
   );
 
+  /**
+   * A sexta assinatura: o que foi excluído e ainda dá para trazer de volta.
+   *
+   * Mora aqui, e não dentro do painel, porque a contagem do botão precisa dela
+   * ANTES de o painel existir — e assinar o mesmo caminho duas vezes custaria o
+   * dobro de leituras para dizer o mesmo número.
+   *
+   * Quem não administra o setor não assina nada: a regra nega a leitura da
+   * lixeira, e mandar o pedido seria gastar uma requisição para receber um erro
+   * que a tela já sabe que viria. `canManage` entra na chave para o dia em que o
+   * papel do usuário mudar sem o setor mudar junto.
+   */
+  const fLixeira = useAsyncData<Card>(
+    canManage ? sector : "",
+    (onData, onErro) => {
+      if (!canManage || !sector) {
+        onData([]);
+        return NADA_A_FECHAR;
+      }
+      return subscribeLixeira(sector, onData, onErro);
+    },
+  );
+
   const cards = fCards.data ?? SEM_CARDS;
   const users = fUsers.data ?? SEM_USERS;
   const solicitantes = fSolicitantes.data ?? SEM_SOLICITANTES;
@@ -367,6 +425,8 @@ export default function KanbanPage() {
   const fireColumns = fCols.data ?? SEM_COLUNAS;
   /** Agora vem do tipo, e não de um booleano à parte que podia discordar. */
   const colsLoaded = fCols.data !== undefined;
+  /** `undefined` de propósito: é o que impede a contagem de existir cedo demais. */
+  const naLixeira = fLixeira.data;
 
   const [search, setSearch] = useState("");
   const [prio, setPrio] = useState<"" | Priority>("");
@@ -379,6 +439,7 @@ export default function KanbanPage() {
   const [alvoDireto, setAlvoDireto] = useState<string | null>(null);
   const [colEdit, setColEdit] = useState<ColEditState>(null);
   const [relatorio, setRelatorio] = useState(false);
+  const [lixeiraAberta, setLixeiraAberta] = useState(false);
   const [dragCardId, setDragCardId] = useState<string | null>(null);
   const [dragColId, setDragColId] = useState<string | null>(null);
   const [overCol, setOverCol] = useState<string | null>(null);
@@ -750,9 +811,28 @@ export default function KanbanPage() {
           </button>
         )}
 
-        {/* Empurrado para a direita: o relatório não é um filtro do quadro, é
-            a ação que se toma depois de olhar para ele. */}
+        {/* Empurrados para a direita: nem a lixeira nem o relatório são
+            filtros do quadro — são ações que se toma depois de olhar para ele. */}
         <div className={styles.grow} />
+        {/* Só para quem administra o setor: a regra do Firestore nega a leitura
+            da lixeira aos demais, e um botão que só produz erro é pior do que
+            botão nenhum. */}
+        {canManage && (
+          <button
+            className={`${styles.filterBtn} ${styles.lixeiraBtn}`}
+            onClick={() => setLixeiraAberta(true)}
+            title="Ver e restaurar as demandas excluídas deste setor"
+          >
+            <Icon name="trash" size={14} />
+            Lixeira
+            {/* A contagem espera a resposta chegar. Um "0" antes dela é a mesma
+                afirmação falsa de "Nenhuma demanda", em forma de número — e é
+                o que os últimos commits do projeto existem para impedir. */}
+            {naLixeira && naLixeira.length > 0 && (
+              <span className={styles.lixeiraN}>{naLixeira.length}</span>
+            )}
+          </button>
+        )}
         <button
           className={`${styles.filterBtn} ${styles.reportBtn}`}
           onClick={() => setRelatorio(true)}
@@ -904,6 +984,7 @@ export default function KanbanPage() {
           state={edit}
           sector={sector}
           columns={displayCols}
+          canManage={canManage}
           actorEmail={profile.email}
           activeUsers={activeUsers}
           usersMap={usersMap}
@@ -941,6 +1022,19 @@ export default function KanbanPage() {
 
       {relatorio && (
         <RelatorioModal sector={sector} onClose={() => setRelatorio(false)} />
+      )}
+
+      {lixeiraAberta && (
+        <LixeiraModal
+          sector={sector}
+          itens={naLixeira}
+          erro={fLixeira.erro}
+          onRetry={fLixeira.tentarDeNovo}
+          columns={displayCols}
+          usersMap={usersMap}
+          actorEmail={autorAtual}
+          onClose={() => setLixeiraAberta(false)}
+        />
       )}
     </div>
   );
@@ -1273,10 +1367,339 @@ function HistoricoModal({
   );
 }
 
+/** Sentinela do "esvaziar" — nenhum id de card do Firestore se parece com isto. */
+const TUDO = "__tudo__";
+
+type Expurgo =
+  | { ok: true; apagados: number; restantes: number }
+  | { ok: false; aviso: string };
+
+/**
+ * O apagamento definitivo é do servidor, e não do navegador.
+ *
+ * Apagar a demanda de vez significa apagar junto o histórico dela, que é uma
+ * subcoleção — e varrer subcoleção pelo cliente estoura o teto de acessos que
+ * as regras impõem antes de a varredura terminar. A rota faz isso com
+ * credencial de administrador e responde quanto sobrou.
+ *
+ * Só o transporte lança. A RECUSA da rota volta como frase, e não como exceção,
+ * porque ela já vem escrita em português para esta tela: passá-la de novo pelo
+ * tradutor genérico trocaria "este setor não é seu" por "algo deu errado".
+ */
+async function expurgar(sector: string, id?: string): Promise<Expurgo> {
+  const user = auth.currentUser;
+  if (!user)
+    return {
+      ok: false,
+      aviso: "Sua sessão expirou. Saia e entre de novo para continuar.",
+    };
+  const token = await user.getIdToken();
+  const r = await fetch("/api/demandas/expurgar", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(id ? { sector, id } : { sector }),
+  });
+  const body = (await r.json()) as {
+    error?: string;
+    apagados?: number;
+    restantes?: number;
+  };
+  if (!r.ok)
+    return {
+      ok: false,
+      aviso: body.error || "Não foi possível apagar de vez. Tente de novo.",
+    };
+  return {
+    ok: true,
+    apagados: body.apagados ?? 0,
+    restantes: body.restantes ?? 0,
+  };
+}
+
+/**
+ * A lixeira do setor.
+ *
+ * NÃO ASSINA NADA: quem assina é a página, porque a contagem do botão precisa
+ * do mesmo dado e uma segunda assinatura do mesmo caminho seria o dobro de
+ * leituras para dizer o mesmo número. Aqui chegam os três estados prontos.
+ *
+ * A ORDEM EM QUE ELES SÃO PERGUNTADOS — erro, depois carregando, depois vazio —
+ * não é estilo. Uma fonte que falhou também tem `data === undefined` (é o que
+ * `aplicarErro` faz questão de garantir), então perguntar "carregando?"
+ * primeiro deixaria o painel num esqueleto que nunca termina.
+ *
+ * Nada aqui anima. Restaurar e apagar são mutação de lista, e o AGENTS.md §3
+ * nomeia esse caso: animar chegada e saída de linha vira lentidão percebida em
+ * quem está limpando dez demandas seguidas. A entrada e a saída do diálogo —
+ * essas sim ganham movimento — já são do `<Modal>`, que também já responde a
+ * `prefers-reduced-motion`.
+ */
+function LixeiraModal({
+  sector,
+  itens,
+  erro,
+  onRetry,
+  columns,
+  usersMap,
+  actorEmail,
+  onClose,
+}: {
+  sector: string;
+  /** `undefined` = a assinatura ainda não respondeu. `[]` = respondeu vazia. */
+  itens: Card[] | undefined;
+  erro: Error | null;
+  onRetry: () => void;
+  columns: ColumnDoc[];
+  usersMap: Record<string, UserProfile>;
+  actorEmail: string;
+  onClose: () => void;
+}) {
+  /** Qual linha está em operação — `TUDO` quando é a lixeira inteira. */
+  const [ocupado, setOcupado] = useState<string | null>(null);
+  /** Qual apagamento definitivo espera confirmação. */
+  const [confirmando, setConfirmando] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
+
+  // Da mais recente para a mais antiga — quem abre a lixeira quase sempre veio
+  // desfazer o que acabou de fazer. A ordem já vem pronta de `subscribeLixeira`
+  // (via `ordenarLixeira`), e reordenar aqui seria uma segunda regra de ordem,
+  // livre para discordar dela um dia.
+  const ordenados = itens ?? SEM_CARDS;
+
+  async function restaurar(c: Card) {
+    setAviso(null);
+    setOcupado(c.id);
+    try {
+      await restaurarDaLixeira(c.id, { ctx: { autor: actorEmail, sector } });
+      // A linha some sozinha: a assinatura da página deixa de entregar o card
+      // assim que ele volta a ser uma demanda viva.
+    } catch (e) {
+      console.error("[restaurar demanda]", codigoDe(e), e);
+      setAviso(fraseDeFalha("Não foi possível restaurar a demanda.", e));
+    } finally {
+      setOcupado(null);
+    }
+  }
+
+  async function apagar(id?: string) {
+    setAviso(null);
+    setOcupado(id ?? TUDO);
+    try {
+      const r = await expurgar(sector, id);
+      if (!r.ok) {
+        setAviso(r.aviso);
+        return;
+      }
+      setConfirmando(null);
+      // Dizer "pronto" quando o servidor avisou que sobrou coisa seria a mesma
+      // mentira que este PR existe para tirar da tela, só que ao contrário.
+      setAviso(
+        id
+          ? r.restantes > 0
+            ? `A demanda saiu, mas o apagamento não terminou: ainda restam ${r.restantes}. Clique em “Apagar de vez” outra vez para concluir.`
+            : "Demanda apagada de vez, com o histórico dela."
+          : r.restantes > 0
+            ? `Ainda restam ${r.restantes} na lixeira — o apagamento sai em lotes. Clique em “Esvaziar a lixeira” outra vez para concluir.`
+            : "Lixeira esvaziada. As demandas e o histórico de cada uma foram apagados de vez.",
+      );
+    } catch (e) {
+      console.error("[apagar demanda de vez]", codigoDe(e), e);
+      setAviso(
+        fraseDeFalha(
+          id
+            ? "Não foi possível apagar a demanda de vez."
+            : "Não foi possível esvaziar a lixeira.",
+          e,
+        ),
+      );
+    } finally {
+      setOcupado(null);
+    }
+  }
+
+  const quantas =
+    ordenados.length === 1 ? "1 demanda" : `${ordenados.length} demandas`;
+
+  return (
+    <Modal
+      onClose={onClose}
+      ariaLabel={`Lixeira do setor ${sector}`}
+      overlayClassName={styles.overlay}
+      className={styles.modal}
+      width={560}
+    >
+      <div className={styles.mhead}>
+        <span className={styles.mchip}>
+          <Icon name="trash" size={12} /> Lixeira
+        </span>
+        <span className={styles.mchip}>{sector}</span>
+      </div>
+      <div className={styles.histTitulo}>
+        Demandas excluídas do quadro. Elas saem da vista de todo mundo, mas
+        continuam aqui até alguém apagá-las de vez.
+      </div>
+
+      {erro ? (
+        <ErrorState error={erro} onRetry={onRetry} size="compact" />
+      ) : itens === undefined ? (
+        <SkeletonRow rows={3} texto="Carregando a lixeira…" />
+      ) : ordenados.length === 0 ? (
+        <EmptyState
+          size="compact"
+          icon="trash"
+          title="A lixeira está vazia"
+          description={
+            <>
+              É assim que ela costuma ficar: ninguém excluiu nenhuma demanda de{" "}
+              <b>{sector}</b>. Quando alguém excluir, ela espera aqui — e volta
+              para o quadro em um clique.
+            </>
+          }
+        />
+      ) : (
+        <div className={styles.lixeiraLista}>
+          {ordenados.map((c) => {
+            const coluna =
+              columns.find((x) => x.colId === c.columnId)?.title ?? c.columnId;
+            const quem = c.deletedBy
+              ? usersMap[c.deletedBy]?.name || c.deletedBy
+              : "alguém";
+            const trabalhando = ocupado === c.id;
+            return (
+              <div key={c.id} className={styles.lixeiraItem}>
+                <div className={styles.lixeiraInfo}>
+                  <div className={styles.lixeiraTitulo}>{c.title}</div>
+                  <div className={styles.lixeiraMeta}>
+                    <span>saiu de {coluna}</span>
+                    <span aria-hidden="true">·</span>
+                    <span>por {quem}</span>
+                    {c.deletedAt ? (
+                      <>
+                        <span aria-hidden="true">·</span>
+                        <span title={dataHora(c.deletedAt)}>
+                          {relTime(c.deletedAt)}
+                        </span>
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+                {confirmando === c.id ? (
+                  <div className={styles.confirmaLinha}>
+                    <span className={styles.confirmaTexto}>
+                      Apagar de vez? O histórico da demanda vai junto, e não há
+                      como trazer de volta.
+                    </span>
+                    <button
+                      type="button"
+                      className={styles.lixeiraAcao}
+                      onClick={() => setConfirmando(null)}
+                      disabled={trabalhando}
+                    >
+                      Não apagar
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.btnConfirmaPerigo}
+                      onClick={() => void apagar(c.id)}
+                      disabled={trabalhando}
+                    >
+                      {trabalhando ? "Apagando…" : "Apagar de vez"}
+                    </button>
+                  </div>
+                ) : (
+                  <div className={styles.lixeiraAcoes}>
+                    <button
+                      type="button"
+                      className={styles.lixeiraAcao}
+                      onClick={() => void restaurar(c)}
+                      disabled={trabalhando || ocupado === TUDO}
+                    >
+                      {trabalhando ? "Restaurando…" : "Restaurar"}
+                    </button>
+                    <button
+                      type="button"
+                      className={`${styles.lixeiraAcao} ${styles.lixeiraApagar}`}
+                      onClick={() => {
+                        setAviso(null);
+                        setConfirmando(c.id);
+                      }}
+                      disabled={trabalhando || ocupado === TUDO}
+                    >
+                      Apagar de vez
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {confirmando === TUDO && (
+        <div className={styles.confirmaBloco}>
+          <div className={styles.confirmaTexto}>
+            <strong>Esvaziar a lixeira de {sector}?</strong> As {quantas} que
+            estão aqui dentro serão apagadas de vez, com o histórico de cada
+            uma. Isto não tem como desfazer.
+          </div>
+          <div className={styles.confirmaAcoes}>
+            <button
+              type="button"
+              className={styles.btnGhost}
+              onClick={() => setConfirmando(null)}
+              disabled={ocupado === TUDO}
+            >
+              Não esvaziar
+            </button>
+            <button
+              type="button"
+              className={styles.btnConfirmaPerigo}
+              onClick={() => void apagar()}
+              disabled={ocupado === TUDO}
+            >
+              {ocupado === TUDO ? "Apagando…" : `Apagar as ${quantas} de vez`}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {aviso && (
+        <div className={styles.lixeiraAviso} role="status">
+          {aviso}
+        </div>
+      )}
+
+      <div className={styles.mactions}>
+        {ordenados.length > 0 && confirmando !== TUDO && (
+          <button
+            type="button"
+            className={styles.btnDanger}
+            onClick={() => {
+              setAviso(null);
+              setConfirmando(TUDO);
+            }}
+            disabled={ocupado !== null}
+          >
+            <Icon name="trash" size={15} /> Esvaziar a lixeira
+          </button>
+        )}
+        <div className={styles.spacer} />
+        <button className={styles.btnGhost} onClick={onClose}>
+          Fechar
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 function CardModal({
   state,
   sector,
   columns,
+  canManage,
   actorEmail,
   activeUsers,
   usersMap,
@@ -1290,6 +1713,8 @@ function CardModal({
   state: NonNullable<EditState>;
   sector: string;
   columns: ColumnDoc[];
+  /** Quem manda a demanda para a lixeira. A regra do Firestore nega o resto. */
+  canManage: boolean;
   actorEmail: string;
   activeUsers: UserProfile[];
   usersMap: Record<string, UserProfile>;
@@ -1376,6 +1801,9 @@ function CardModal({
    */
   const gravandoComentario = useRef(false);
   const [saving, setSaving] = useState(false);
+  /** A exclusão pedida, esperando o segundo clique. */
+  const [confirmandoExclusao, setConfirmandoExclusao] = useState(false);
+  const [excluindo, setExcluindo] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   /**
    * Qual campo travou o salvamento.
@@ -1769,7 +2197,8 @@ function CardModal({
    * Apaga um comentário, com confirmação.
    *
    * Confirmação porque não há desfazer: o texto sai do array e não fica cópia
-   * em lugar nenhum — mesmo padrão de excluir a demanda e a coluna.
+   * em lugar nenhum. Diferente de excluir a demanda, que desde a lixeira é
+   * reversível e por isso confirma na própria tela em vez de no navegador.
    */
   async function excluirComentario(c: Comment) {
     if (!card) return;
@@ -1918,22 +2347,40 @@ function CardModal({
       }
       onClose();
     } catch (e) {
-      console.error(e);
-      setErr("Não foi possível salvar a demanda.");
+      // O código ao LADO do objeto, e não dentro dele: assim quem está com o
+      // console aberto copia uma palavra em vez de expandir um objeto para
+      // achá-la — e essa palavra é o que faz a diferença entre "quebrou" e
+      // "permission-denied" na hora de pedir ajuda.
+      console.error("[salvar demanda]", codigoDe(e), e);
+      setErr(fraseDeFalha("Não foi possível salvar a demanda.", e));
       setSaving(false);
     }
   }
 
+  /**
+   * Exclusão da demanda — que agora é reversível.
+   *
+   * O `confirm()` do navegador saiu daqui de propósito. Ele existia para
+   * segurar um apagamento sem volta, e não é mais isso que acontece: a demanda
+   * vai para a lixeira do setor e volta de lá. Além disso ele é desenhado pelo
+   * navegador FORA do diálogo — rouba o foco que o `<Modal>` prende, não fala
+   * na voz do app e não cabe a frase que explica para onde a demanda foi. A
+   * confirmação passa a ser a própria tela, a dois cliques, onde os olhos já
+   * estão.
+   */
   async function remove() {
     if (!card) return;
-    if (!confirm("Remover esta demanda? Esta ação não pode ser desfeita."))
-      return;
+    setErr(null);
+    setExcluindo(true);
     try {
-      await deleteCardById(card.id, sector);
+      await moverParaLixeira(card.id, { ctx: { autor: actorEmail, sector } });
       onClose();
     } catch (e) {
-      console.error(e);
-      setErr("Não foi possível remover.");
+      console.error("[mover demanda para a lixeira]", codigoDe(e), e);
+      setErr(
+        fraseDeFalha("Não foi possível mover a demanda para a lixeira.", e),
+      );
+      setExcluindo(false);
     }
   }
 
@@ -2535,9 +2982,47 @@ function CardModal({
 
       {err && <div className={styles.err}>{err}</div>}
 
+      {confirmandoExclusao && (
+        <div className={styles.confirmaBloco}>
+          <div className={styles.confirmaTexto}>
+            <strong>Mover esta demanda para a lixeira?</strong> Ela sai do
+            quadro de {sector} e fica guardada na lixeira do setor, de onde dá
+            para trazer de volta. Nada é apagado agora.
+          </div>
+          <div className={styles.confirmaAcoes}>
+            <button
+              type="button"
+              className={styles.btnGhost}
+              onClick={() => setConfirmandoExclusao(false)}
+              disabled={excluindo}
+            >
+              Manter no quadro
+            </button>
+            <button
+              type="button"
+              className={styles.btnConfirmaPerigo}
+              onClick={() => void remove()}
+              disabled={excluindo}
+            >
+              {excluindo ? "Movendo…" : "Mover para a lixeira"}
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className={styles.mactions}>
-        {!isNew && (
-          <button className={styles.btnDanger} onClick={remove}>
+        {/* Escondido de quem a regra do Firestore recusaria. Ele aparecia para
+            operador, que clicava e levava um "Não foi possível remover." sem
+            nome nem motivo — o botão prometia o que o banco negava. */}
+        {!isNew && canManage && !confirmandoExclusao && (
+          <button
+            className={styles.btnDanger}
+            onClick={() => {
+              setErr(null);
+              setConfirmandoExclusao(true);
+            }}
+            disabled={saving || posting || excluindo}
+          >
             <Icon name="trash" size={15} /> Excluir
           </button>
         )}
@@ -2545,14 +3030,14 @@ function CardModal({
         <button
           className={styles.btnGhost}
           onClick={() => void fechar()}
-          disabled={saving || posting}
+          disabled={saving || posting || excluindo}
         >
           Cancelar
         </button>
         <button
           className={styles.btnSave}
           onClick={submit}
-          disabled={saving || posting}
+          disabled={saving || posting || excluindo}
         >
           {saving ? "Salvando…" : isNew ? "Criar demanda" : "Salvar"}
         </button>

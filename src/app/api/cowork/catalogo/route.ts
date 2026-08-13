@@ -16,6 +16,9 @@
 import { NextResponse } from "next/server";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { HttpError, adminDb } from "@/lib/server/drive-server";
+// Módulo PURO: `kanban.ts` traz o SDK do cliente junto e uma rota não consegue
+// importá-lo. A definição de "está na lixeira" mora num lugar só, e é esta.
+import { viva } from "@/lib/lixeira-core";
 
 export const runtime = "nodejs";
 
@@ -45,21 +48,31 @@ export async function GET(req: Request) {
     const db = adminDb();
     const snap = await db.collection("cards").get();
 
-    const cards = snap.docs.slice(0, MAX_CARDS).map((d) => {
-      const c = d.data();
-      return {
-        cardId: d.id,
-        setor: (c.sector as string) ?? "",
-        titulo: (c.title as string) ?? "",
-        tipo: (c.type as string) ?? null,
-        coluna: (c.columnId as string) ?? null,
-        tags: Array.isArray(c.tags) ? (c.tags as string[]).slice(0, 12) : [],
-        responsavel: (c.assignee as string) ?? null,
-        // `rev` viaja para que uma fase futura consiga detectar que o card
-        // mudou entre a leitura do catálogo e a aplicação de um ajuste.
-        rev: typeof c.rev === "number" ? c.rev : 0,
-      };
-    });
+    // Demanda na lixeira sai do catálogo. O Admin SDK não passa pelo filtro do
+    // `subscribeCards`, então sem esta peneira o Cowork continuaria propondo
+    // ajuste para uma demanda que alguém já excluiu — e a proposta chegaria
+    // apontando para um card que não está em quadro nenhum.
+    //
+    // Peneira ANTES do `slice`: cortar primeiro faria as excluídas gastarem
+    // vagas do teto e sumirem demandas vivas do fim da lista.
+    const cards = snap.docs
+      .filter((d) => viva(d.data() as { deletedAt?: number | null }))
+      .slice(0, MAX_CARDS)
+      .map((d) => {
+        const c = d.data();
+        return {
+          cardId: d.id,
+          setor: (c.sector as string) ?? "",
+          titulo: (c.title as string) ?? "",
+          tipo: (c.type as string) ?? null,
+          coluna: (c.columnId as string) ?? null,
+          tags: Array.isArray(c.tags) ? (c.tags as string[]).slice(0, 12) : [],
+          responsavel: (c.assignee as string) ?? null,
+          // `rev` viaja para que uma fase futura consiga detectar que o card
+          // mudou entre a leitura do catálogo e a aplicação de um ajuste.
+          rev: typeof c.rev === "number" ? c.rev : 0,
+        };
+      });
 
     // O hash identifica ESTA foto do catálogo. Serve para o Cowork registrar
     // no sidecar de que versão ele partiu, e para diagnosticar depois uma

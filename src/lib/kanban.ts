@@ -12,18 +12,21 @@ import {
   writeBatch,
   arrayUnion,
   runTransaction,
+  type QuerySnapshot,
 } from "firebase/firestore";
 import { db } from "./firebase";
 
 // A trilha de mudanças da demanda. Mora em módulo próprio, mas as escritas
 // passam por aqui de propósito — ver `updateCard`.
-import {
-  anexarEvento,
-  apagarHistorico,
-  type ContextoHistorico,
-} from "./historico";
+import { anexarEvento, type ContextoHistorico } from "./historico";
 import type { Acao, Mudanca } from "./historico-core";
 export type { ContextoHistorico };
+
+// A regra da lixeira é pura e o SERVIDOR também precisa dela — as rotas que
+// leem `/cards` pelo Admin SDK não conseguem importar este arquivo, que carrega
+// o SDK do cliente junto. Ver o cabeçalho de `lixeira-core`.
+import { naLixeira, ordenarLixeira, viva } from "./lixeira-core";
+export { naLixeira, viva };
 
 // Moradia em módulo puro: o gerador de recorrências lê as colunas no servidor,
 // onde importar este arquivo (e o SDK do cliente junto) não é possível.
@@ -170,6 +173,17 @@ export type Card = {
    * evento nenhum.
    */
   histCount?: number;
+  /**
+   * Quando a demanda foi para a lixeira (ms). Ausente ou `null` = viva.
+   *
+   * Marca, e não exclusão de verdade: o documento fica inteiro — mesma coluna,
+   * mesma `order`, mesmo `enteredAt`, com o histórico pendurado embaixo. É o
+   * que permite restaurar sem a demanda voltar mentindo que é nova. Quem
+   * responde "isto está na lixeira?" é `naLixeira`, nunca uma comparação solta.
+   */
+  deletedAt?: number | null;
+  /** E-mail de quem mandou para a lixeira. `null` depois de restaurada. */
+  deletedBy?: string | null;
 };
 
 export type CardInput = {
@@ -189,7 +203,33 @@ export type CardInput = {
   links: CardLink[];
 };
 
-/** Assina os cards de um setor em tempo real. */
+/** Vira o snapshot em cards, sem julgar nada. As três assinaturas partem daqui. */
+function cardsDo(snap: QuerySnapshot): Card[] {
+  return snap.docs.map((d) => ({
+    id: d.id,
+    ...(d.data() as Omit<Card, "id">),
+  }));
+}
+
+/**
+ * Assina os cards de um setor em tempo real — só os VIVOS.
+ *
+ * O FILTRO MORA AQUI, na origem, e não em cada tela. Seis telas leem card hoje;
+ * se cada uma filtrasse por conta própria, a sétima que alguém escrever no mês
+ * que vem nasceria mostrando demanda excluída — e ninguém perceberia, porque a
+ * tela funcionaria perfeitamente. Esconder o que foi para a lixeira é
+ * propriedade da FONTE, não boa vontade de quem consome. Quem quer o outro lado
+ * pede por ele, em `subscribeLixeira`.
+ *
+ * E o filtro é EM MEMÓRIA, não na consulta. `where("deletedAt", "==", null)`
+ * parece a versão certa e é a armadilha: no Firestore, documento que não TEM o
+ * campo não é devolvido por consulta sobre aquele campo. Todo card já gravado
+ * está nessa situação — nenhum deles conhece `deletedAt` —, então a consulta
+ * "correta" devolveria zero demandas, e todos os quadros do app amanheceriam
+ * vazios até alguém rodar um backfill. Fora isso, ainda pediria índice composto
+ * com `sector`. Filtrar depois custa o que o snapshot já trouxe, e o snapshot
+ * do setor é justamente o que o quadro precisa inteiro de qualquer jeito.
+ */
 export function subscribeCards(
   sector: string,
   onData: (cards: Card[]) => void,
@@ -198,10 +238,7 @@ export function subscribeCards(
   return onSnapshot(
     query(collection(db, "cards"), where("sector", "==", sector)),
     (snap) => {
-      const cards = snap.docs.map((d) => ({
-        id: d.id,
-        ...(d.data() as Omit<Card, "id">),
-      }));
+      const cards = cardsDo(snap).filter(viva);
       cards.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
       onData(cards);
     },
@@ -209,7 +246,11 @@ export function subscribeCards(
   );
 }
 
-/** Assina os cards de vários setores (Dashboard/Cronograma). */
+/**
+ * Assina os cards de vários setores (Dashboard/Cronograma/Links/Recorrências).
+ *
+ * Mesma exclusão da lixeira, pelo mesmo motivo — ver `subscribeCards`.
+ */
 export function subscribeCardsForSectors(
   sectors: string[],
   onData: (cards: Card[]) => void,
@@ -222,9 +263,31 @@ export function subscribeCardsForSectors(
   return onSnapshot(
     query(collection(db, "cards"), where("sector", "in", sectors.slice(0, 30))),
     (snap) => {
-      onData(
-        snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Card, "id">) })),
-      );
+      onData(cardsDo(snap).filter(viva));
+    },
+    (e) => onError?.(e),
+  );
+}
+
+/**
+ * Assina só as demandas NA lixeira de um setor, da mais recente para a mais
+ * antiga.
+ *
+ * Espelho exato de `subscribeCards`: a mesma consulta, o filtro invertido. É de
+ * propósito que a consulta seja idêntica — o SDK do cliente reconhece o mesmo
+ * alvo e não abre uma segunda escuta no servidor quando as duas telas coexistem.
+ * Uma consulta própria (`where("deletedAt", "!=", null)`) custaria índice novo e
+ * ainda esbarraria na mesma armadilha do documento sem o campo.
+ */
+export function subscribeLixeira(
+  sector: string,
+  onData: (cards: Card[]) => void,
+  onError?: (e: Error) => void,
+): () => void {
+  return onSnapshot(
+    query(collection(db, "cards"), where("sector", "==", sector)),
+    (snap) => {
+      onData(ordenarLixeira(cardsDo(snap).filter(naLixeira)));
     },
     (e) => onError?.(e),
   );
@@ -427,15 +490,74 @@ export async function removeComment(
 }
 
 /**
- * Apaga a demanda — e o histórico dela antes, porque o Firestore não apaga
- * subcoleção junto com o pai. Ver `apagarHistorico` para a ordem.
+ * Manda a demanda para a lixeira.
+ *
+ * ISTO SUBSTITUI o antigo `deleteCardById`, que apagava de verdade — e que, na
+ * prática, só o super admin conseguia executar. Ele varria a subcoleção de
+ * histórico num lote de até 400 deleções, e cada deleção custa 8 acessos a
+ * documento nas regras para admin (14 para gestor), contra um teto de 20 por
+ * requisição. O super admin passava porque `isSuperAdmin()` responde sem ler
+ * documento nenhum; todo o resto batia no teto e recebia "sem permissão" numa
+ * ação que a pessoa tinha, sim, permissão de fazer.
+ *
+ * A saída não é um lote menor: é não precisar de lote. Aqui são DUAS operações
+ * de documento único — a marca no card e o evento do histórico —, e o custo
+ * cabe com folga (14 acessos para admin, 18 para gestor). Apagar de vez, com a
+ * varrida da subcoleção, é `POST /api/demandas/expurgar`, que roda no Admin SDK
+ * e não passa por regra nenhuma.
+ *
+ * Lote de duas, e não duas escritas: a demanda sai do quadro e o registro de
+ * que ela saiu entram juntos, ou nenhum dos dois entra (AGENTS.md §4). Uma
+ * demanda que some sem linha nenhuma no histórico é a pior coisa que esta
+ * funcionalidade poderia produzir — some justamente o que responde "quem
+ * apagou isto, e quando?".
+ *
+ * `columnId`, `order` e `enteredAt` NÃO são tocados. É o que faz a restauração
+ * devolver a demanda ao lugar de onde ela saiu, com a idade que sempre teve.
  */
-export async function deleteCardById(
+export async function moverParaLixeira(
   id: string,
-  sector: string,
+  registro: { ctx: ContextoHistorico },
 ): Promise<void> {
-  await apagarHistorico(id, sector);
-  await deleteDoc(doc(db, "cards", id));
+  const batch = writeBatch(db);
+  // Sem `mudancas`: o verbo é o fato inteiro, e "deletedAt: vazio → data" seria
+  // a mesma frase escrita duas vezes. Por isso o evento entra mesmo assim — ver
+  // `registraSemMudancas` em `historico-core`.
+  anexarEvento(batch, id, registro.ctx, "excluida", []);
+  batch.update(doc(db, "cards", id), {
+    deletedAt: Date.now(),
+    deletedBy: registro.ctx.autor,
+    histCount: increment(1),
+  });
+  await batch.commit();
+}
+
+/**
+ * Devolve a demanda ao quadro, na coluna em que estava.
+ *
+ * Grava `null`, e não `deleteField()`. As duas escondem a demanda da lixeira,
+ * mas a regra do Firestore que autoriza a restauração olha os campos afetados
+ * pela escrita, e `null` é o que ela consegue examinar: `deleteField()` chega
+ * como remoção, e uma regra que precisa comparar valor não tem o que comparar.
+ * `naLixeira` trata ausência e `null` como a mesma coisa exatamente para que
+ * essa escolha fique livre — ver `lixeira-core`.
+ *
+ * Nada de `order` nem de `enteredAt`. Reiniciar o aging faria a demanda voltar
+ * ao topo da coluna mentindo que é nova, e o atraso que ela acumulou — que é a
+ * razão de alguém tê-la resgatado — desapareceria do Dashboard no mesmo clique.
+ */
+export async function restaurarDaLixeira(
+  id: string,
+  registro: { ctx: ContextoHistorico },
+): Promise<void> {
+  const batch = writeBatch(db);
+  anexarEvento(batch, id, registro.ctx, "restaurada", []);
+  batch.update(doc(db, "cards", id), {
+    deletedAt: null,
+    deletedBy: null,
+    histCount: increment(1),
+  });
+  await batch.commit();
 }
 
 /**

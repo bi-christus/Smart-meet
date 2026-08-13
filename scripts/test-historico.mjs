@@ -14,11 +14,13 @@
  * Roda com o strip de tipos nativo do Node sobre o .ts real — sem cópia.
  */
 import {
+  ACAO_ROTULO,
   CAMPO_ROTULO,
   dataBR,
   diffCard,
   linhaDaMudanca,
   mudancasIniciais,
+  registraSemMudancas,
 } from "../src/lib/historico-core.ts";
 
 let falhas = 0;
@@ -313,6 +315,38 @@ checa(
 checa(
   "nenhum campo chega à tela sem rótulo",
   Object.values(CAMPO_ROTULO).every((v) => typeof v === "string" && v.length),
+);
+
+// --- lixeira: dois verbos que valem por si --------------------------------
+// Estes dois não têm par "de → para": mandar para a lixeira não muda campo
+// nenhum que o histórico rastreie, e "deletedAt saiu de vazio e virou uma data"
+// é o próprio verbo escrito de novo. O risco, então, é o oposto do resto deste
+// arquivo: aqui a falha seria a ação acontecer SEM linha nenhuma — a demanda
+// some do quadro e o histórico não sabe dizer quem a tirou.
+checa(
+  "excluir e restaurar viram evento mesmo sem mudança de campo",
+  registraSemMudancas("excluida") && registraSemMudancas("restaurada"),
+);
+checa(
+  "criar continua valendo por si (era o único até aqui)",
+  registraSemMudancas("criada"),
+);
+checa(
+  "editar e mover sem mudança nenhuma continuam NÃO virando linha",
+  !registraSemMudancas("editada") && !registraSemMudancas("movida"),
+);
+checa(
+  "os dois verbos novos chegam à timeline com frase, não com o código",
+  ACAO_ROTULO.excluida === "mandou para a lixeira" &&
+    ACAO_ROTULO.restaurada === "trouxe de volta da lixeira",
+  `${ACAO_ROTULO.excluida} / ${ACAO_ROTULO.restaurada}`,
+);
+checa(
+  "nenhuma ação chega à tela sem rótulo",
+  ["criada", "editada", "movida", "excluida", "restaurada"].every(
+    (a) => typeof ACAO_ROTULO[a] === "string" && ACAO_ROTULO[a].length > 0,
+  ),
+  Object.keys(ACAO_ROTULO).join(", "),
 );
 
 console.log(

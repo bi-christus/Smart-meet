@@ -1581,3 +1581,204 @@
      ABAIXO da linha de adicionar, então o deslocamento inverte de sinal. */
   margin: 6px 0 0;
 }
+
+/* ---------- lixeira do setor ----------
+   Excluir uma demanda deixou de ser um apagamento: ela vai para cá e volta de
+   cá. O painel é uma lista de linhas, e a geometria vem do histórico (mesma
+   altura máxima, mesma rolagem interna) porque os dois respondem à mesma
+   pergunta — "o que aconteceu com esta demanda?" — e abrem no mesmo diálogo.
+
+   NADA AQUI ANIMA, e isso é decisão, não esquecimento. Restaurar e apagar são
+   mutação de lista: pelo AGENTS.md §3 e pela Frequency Gate da skill de motion,
+   animar a saída de cada linha vira lentidão percebida em quem está limpando
+   dez demandas seguidas. A entrada e a saída do diálogo — essas ganham
+   movimento — são do `<Modal>`, que já está no bloco de `prefers-reduced-motion`
+   lá em cima. Por isso nenhuma classe daqui entra naquele bloco: não há
+   movimento para reduzir. */
+
+/* No cabeçalho do quadro, ao lado do relatório: as duas são ações que se toma
+   depois de olhar para o quadro, não filtros dele. */
+.lixeiraBtn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.lixeiraBtn svg {
+  color: var(--tx-3);
+}
+.lixeiraBtn:hover svg {
+  color: var(--brand);
+}
+/* A contagem só existe quando há algo dentro — e o CSS não é quem decide isso.
+   Ver o `naLixeira &&` na página: um "0" antes da resposta seria a mesma
+   mentira que o resto do quadro passou meses corrigindo. */
+.lixeiraN {
+  min-width: 17px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--s3);
+  color: var(--tx);
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 17px;
+  text-align: center;
+}
+
+.lixeiraLista {
+  display: flex;
+  flex-direction: column;
+  max-height: 52vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.lixeiraItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.lixeiraItem:last-child {
+  border-bottom: none;
+}
+.lixeiraInfo {
+  flex: 1;
+  /* Sem isto o título longo empurra os botões para fora do diálogo em vez de
+     quebrar: o conteúdo define o mínimo de um flex item. */
+  min-width: 180px;
+}
+.lixeiraTitulo {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--tx);
+  line-height: 1.35;
+}
+.lixeiraMeta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-top: 3px;
+  font-size: 11.5px;
+  color: var(--tx-3);
+}
+.lixeiraAcoes {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+.lixeiraAcao {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--s1);
+  color: var(--tx-2);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.lixeiraAcao:hover {
+  color: var(--tx);
+  border-color: var(--brand);
+}
+.lixeiraAcao:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+/* Apagar de vez fica em vermelho só no hover: em repouso ele é vizinho de
+   "Restaurar" e não pode gritar mais alto que a ação que se espera usar. */
+.lixeiraApagar:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.lixeiraAviso {
+  margin-top: 12px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  background: var(--s1);
+  border: 1px solid var(--line);
+  color: var(--tx-2);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+/* ---------- confirmação na própria tela ----------
+   Substitui o `confirm()` do navegador, que é desenhado fora do diálogo, rouba
+   o foco preso pelo `<Modal>` e só aceita uma frase que ninguém formatou. Aqui
+   cabe dizer o que vai acontecer — e o que NÃO vai. */
+.confirmaBloco {
+  margin-top: 14px;
+  padding: 12px 13px;
+  border: 1px solid var(--danger);
+  border-radius: 10px;
+  background: var(--danger-bg);
+}
+.confirmaTexto {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--tx);
+}
+.confirmaTexto strong {
+  display: block;
+  font-size: 13.5px;
+  margin-bottom: 3px;
+}
+.confirmaAcoes {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 11px;
+}
+/* A mesma confirmação, mas dentro de uma linha da lista: ela cabe na largura
+   que sobra, então o texto encolhe e os botões seguem os da lista. */
+.confirmaLinha {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 1;
+  min-width: 200px;
+  padding: 8px 10px;
+  border: 1px solid var(--danger);
+  border-radius: 9px;
+  background: var(--danger-bg);
+}
+.confirmaLinha .confirmaTexto {
+  flex: 1;
+  min-width: 160px;
+  font-size: 12px;
+}
+/* Sólido, e só aqui: o botão que confirma o irreversível é o único do modal que
+   pode parecer perigoso. O `.btnDanger` do rodapé continua discreto porque ele
+   só ABRE esta pergunta. */
+.btnConfirmaPerigo {
+  height: 34px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 8px;
+  background: var(--danger);
+  color: #fff;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btnConfirmaPerigo:hover {
+  filter: brightness(1.08);
+}
+.btnConfirmaPerigo:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.confirmaAcoes .btnGhost {
+  height: 34px;
+  padding: 0 14px;
+  font-size: 12.5px;
+}

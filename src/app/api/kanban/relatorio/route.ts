@@ -23,6 +23,9 @@ import {
   MAX_DESTINATARIOS,
 } from "@/lib/relatorio/config";
 import type { Card, ColumnDoc } from "@/lib/kanban";
+// Do módulo puro, e não de `kanban.ts`: aquele traz o SDK do cliente junto, e
+// uma rota de servidor não consegue importá-lo.
+import { viva } from "@/lib/lixeira-core";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -81,9 +84,15 @@ export async function POST(req: Request) {
       db.collection("users").get(),
     ]);
 
-    const cards = cardsSnap.docs.map(
-      (d) => ({ id: d.id, ...d.data() }) as Card,
-    );
+    // O filtro de lixeira roda AQUI, e não some porque `subscribeCards` já
+    // filtra: aquele é o SDK do cliente, e esta rota lê pelo Admin SDK, que não
+    // passa por ele. Sem esta linha o e-mail do gestor contaria demanda
+    // excluída — e discordaria da prévia que ele acabou de ver na tela, que lê
+    // pelo caminho do cliente. Relatório que não bate com o quadro é pior do
+    // que relatório nenhum, porque alguém decide em cima dele.
+    const cards = cardsSnap.docs
+      .map((d) => ({ id: d.id, ...d.data() }) as Card)
+      .filter(viva);
     if (cards.length === 0) {
       throw new HttpError(409, `O quadro de ${setor} não tem demandas.`);
     }
