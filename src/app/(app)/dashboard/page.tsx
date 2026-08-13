@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { subscribeUsers, DEFAULT_SECTORS, type UserProfile } from "@/lib/users";
@@ -28,8 +28,13 @@ import {
   startOfWeek,
   toISO,
 } from "@/lib/datas";
+import { juntarFontes, type Fonte } from "@/lib/async-data-core";
+import { useAsyncData } from "@/lib/use-async-data";
 import { Icon } from "@/components/icons";
 import { Select, type SelectOption } from "@/components/select";
+import { EmptyState } from "@/components/empty-state";
+import { ErrorState } from "@/components/error-state";
+import { SkeletonChart, SkeletonRow } from "@/components/skeleton";
 import styles from "./dashboard.module.css";
 
 /**
@@ -69,6 +74,19 @@ const PERIODO_LABEL: Record<Periodo, string> = {
 /** Mínimo de conclusões para publicar percentil. Abaixo disso é chute. */
 const MIN_AMOSTRA = 5;
 
+/**
+ * Listas vazias constantes, para os cálculos rodarem antes de os dados chegarem.
+ *
+ * Elas moram fora do componente porque `?? []` escrito no corpo cria um array
+ * NOVO a cada render, e todo `useMemo` que dependesse dele recalcularia sempre
+ * — o Dashboard tem doze. Nenhuma delas chega à tela: quem decide se o painel
+ * desenha é `juntarFontes`, painel a painel.
+ */
+const SEM_CARDS: Card[] = [];
+const SEM_COLS: ColumnDoc[] = [];
+const SEM_RECS: Recorrencia[] = [];
+const SEM_USERS: UserProfile[] = [];
+
 export default function DashboardPage() {
   const { profile } = useAuth();
 
@@ -82,37 +100,40 @@ export default function DashboardPage() {
     [profile],
   );
 
-  const [cards, setCards] = useState<Card[]>([]);
-  const [users, setUsers] = useState<UserProfile[]>([]);
-  const [cols, setCols] = useState<ColumnDoc[]>([]);
-  const [recs, setRecs] = useState<Recorrencia[]>([]);
+  /**
+   * As quatro assinaturas, cada uma sabendo dizer se já respondeu.
+   *
+   * Antes eram quatro `useState([])`: enquanto o Firestore não respondia, a
+   * tela afirmava seis vezes que não havia nada. E os três callbacks de erro
+   * vazios, mais o que só escrevia no console, faziam com que negação de
+   * permissão ficasse para sempre parecendo "não há nada aqui" — que é a mesma
+   * tela de quando dá certo e o setor está zerado.
+   */
+  const chaveSetores = sectors.join("|");
+  const fCards = useAsyncData<Card>(chaveSetores, (onData, onErro) =>
+    subscribeCardsForSectors(sectors, onData, onErro),
+  );
+  const fCols = useAsyncData<ColumnDoc>(chaveSetores, (onData, onErro) =>
+    subscribeColumnsForSectors(sectors, onData, onErro),
+  );
+  const fRecs = useAsyncData<Recorrencia>(chaveSetores, (onData, onErro) =>
+    subscribeRecorrencias(sectors, onData, onErro),
+  );
+  // A lista de pessoas não é recortada por setor, então a chave é fixa: só
+  // remonta em "tentar de novo".
+  const fUsers = useAsyncData<UserProfile>("todos", (onData, onErro) =>
+    subscribeUsers(onData, onErro),
+  );
+
+  const cards = fCards.data ?? SEM_CARDS;
+  const cols = fCols.data ?? SEM_COLS;
+  const recs = fRecs.data ?? SEM_RECS;
+  const users = fUsers.data ?? SEM_USERS;
 
   const [fSetor, setFSetor] = useState("");
   const [fPessoa, setFPessoa] = useState("");
   const [fResp, setFResp] = useState("");
   const [periodo, setPeriodo] = useState<Periodo>(12);
-
-  useEffect(() => {
-    const u = subscribeCardsForSectors(sectors, setCards, (e) =>
-      console.error("Erro ao carregar cards:", e),
-    );
-    return () => u();
-  }, [sectors]);
-
-  useEffect(() => {
-    const u = subscribeColumnsForSectors(sectors, setCols, () => {});
-    return () => u();
-  }, [sectors]);
-
-  useEffect(() => {
-    const u = subscribeRecorrencias(sectors, setRecs, () => {});
-    return () => u();
-  }, [sectors]);
-
-  useEffect(() => {
-    const u = subscribeUsers(setUsers, () => {});
-    return () => u();
-  }, []);
 
   const usersMap = useMemo(() => {
     const m: Record<string, UserProfile> = {};
@@ -247,8 +268,22 @@ export default function DashboardPage() {
     ...pessoas.map((e) => ({ value: e, label: nomeDe(e) })),
   ];
   const sujo = !!(fSetor || fPessoaAtivo || fRespAtivo);
+
+  /**
+   * A faixa de indicadores não ganhou esqueleto: ganhou o travessão.
+   *
+   * Ela é a primeira coisa que o olho encontra, e "0 vencidas" virando "12
+   * vencidas" meio segundo depois é a mesma mentira dos painéis, em número. O
+   * travessão já é o jeito desta tela de dizer "não sei" — é o que o p85 usa
+   * quando a amostra é pequena demais, três linhas abaixo. Cinco shimmers
+   * lado a lado numa faixa de 60px de altura seriam mais ruído que informação,
+   * e cinco `aria-live` anunciando "Carregando…" em sequência, pior ainda.
+   */
+  const kpis = juntarFontes([fCards, fCols]);
+  const kpiSemResposta = kpis.carregando || !!kpis.erro;
   const p85Txt =
-    fluxo.amostra >= MIN_AMOSTRA ? String(fluxo.p85) : "—";
+    kpiSemResposta || fluxo.amostra < MIN_AMOSTRA ? "—" : String(fluxo.p85);
+  const kpi = (n: number) => (kpiSemResposta ? "—" : n);
 
   return (
     <div className={`${styles.page} ${styles.viz}`}>
@@ -309,49 +344,57 @@ export default function DashboardPage() {
             <Icon name="x" size={13} /> Limpar
           </button>
         )}
-        <span className={styles.contagem}>
-          {abertos.length}{" "}
-          {abertos.length === 1 ? "demanda em aberto" : "demandas em aberto"}
-          {fPessoaAtivo ? " · pessoa = autor ou responsável" : ""}
-        </span>
+        {!kpiSemResposta && (
+          <span className={styles.contagem}>
+            {abertos.length}{" "}
+            {abertos.length === 1 ? "demanda em aberto" : "demandas em aberto"}
+            {fPessoaAtivo ? " · pessoa = autor ou responsável" : ""}
+          </span>
+        )}
       </div>
 
       <div className={styles.kstrip}>
         <Kpi
           icone="kanban"
           rotulo="Em aberto"
-          valor={abertos.length}
-          rodape={`${doRecorte.length - abertos.length} concluída(s) fora da conta`}
+          valor={kpi(abertos.length)}
+          rodape={
+            kpiSemResposta
+              ? "aguardando o quadro"
+              : `${doRecorte.length - abertos.length} concluída(s) fora da conta`
+          }
         />
         <Kpi
           icone="warn"
           rotulo="Vencidas"
-          valor={prazos.vencidas}
+          valor={kpi(prazos.vencidas)}
           rodape="prazo já ultrapassado"
-          tom={prazos.vencidas ? "danger" : undefined}
+          tom={!kpiSemResposta && prazos.vencidas ? "danger" : undefined}
         />
         <Kpi
           icone="calendar"
           rotulo="Vencem em 7 dias"
-          valor={prazos.proximas}
+          valor={kpi(prazos.proximas)}
           rodape="entram na semana"
-          tom={prazos.proximas ? "warn" : undefined}
+          tom={!kpiSemResposta && prazos.proximas ? "warn" : undefined}
         />
         <Kpi
           icone="clock"
           rotulo="Cycle time p85"
           valor={p85Txt}
-          unidade={fluxo.amostra >= MIN_AMOSTRA ? "dias" : ""}
+          unidade={p85Txt === "—" ? "" : "dias"}
           rodape={
-            fluxo.amostra >= MIN_AMOSTRA
-              ? "85% saem nesse prazo ou menos"
-              : `${fluxo.amostra} conclusão(ões) no período — amostra pequena demais`
+            kpiSemResposta
+              ? "aguardando o quadro"
+              : fluxo.amostra >= MIN_AMOSTRA
+                ? "85% saem nesse prazo ou menos"
+                : `${fluxo.amostra} conclusão(ões) no período — amostra pequena demais`
           }
         />
         <Kpi
           icone="check"
           rotulo="Entregas"
-          valor={fluxo.entregas4}
+          valor={kpi(fluxo.entregas4)}
           unidade="/4 sem"
           rodape="concluídas nas últimas 4 semanas"
         />
@@ -368,47 +411,68 @@ export default function DashboardPage() {
        * Na dupla ficam os dois painéis de altura parecida (rosca e cycle time);
        * os dois gráficos largos ficam inteiros embaixo, onde 52 semanas cabem.
        */}
+      {/**
+       * Cada painel espera pelas fontes QUE ELE LÊ, e por mais nenhuma.
+       *
+       * Um esqueleto de página inteira seria a rosca de tipos esperando a lista
+       * de usuários, que ela nem consulta. As dependências abaixo não são as
+       * das props: `abertos` passa por `concluido`, que sai de `cols` — desenhar
+       * qualquer painel antes de as colunas chegarem mostraria demanda entregue
+       * contada como aberta, que é número errado, e não só número faltando.
+       */}
       <div className={styles.paineis}>
-        <section className={`${styles.painel} ${styles.painelLargo}`}>
-          <PainelHead titulo="Consumo por responsável" />
+        <Painel
+          largo
+          titulo="Consumo por responsável"
+          fontes={[fCards, fCols, fRecs, fUsers]}
+          esqueleto={<SkeletonRow rows={4} texto="Carregando a carga por responsável…" />}
+        >
           <BarrasResponsavel
             cards={abertos}
             recs={recsNoRecorte}
             nomeDe={nomeDe}
           />
-        </section>
+        </Painel>
 
-        <section className={styles.painel}>
-          <PainelHead titulo="Demandas por tipo" />
+        <Painel
+          titulo="Demandas por tipo"
+          fontes={[fCards, fCols]}
+          esqueleto={<SkeletonChart bars={5} texto="Carregando a divisão por tipo…" />}
+        >
           <Rosca cards={abertos} />
-        </section>
+        </Painel>
 
-        <section className={styles.painel}>
-          <PainelHead
-            titulo="Cycle time e previsibilidade"
-            chip={
-              fluxo.amostra >= MIN_AMOSTRA
-                ? `p50 ${fluxo.p50}d · p85 ${fluxo.p85}d`
-                : undefined
-            }
-          />
+        <Painel
+          titulo="Cycle time e previsibilidade"
+          chip={
+            fluxo.amostra >= MIN_AMOSTRA
+              ? `p50 ${fluxo.p50}d · p85 ${fluxo.p85}d`
+              : undefined
+          }
+          fontes={[fCards, fCols]}
+          esqueleto={<SkeletonChart bars={9} texto="Carregando o cycle time…" />}
+        >
           <CycleTime fluxo={fluxo} />
-        </section>
+        </Painel>
 
-        <section className={`${styles.painel} ${styles.painelLargo}`}>
-          <PainelHead
-            titulo="Demanda que entra × demanda que sai"
-            chip={`fila ${fluxo.fila[fluxo.fila.length - 1] ?? 0}`}
-          />
+        <Painel
+          largo
+          titulo="Demanda que entra × demanda que sai"
+          chip={`fila ${fluxo.fila[fluxo.fila.length - 1] ?? 0}`}
+          fontes={[fCards, fCols]}
+          esqueleto={<SkeletonChart bars={10} texto="Carregando as séries semanais…" />}
+        >
           <FluxoSemanal fluxo={fluxo} />
-        </section>
+        </Painel>
 
-        <section className={`${styles.painel} ${styles.painelLargo}`}>
-          <PainelHead
-            titulo="Prazos — vencidas e a vencer"
-            chip={`${prazos.vencidas} ${prazos.vencidas === 1 ? "vencida" : "vencidas"}`}
-            chipTom={prazos.vencidas ? "danger" : undefined}
-          />
+        <Painel
+          largo
+          titulo="Prazos — vencidas e a vencer"
+          chip={`${prazos.vencidas} ${prazos.vencidas === 1 ? "vencida" : "vencidas"}`}
+          chipTom={prazos.vencidas ? "danger" : undefined}
+          fontes={[fCards, fCols, fUsers]}
+          esqueleto={<SkeletonRow rows={5} texto="Carregando os prazos…" />}
+        >
           <TabelaPrazos
             cards={abertos}
             hoje={hoje}
@@ -416,7 +480,7 @@ export default function DashboardPage() {
             colsPorSetor={colsPorSetor}
             corDoSetor={corDoSetor}
           />
-        </section>
+        </Painel>
       </div>
     </div>
   );
@@ -585,8 +649,66 @@ function Kpi({
   );
 }
 
-function Vazio({ children }: { children: React.ReactNode }) {
-  return <div className={styles.vazioPainel}>{children}</div>;
+/** Uma assinatura vista pelo painel: o estado dela, e como reabri-la. */
+type Assinatura = Fonte & { tentarDeNovo: () => void };
+
+/**
+ * Um painel do Dashboard, com o próprio estado de carregamento.
+ *
+ * A moldura e o título ficam SEMPRE na tela — é o que segura a forma da grade
+ * enquanto os cinco painéis resolvem em tempos diferentes. Só o miolo troca
+ * entre esqueleto, erro e conteúdo.
+ *
+ * O CHIP SOME ENQUANTO NÃO SE SABE. Ele é calculado a partir dos mesmos dados
+ * do miolo, então antes da resposta diria "fila 0" ou "0 vencidas" com a
+ * autoridade de um número pronto — a mentira que esta Issue existe para tirar,
+ * só que no cabeçalho.
+ *
+ * "Tentar de novo" reabre as assinaturas DESTE painel, e não as quatro: se só
+ * a lista de pessoas falhou, não há motivo para o quadro inteiro voltar ao
+ * esqueleto junto.
+ */
+function Painel({
+  titulo,
+  chip,
+  chipTom,
+  largo,
+  fontes,
+  esqueleto,
+  children,
+}: {
+  titulo: string;
+  chip?: string;
+  chipTom?: "danger";
+  largo?: boolean;
+  fontes: Assinatura[];
+  esqueleto: ReactNode;
+  children: ReactNode;
+}) {
+  const { erro, carregando } = juntarFontes(fontes);
+  return (
+    <section
+      className={`${styles.painel} ${largo ? styles.painelLargo : ""}`}
+      aria-busy={carregando || undefined}
+    >
+      <PainelHead
+        titulo={titulo}
+        chip={erro || carregando ? undefined : chip}
+        chipTom={chipTom}
+      />
+      {erro ? (
+        <ErrorState
+          error={erro}
+          size="compact"
+          onRetry={() => fontes.forEach((f) => f.tentarDeNovo())}
+        />
+      ) : carregando ? (
+        esqueleto
+      ) : (
+        children
+      )}
+    </section>
+  );
 }
 
 /** Rótulo do card cujo setor solicitante ficou em branco. */
@@ -666,7 +788,14 @@ function BarrasResponsavel({
   }, [origensUsadas]);
 
   if (!linhas.length)
-    return <Vazio>Nenhuma demanda em aberto neste recorte.</Vazio>;
+    return (
+      <EmptyState
+        size="compact"
+        icon="users"
+        title="Ninguém com demanda em aberto"
+        description="Quando houver demanda aberta no recorte, a carga de cada responsável aparece aqui — segmentada pelo setor que pediu."
+      />
+    );
 
   const max = Math.max(...linhas.map((l) => l[1].total));
   // Setor sem nenhuma recorrência programada não ganha uma coluna de "0 h/mês"
@@ -753,7 +882,15 @@ function Rosca({ cards }: { cards: Card[] }) {
     return m;
   }, [cards]);
 
-  if (!total) return <Vazio>Nenhuma demanda em aberto neste recorte.</Vazio>;
+  if (!total)
+    return (
+      <EmptyState
+        size="compact"
+        icon="kanban"
+        title="Nenhuma demanda em aberto"
+        description="A divisão por tipo aparece assim que houver demanda aberta neste recorte."
+      />
+    );
 
   const fatias = [
     ...DEMAND_TYPES.map((t) => ({
@@ -839,10 +976,12 @@ function FluxoSemanal({ fluxo }: { fluxo: Fluxo }) {
   const { semanas, entradas, entregas, fila } = fluxo;
   if (!entradas.some(Boolean) && !entregas.some(Boolean))
     return (
-      <Vazio>
-        Sem movimento no período. As séries aparecem quando houver demanda
-        criada ou concluída.
-      </Vazio>
+      <EmptyState
+        size="compact"
+        icon="trend"
+        title="Sem movimento no período"
+        description="As séries aparecem quando houver demanda criada ou concluída. Amplie o período no topo da tela para alcançar semanas anteriores."
+      />
     );
 
   // Painel de largura inteira: o viewBox acompanha, senão o SVG escala ~3× e o
@@ -981,16 +1120,26 @@ function CycleTime({ fluxo }: { fluxo: Fluxo }) {
   const { pontos, p50, p85, p95, amostra, semanas } = fluxo;
   if (amostra === 0)
     return (
-      <Vazio>
-        Nenhuma demanda concluída no período — sem conclusão não há cycle time.
-      </Vazio>
+      <EmptyState
+        size="compact"
+        icon="clock"
+        title="Nenhuma demanda concluída no período"
+        description="Sem conclusão não há cycle time. Amplie o período no topo da tela para alcançar semanas anteriores."
+      />
     );
   if (amostra < MIN_AMOSTRA)
     return (
-      <Vazio>
-        Só {amostra} conclusão(ões) no período. Percentil com amostra assim vira
-        chute — o gráfico aparece a partir de {MIN_AMOSTRA}.
-      </Vazio>
+      <EmptyState
+        size="compact"
+        icon="clock"
+        title="Amostra pequena demais"
+        description={
+          <>
+            Só {amostra} conclusão(ões) no período. Percentil com amostra assim
+            vira chute — o gráfico aparece a partir de {MIN_AMOSTRA}.
+          </>
+        }
+      />
     );
 
   // Proporção achatada de propósito. O SVG escala pela largura, então o painel
@@ -1089,9 +1238,12 @@ function TabelaPrazos({
 
   if (!linhas.length)
     return (
-      <Vazio>
-        Nenhuma demanda vencida ou vencendo nos próximos 14 dias.
-      </Vazio>
+      <EmptyState
+        size="compact"
+        icon="calendar"
+        title="Nenhum prazo à vista"
+        description="Nada vencido, e nada vencendo nos próximos 14 dias, neste recorte."
+      />
     );
 
   return (

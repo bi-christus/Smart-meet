@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { subscribeUsers, DEFAULT_SECTORS, type UserProfile } from "@/lib/users";
@@ -28,9 +28,14 @@ import {
   startOfWeek,
   toISO,
 } from "@/lib/datas";
+import { juntarFontes } from "@/lib/async-data-core";
+import { useAsyncData } from "@/lib/use-async-data";
 import { Icon } from "@/components/icons";
 import { Modal } from "@/components/modal";
 import { Select, type SelectOption } from "@/components/select";
+import { EmptyState } from "@/components/empty-state";
+import { ErrorState } from "@/components/error-state";
+import { SkeletonRow } from "@/components/skeleton";
 import styles from "./cronograma.module.css";
 
 /**
@@ -58,6 +63,16 @@ type Item =
 
 type Vista = "mes" | "semana";
 
+/**
+ * Listas vazias constantes, para os cálculos rodarem antes de os dados
+ * chegarem. Fora do componente porque `?? []` no corpo cria um array novo a
+ * cada render, e os `useMemo` que dependem dele recalculariam sempre.
+ */
+const SEM_CARDS: Card[] = [];
+const SEM_MEETINGS: Meeting[] = [];
+const SEM_COLS: ColumnDoc[] = [];
+const SEM_USERS: UserProfile[] = [];
+
 export default function CronogramaPage() {
   const { profile } = useAuth();
 
@@ -71,39 +86,41 @@ export default function CronogramaPage() {
     [profile],
   );
 
-  const [cards, setCards] = useState<Card[]>([]);
-  const [meetings, setMeetings] = useState<Meeting[]>([]);
-  const [users, setUsers] = useState<UserProfile[]>([]);
-  const [cols, setCols] = useState<ColumnDoc[]>([]);
+  /**
+   * As quatro assinaturas, cada uma sabendo dizer se já respondeu.
+   *
+   * Antes eram quatro `useState([])`, e o calendário afirmava "Nenhuma reunião
+   * ou prazo neste período" enquanto ainda buscava — com dois dos quatro erros
+   * indo só para o console e os outros dois para lugar nenhum.
+   */
+  const chaveSetores = sectors.join("|");
+  const fCards = useAsyncData<Card>(chaveSetores, (onData, onErro) =>
+    subscribeCardsForSectors(sectors, onData, onErro),
+  );
+  const fMeetings = useAsyncData<Meeting>(chaveSetores, (onData, onErro) =>
+    subscribeMeetings(sectors, onData, onErro),
+  );
+  const fCols = useAsyncData<ColumnDoc>(chaveSetores, (onData, onErro) =>
+    subscribeColumnsForSectors(sectors, onData, onErro),
+  );
+  const fUsers = useAsyncData<UserProfile>("todos", (onData, onErro) =>
+    subscribeUsers(onData, onErro),
+  );
+
+  const cards = fCards.data ?? SEM_CARDS;
+  const meetings = fMeetings.data ?? SEM_MEETINGS;
+  const cols = fCols.data ?? SEM_COLS;
+  // A lista de pessoas não entra no estado da grade: ela só traduz e-mail em
+  // nome dentro do modal de espiada, e um card sem o nome resolvido ainda diz
+  // tudo o que importa. Fazer o calendário inteiro esperar por ela seria
+  // esperar por um dado que a tela nem mostra.
+  const users = fUsers.data ?? SEM_USERS;
+
   const [vista, setVista] = useState<Vista>("mes");
   const [filtroSetor, setFiltroSetor] = useState("");
   /** Deslocamento em meses (ou semanas, na vista de semana) a partir de hoje. */
   const [offset, setOffset] = useState(0);
   const [peek, setPeek] = useState<Item | null>(null);
-
-  useEffect(() => {
-    const u = subscribeCardsForSectors(sectors, setCards, (e) =>
-      console.error("Erro ao carregar cards:", e),
-    );
-    return () => u();
-  }, [sectors]);
-
-  useEffect(() => {
-    const u = subscribeMeetings(sectors, setMeetings, (e) =>
-      console.error("Erro ao carregar reuniões:", e),
-    );
-    return () => u();
-  }, [sectors]);
-
-  useEffect(() => {
-    const u = subscribeColumnsForSectors(sectors, setCols, () => {});
-    return () => u();
-  }, [sectors]);
-
-  useEffect(() => {
-    const u = subscribeUsers(setUsers, () => {});
-    return () => u();
-  }, []);
 
   const usersMap = useMemo(() => {
     const m: Record<string, UserProfile> = {};
@@ -197,6 +214,21 @@ export default function CronogramaPage() {
     [itens, janela],
   );
 
+  /**
+   * A grade lê de três assinaturas, e não de quatro.
+   *
+   * `cols` entra porque demanda entregue sai da agenda — sem as colunas, o
+   * calendário mostraria prazo cumprido com selo de "vencida há N dias" sobre
+   * trabalho pronto. Isso é número errado, não número faltando, e por isso
+   * segura a grade junto com os cards e as reuniões.
+   */
+  const grade = juntarFontes([fCards, fMeetings, fCols]);
+  const reabrirGrade = () => {
+    fCards.tentarDeNovo();
+    fMeetings.tentarDeNovo();
+    fCols.tentarDeNovo();
+  };
+
   const setorOptions: SelectOption[] = [
     { value: "", label: "Todos os setores" },
     ...sectors.map((s) => ({ value: s, label: s })),
@@ -231,9 +263,14 @@ export default function CronogramaPage() {
       <div className={styles.head}>
         <div className={styles.headMain}>
           <h1>Cronograma</h1>
+          {/* A contagem só entra depois da resposta: "0 compromissos no
+              período" antes de saber é a mesma afirmação falsa da mensagem de
+              vazio, dita com a autoridade de um número. */}
           <p>
-            Reuniões e prazos de demandas — {noPeriodo}{" "}
-            {noPeriodo === 1 ? "compromisso" : "compromissos"} no período.
+            Reuniões e prazos de demandas
+            {grade.carregando || grade.erro
+              ? "."
+              : ` — ${noPeriodo} ${noPeriodo === 1 ? "compromisso" : "compromissos"} no período.`}
           </p>
         </div>
 
@@ -306,8 +343,18 @@ export default function CronogramaPage() {
       </div>
 
       <div className={styles.scroll}>
+        {/**
+         * A grade fica na tela mesmo carregando, e o esqueleto vai abaixo dela.
+         *
+         * O mês é estrutura, não dado: os dias 1 a 31 existem antes de qualquer
+         * `onSnapshot` e não afirmam nada sobre a agenda. Trocar a grade inteira
+         * por barras cinzas tiraria a forma da página para devolvê-la meio
+         * segundo depois — e o `aria-busy` abaixo é o que conta a mesma coisa a
+         * quem não vê o esqueleto.
+         */}
         <div
           className={`${styles.grade} ${vista === "semana" ? styles.gradeSemana : ""}`}
+          aria-busy={grade.carregando || undefined}
         >
           {DOW_MINI.map((d) => (
             <div key={d} className={styles.gradeHead}>
@@ -348,12 +395,23 @@ export default function CronogramaPage() {
           })}
         </div>
 
-        {noPeriodo === 0 && (
-          <div className={styles.vazio}>
-            Nenhuma reunião ou prazo neste período. Prazos aparecem aqui quando
-            uma demanda do Kanban ganha data de entrega.
-          </div>
-        )}
+        {grade.erro ? (
+          <ErrorState error={grade.erro} onRetry={reabrirGrade} />
+        ) : grade.carregando ? (
+          <SkeletonRow rows={3} texto="Carregando reuniões e prazos…" />
+        ) : noPeriodo === 0 ? (
+          <EmptyState
+            icon="calendar"
+            title="Nada marcado neste período"
+            description={
+              <>
+                Nenhuma reunião e nenhum prazo entre estas datas. Prazos
+                aparecem aqui quando uma demanda do Kanban ganha data de
+                entrega.
+              </>
+            }
+          />
+        ) : null}
       </div>
 
       {peek && (
