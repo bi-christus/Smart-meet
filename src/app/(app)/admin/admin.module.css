@@ -100,6 +100,10 @@
   font-size: 13.5px;
   font-weight: 600;
   cursor: pointer;
+  /* Esta tela nao tinha UMA linha de transicao — nem em hover de botao.
+     Mudanca instantanea de estado le como quebrado. 180ms e o alvo do
+     AGENTS.md; nada de animacao de entrada. */
+  transition: background 0.18s;
 }
 .btnPrimary:hover {
   background: var(--brand-hover);
@@ -215,6 +219,7 @@
   border-radius: 8px;
   color: var(--tx-3);
   cursor: pointer;
+  transition: color 0.18s, border-color 0.18s;
 }
 .iconBtn:hover {
   color: var(--tx);
@@ -327,6 +332,7 @@
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
+  transition: color 0.18s;
 }
 .btnGhost:hover {
   color: var(--tx);
@@ -342,6 +348,7 @@
   font-size: 14px;
   font-weight: 700;
   cursor: pointer;
+  transition: background 0.18s;
 }
 .btnSave:hover {
   background: var(--brand-hover);

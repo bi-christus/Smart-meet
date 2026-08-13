@@ -53,6 +53,10 @@
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
+  /* Esta tela nao tinha UMA linha de transicao — nem em hover de botao.
+     Mudanca instantanea de estado le como quebrado. 180ms e o alvo do
+     AGENTS.md; nada de animacao de entrada, isto e so resposta a um gesto. */
+  transition: background 0.18s, color 0.18s, border-color 0.18s;
 }
 .btnPri {
   border: 1px solid var(--brand);
@@ -193,6 +197,7 @@
   line-height: 1.35;
   color: var(--tx);
   cursor: pointer;
+  transition: color 0.18s;
 }
 .cardTitulo button:hover {
   color: var(--accent);
@@ -380,6 +385,7 @@
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
+  transition: color 0.18s, background 0.18s;
 }
 .seg button:hover {
   color: var(--tx);
@@ -446,6 +452,7 @@
   line-height: 1.35;
   color: var(--tx);
   cursor: pointer;
+  transition: border-color 0.18s;
 }
 .calChip:hover {
   border-color: var(--brand-line);
@@ -480,41 +487,11 @@
 }
 
 /* ---------- estados vazios ---------- */
-.vazioGrande {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding: 70px 40px;
-}
-.vazioIcone {
-  width: 66px;
-  height: 66px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 18px;
-  background: var(--s2);
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  color: var(--tx-3);
-}
-.vazioTitulo {
-  font-size: 17px;
-  font-weight: 700;
-  color: var(--tx);
-  margin-bottom: 6px;
-}
-.vazioGrande p {
-  max-width: 440px;
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--tx-3);
-}
-.vazioGrande b {
-  color: var(--tx-2);
-}
+
+/* `.vazioGrande`, `.vazioIcone` e `.vazioTitulo` moravam aqui e foram o MOLDE
+   do `components/empty-state.tsx`: eram o unico vazio do app com as quatro
+   partes. Saem agora que a pagina consome o componente — o desenho continua
+   vivo, so mudou de endereco e passou a servir as oito telas. */
 .vazioTela {
   margin: 60px auto;
   max-width: 420px;
@@ -773,6 +750,7 @@
   border-radius: 8px;
   color: var(--tx-3);
   cursor: pointer;
+  transition: color 0.18s;
 }
 .iconBtn:hover {
   color: var(--danger);
@@ -788,6 +766,7 @@
   font-size: 11px;
   color: var(--tx-3);
   cursor: pointer;
+  transition: color 0.18s, border-color 0.18s;
 }
 .addAct:hover {
   color: var(--accent);
