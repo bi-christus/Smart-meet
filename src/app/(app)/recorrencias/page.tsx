@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { subscribeUsers, DEFAULT_SECTORS, type UserProfile } from "@/lib/users";
@@ -54,7 +54,23 @@ import {
 import { Icon } from "@/components/icons";
 import { Modal } from "@/components/modal";
 import { Select, type SelectOption } from "@/components/select";
+import { EmptyState } from "@/components/empty-state";
+import { ErrorState } from "@/components/error-state";
+import { SkeletonRow } from "@/components/skeleton";
+import { juntarFontes } from "@/lib/async-data-core";
+import { useAsyncData } from "@/lib/use-async-data";
 import styles from "./recorrencias.module.css";
+
+/**
+ * Listas vazias constantes, para os cálculos rodarem antes de os dados
+ * chegarem. Fora do componente porque `?? []` no corpo cria um array novo a
+ * cada render, e os `useMemo` que dependem dele recalculariam sempre.
+ */
+const SEM_RECS: Recorrencia[] = [];
+const SEM_OCCS: Ocorrencia[] = [];
+const SEM_CARDS: Card[] = [];
+const SEM_COLS: ColumnDoc[] = [];
+const SEM_USERS: UserProfile[] = [];
 
 /**
  * Recorrências — a manutenção que ninguém lembra de fazer.
@@ -96,11 +112,38 @@ export default function RecorrenciasPage() {
   );
 
   const [sectorEscolhido, setSector] = useState("");
-  const [recs, setRecs] = useState<Recorrencia[]>([]);
-  const [occs, setOccs] = useState<Ocorrencia[]>([]);
-  const [cards, setCards] = useState<Card[]>([]);
-  const [cols, setCols] = useState<ColumnDoc[]>([]);
-  const [users, setUsers] = useState<UserProfile[]>([]);
+
+  /**
+   * As cinco assinaturas da tela.
+   *
+   * Este era o falso vazio mais visível do app: o estado vazio de Recorrências
+   * é o único com anatomia completa — ícone, título, explicação e o que fazer —
+   * e por isso o flash dele era o que mais chamava atenção. Quatro dos cinco
+   * erros iam para lugar nenhum.
+   */
+  const chaveSetores = sectors.join("|");
+  const fRecs = useAsyncData<Recorrencia>(chaveSetores, (onData, onErro) =>
+    subscribeRecorrencias(sectors, onData, onErro),
+  );
+  const fOccs = useAsyncData<Ocorrencia>(chaveSetores, (onData, onErro) =>
+    subscribeOcorrencias(sectors, onData, onErro),
+  );
+  const fCards = useAsyncData<Card>(chaveSetores, (onData, onErro) =>
+    subscribeCardsForSectors(sectors, onData, onErro),
+  );
+  const fCols = useAsyncData<ColumnDoc>(chaveSetores, (onData, onErro) =>
+    subscribeColumnsForSectors(sectors, onData, onErro),
+  );
+  const fUsers = useAsyncData<UserProfile>("todos", (onData, onErro) =>
+    subscribeUsers(onData, onErro),
+  );
+
+  const recs = fRecs.data ?? SEM_RECS;
+  const occs = fOccs.data ?? SEM_OCCS;
+  const cards = fCards.data ?? SEM_CARDS;
+  const cols = fCols.data ?? SEM_COLS;
+  const users = fUsers.data ?? SEM_USERS;
+
   const [mesOffset, setMesOffset] = useState(0);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [aberta, setAberta] = useState<string | null>(null);
@@ -112,25 +155,21 @@ export default function RecorrenciasPage() {
     ? sectorEscolhido
     : (sectors[0] ?? "");
 
-  useEffect(() => {
-    const a = subscribeRecorrencias(sectors, setRecs, (e) =>
-      console.error("Erro ao carregar recorrências:", e),
-    );
-    const b = subscribeOcorrencias(sectors, setOccs, () => {});
-    const c = subscribeCardsForSectors(sectors, setCards, () => {});
-    const d = subscribeColumnsForSectors(sectors, setCols, () => {});
-    return () => {
-      a();
-      b();
-      c();
-      d();
-    };
-  }, [sectors]);
-
-  useEffect(() => {
-    const u = subscribeUsers(setUsers, () => {});
-    return () => u();
-  }, []);
+  /**
+   * As quatro fontes que a tela desenha.
+   *
+   * `recs` sozinho decide se está vazio, mas os totais no topo saem de `occs`,
+   * `cards` e `cols`: desenhar o corpo antes deles mostraria "0 atrasadas" com
+   * cara de número apurado. A lista de pessoas fica de fora — ela só traduz
+   * e-mail em nome dentro do card.
+   */
+  const tela = juntarFontes([fRecs, fOccs, fCards, fCols]);
+  const reabrirTela = () => {
+    fRecs.tentarDeNovo();
+    fOccs.tentarDeNovo();
+    fCards.tentarDeNovo();
+    fCols.tentarDeNovo();
+  };
 
   const hoje = useMemo(() => startOfDay(), []);
   const usersMap = useMemo(() => {
@@ -297,19 +336,34 @@ export default function RecorrenciasPage() {
         </div>
       )}
 
-      {doSetor.length === 0 ? (
-        <div className={styles.vazioGrande}>
-          <div className={styles.vazioIcone}>
-            <Icon name="recorrencias" size={30} />
-          </div>
-          <div className={styles.vazioTitulo}>Nenhuma recorrência cadastrada</div>
-          <p>
-            O setor <b>{sector}</b> ainda não tem manutenção programada. Cada
-            recorrência cadastrada aqui passa a abrir um card no Kanban na data
-            combinada.
-            {canManage ? " Comece em Nova recorrência." : ""}
-          </p>
-        </div>
+      {tela.erro ? (
+        <ErrorState error={tela.erro} onRetry={reabrirTela} />
+      ) : tela.carregando ? (
+        <SkeletonRow rows={4} texto="Carregando as recorrências…" />
+      ) : doSetor.length === 0 ? (
+        /* Este bloco foi o molde do `<EmptyState>`: era o único vazio do app
+           com as quatro partes. Ao migrar, a explicação continua nomeando o
+           setor — é o que a torna sobre a situação de quem lê — e o convite
+           virou botão de verdade, em vez de uma frase pedindo que a pessoa
+           procure sozinha onde fica "Nova recorrência". */
+        <EmptyState
+          icon="recorrencias"
+          title="Nenhuma recorrência cadastrada"
+          description={
+            <>
+              O setor <b>{sector}</b> ainda não tem manutenção programada. Cada
+              recorrência cadastrada aqui passa a abrir um card no Kanban na
+              data combinada.
+            </>
+          }
+          action={
+            canManage ? (
+              <button type="button" onClick={() => setDraft(novaRec())}>
+                <Icon name="plus" size={14} /> Nova recorrência
+              </button>
+            ) : undefined
+          }
+        />
       ) : (
         <div className={styles.corpo}>
           <div className={styles.strip}>

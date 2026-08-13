@@ -302,16 +302,6 @@
   background: color-mix(in srgb, var(--warn) 16%, transparent);
 }
 
-.colempty {
-  margin-top: 4px;
-  padding: 20px 10px;
-  border: 1.5px dashed var(--line);
-  border-radius: 9px;
-  text-align: center;
-  color: var(--tx-3);
-  font-size: 12px;
-}
-
 .kcard {
   background: var(--s2);
   border: 1px solid var(--line-soft);

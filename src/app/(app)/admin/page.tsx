@@ -25,7 +25,15 @@ import {
 } from "@/lib/solicitantes";
 import { Icon } from "@/components/icons";
 import { OverlayPortal } from "@/components/overlay-portal";
+import { EmptyState } from "@/components/empty-state";
+import { ErrorState } from "@/components/error-state";
+import { SkeletonRow } from "@/components/skeleton";
+import { useAsyncData } from "@/lib/use-async-data";
 import styles from "./admin.module.css";
+
+/** Vazias constantes: `?? []` no corpo recria o array e invalida os `useMemo`. */
+const SEM_SETORES: SolicitanteSetor[] = [];
+const SEM_PESSOAS: Solicitante[] = [];
 
 const SUBTABS = [
   { id: "usuarios", label: "Usuários", enabled: true },
@@ -44,13 +52,30 @@ export default function AdminPage() {
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<UserProfile | "new" | null>(null);
 
+  /**
+   * A aba de Usuários já era a única do app que distinguia carregando de
+   * vazio, com `UserProfile[] | null`. Essa lógica fica exatamente como está —
+   * o que muda é o que acontecia no erro.
+   *
+   * Antes, falhar virava `setUsers([])`: a falha se disfarçava de "nenhum
+   * usuário cadastrado ainda", e o motivo real ia para o console. Agora o erro
+   * tem estado próprio e o `null` continua significando só "ainda não sei".
+   */
+  const [erroUsers, setErroUsers] = useState<Error | null>(null);
+  const [tentativaUsers, setTentativaUsers] = useState(0);
+
   useEffect(() => {
-    const unsub = subscribeUsers(setUsers, (e) => {
-      console.error("Erro ao carregar usuários:", e);
-      setUsers([]);
-    });
+    const unsub = subscribeUsers(
+      (lista) => {
+        setUsers(lista);
+        // Snapshot novo limpa o erro: o Firestore reconecta sozinho, e a tela
+        // tem de sair da falha sem ninguém recarregar a página.
+        setErroUsers(null);
+      },
+      (e) => setErroUsers(e),
+    );
     return () => unsub();
-  }, []);
+  }, [tentativaUsers]);
 
   const filtered = useMemo(() => {
     if (!users) return [];
@@ -110,9 +135,16 @@ export default function AdminPage() {
         </button>
       </div>
 
-      {users === null ? (
-        <div className={styles.empty}>Carregando usuários…</div>
+      {erroUsers ? (
+        <ErrorState
+          error={erroUsers}
+          onRetry={() => setTentativaUsers((n) => n + 1)}
+        />
+      ) : users === null ? (
+        <SkeletonRow rows={5} texto="Carregando os usuários…" />
       ) : filtered.length === 0 ? (
+        /* Com busca ativa isto é vazio DE VERDADE — a lista chegou e o filtro
+           não achou ninguém. Continua aqui de propósito. */
         <div className={styles.empty}>
           {search
             ? "Nenhum usuário encontrado."
@@ -147,20 +179,26 @@ export default function AdminPage() {
 }
 
 function SolicitantesAdmin() {
-  const [setores, setSetores] = useState<SolicitanteSetor[]>([]);
-  const [pessoas, setPessoas] = useState<Solicitante[]>([]);
+  /**
+   * Duas colunas, duas assinaturas, dois estados independentes — de propósito.
+   *
+   * São coleções separadas: a de setores pode responder antes da de pessoas, e
+   * segurar as duas juntas seria inventar uma espera. Antes, as duas jogavam o
+   * erro fora e as duas colunas afirmavam "ainda não tem nenhum" desde o
+   * primeiro quadro.
+   */
+  const fSetores = useAsyncData<SolicitanteSetor>("todos", (onData, onErro) =>
+    subscribeSolicitanteSetores(onData, onErro),
+  );
+  const fPessoas = useAsyncData<Solicitante>("todos", (onData, onErro) =>
+    subscribeSolicitantes(onData, onErro),
+  );
+  const setores = fSetores.data ?? SEM_SETORES;
+  const pessoas = fPessoas.data ?? SEM_PESSOAS;
+
   const [newSetor, setNewSetor] = useState("");
   const [newName, setNewName] = useState("");
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    const a = subscribeSolicitanteSetores(setSetores, () => {});
-    const b = subscribeSolicitantes(setPessoas, () => {});
-    return () => {
-      a();
-      b();
-    };
-  }, []);
 
   async function addSetor() {
     const n = newSetor.trim();
@@ -239,8 +277,21 @@ function SolicitantesAdmin() {
             <Icon name="plus" size={15} /> Adicionar
           </button>
         </div>
-        {setores.length === 0 ? (
-          <div className={styles.empty}>Nenhum setor solicitante ainda.</div>
+        {fSetores.erro ? (
+          <ErrorState
+            error={fSetores.erro}
+            size="compact"
+            onRetry={fSetores.tentarDeNovo}
+          />
+        ) : fSetores.data === undefined ? (
+          <SkeletonRow rows={3} texto="Carregando os setores solicitantes…" />
+        ) : setores.length === 0 ? (
+          <EmptyState
+            size="compact"
+            icon="users"
+            title="Nenhum setor solicitante ainda"
+            description="Cadastre acima os setores que costumam pedir demandas — eles viram opção no formulário do Kanban."
+          />
         ) : (
           <div className={styles.solList}>
             {setores.map((s) => (
@@ -279,8 +330,21 @@ function SolicitantesAdmin() {
             <Icon name="plus" size={15} /> Adicionar
           </button>
         </div>
-        {pessoas.length === 0 ? (
-          <div className={styles.empty}>Nenhum solicitante ainda.</div>
+        {fPessoas.erro ? (
+          <ErrorState
+            error={fPessoas.erro}
+            size="compact"
+            onRetry={fPessoas.tentarDeNovo}
+          />
+        ) : fPessoas.data === undefined ? (
+          <SkeletonRow rows={3} texto="Carregando os solicitantes…" />
+        ) : pessoas.length === 0 ? (
+          <EmptyState
+            size="compact"
+            icon="users"
+            title="Nenhum solicitante ainda"
+            description="Cadastre acima quem costuma pedir demandas — os nomes viram opção no formulário do Kanban."
+          />
         ) : (
           <div className={styles.solList}>
             {pessoas.map((p) => (

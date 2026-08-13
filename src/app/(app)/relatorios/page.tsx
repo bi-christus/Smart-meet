@@ -12,7 +12,7 @@
  * proposta pendente. Assim o filtro significa "não tenho mais nada aqui", que é
  * a pergunta que a pessoa realmente faz.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { DEFAULT_SECTORS } from "@/lib/users";
 import {
@@ -25,9 +25,21 @@ import {
 import { subscribePropostas, type Proposta } from "@/lib/demandas";
 import { Icon } from "@/components/icons";
 import { OverlayPortal } from "@/components/overlay-portal";
+import { EmptyState } from "@/components/empty-state";
+import { ErrorState } from "@/components/error-state";
+import { SkeletonRow } from "@/components/skeleton";
+import { juntarFontes } from "@/lib/async-data-core";
+import { useAsyncData } from "@/lib/use-async-data";
 import { PropostaForm } from "./proposta-form";
 import { DocViewer } from "./doc-viewer";
 import styles from "./relatorios.module.css";
+
+/**
+ * Listas vazias constantes: `?? []` no corpo do componente cria um array novo
+ * a cada render, e os `useMemo` que dependem dele recalculariam sempre.
+ */
+const SEM_MEETINGS: Meeting[] = [];
+const SEM_PROPOSTAS: Proposta[] = [];
 
 const OUTPUT_ICON: Record<DriveOutputKind, string> = {
   transcricao: "chat",
@@ -56,23 +68,33 @@ export default function RelatoriosPage() {
     [profile],
   );
 
-  const [meetings, setMeetings] = useState<Meeting[]>([]);
-  const [propostas, setPropostas] = useState<Proposta[]>([]);
+  /**
+   * As duas assinaturas da tela. Antes, as duas jogavam o erro no console — e
+   * console não é tratamento: ninguém abre o DevTools para descobrir por que a
+   * lista está vazia.
+   */
+  const chaveSetores = sectors.join("|");
+  const fMeetings = useAsyncData<Meeting>(chaveSetores, (onData, onErro) =>
+    subscribeMeetings(sectors, onData, onErro),
+  );
+  const fPropostas = useAsyncData<Proposta>(chaveSetores, (onData, onErro) =>
+    subscribePropostas(sectors, onData, onErro),
+  );
+
+  const meetings = fMeetings.data ?? SEM_MEETINGS;
+  const propostas = fPropostas.data ?? SEM_PROPOSTAS;
+
+  // As propostas entram junto: os contadores de cada filtro e o selo de
+  // pendência de cada card saem delas, e mostrá-los zerados antes da resposta
+  // diria que não há nada a decidir quando pode haver.
+  const tela = juntarFontes([fMeetings, fPropostas]);
+  const reabrirTela = () => {
+    fMeetings.tentarDeNovo();
+    fPropostas.tentarDeNovo();
+  };
+
   const [filter, setFilter] = useState<Filtro>("todas");
   const [view, setView] = useState<string | null>(null);
-
-  useEffect(() => {
-    const a = subscribeMeetings(sectors, setMeetings, (e) =>
-      console.error("Erro ao carregar relatórios:", e),
-    );
-    const b = subscribePropostas(sectors, setPropostas, (e) =>
-      console.error("Erro ao carregar propostas:", e),
-    );
-    return () => {
-      a();
-      b();
-    };
-  }, [sectors]);
 
   /** Propostas de cada reunião, para o card e para o modal. */
   const porReuniao = useMemo(() => {
@@ -156,13 +178,24 @@ export default function RelatoriosPage() {
         })}
       </div>
 
-      {shown.length === 0 ? (
-        <div className={styles.empty}>
-          Nenhuma reunião aqui ainda.
-          <br />
-          Quando o processamento gerar as atas de uma reunião, ela aparece com
-          os documentos e as demandas propostas.
-        </div>
+      {tela.erro ? (
+        <ErrorState error={tela.erro} onRetry={reabrirTela} />
+      ) : tela.carregando ? (
+        <SkeletonRow rows={4} texto="Carregando os relatórios…" />
+      ) : shown.length === 0 ? (
+        <EmptyState
+          icon="relatorios"
+          title={
+            filter === "todas"
+              ? "Nenhuma reunião aqui ainda"
+              : "Nenhuma reunião neste filtro"
+          }
+          description={
+            filter === "todas"
+              ? "Quando o processamento gerar as atas de uma reunião, ela aparece aqui com os documentos e as demandas propostas."
+              : "Troque o filtro acima para ver as demais reuniões."
+          }
+        />
       ) : (
         <div className={styles.grid}>
           {shown.map((m) => {
