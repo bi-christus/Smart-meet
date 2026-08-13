@@ -114,20 +114,11 @@
 .userBtn:hover {
   background: var(--s2);
 }
-.uAvatar,
-.uAvatarFallback {
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  flex: none;
-}
-.uAvatarFallback {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  font-weight: 700;
-  font-size: 12px;
+/* `.uAvatar` e `.uAvatarFallback` saíram daqui: círculo, corte e inicial agora
+   são de `<Avatar>`, que faz isso uma vez para os seis lugares que faziam à
+   mão. O que sobra é só o anel desta tela, que nenhum outro avatar tem. */
+.pendingAvatar {
+  border: 2px solid var(--brand-line);
 }
 .uMeta {
   text-align: left;

@@ -147,6 +147,36 @@ export function SkeletonRow({
 }
 
 /**
+ * Círculos do tamanho do avatar — a espera de quem acabou de escolher uma foto.
+ *
+ * Recebe uma LISTA de diâmetros porque a prévia da foto de perfil mostra o
+ * avatar nos tamanhos reais em que ele vai aparecer, lado a lado. Se o
+ * esqueleto fosse de um só, a linha encolheria durante o preparo e saltaria
+ * quando a imagem ficasse pronta — esqueleto que não ocupa o espaço do
+ * conteúdo troca uma espera por um solavanco.
+ */
+export function SkeletonAvatar({
+  sizes = [34],
+  texto = "Preparando a imagem…",
+}: {
+  sizes?: number[];
+  texto?: string;
+}) {
+  return (
+    <div className={styles.avatares} aria-live="polite" aria-busy="true">
+      <Aviso texto={texto} />
+      {sizes.map((s, i) => (
+        <div
+          key={i}
+          className={`${styles.bloco} ${styles.avatar}`}
+          style={{ width: s, height: s }}
+        />
+      ))}
+    </div>
+  );
+}
+
+/**
  * Painel de gráfico do Dashboard.
  *
  * Barras de alturas diferentes, ancoradas na base: um retângulo cinza chapado

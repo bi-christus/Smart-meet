@@ -24,6 +24,7 @@ import {
   type SolicitanteSetor,
 } from "@/lib/solicitantes";
 import { Icon } from "@/components/icons";
+import { Avatar } from "@/components/avatar";
 import { OverlayPortal } from "@/components/overlay-portal";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
@@ -375,7 +376,6 @@ function UserRow({
   isYou: boolean;
   onEdit: () => void;
 }) {
-  const inicial = (user.name?.trim()[0] || user.email[0] || "U").toUpperCase();
   const roleClass =
     user.role === "admin"
       ? styles.roleadmin
@@ -409,12 +409,8 @@ function UserRow({
 
   return (
     <div className={`${styles.row} ${!user.active ? styles.rowInactive : ""}`}>
-      <span
-        className={styles.avatarFallback}
-        style={{ background: user.color || "#555" }}
-      >
-        {inicial}
-      </span>
+      {/* alt vazio: o nome da pessoa está escrito na linha, ao lado. */}
+      <Avatar pessoa={user} size={38} alt="" />
 
       <div className={styles.rowMain}>
         <div className={styles.rowTop}>

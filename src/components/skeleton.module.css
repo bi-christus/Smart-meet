@@ -110,6 +110,14 @@
   flex: none;
   margin: 0;
 }
+/* Os círculos da prévia da foto de perfil, na mesma linha e no mesmo espaçamento
+   dos avatares de verdade que eles substituem enquanto a imagem é preparada. */
+.avatares {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
 .linhaTexto {
   flex: 1;
   min-width: 0;

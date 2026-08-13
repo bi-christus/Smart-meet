@@ -445,18 +445,8 @@
   width: 12px;
   height: 12px;
 }
-.miniAvatar {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 9.5px;
-  font-weight: 700;
-  color: #fff;
-  flex: none;
-}
+/* `.miniAvatar` saiu daqui: o círculo do responsável é `<Avatar>` agora, com o
+   mesmo desenho dos outros cinco lugares que o repetiam à mão. */
 
 /* ---------- modal ---------- */
 .overlay {
@@ -1127,18 +1117,8 @@
     transform: none;
   }
 }
-.cAvatar {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  font-weight: 700;
-  font-size: 10px;
-}
+/* `.cAvatar` saiu daqui pelo mesmo motivo do `.miniAvatar`: o avatar do autor
+   do comentário e o do evento do histórico são `<Avatar>`. */
 .cBody {
   flex: 1;
   min-width: 0;
