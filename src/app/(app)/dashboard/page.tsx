@@ -400,16 +400,21 @@ export default function DashboardPage() {
       </div>
 
       {/**
-       * A ordem dos painéis é de altura, não só de assunto.
+       * UMA COLUNA, e todo painel na largura inteira.
        *
-       * Consumo por responsável cresce com o número de pessoas do setor e não
-       * tem teto — ao lado de qualquer painel de altura fixa, ele decide a
-       * altura da linha inteira. Por isso vai sozinho, na largura toda: assim
-       * as origens de cada demanda cabem numa linha só, em vez de quebrarem.
+       * A grade era de duas colunas com uma escotilha (`largo`) para os painéis
+       * que não cabiam nela — e três dos cinco usavam a escotilha. O que a
+       * derrubou de vez foi o painel de setor solicitante passar a ocupar a
+       * largura toda (Issue #83): sobrava um único painel de meia largura, com
+       * meia linha vazia ao lado, que é exatamente o "card 80% vazio lê como
+       * bug" que o comentário de `align-items: start` existia para evitar.
        *
-       * Na dupla ficam os dois painéis que respondem "de que é feita a fila" —
-       * por tipo e por quem pediu; os dois gráficos largos ficam inteiros
-       * embaixo, onde 52 semanas cabem.
+       * Nenhum destes painéis é de meia largura por natureza. Três são séries e
+       * tabelas que ganham com cada pixel de largura; os dois de barra deitada
+       * medem por COMPRIMENTO, e comprimento cortado ao meio é a medida ficando
+       * pela metade. A ordem, agora, é só de assunto: quem carrega (pessoas),
+       * de que é feita a fila (tipo, origem), como ela anda (fluxo) e o que
+       * está vencendo (prazos).
        */}
       {/**
        * Cada painel espera pelas fontes QUE ELE LÊ, e por mais nenhuma.
@@ -422,7 +427,6 @@ export default function DashboardPage() {
        */}
       <div className={styles.paineis}>
         <Painel
-          largo
           titulo="Consumo por responsável"
           fontes={[fCards, fCols, fRecs, fUsers]}
           esqueleto={<SkeletonRow rows={4} texto="Carregando a carga por responsável…" />}
@@ -476,7 +480,6 @@ export default function DashboardPage() {
         </Painel>
 
         <Painel
-          largo
           titulo="Demanda que entra × demanda que sai"
           chip={`fila ${fluxo.fila[fluxo.fila.length - 1] ?? 0}`}
           fontes={[fCards, fCols]}
@@ -486,7 +489,6 @@ export default function DashboardPage() {
         </Painel>
 
         <Painel
-          largo
           titulo="Prazos — vencidas e a vencer"
           chip={`${prazos.vencidas} ${prazos.vencidas === 1 ? "vencida" : "vencidas"}`}
           chipTom={prazos.vencidas ? "danger" : undefined}
@@ -678,7 +680,7 @@ type Assinatura = Fonte & { tentarDeNovo: () => void };
 /**
  * Um painel do Dashboard, com o próprio estado de carregamento.
  *
- * A moldura e o título ficam SEMPRE na tela — é o que segura a forma da grade
+ * A moldura e o título ficam SEMPRE na tela — é o que segura a forma da pilha
  * enquanto os cinco painéis resolvem em tempos diferentes. Só o miolo troca
  * entre esqueleto, erro e conteúdo.
  *
@@ -695,7 +697,6 @@ function Painel({
   titulo,
   chip,
   chipTom,
-  largo,
   fontes,
   esqueleto,
   children,
@@ -703,7 +704,6 @@ function Painel({
   titulo: string;
   chip?: string;
   chipTom?: "danger";
-  largo?: boolean;
   fontes: Assinatura[];
   esqueleto: ReactNode;
   children: ReactNode;
@@ -711,7 +711,7 @@ function Painel({
   const { erro, carregando } = juntarFontes(fontes);
   return (
     <section
-      className={`${styles.painel} ${largo ? styles.painelLargo : ""}`}
+      className={styles.painel}
       aria-busy={carregando || undefined}
     >
       <PainelHead
@@ -1187,10 +1187,12 @@ function corDoNumero(cor: string): string {
  * Fração do trilho abaixo da qual o número não cabe DENTRO da faixa.
  *
  * A faixa ocupa exatamente `s.n / max` do trilho — a pilha vale `total / max`
- * dele, e a faixa vale `s.n / total` da pilha. O trilho mais estreito que a
- * grade desta tela produz tem uns 300px (painel em meia largura, logo acima do
- * ponto em que ela vira uma coluna só), e 10% disso são 30px: cabem três
- * dígitos em 10px negrito com folga.
+ * dele, e a faixa vale `s.n / total` da pilha. O trilho mais estreito que esta
+ * tela produz no desktop tem uns 300px (janela de 1024px, descontados o nome, o
+ * total e os respiros), e 10% disso são 30px: cabem três dígitos em 10px
+ * negrito com folga. O painel passou à largura inteira (Issue #83) e o trilho
+ * só ficou mais folgado — o limiar continua valendo pelo pior caso, que é a
+ * janela estreita, e não pela grade que deixou de existir.
  *
  * Abaixo do limiar o número não aparece — nunca aparece cortado pela metade. E
  * esconder aqui não tira informação da tela: a linha de etapas embaixo da barra
@@ -1198,29 +1200,10 @@ function corDoNumero(cor: string): string {
  */
 const LIMIAR_NUMERO = 0.1;
 
-/**
- * Quantas barras nomeadas cabem antes de a cauda virar uma barra "Outros".
- *
- * Há 13 setores solicitantes cadastrados, e a barra deitada é um instrumento de
- * COMPARAÇÃO: da nona linha em diante são quase sempre setores com uma ou duas
- * demandas, cujas barras já não se distinguem entre si no comprimento e ainda
- * assim custam uma linha inteira cada. Oito é onde a comparação ainda funciona.
- *
- * O corte NÃO É SILENCIOSO: a barra "Outros" leva no `title` do rótulo o nome
- * de cada setor que foi dobrado nela. Cortar sem dizer lê-se como "é só isso",
- * que é exatamente a mentira que os painéis desta tela existem para não contar.
- * Era uma frase no rodapé do painel, e virou `title` porque a frase custava
- * quatro linhas fixas para explicar a última barra da lista — e quem cruza com
- * a barra é ali, no rótulo dela, que faz a pergunta.
- */
-const TETO_ORIGENS = 8;
-
 type Segmento = { etapa: string; cor: string; n: number };
 type LinhaOrigem = {
   chave: string;
   label: string;
-  /** O que o `title` do rótulo diz. Igual ao label, exceto na barra "Outros". */
-  titulo: string;
   total: number;
   segs: Segmento[];
 };
@@ -1324,11 +1307,9 @@ function OrigemPorEtapa({
       chave: string,
       label: string,
       m: Map<string, number>,
-      titulo = label,
     ): LinhaOrigem => ({
       chave,
       label,
-      titulo,
       total: [...m.values()].reduce((a, b) => a + b, 0),
       // Etapa com zero simplesmente não está no mapa, então não vira faixa
       // nenhuma. Se virasse, o `min-width` de 3px do segmento a desenharia —
@@ -1345,46 +1326,41 @@ function OrigemPorEtapa({
         })),
     });
 
-    const nomeadas = [...por.entries()]
+    /**
+     * TODO SETOR QUE PEDIU VIRA UMA BARRA, com o próprio nome.
+     *
+     * Havia um teto de oito barras aqui, e a cauda virava uma barra "Outros (N
+     * setores)" com os nomes escondidos num `title`. O argumento era de
+     * comparação — da nona linha em diante os comprimentos já não se distinguem
+     * — e ele custava caro demais: o painel existe para responder QUEM ESTÁ
+     * PEDINDO, e a resposta para cinco dos treze setores cadastrados era um
+     * rótulo anônimo que só se abria pousando o ponteiro em cima. Quem pede
+     * pouco é exatamente o setor sobre o qual ninguém sabe de cabeça.
+     *
+     * O que pagava o teto era altura de painel, e o painel passou a ocupar a
+     * largura inteira (Issue #83): a linha de etapas de cada barra, que em meia
+     * largura quebrava em duas ou três, agora cabe numa só. Treze barras aqui
+     * custam menos altura do que nove custavam antes.
+     */
+    const linhas = [...por.entries()]
       .filter(([o]) => o !== SEM_ORIGEM)
       .map(([o, m]) => monta(o, o, m))
       .sort((a, b) => b.total - a.total || a.label.localeCompare(b.label, "pt-BR"));
 
-    // Dobrar UMA barra em "Outros" não economiza linha e ainda troca o nome de
-    // quem pediu por um rótulo anônimo — daí o `+ 1`.
-    const dobra = nomeadas.length > TETO_ORIGENS + 1;
-    const cauda = dobra ? nomeadas.slice(TETO_ORIGENS) : [];
-    const fora = dobra ? nomeadas.slice(0, TETO_ORIGENS) : [...nomeadas];
-    if (cauda.length) {
-      const m = new Map<string, number>();
-      cauda.forEach((l) =>
-        l.segs.forEach((s) => m.set(s.etapa, (m.get(s.etapa) ?? 0) + s.n)),
-      );
-      // O `title` é onde os setores dobrados continuam nomeados, agora que a
-      // frase do rodapé saiu. O rótulo já é truncado por `.barraNome`, então
-      // esta linha é a única da lista que teria `title` de qualquer forma —
-      // aqui ele deixa de repetir o rótulo e passa a dizer o que ele esconde.
-      fora.push(
-        monta(
-          "__outros__",
-          `Outros (${cauda.length} setores)`,
-          m,
-          `Somados aqui: ${cauda.map((l) => l.label).join(", ")}`,
-        ),
-      );
-    }
-    // "Sem setor solicitante" fecha a lista, como "Sem tipo" fecha a rosca, e
-    // nunca entra em "Outros": campo em branco não é um setor pequeno, é uma
-    // resposta de outra natureza — some-lo com os pequenos esconderia as duas.
+    const comOrigem = linhas.length;
+
+    // "Sem setor solicitante" fecha a lista, como "Sem tipo" fecha a rosca:
+    // campo em branco não é um setor pequeno, é uma resposta de outra natureza,
+    // e ordená-lo pelo total o esconderia no meio dos setores de verdade.
     const sem = por.get(SEM_ORIGEM);
-    if (sem) fora.push(monta(SEM_ORIGEM, SEM_ORIGEM, sem));
+    if (sem) linhas.push(monta(SEM_ORIGEM, SEM_ORIGEM, sem));
 
     return {
-      linhas: fora,
+      linhas,
       etapasUsadas: [...usadas].sort(
         (a, b) => ordemDa(a) - ordemDa(b) || a.localeCompare(b, "pt-BR"),
       ),
-      comOrigem: nomeadas.length,
+      comOrigem,
     };
   }, [cards, colsPorSetor, etapas]);
 
@@ -1426,7 +1402,7 @@ function OrigemPorEtapa({
         {linhas.map((l) => (
           <div key={l.chave} className={styles.barraBloco}>
             <div className={styles.barraLinha}>
-              <div className={styles.barraNome} title={l.titulo}>
+              <div className={styles.barraNome} title={l.label}>
                 {l.label}
               </div>
               <div className={styles.barraTrilho}>
