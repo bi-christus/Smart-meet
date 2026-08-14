@@ -167,17 +167,23 @@
 
 /* ---------- painéis ---------- */
 /**
- * `align-items: start` é a regra que impede um painel de virar moldura vazia.
+ * UMA COLUNA. Todo painel na largura inteira, cada um com a própria altura.
  *
- * Por padrão o grid estica todo item até a altura do mais alto da linha. Como
- * "consumo por responsável" cresce com o número de pessoas do setor, o vizinho
- * herdava uma altura que o conteúdo dele nunca ia preencher — e um card 80%
- * vazio lê como bug, não como dado curto. Aqui cada painel para onde acaba.
+ * Era um grid de duas colunas com `align-items: start` — regra que existia para
+ * impedir o vizinho de herdar a altura do painel mais alto da linha e virar uma
+ * moldura 80% vazia, que lê como bug e não como dado curto. Com o painel de
+ * setor solicitante passando à largura inteira (Issue #83), sobrava um único
+ * painel de meia largura, e o vão ao lado dele era justamente aquela moldura
+ * vazia — só que sem nem um painel dentro.
+ *
+ * Nenhum destes cinco é de meia largura por natureza: dois medem por
+ * COMPRIMENTO de barra e três são séries e tabelas em SVG, onde a largura vira
+ * tamanho de rótulo. `flex` em coluna, e não um grid de uma coluna, porque não
+ * sobrou nada para a grade decidir.
  */
 .paineis {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  align-items: start;
+  display: flex;
+  flex-direction: column;
   gap: 14px;
   padding: 16px 22px 0;
 }
@@ -187,9 +193,6 @@
   border-radius: var(--r-lg);
   padding: 16px;
   min-width: 0;
-}
-.painelLargo {
-  grid-column: 1 / -1;
 }
 .painelHead {
   display: flex;
@@ -474,14 +477,13 @@
 }
 
 /* ---------- rosca ---------- */
-/* Centralizado e com a lista limitada: solta num painel largo, a legenda
-   esticava o rótulo para uma ponta e o número para a outra, e ninguém lia a
-   linha inteira para casar "Melhoria" com "2". */
+/* Na largura inteira a rosca ancora à ESQUERDA e a lista ocupa o resto. Centrada,
+   como era em meia largura, o par desenho + lista ficava boiando no meio de um
+   painel de 1600px com vão igual dos dois lados. */
 .rosca {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 22px;
+  gap: 26px;
   flex-wrap: wrap;
   padding: 4px 0;
 }
@@ -499,13 +501,17 @@
   font-size: 10.5px;
   fill: var(--tx-3);
 }
+/* A legenda vira COLUNAS conforme a largura sobra: seis tipos empilhados numa
+   tira de 380px deixavam o painel alto e vazio à direita. `auto-fill` e não
+   `auto-fit`: com dois tipos só, as duas entradas ficam com a largura de leitura
+   e o resto fica vazio, em vez de duas colunas gigantes com uma palavra dentro. */
 .roscaLista {
   flex: 1;
   min-width: 190px;
-  max-width: 380px;
-  display: flex;
-  flex-direction: column;
-  gap: 11px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 11px 28px;
+  align-content: center;
 }
 .roscaItem {
   display: flex;
@@ -678,15 +684,6 @@
 @media (max-width: 1400px) {
   .barraOrigens {
     padding-right: 0;
-  }
-}
-/* Uma coluna já a partir do notebook, e não só no celular: os gráficos são SVG
-   com viewBox, então largura vira tamanho de fonte. Espremidos em meia tela de
-   1000px, os rótulos de eixo ficam ilegíveis muito antes de o card ficar
-   estreito demais. */
-@media (max-width: 1080px) {
-  .paineis {
-    grid-template-columns: 1fr;
   }
 }
 @media (max-width: 900px) {
