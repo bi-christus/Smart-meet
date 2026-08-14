@@ -5,9 +5,12 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { ROLE_LABEL, pickColor, type MeuCadastro } from "@/lib/users";
+import { usePermissoes } from "@/lib/permissoes";
+import { abaDaRota, abasVisiveis, podeVerAba } from "@/lib/permissoes-core";
 import { useTheme } from "@/lib/theme";
 import { Icon } from "@/components/icons";
 import { Avatar } from "@/components/avatar";
+import { EmptyState } from "@/components/empty-state";
 import { PerfilModal } from "@/components/perfil-modal";
 import { RecoveryBanner } from "@/components/recovery-banner";
 import { RecordingProvider } from "@/lib/audio/recording-context";
@@ -15,19 +18,24 @@ import { MiniPlayer } from "@/components/mini-player";
 import { Waveform } from "@/components/waveform";
 import styles from "./app-shell.module.css";
 
-const NAV = [
-  { id: "inicio", label: "Início", href: "/" },
-  { id: "reunioes", label: "Reuniões", href: "/reunioes" },
-  { id: "relatorios", label: "Relatórios IA", href: "/relatorios" },
-  { id: "kanban", label: "Kanban", href: "/kanban" },
-  { id: "recorrencias", label: "Recorrências", href: "/recorrencias" },
-  { id: "dashboard", label: "Dashboard", href: "/dashboard" },
-  { id: "cronograma", label: "Cronograma", href: "/cronograma" },
-  { id: "links", label: "Links", href: "/links" },
-];
-
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, profile, loading, authorized, logout } = useAuth();
+  /**
+   * As permissões entram no MESMO portão de espera do login, e não num
+   * segundo portão depois dele.
+   *
+   * As duas leituras começam juntas, na montagem, e a do login é sempre a mais
+   * demorada (é um `onAuthStateChanged` mais um `getDoc` de perfil, contra a
+   * leitura de um documento só). Esperar as duas juntas custa, na prática, os
+   * milissegundos em que a segunda ainda não voltou — e compra o que importa:
+   * a barra do topo nunca desenha oito abas para recolher três meio segundo
+   * depois. Isso seria a mesma mentira que os esqueletos deste projeto existem
+   * para tirar da tela, agora na navegação.
+   *
+   * Falha de leitura NÃO segura o portão: `usePermissoes` responde "tudo
+   * liberado" e sai de `carregando`. O porquê está escrito lá.
+   */
+  const { permissoes, carregando: permsCarregando } = usePermissoes();
   const { theme, accent, setTheme, setAccent } = useTheme();
   const router = useRouter();
   const pathname = usePathname();
@@ -52,7 +60,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     if (!loading && !user) router.replace("/login");
   }, [loading, user, router]);
 
-  if (loading || !user) {
+  if (loading || permsCarregando || !user) {
     return <div className={styles.loader}>Carregando…</div>;
   }
 
@@ -67,13 +75,26 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const nav = [...NAV];
-  if (profile.role === "admin") {
-    nav.push({ id: "admin", label: "Admin", href: "/admin" });
-  }
+  const nav = abasVisiveis(profile, permissoes);
 
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
+
+  /**
+   * O GUARDA DE ROTA — a metade que a barra do topo não faz.
+   *
+   * Tirar o botão esconde o caminho, não fecha a porta: a URL continua sendo
+   * digitável, o histórico do navegador continua guardando a visita de ontem, e
+   * um link no meio de outra tela continua clicável. Sem esta pergunta, uma aba
+   * "restrita" seria uma aba difícil de achar — que é outra coisa.
+   *
+   * Rota que o catálogo não conhece não é negada, é ignorada (`abaDaRota`
+   * devolve `undefined`). Negar por desconhecimento faria toda página nova
+   * nascer inacessível até alguém lembrar de cadastrá-la aqui.
+   */
+  const abaAtual = abaDaRota(pathname);
+  const rotaNegada =
+    !!abaAtual && !podeVerAba(abaAtual.id, profile, permissoes);
 
   const eu = { ...profile, ...meuLocal };
 
@@ -209,7 +230,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <RecoveryBanner />
         {/* key no pathname: remonta a cada troca de aba e reexecuta a animação */}
         <div key={pathname} className={styles.tabEnter}>
-          {children}
+          {abaAtual && rotaNegada ? (
+            <SemAcesso aba={abaAtual.label} />
+          ) : (
+            children
+          )}
         </div>
       </main>
       </div>
@@ -224,6 +249,38 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         />
       )}
     </RecordingProvider>
+  );
+}
+
+/**
+ * A aba existe, a pessoa tem conta, e mesmo assim aquela porta não é dela.
+ *
+ * É um caso DIFERENTE de `AccessPending`, e por isso é outra tela: lá a conta
+ * ainda não entrou no app e não há nada a fazer além de esperar o
+ * administrador; aqui a pessoa está dentro, com barra do topo e todas as outras
+ * abas funcionando, e o que falta é o acesso a uma delas. Dizer "acesso
+ * pendente" nos dois casos mandaria metade das pessoas pedir a coisa errada.
+ *
+ * O nome da aba entra na frase de propósito. Quem chega aqui quase sempre veio
+ * de um link colado por outra pessoa, e "esta página" não dá o que pedir ao
+ * administrador — "a aba Dashboard" dá.
+ */
+function SemAcesso({ aba }: { aba: string }) {
+  return (
+    <div className={styles.semAcesso}>
+      <EmptyState
+        icon="lock"
+        title={`A aba ${aba} não está liberada para você`}
+        description={
+          <>
+            O acesso a esta aba é definido por setor e por pessoa, na tela de
+            Admin. Peça ao administrador para incluir você — ou o seu setor — na
+            aba <strong>{aba}</strong>. As outras abas da barra do topo
+            continuam disponíveis.
+          </>
+        }
+      />
+    </div>
   );
 }
 

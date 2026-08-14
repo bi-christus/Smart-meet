@@ -429,6 +429,40 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // ---- configuração do app (hoje: quem enxerga qual aba) ----
+    // `config/permissoes` é o quadro montado na aba Admin → Permissões. Ele diz
+    // quais abas ficam restritas, a quais setores e a quais pessoas.
+    //
+    // LEITURA ABERTA A TODO USUÁRIO ATIVO, e isso é escolha: é a barra do topo
+    // que depende dela, então TODA sessão a lê logo depois do login. O que ela
+    // expõe é a própria configuração — quais abas são restritas e a quem. Num
+    // app interno isso é o mesmo tipo de informação que /users já expõe (ver o
+    // bloco de lá): o organograma da ferramenta, não segredo.
+    //
+    // E LEITURA ABERTA NÃO É ACESSO. O que este documento controla é o que a
+    // INTERFACE mostra; quem impede a leitura de card, reunião ou recorrência
+    // continua sendo a regra por setor de cada coleção, que não olha para cá.
+    // Uma aba escondida cujo dado o Firestore entregasse continuaria acessível
+    // por qualquer caminho fora desta tela — é por isso que as duas camadas
+    // existem, e nenhuma coleção nova deve nascer confiando só na de cima.
+    //
+    // ESCRITA SÓ DE ADMIN, sem conferência de forma. É o oposto do que /users e
+    // /prefs fazem, e de propósito: lá o cliente que escreve é o dono do
+    // cadastro, aqui é quem já pode criar e apagar usuário. Schema como defesa
+    // existe contra quem não devia estar escrevendo — e quem escreve aqui é
+    // justamente quem pode mais. A leitura é que se defende, em
+    // `normalizarPermissoes`: campo que ela não entende vira o padrão ABERTO,
+    // para que um documento torto nunca tranque o app inteiro.
+    //
+    // A coleção é `/config` e não `/config/permissoes` cravado porque outra
+    // configuração global cabe aqui pelas mesmas duas regras. Regra é código
+    // (AGENTS.md §4): o dia em que uma delas precisar de escrita de gestor, o
+    // bloco se parte — não se afrouxa.
+    match /config/{doc} {
+      allow read: if isAuthorized();
+      allow write: if isAdmin();
+    }
+
     // ---- solicitantes e setores solicitantes ----
     // Qualquer usuário autorizado CRIA (no meio do preenchimento de uma
     // demanda: quem descobre que falta um solicitante é quem está cadastrando,

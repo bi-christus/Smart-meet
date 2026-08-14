@@ -401,6 +401,25 @@ for (const quem of Object.keys(PESSOAS)) {
     { name: "Fulano" },
     null,
   );
+
+  // --- config: quem enxerga qual aba ---------------------------------------
+  // Estes casos NASCEM mudando de resposta, e e o unico jeito de eles nascerem:
+  // na `main` o caminho /config nao existe e cai na negacao final, entao a
+  // comparacao acusa todos eles. E de proposito — o script mostra o que mudou,
+  // e o que tem de mudar aqui e exatamente: leitura passa a valer para todo
+  // usuario ativo, escrita so para admin.
+  const CFG = doc("config/permissoes");
+  const QUADRO = {
+    v: 1,
+    abas: { dashboard: { modo: "restrito", setores: ["B.I."], pessoas: [] } },
+  };
+  caso(quem, "ler o quadro de permissoes", "get", CFG, QUADRO, null);
+  caso(quem, "escrever o quadro de permissoes", "update", CFG, QUADRO, {
+    ...QUADRO,
+    abas: { dashboard: { modo: "todos", setores: [], pessoas: [] } },
+  });
+  caso(quem, "criar o quadro de permissoes", "create", CFG, null, QUADRO);
+  caso(quem, "apagar o quadro de permissoes", "delete", CFG, QUADRO, null);
 }
 
 // Forjar autoria tem de continuar negado para todos.
