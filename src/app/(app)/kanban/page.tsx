@@ -691,13 +691,18 @@ export default function KanbanPage() {
                     <GripDots />
                   </span>
                 )}
-                <span className={styles.colTitle}>{col.title}</span>
+                {/* O `title` devolve o nome inteiro da etapa a quem pousar o
+                    ponteiro: a partir de umas três palavras ele passa a sair
+                    com reticências, e o nome da etapa é o que diz em que ponto
+                    do fluxo aquela pilha de cards está. */}
+                <span className={styles.colTitle} title={col.title}>
+                  {col.title}
+                </span>
                 {/* A contagem espera junto com a lista: "0" antes da resposta
                     é a mesma afirmação falsa de "Nenhuma demanda", em número. */}
                 {!quadro.carregando && (
                   <span className={styles.colCount}>{colCards.length}</span>
                 )}
-                <div style={{ flex: 1 }} />
                 <button
                   className={styles.iconbtn}
                   title="Adicionar demanda"
@@ -724,12 +729,18 @@ export default function KanbanPage() {
                 {quadro.carregando ? (
                   <SkeletonCard cards={2} texto="Carregando as demandas…" />
                 ) : colCards.length === 0 ? (
-                  <EmptyState
-                    size="compact"
-                    icon="kanban"
-                    title="Nenhuma demanda"
-                    description="Arraste um card para cá ou use o + no topo da coluna."
-                  />
+                  /* Centrado na altura, agora que a coluna vazia vai até o pé
+                     do quadro: encostado no topo de uma coluna de 700px, o
+                     aviso ficava pendurado sobre um vão enorme e a coluna lia
+                     como quebrada em vez de vazia. */
+                  <div className={styles.colVazio}>
+                    <EmptyState
+                      size="compact"
+                      icon="kanban"
+                      title="Nenhuma demanda"
+                      description="Arraste um card para cá ou use o + no topo da coluna."
+                    />
+                  </div>
                 ) : (
                   colCards.map((c) => (
                     <CardItem
