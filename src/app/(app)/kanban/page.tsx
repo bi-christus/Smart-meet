@@ -988,6 +988,29 @@ function CardItem({
         </span>
       </div>
       <div className={styles.ktitle}>{card.title}</div>
+      {/**
+       * QUEM PEDIU fica colado no título, e não mais no rodapé.
+       *
+       * No rodapé ele ficava a um espaço do rosto do RESPONSÁVEL — duas pessoas
+       * diferentes lado a lado, e a leitura natural era que aquele nome era o
+       * dono daquela foto. Aqui embaixo do título ele lê como o que é: a
+       * assinatura do pedido. O título diz o que foi pedido; a linha seguinte,
+       * por quem. O rodapé fica só com o andamento (prazo, checklist, quem
+       * responde), que é outra pergunta.
+       *
+       * O nome vem INTEIRO agora — a linha é dele sozinha, então não há mais o
+       * motivo que obrigava a cortar no primeiro nome. O setor continua no
+       * `title`: ele é a segunda informação da mesma pergunta, e escrevê-lo
+       * dobraria a linha em todo card.
+       */}
+      {requester && (
+        <div
+          className={styles.kPor}
+          title={`Solicitante: ${requester}${requesterSector ? ` · ${requesterSector}` : ""}`}
+        >
+          por {requester}
+        </div>
+      )}
       {tags.length > 0 && (
         <div className={styles.kTags}>
           {tags.slice(0, 4).map((t) => (
@@ -1038,38 +1061,37 @@ function CardItem({
             {links}
           </span>
         )}
-        <div style={{ flex: 1 }} />
-        {requester && (
-          <span
-            className={styles.mini}
-            title={`Solicitante: ${requester}${requesterSector ? ` · ${requesterSector}` : ""}`}
-          >
-            por {requester.split(" ")[0]}
-          </span>
-        )}
         {assignee && (
           /**
-           * O único alvo do card que não abre a demanda.
+           * O nome ao lado do rosto é o de quem o rosto é — o RESPONSÁVEL.
            *
-           * Aqui o nome do responsável NÃO está escrito no card — só o do
-           * solicitante está. O avatar é a única coisa que diz de quem é a
-           * demanda, então ele leva a frase inteira no `alt` (que em modo alvo
-           * vira o rótulo do botão) e no `title`.
+           * Antes deste par existir, o que ficava colado no avatar era o nome do
+           * solicitante, e ninguém tem como adivinhar que aquele nome e aquela
+           * foto são de duas pessoas diferentes. Agora eles são a mesma pessoa
+           * dita duas vezes, e a dúvida some.
            *
-           * E O `title` FICA, ao contrário do que o Cronograma decidiu para o
-           * chip dele. Lá a prévia é um cartão com o nome escrito por extenso, e
-           * o `title` nativo seria uma segunda caixa de texto dizendo o mesmo. A
-           * prévia daqui é só a foto, sem uma palavra dentro — o `title` não
-           * repete nada dela, e é o único lugar do card onde o nome de quem
-           * responde pela demanda chega a aparecer escrito.
+           * PRIMEIRO NOME, como no comentário e no histórico (`cName`): o rodapé
+           * é uma linha só, dividida com prazo, aging, checklist, comentários e
+           * links. "Maria Fernanda de Albuquerque" ali dentro empurraria todo o
+           * resto para a linha de baixo em metade dos cards. A elipse do CSS
+           * cuida do primeiro nome que ainda assim for comprido, e o nome
+           * completo continua a um clique de distância, no perfil.
+           *
+           * O `alt` leva o nome INTEIRO e o que o clique faz: em modo alvo ele
+           * vira o `aria-label` do botão, e é ele — não mais o `title`, que
+           * tapava a prévia — quem responde a quem não enxerga a foto.
            */
-          <Avatar
-            pessoa={assignee}
-            size={22}
-            alt={`Responsável: ${assignee.name} — ver perfil`}
-            title={`Responsável: ${assignee.name} — ver perfil`}
-            aoAbrirPerfil={() => onPerfil(assignee)}
-          />
+          <span className={styles.kResp}>
+            <span className={styles.kRespNome}>
+              {(assignee.name || assignee.email).split(" ")[0]}
+            </span>
+            <Avatar
+              pessoa={assignee}
+              size={22}
+              alt={`Responsável: ${assignee.name || assignee.email} — ver perfil`}
+              aoAbrirPerfil={() => onPerfil(assignee)}
+            />
+          </span>
         )}
       </div>
     </div>

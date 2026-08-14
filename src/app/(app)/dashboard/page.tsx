@@ -1143,6 +1143,62 @@ function FluxoSemanal({ fluxo }: { fluxo: Fluxo }) {
 const SEM_ETAPA = "Fora do quadro";
 
 /**
+ * O cinza da etapa órfã é FIXO, e não `var(--tx-3)` como nos "sem X" vizinhos.
+ *
+ * A quantidade passou a ser escrita dentro da faixa, e a cor desse número sai
+ * da luminância da cor da faixa (`corDoNumero`). Uma `var()` não tem luminância
+ * até o navegador resolvê-la, e resolvê-la aqui custaria um `getComputedStyle`
+ * por faixa desenhada. Este é o valor que `--tx-3` já tem no tema escuro, e é
+ * um cinza médio que se lê nos quatro temas — é a única cor desta tela que não
+ * acompanha o tema, e é por isso que não acompanha.
+ */
+const COR_SEM_ETAPA = "#78776f";
+
+/**
+ * Tinta clara ou escura sobre a faixa, decidida pela luminância dela.
+ *
+ * A cor da etapa é a da coluna do Kanban, e quem escolhe é o setor: pode ser
+ * qualquer uma. Uma cor de texto fixa apagaria o número em metade das faixas —
+ * as cinco colunas padrão são todas claras e pedem tinta escura, mas nada
+ * impede um setor de pintar a dele de azul-marinho.
+ *
+ * Contorno de texto (`text-shadow` escuro sob tinta branca) foi o descartado:
+ * resolve sem calcular nada, mas em 10px negrito o halo engorda o glifo e o
+ * número sai sujo justamente onde ele é pequeno.
+ *
+ * A luminância é a Rec. 601, não a relativa da WCAG. Para escolher entre os
+ * dois extremos o degrau cai no mesmo lugar, e esta custa três multiplicações
+ * em vez de três potências por faixa.
+ */
+function corDoNumero(cor: string): string {
+  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(cor.trim());
+  if (!m) return "#fff";
+  const hex = m[1].length === 3 ? m[1].replace(/./g, (c) => c + c) : m[1];
+  const v = parseInt(hex, 16);
+  const lum =
+    (0.299 * ((v >> 16) & 255) +
+      0.587 * ((v >> 8) & 255) +
+      0.114 * (v & 255)) /
+    255;
+  return lum > 0.6 ? "#151517" : "#fff";
+}
+
+/**
+ * Fração do trilho abaixo da qual o número não cabe DENTRO da faixa.
+ *
+ * A faixa ocupa exatamente `s.n / max` do trilho — a pilha vale `total / max`
+ * dele, e a faixa vale `s.n / total` da pilha. O trilho mais estreito que a
+ * grade desta tela produz tem uns 300px (painel em meia largura, logo acima do
+ * ponto em que ela vira uma coluna só), e 10% disso são 30px: cabem três
+ * dígitos em 10px negrito com folga.
+ *
+ * Abaixo do limiar o número não aparece — nunca aparece cortado pela metade. E
+ * esconder aqui não tira informação da tela: a linha de etapas embaixo da barra
+ * repete TODOS os números, um a um, com o nome da etapa junto.
+ */
+const LIMIAR_NUMERO = 0.1;
+
+/**
  * Quantas barras nomeadas cabem antes de a cauda virar uma barra "Outros".
  *
  * Há 13 setores solicitantes cadastrados, e a barra deitada é um instrumento de
@@ -1150,9 +1206,12 @@ const SEM_ETAPA = "Fora do quadro";
  * demandas, cujas barras já não se distinguem entre si no comprimento e ainda
  * assim custam uma linha inteira cada. Oito é onde a comparação ainda funciona.
  *
- * O corte NÃO É SILENCIOSO — a nota do rodapé nomeia um a um os setores que
- * foram para "Outros". Cortar sem dizer lê-se como "é só isso", que é
- * exatamente a mentira que os painéis desta tela existem para não contar.
+ * O corte NÃO É SILENCIOSO: a barra "Outros" leva no `title` do rótulo o nome
+ * de cada setor que foi dobrado nela. Cortar sem dizer lê-se como "é só isso",
+ * que é exatamente a mentira que os painéis desta tela existem para não contar.
+ * Era uma frase no rodapé do painel, e virou `title` porque a frase custava
+ * quatro linhas fixas para explicar a última barra da lista — e quem cruza com
+ * a barra é ali, no rótulo dela, que faz a pergunta.
  */
 const TETO_ORIGENS = 8;
 
@@ -1160,6 +1219,8 @@ type Segmento = { etapa: string; cor: string; n: number };
 type LinhaOrigem = {
   chave: string;
   label: string;
+  /** O que o `title` do rótulo diz. Igual ao label, exceto na barra "Outros". */
+  titulo: string;
   total: number;
   segs: Segmento[];
 };
@@ -1182,8 +1243,15 @@ type LinhaOrigem = {
  * E a forma obriga: empilhar por etapa sem as entregues faria a última faixa
  * sumir de todas as barras, e o total de cada setor passaria a ser um número
  * menor do que ele de fato pediu, sem nada na tela dizendo isso. Um painel de
- * origem que esconde o fim do funil não é conservador, é errado. Por isso o
- * chip traz o total e a nota avisa que ele é maior que o "em aberto" do topo.
+ * origem que esconde o fim do funil não é conservador, é errado.
+ *
+ * A CONSEQUÊNCIA DISSO É UM NÚMERO QUE NÃO FECHA COM O TOPO DA TELA, de
+ * propósito: a soma das barras daqui é maior que as "N demandas em aberto" da
+ * barra de filtros, porque lá as entregues saem e aqui ficam. O chip do painel
+ * publica esse total justamente para quem for conferir a conta encontrar a
+ * diferença explicada em vez de achar o painel quebrado. Isto era uma frase de
+ * quatro linhas no rodapé do painel e saiu da tela (Issue #78): é uma decisão
+ * de projeto, que se lê uma vez, e não um aviso, que se lê sempre.
  *
  * DEMANDA NA LIXEIRA NÃO CONTA, e não há nada a fazer por isso aqui:
  * `subscribeCardsForSectors` (lib/kanban) filtra os excluídos NA ORIGEM, antes
@@ -1191,9 +1259,12 @@ type LinhaOrigem = {
  * sobre o mesmo assunto — conferido, não reimplementado.
  *
  * O PERÍODO DO TOPO NÃO RECORTA ESTE PAINEL, como não recorta a rosca nem o
- * consumo por responsável: ele é a janela das SÉRIES semanais. Aqui a pergunta
- * é sobre o quadro como ele está agora, e a nota do rodapé diz isso para quem
- * trocar o período e estranhar que nada se mexeu.
+ * consumo por responsável: ele é a janela das SÉRIES semanais, e aqui a
+ * pergunta é sobre o quadro como ele está agora. Quem trocar o período e vir
+ * este painel parado não encontrou um bug — encontrou o recorte funcionando
+ * onde ele se aplica. Também isso vinha escrito no rodapé e saiu com ele: três
+ * painéis desta tela ignoram o período, e explicar num só sugeria que os outros
+ * dois obedeciam.
  */
 function OrigemPorEtapa({
   cards,
@@ -1229,11 +1300,11 @@ function OrigemPorEtapa({
       );
     // Coluna apagada depois de o card entrar nela: fica fora da paleta e no fim
     // da fila, como "Sem tipo" na rosca.
-    m.set(SEM_ETAPA, { cor: "var(--tx-3)", ordem: 99 });
+    m.set(SEM_ETAPA, { cor: COR_SEM_ETAPA, ordem: 99 });
     return m;
   }, [colsPorSetor]);
 
-  const { linhas, cortados, etapasUsadas, comOrigem } = useMemo(() => {
+  const { linhas, etapasUsadas, comOrigem } = useMemo(() => {
     const por = new Map<string, Map<string, number>>();
     const usadas = new Set<string>();
     cards.forEach((c) => {
@@ -1253,9 +1324,11 @@ function OrigemPorEtapa({
       chave: string,
       label: string,
       m: Map<string, number>,
+      titulo = label,
     ): LinhaOrigem => ({
       chave,
       label,
+      titulo,
       total: [...m.values()].reduce((a, b) => a + b, 0),
       // Etapa com zero simplesmente não está no mapa, então não vira faixa
       // nenhuma. Se virasse, o `min-width` de 3px do segmento a desenharia —
@@ -1267,7 +1340,7 @@ function OrigemPorEtapa({
         )
         .map(([etapa, n]) => ({
           etapa,
-          cor: etapas.get(etapa)?.cor ?? "var(--tx-3)",
+          cor: etapas.get(etapa)?.cor ?? COR_SEM_ETAPA,
           n,
         })),
     });
@@ -1287,8 +1360,17 @@ function OrigemPorEtapa({
       cauda.forEach((l) =>
         l.segs.forEach((s) => m.set(s.etapa, (m.get(s.etapa) ?? 0) + s.n)),
       );
+      // O `title` é onde os setores dobrados continuam nomeados, agora que a
+      // frase do rodapé saiu. O rótulo já é truncado por `.barraNome`, então
+      // esta linha é a única da lista que teria `title` de qualquer forma —
+      // aqui ele deixa de repetir o rótulo e passa a dizer o que ele esconde.
       fora.push(
-        monta("__outros__", `Outros (${cauda.length} setores)`, m),
+        monta(
+          "__outros__",
+          `Outros (${cauda.length} setores)`,
+          m,
+          `Somados aqui: ${cauda.map((l) => l.label).join(", ")}`,
+        ),
       );
     }
     // "Sem setor solicitante" fecha a lista, como "Sem tipo" fecha a rosca, e
@@ -1299,7 +1381,6 @@ function OrigemPorEtapa({
 
     return {
       linhas: fora,
-      cortados: cauda.map((l) => l.label),
       etapasUsadas: [...usadas].sort(
         (a, b) => ordemDa(a) - ordemDa(b) || a.localeCompare(b, "pt-BR"),
       ),
@@ -1345,11 +1426,11 @@ function OrigemPorEtapa({
         {linhas.map((l) => (
           <div key={l.chave} className={styles.barraBloco}>
             <div className={styles.barraLinha}>
-              <div className={styles.barraNome} title={l.label}>
+              <div className={styles.barraNome} title={l.titulo}>
                 {l.label}
               </div>
               <div className={styles.barraTrilho}>
-                {/* A pilha inteira é UM elemento, e é ela que cresce: são as
+                {/* A pilha inteira é UM elemento, e é ela que mede: são as
                     faixas juntas que formam o comprimento que se lê. */}
                 <div
                   className={styles.pilha}
@@ -1360,22 +1441,35 @@ function OrigemPorEtapa({
                       key={s.etapa}
                       role="img"
                       aria-label={`${s.etapa}: ${s.n}`}
-                      className={styles.barraSeg}
+                      className={styles.pilhaSeg}
                       style={{
                         width: `${(s.n / l.total) * 100}%`,
                         background: s.cor,
                       }}
                       title={`${s.etapa} · ${s.n}`}
-                    />
+                    >
+                      {/* O número não precisa de `aria-hidden`: `role="img"` já
+                          troca o conteúdo do elemento pelo `aria-label` acima,
+                          e é ele que o leitor de tela anuncia. */}
+                      {s.n / max >= LIMIAR_NUMERO && (
+                        <span
+                          className={styles.pilhaNum}
+                          style={{ color: corDoNumero(s.cor) }}
+                        >
+                          {s.n}
+                        </span>
+                      )}
+                    </div>
                   ))}
                 </div>
               </div>
               <div className={styles.origemNum}>{l.total}</div>
             </div>
             {/* As mesmas etapas em texto, para quem não distingue as cores ler a
-                divisão sem passar o mouse em faixa nenhuma. `aria-hidden`
-                porque cada faixa acima já se anuncia com o mesmo par nome +
-                número: visível é complemento, falado seria eco. */}
+                divisão sem passar o mouse em faixa nenhuma — e para trazer o
+                número das faixas estreitas demais para o comportarem dentro.
+                `aria-hidden` porque cada faixa acima já se anuncia com o mesmo
+                par nome + número: visível é complemento, falado seria eco. */}
             <div className={styles.origemEtapas} aria-hidden="true">
               {l.segs.map((s) => (
                 <span key={s.etapa} className={styles.origem}>
@@ -1398,15 +1492,6 @@ function OrigemPorEtapa({
           ))}
         </div>
       )}
-      <p className={styles.nota}>
-        Conta a demanda entregue também — ela é a última faixa da barra, e sem
-        ela o total de cada setor seria menor do que o que ele pediu. Por isso a
-        soma aqui passa das demandas em aberto do topo da tela, e por isso o
-        período do topo não recorta este painel.
-        {cortados.length > 0 && (
-          <> Somados em “Outros”: {cortados.join(", ")}.</>
-        )}
-      </p>
     </>
   );
 }

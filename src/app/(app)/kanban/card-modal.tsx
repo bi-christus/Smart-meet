@@ -1028,6 +1028,15 @@ export function CardModal({
         </div>
       )}
 
+      {/**
+       * Daqui até o rodapé, o diálogo é de duas colunas — ver `.mcorpo` no CSS.
+       * À esquerda os dados da demanda; à direita o que se escreve sobre ela.
+       * A ordem do arquivo é a ordem da tela e a ordem do Tab: nada aqui é
+       * reposicionado por CSS, e por isso a leitura por teclado e por leitor de
+       * tela continua sendo a mesma de quando isto era uma pilha só.
+       */}
+      <div className={styles.mcorpo}>
+      <div className={styles.mdados}>
       <div className={styles.row2}>
         <div className={styles.field}>
           <label className={styles.label}>Tipo</label>
@@ -1249,6 +1258,11 @@ export function CardModal({
         </div>
       </div>
 
+      {/* Sozinho na linha e ainda assim dentro de `.row2`: é a grade que o
+          segura na largura de um campo. O `<div className={styles.field} />`
+          vazio que fazia esse papel no layout antigo saiu — ele não era um
+          campo, era um calço, e na coluna estreita ele viraria 14px de vão
+          entre "Coluna" e "Tags" sem nada dentro. */}
       <div className={styles.row2}>
         <div className={styles.field}>
           <label className={styles.label}>Coluna</label>
@@ -1259,7 +1273,6 @@ export function CardModal({
             ariaLabel="Coluna"
           />
         </div>
-        <div className={styles.field} />
       </div>
 
       <div className={styles.sectionLabel}>Tags</div>
@@ -1344,6 +1357,9 @@ export function CardModal({
           )}
         </div>
       </div>
+
+      </div>
+      <div className={styles.mconteudo}>
 
       <div className={styles.sectionLabel}>Descrição</div>
       <textarea
@@ -1649,6 +1665,9 @@ export function CardModal({
           </div>
         </>
       )}
+
+      </div>
+      </div>
 
       {err && <div className={styles.err}>{err}</div>}
 
