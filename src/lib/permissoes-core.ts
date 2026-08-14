@@ -73,6 +73,7 @@ export const ABAS: Aba[] = [
     configuravel: true,
   },
   { id: "links", label: "Links", href: "/links", configuravel: true },
+  { id: "rank", label: "Rank", href: "/rank", configuravel: true },
   {
     id: "admin",
     label: "Admin",

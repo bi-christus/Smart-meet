@@ -1,0 +1,249 @@
+/**
+ * O pódio.
+ *
+ * A escala desta tela é decidida por uma coisa só: o rosto tem de ser
+ * reconhecível. 112px no primeiro lugar, 88 no segundo e no terceiro, 52 na
+ * fila de honra — contra os 30px da topbar e os 22px do card do Kanban. Todo o
+ * resto (altura de bloco, tipo, respiro) é dimensionado em volta disso.
+ *
+ * O QUE FICOU DE FORA, e por quê: ouro, prata e bronze. São três plásticos que
+ * brigam com o laranja da marca e não dizem nada que a altura do degrau já não
+ * diga — e a altura diz melhor, porque é proporcional à contagem em vez de ser
+ * uma faixa de três. O primeiro lugar ganha a cor da marca; os outros ficam em
+ * superfície neutra. Nenhum troféu, nenhuma coroa, nenhum confete.
+ */
+
+.page {
+  height: calc(100vh - 56px);
+  overflow: auto;
+  padding-bottom: 40px;
+}
+
+.head {
+  padding: 16px 22px 0;
+}
+.head h1 {
+  /* A serifa entra AQUI e em nenhum outro lugar da tela. Ela é a voz de
+     cerimônia do app (a mesma do "Acesso pendente"), e uma tela que só ela
+     usa é o que a mantém significando alguma coisa. */
+  font-family: var(--font-serif), serif;
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  color: var(--tx);
+}
+.head p {
+  font-size: 12.5px;
+  color: var(--tx-3);
+  margin-top: 4px;
+}
+
+.vazioTela {
+  margin: 60px auto;
+  max-width: 420px;
+  text-align: center;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--tx-3);
+}
+
+/* Reserva a altura do pódio montado: sem ela, a tela salta uns 300px no
+   instante em que os dados chegam. */
+.esqueleto {
+  min-height: 330px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 40px 22px 0;
+}
+
+/* ---------- os três degraus ---------- */
+
+/* `flex-end` é a regra que faz isto ser um pódio: os blocos têm alturas
+   diferentes e todos assentam na MESMA linha de base. Alinhados pelo topo,
+   seriam três cartões de tamanhos aleatórios. */
+.podio {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 14px;
+  margin: 0 22px;
+  padding: 44px 0 0;
+  flex-wrap: wrap;
+  /* A LINHA DE BASE do pódio mora aqui, e não no topo da fila de honra. Com
+     menos de quatro pessoas não existe fila nenhuma, e os blocos ficariam com
+     a borda de baixo aberta, flutuando — um pódio sem chão. */
+  border-bottom: 2px solid var(--line);
+}
+
+.degrau {
+  width: 190px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+  animation: subir 220ms var(--atraso, 0ms) both cubic-bezier(0.32, 0.72, 0, 1);
+}
+/* O degrau SOBE para o lugar, e a distância é pequena de propósito: 16px é o
+   bastante para o olho ler "assentou" sem virar uma apresentação. Uma vez, na
+   chegada dos dados — não a cada render, não em hover, não em laço. */
+@keyframes subir {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.rosto {
+  padding: 4px;
+  border-radius: 50%;
+  border: 2px solid var(--line);
+  background: var(--s1);
+  /* A moldura é o que separa a foto do fundo quando ela é clara e o tema
+     também. Sem ela, um retrato de fundo branco no tema claro fica boiando. */
+}
+.primeiro .rosto {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 5px var(--brand-soft);
+}
+.nome {
+  margin-top: 12px;
+  max-width: 100%;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--tx);
+  text-align: center;
+  /* Duas linhas, e não elipse numa: nome completo é o que a pessoa reconhece,
+     e "Maria Fernanda de Albu…" num pódio é pior do que uma segunda linha. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.3;
+}
+.primeiro .nome {
+  font-size: 16px;
+}
+
+.bloco {
+  margin-top: 12px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  background: var(--s2);
+  border: 1px solid var(--line-soft);
+  /* Sem raio embaixo: o bloco encosta na linha de base do pódio, e canto
+     arredondado ali o faria flutuar. */
+  border-radius: 10px 10px 0 0;
+  border-bottom: none;
+}
+.primeiro .bloco {
+  background: var(--brand-soft);
+  border-color: var(--brand-line);
+}
+
+.posicao {
+  font-family: var(--font-serif), serif;
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--tx-2);
+}
+.primeiro .posicao {
+  font-size: 38px;
+  color: var(--brand);
+}
+.entregas {
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  color: var(--tx-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- do quarto ao oitavo ---------- */
+
+/* Encosta na linha de base do pódio, sem borda própria: os dois pedaços
+   compartilham o mesmo chão, e é isso que os faz ler como um pódio só em vez de
+   "um pódio e, embaixo, uma lista". */
+.honra {
+  margin: 0 22px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px 0 0;
+  list-style: none;
+}
+.honraItem {
+  width: 150px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 10px;
+  background: var(--s1);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-lg);
+  min-width: 0;
+  animation: subir 220ms var(--atraso, 0ms) both cubic-bezier(0.32, 0.72, 0, 1);
+}
+.honraPos {
+  font-family: var(--font-serif), serif;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--tx-3);
+  line-height: 1;
+}
+.honraNome {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--tx-2);
+  text-align: center;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.3;
+}
+.honraNum {
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  color: var(--tx-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Inegociável (AGENTS.md §3). A entrada some inteira; o pódio já está montado
+   quando a pessoa olha, que é o estado que interessava desde o começo. */
+@media (prefers-reduced-motion: reduce) {
+  .degrau,
+  .honraItem {
+    animation: none;
+  }
+}
+
+/* Abaixo de 720px os três degraus não cabem lado a lado sem espremer o rosto
+   abaixo do tamanho que justifica esta tela. Eles quebram em linha, e o pódio
+   vira uma coluna — o que a altura do bloco dizia passa a ser dito pela ordem
+   e pelo número gravado nele. */
+@media (max-width: 720px) {
+  .degrau {
+    width: 100%;
+    max-width: 260px;
+  }
+  .bloco {
+    /* Empilhados, a altura proporcional vira um bloco enorme no topo da
+       coluna. O `!important` não entra: o valor vem do style inline do
+       elemento, então quem manda aqui é o `max-height`. */
+    max-height: 76px;
+  }
+  .honraItem {
+    width: calc(50% - 4px);
+  }
+}

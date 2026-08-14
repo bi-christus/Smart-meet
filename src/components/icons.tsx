@@ -171,6 +171,17 @@ const PATHS: Record<string, ReactNode> = {
       <path d="M12 8v4.3l3 1.7" />
     </>
   ),
+  /* tres degraus assentados na mesma linha de base, o do meio mais alto — e a
+     base desenhada, que e o que separa isto do icone `kanban` (tres retangulos
+     pendurados no topo) e do `dashboard` (eixo com uma linha subindo) */
+  rank: (
+    <>
+      <path d="M3 21h18" />
+      <path d="M4 21v-6h5v6" />
+      <path d="M9 21v-11h6v11" />
+      <path d="M15 21v-8h5v8" />
+    </>
+  ),
   chevronLeft: <path d="M15 6l-6 6 6 6" />,
   chevronRight: <path d="M9 6l6 6-6 6" />,
 };
