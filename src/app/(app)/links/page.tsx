@@ -62,6 +62,29 @@ const SEM_USERS: UserProfile[] = [];
  */
 const SEM_RESPONSAVEL = "__sem__";
 
+/**
+ * Sentinela do filtro de setor solicitante — o mesmo problema, outra coluna.
+ *
+ * Aqui o cuidado com colisão é maior que no de responsável: as outras opções
+ * não são e-mails, são nomes de setor digitados por gente no cadastro
+ * `/solicitanteSetores`. Underscore duplo nas duas pontas não é nome que
+ * alguém escreva num campo de cadastro.
+ */
+const SEM_SETOR_SOLICITANTE = "__sem_setor__";
+
+/**
+ * O setor de QUEM PEDIU a demanda — `null` quando ninguém preencheu o campo.
+ *
+ * Nem `card.sector`, que é o setor de quem EXECUTA e vale "B.I." em todo card
+ * do banco. Filtrar por ele era um seletor que não peneirava nada.
+ *
+ * O `trim()` não é paranoia: o campo é texto livre no modal da demanda, e um
+ * espaço sobrando faria "RH " virar uma opção separada de "RH" no seletor.
+ */
+function setorSolicitanteDe(card: Card): string | null {
+  return card.requesterSector?.trim() || null;
+}
+
 /** Um link e a demanda de onde ele veio — o card desta tela é este par. */
 type LinkNaTela = { link: CardLink; card: Card };
 
@@ -161,7 +184,14 @@ export default function LinksPage() {
   const visiveis = useMemo(() => {
     const q = busca.trim().toLowerCase();
     return todos.filter(({ link, card }) => {
-      if (filtroSetor && card.sector !== filtroSetor) return false;
+      if (filtroSetor) {
+        const setor = setorSolicitanteDe(card);
+        const casa =
+          filtroSetor === SEM_SETOR_SOLICITANTE
+            ? setor === null
+            : setor === filtroSetor;
+        if (!casa) return false;
+      }
       if (filtroResp) {
         const casa =
           filtroResp === SEM_RESPONSAVEL
@@ -170,6 +200,16 @@ export default function LinksPage() {
         if (!casa) return false;
       }
       if (!q) return true;
+      // O setor solicitante NÃO entra na busca, e a omissão é escolhida.
+      //
+      // Ele agora tem um seletor próprio, que é exato e exaustivo — as opções
+      // saem dos links que existem, então nenhum setor real fica de fora dele.
+      // Repetir a mesma coluna aqui como `includes` daria dois controles para o
+      // mesmo recorte com semânticas diferentes, e eles se combinam por E: quem
+      // escolhesse "Infra" no seletor e digitasse "Infraestrutura" na busca
+      // veria zero, com os dois controles dizendo a mesma coisa. Fora que o
+      // placeholder promete três coisas — link, domínio e demanda — e uma
+      // quarta invisível transforma a promessa em mentira.
       return (
         rotuloDoLink(link).toLowerCase().includes(q) ||
         dominioDe(link.url).toLowerCase().includes(q) ||
@@ -180,10 +220,42 @@ export default function LinksPage() {
 
   const anoAtual = useMemo(() => new Date().getFullYear(), []);
 
-  const setorOptions: SelectOption[] = [
-    { value: "", label: "Todos os setores" },
-    ...sectors.map((s) => ({ value: s, label: s })),
-  ];
+  /**
+   * Setores SOLICITANTES que aparecem nos links — não os setores do usuário.
+   *
+   * A lista de `sectors` (o que a pessoa executa) construía um seletor que não
+   * peneirava nada: todo card do banco tem `sector: "B.I."`, então escolher
+   * qualquer opção devolvia exatamente o mesmo conjunto. Quem varia é quem
+   * PEDE, e é por aí que se procura: "os links das demandas do RH".
+   *
+   * As opções saem dos links existentes, e não do cadastro inteiro de
+   * `/solicitanteSetores` — são treze setores lá, e oferecer os que nunca
+   * pediram nada é ruído com cara de escolha. É o mesmo raciocínio do filtro de
+   * responsável, logo abaixo, inclusive na base: `todos`, e não `visiveis`,
+   * senão o responsável e a busca esvaziariam este select e trocar um filtro
+   * apagaria a opção escolhida no outro.
+   */
+  const setorOptions = useMemo<SelectOption[]>(() => {
+    const comLink = new Set<string>();
+    let temSemSetor = false;
+    todos.forEach(({ card }) => {
+      const s = setorSolicitanteDe(card);
+      if (s) comLink.add(s);
+      else temSemSetor = true;
+    });
+    const opts: SelectOption[] = [
+      { value: "", label: "Todos os setores solicitantes" },
+    ];
+    [...comLink]
+      .sort((a, b) => a.localeCompare(b, "pt-BR"))
+      .forEach((s) => opts.push({ value: s, label: s }));
+    if (temSemSetor)
+      opts.push({
+        value: SEM_SETOR_SOLICITANTE,
+        label: "Sem setor solicitante",
+      });
+    return opts;
+  }, [todos]);
 
   /**
    * Só entram no filtro os responsáveis de demandas QUE TÊM LINK.
@@ -258,13 +330,18 @@ export default function LinksPage() {
         </div>
 
         <div className={styles.headTools}>
+          {/* Setor SOLICITANTE, não o setor da demanda. O rótulo e o
+              `ariaLabel` dizem "solicitante" porque o antigo "Todos os
+              setores" passaria a mentir sobre o recorte: quem lê a palavra
+              "setor" neste app pensa primeiro no quadro em que a demanda
+              mora, e não é ele que este seletor peneira. */}
           <div className={styles.filtroSetor}>
             <Select
               value={filtroSetor}
               options={setorOptions}
               onChange={setFiltroSetor}
-              placeholder="Todos os setores"
-              ariaLabel="Filtrar por setor"
+              placeholder="Todos os setores solicitantes"
+              ariaLabel="Filtrar por setor solicitante"
             />
           </div>
           {/* Responsável DA DEMANDA, não de quem colou o link — é o sentido que
@@ -324,9 +401,9 @@ export default function LinksPage() {
                 title="Nenhum link com esse filtro"
                 description={
                   <>
-                    Nenhum dos {todos.length} links guardados casa com o setor,
-                    o responsável e a busca escolhidos — eles continuam lá, é a
-                    peneira que está apertada.
+                    Nenhum dos {todos.length} links guardados casa com o setor
+                    solicitante, o responsável e a busca escolhidos — eles
+                    continuam lá, é a peneira que está apertada.
                   </>
                 }
               />
@@ -378,6 +455,7 @@ function LinkCard({
   // avisa. Sem `href` o elemento deixa de ser link: não abre nada, que é a
   // falha certa para um endereço em que não se pode confiar.
   const destino = normalizarUrl(link.url) || undefined;
+  const setorSolicitante = setorSolicitanteDe(card);
 
   return (
     <div className={styles.card}>
@@ -443,7 +521,20 @@ function LinkCard({
       </div>
 
       <div className={styles.cardPe}>
-        <span className={styles.setor}>{card.sector}</span>
+        {/* Quem aparece no rodapé é o setor SOLICITANTE, para casar com o que
+            o seletor do topo recorta. `card.sector` saiu daqui porque vale
+            "B.I." em todo card do banco: um selo que repete a mesma palavra em
+            cada card da grade gasta espaço sem informar nada e, agora,
+            contradiria o filtro — a pessoa peneiraria por "RH" e leria "B.I."
+            em tudo o que sobrasse. O `?setor=` do link ao lado continua sendo
+            `card.sector`: lá é o quadro que precisa abrir, e é outro dado.
+
+            Demanda sem setor solicitante fica sem o selo, em vez de ganhar um
+            texto de ausência: a autoria já é empurrada para a direita pelo
+            `margin-left: auto`, então o rodapé não desmonta sem ele. */}
+        {setorSolicitante && (
+          <span className={styles.setor}>{setorSolicitante}</span>
+        )}
         <span className={styles.autoria}>
           {nomeDe(link.addedBy)} · {dataDe(link.addedAt, anoAtual)}
         </span>

@@ -121,17 +121,30 @@ export async function ensureUserProfile(
 // Gestão de usuários (aba Admin) — exige papel admin (garantido pelas regras).
 // ---------------------------------------------------------------------------
 
-/** Setores padrão (serão editáveis no Firestore na aba Admin › Setores). */
-export const DEFAULT_SECTORS = [
-  "B.I.",
-  "Compras",
-  "Cantinas",
-  "Nutrição",
-  "Infraestrutura",
-  "RH",
-  "CESIU",
-  "CVU",
-];
+/**
+ * Os setores que EXECUTAM demanda neste app. Hoje, um só.
+ *
+ * ESTA LISTA JÁ TEVE OITO NOMES, E ENCOLHEU DE PROPÓSITO — se você chegou aqui
+ * achando que faltam sete, não faltam. A conferência do banco feita antes da
+ * mudança achou os 69 cards, as 17 reuniões e as 0 recorrências **todos** em
+ * "B.I.", e todos os usuários cadastrados com `sectors: ["B.I."]` (menos o
+ * admin, que tinha os oito por herança desta constante). Os outros sete só
+ * existiam como abas que nunca abriam nada e como 35 colunas semeadas sem um
+ * único card atrás. Nada ficou inalcançável ao encolher.
+ *
+ * O engano que os oito nomes carregavam é a confusão entre quem FAZ e quem
+ * PEDE. Quem varia é quem pede — e isso já tem campo próprio no card
+ * (`requesterSector`), alimentado pelo cadastro `/solicitanteSetores`, que tem
+ * treze entradas e é editável na aba Admin. Setor de execução e setor
+ * solicitante são coisas diferentes; esta constante é só a primeira.
+ *
+ * Ela decide o que o ADMIN enxerga (`role === "admin" ? DEFAULT_SECTORS :
+ * profile.sectors`) em seis telas, e é a lista de setores que a aba Admin
+ * oferece ao montar um usuário. Antes de "restaurar" os sete, confira no banco
+ * se existe card, reunião ou recorrência fora de B.I.: quem manda neste valor é
+ * o dado, não a expectativa.
+ */
+export const DEFAULT_SECTORS = ["B.I."];
 
 /**
  * Cor de avatar estável a partir do e-mail.

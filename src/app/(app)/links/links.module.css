@@ -35,11 +35,17 @@
   gap: 10px;
   flex-wrap: wrap;
 }
-/* O `<Select>` ocupa 100% do pai, então a largura é decidida aqui. */
+/* O `<Select>` ocupa 100% do pai, então a largura é decidida aqui.
+
+   Os 180px de antes cabiam "Todos os setores". O rótulo agora diz o que ele de
+   fato recorta — "Todos os setores solicitantes" — e é a opção padrão, ou seja,
+   a que fica na tela quase o tempo todo: cortá-la em reticências logo no estado
+   de repouso esconderia justamente a palavra que distingue este filtro do
+   outro sentido de "setor" no app. */
 .filtroSetor {
-  min-width: 180px;
+  min-width: 246px;
 }
-/* Mais largo que o de setor: aqui cabe nome e sobrenome, não uma sigla. */
+/* Cabe nome e sobrenome, não uma sigla. */
 .filtroResp {
   min-width: 200px;
 }

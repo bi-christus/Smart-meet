@@ -407,8 +407,9 @@ export default function DashboardPage() {
        * altura da linha inteira. Por isso vai sozinho, na largura toda: assim
        * as origens de cada demanda cabem numa linha só, em vez de quebrarem.
        *
-       * Na dupla ficam os dois painéis de altura parecida (rosca e cycle time);
-       * os dois gráficos largos ficam inteiros embaixo, onde 52 semanas cabem.
+       * Na dupla ficam os dois painéis que respondem "de que é feita a fila" —
+       * por tipo e por quem pediu; os dois gráficos largos ficam inteiros
+       * embaixo, onde 52 semanas cabem.
        */}
       {/**
        * Cada painel espera pelas fontes QUE ELE LÊ, e por mais nenhuma.
@@ -442,24 +443,36 @@ export default function DashboardPage() {
         </Painel>
 
         {/**
-         * O esqueleto deste painel é o de LINHAS, o mesmo de "consumo por
-         * responsável", e não mais o de barras em pé: os dois painéis passaram
-         * a ter a mesma forma, e esqueleto que promete outra troca a espera por
-         * um solavanco quando o conteúdo chega.
+         * O CHIP DEIXOU DE SER `p50 Xd · p85 Yd`.
+         *
+         * Aquele número é cycle time, e este painel parou de medir cycle time —
+         * mantê-lo aqui seria um número certo sob um rótulo errado, que é a
+         * única forma de erro que ninguém confere. A previsibilidade continua
+         * inteira no KPI "Cycle time p85" da faixa do topo, com a mesma
+         * `MIN_AMOSTRA` segurando a publicação.
+         *
+         * No lugar dele vai o TOTAL do painel, e ele existe por um motivo
+         * concreto: as barras somam demanda entregue, então a soma delas é
+         * maior que as "N demandas em aberto" escritas na barra de filtros.
+         * Sem o chip, quem conferisse a conta acharia que o painel está errado.
+         *
+         * O esqueleto é o de LINHAS: a forma nova continua sendo uma lista de
+         * barras deitadas, agora com a linha de etapas embaixo de cada uma —
+         * daí uma linha a mais que antes, para o painel não encolher quando o
+         * conteúdo chegar.
          */}
         <Painel
-          titulo="Cycle time e previsibilidade"
-          chip={
-            fluxo.amostra >= MIN_AMOSTRA
-              ? `p50 ${fluxo.p50}d · p85 ${fluxo.p85}d`
-              : undefined
-          }
+          titulo="Demandas por setor solicitante"
+          chip={`${doRecorte.length} ${doRecorte.length === 1 ? "demanda" : "demandas"}`}
           fontes={[fCards, fCols]}
           esqueleto={
-            <SkeletonRow rows={4} texto="Carregando o cycle time por tipo…" />
+            <SkeletonRow
+              rows={5}
+              texto="Carregando as demandas por setor solicitante…"
+            />
           }
         >
-          <CycleTime fluxo={fluxo} />
+          <OrigemPorEtapa cards={doRecorte} colsPorSetor={colsPorSetor} />
         </Painel>
 
         <Painel
@@ -498,21 +511,20 @@ export default function DashboardPage() {
 // ---------------------------------------------------------------------------
 
 /**
- * Uma conclusão do período: quantos dias levou, e de que tipo era.
+ * As séries do período, e o que dá para prometer de prazo a partir delas.
  *
- * O timestamp da conclusão saiu daqui junto com a nuvem de pontos que o lia —
- * ver `CycleTime`. Guardar por card um campo que ninguém mais consulta é peso
- * num `useMemo` que percorre o quadro inteiro a cada troca de filtro.
+ * `pontos` (uma entrada por conclusão, com dias e tipo) e `p50` moravam aqui e
+ * saíram junto com o painel de cycle time por tipo, que era o único a lê-los —
+ * ver `OrigemPorEtapa`, que tomou o lugar dele. O p85 fica, porque o KPI do topo
+ * continua publicando; a lista de durações que o gera não precisa mais escapar
+ * de `calcularFluxo`, e guardá-la era peso num `useMemo` que percorre o quadro
+ * inteiro a cada troca de filtro.
  */
-type Conclusao = { dias: number; tipo: DemandType | null };
-
 type Fluxo = {
   semanas: { inicio: Date; rotulo: string }[];
   entradas: number[];
   entregas: number[];
   fila: number[];
-  pontos: Conclusao[];
-  p50: number;
   p85: number;
   amostra: number;
   entregas4: number;
@@ -547,7 +559,8 @@ function calcularFluxo(
 
   const entradas = new Array(semanasN).fill(0);
   const entregas = new Array(semanasN).fill(0);
-  const pontos: Conclusao[] = [];
+  /** Dias entre criação e conclusão, uma entrada por card entregue no período. */
+  const duracoes: number[] = [];
   let filaInicial = 0;
 
   cards.forEach((c) => {
@@ -569,15 +582,8 @@ function calcularFluxo(
       const i = indiceDa(entregue);
       if (i >= 0) {
         entregas[i]++;
-        if (nasceu !== null && entregue >= nasceu) {
-          pontos.push({
-            dias: Math.max(0, Math.round((entregue - nasceu) / 86400000)),
-            // Mesma desconfiança do gráfico de rosca: `type` vem do documento e
-            // um valor que saiu da lista (renomeado, importado torto) viraria um
-            // rótulo `undefined` na tela. Fora da lista é "sem tipo".
-            tipo: c.type && DEMAND_TYPES.includes(c.type) ? c.type : null,
-          });
-        }
+        if (nasceu !== null && entregue >= nasceu)
+          duracoes.push(Math.max(0, Math.round((entregue - nasceu) / 86400000)));
       }
     }
   });
@@ -589,16 +595,16 @@ function calcularFluxo(
     fila.push(acc);
   }
 
-  const ordenado = pontos.map((p) => p.dias).sort((a, b) => a - b);
   return {
     semanas,
     entradas,
     entregas,
     fila,
-    pontos,
-    p50: percentil(ordenado, 0.5),
-    p85: percentil(ordenado, 0.85),
-    amostra: pontos.length,
+    p85: percentil(
+      [...duracoes].sort((a, b) => a - b),
+      0.85,
+    ),
+    amostra: duracoes.length,
     entregas4: entregas.slice(-4).reduce((a, b) => a + b, 0),
   };
 }
@@ -1133,134 +1139,273 @@ function FluxoSemanal({ fluxo }: { fluxo: Fluxo }) {
   );
 }
 
+/** Rótulo do card cuja coluna não existe mais no quadro do setor dele. */
+const SEM_ETAPA = "Fora do quadro";
+
 /**
- * Cycle time mediano por tipo de demanda — uma barra deitada por tipo.
+ * Quantas barras nomeadas cabem antes de a cauda virar uma barra "Outros".
  *
- * Era uma nuvem de pontos: um ponto por conclusão, x = quando saiu, y = quantos
- * dias levou, com três tracejados de percentil por cima. Mostrava a dispersão
- * inteira, e cobrava por isso o preço de ler densidade de pontos — enquanto a
- * pergunta que se faz neste painel é mais simples e a nuvem não respondia:
- * QUAL TIPO DE DEMANDA DEMORA MAIS. É a resposta que muda o que se promete ao
- * setor solicitante quando ele pede uma implementação em vez de uma correção.
+ * Há 13 setores solicitantes cadastrados, e a barra deitada é um instrumento de
+ * COMPARAÇÃO: da nona linha em diante são quase sempre setores com uma ou duas
+ * demandas, cujas barras já não se distinguem entre si no comprimento e ainda
+ * assim custam uma linha inteira cada. Oito é onde a comparação ainda funciona.
  *
- * BARRA DEITADA, E NÃO EM PÉ: o rótulo de cada linha é texto de tamanho real
- * ("Nova implementação", "Manutenção"). Deitado ele cabe inteiro à esquerda; em
- * pé teria de girar 90° ou ser truncado, e rótulo girado é o jeito mais barato
- * de tornar um gráfico ilegível. A forma também é a mesma de "consumo por
- * responsável", que fica duas posições acima na mesma tela — dois gráficos de
- * comparação entre categorias não deveriam exigir dois modos de leitura.
- *
- * MEDIANA, E NÃO MÉDIA: um tipo com quatro conclusões de 3 dias e uma de 90 tem
- * média 20 — número que não descreve nenhuma das cinco entregas. A metade sai
- * em 3, e é isso que se pode prometer.
- *
- * O NÚMERO DE CONCLUSÕES VAI EM TEXTO, EM TODA LINHA. `MIN_AMOSTRA` segura o
- * painel inteiro, mas dentro dele um tipo pode ter uma conclusão só — e a barra
- * dele sai com a mesma autoridade visual das outras. "1 conclusão" ao lado é o
- * que impede a linha de parecer apurada.
- *
- * DESCARTADA a linha de referência do p85 do período cruzando as barras: o p85
- * do conjunto é, por construção, maior que quase toda mediana de subgrupo, e a
- * marca ficaria colada na borda direita em praticamente todo recorte — uma
- * régua que nunca se move não é régua. A previsibilidade continua no chip do
- * cabeçalho, onde é do período inteiro e sobre a amostra que `MIN_AMOSTRA`
- * aprovou.
+ * O corte NÃO É SILENCIOSO — a nota do rodapé nomeia um a um os setores que
+ * foram para "Outros". Cortar sem dizer lê-se como "é só isso", que é
+ * exatamente a mentira que os painéis desta tela existem para não contar.
  */
-function CycleTime({ fluxo }: { fluxo: Fluxo }) {
-  const { pontos, amostra } = fluxo;
+const TETO_ORIGENS = 8;
 
-  const linhas = useMemo(() => {
-    const por: Record<string, number[]> = {};
-    pontos.forEach((p) => {
-      const t = p.tipo ?? "__sem__";
-      (por[t] = por[t] ?? []).push(p.dias);
-    });
-    return Object.entries(por)
-      .map(([chave, dias]) => ({
-        chave,
-        label:
-          chave === "__sem__"
-            ? "Sem tipo"
-            : DEMAND_TYPE_LABEL[chave as DemandType],
-        // Cor do tipo, a MESMA do Kanban e da rosca acima — tipo tem uma cor só
-        // no app inteiro. "Sem tipo" fica fora da paleta, como na rosca.
-        cor:
-          chave === "__sem__"
-            ? "var(--tx-3)"
-            : DEMAND_TYPE_COLOR[chave as DemandType],
-        mediana: percentil(
-          [...dias].sort((a, b) => a - b),
-          0.5,
-        ),
-        n: dias.length,
-      }))
-      .sort(
-        (a, b) =>
-          b.mediana - a.mediana || a.label.localeCompare(b.label, "pt-BR"),
+type Segmento = { etapa: string; cor: string; n: number };
+type LinhaOrigem = {
+  chave: string;
+  label: string;
+  total: number;
+  segs: Segmento[];
+};
+
+/**
+ * De onde vem a demanda, e em que etapa do quadro ela está.
+ *
+ * Uma barra por setor solicitante, do que mais pede para o que menos pede; o
+ * comprimento é a contagem, e cada faixa é uma etapa, com a cor que a própria
+ * coluna do Kanban já tem. Substituiu o cycle time mediano por tipo: aquele
+ * painel respondia "qual tipo demora mais", que é a mesma família de pergunta
+ * do p85 no KPI logo acima, enquanto ninguém sabia responder de cabeça QUEM
+ * ESTÁ PEDINDO — que é a conversa que se tem com o setor vizinho.
+ *
+ * DEMANDA ENTREGUE CONTA AQUI, e é a única exceção da tela.
+ *
+ * O painel irmão ("Consumo por responsável") recebe `abertos` porque mede carga
+ * de trabalho, e trabalho terminado não pesa em ninguém. Este mede VOLUME DE
+ * PEDIDO, que é outra coisa: quem pediu, pediu — a entrega não apaga o pedido.
+ * E a forma obriga: empilhar por etapa sem as entregues faria a última faixa
+ * sumir de todas as barras, e o total de cada setor passaria a ser um número
+ * menor do que ele de fato pediu, sem nada na tela dizendo isso. Um painel de
+ * origem que esconde o fim do funil não é conservador, é errado. Por isso o
+ * chip traz o total e a nota avisa que ele é maior que o "em aberto" do topo.
+ *
+ * DEMANDA NA LIXEIRA NÃO CONTA, e não há nada a fazer por isso aqui:
+ * `subscribeCardsForSectors` (lib/kanban) filtra os excluídos NA ORIGEM, antes
+ * de qualquer tela ver o snapshot. Refiltrar seria criar uma segunda verdade
+ * sobre o mesmo assunto — conferido, não reimplementado.
+ *
+ * O PERÍODO DO TOPO NÃO RECORTA ESTE PAINEL, como não recorta a rosca nem o
+ * consumo por responsável: ele é a janela das SÉRIES semanais. Aqui a pergunta
+ * é sobre o quadro como ele está agora, e a nota do rodapé diz isso para quem
+ * trocar o período e estranhar que nada se mexeu.
+ */
+function OrigemPorEtapa({
+  cards,
+  colsPorSetor,
+}: {
+  cards: Card[];
+  colsPorSetor: Record<string, KanbanColumn[]>;
+}) {
+  /**
+   * Catálogo de etapas por TÍTULO — a cor e a posição no quadro.
+   *
+   * Por título, e não por `colId`: o recorte "todos os setores" cruza vários
+   * quadros, e as colunas que um setor criou à mão têm id `col_<timestamp>`,
+   * único por setor. Agrupar por id partiria "Em andamento" em tantas faixas
+   * quantos são os quadros — e para quem lê, duas etapas com o mesmo nome são a
+   * mesma etapa.
+   *
+   * Quando dois quadros pintam a mesma etapa de cores diferentes, decide o
+   * setor que vem primeiro no alfabeto. Precisa ser uma regra qualquer, mas
+   * FIXA: sem ordenar, a cor viria de qual snapshot chegou primeiro e a legenda
+   * se repintaria sozinha entre um render e outro.
+   */
+  const etapas = useMemo(() => {
+    const m = new Map<string, { cor: string; ordem: number }>();
+    Object.keys(colsPorSetor)
+      .sort((a, b) => a.localeCompare(b, "pt-BR"))
+      .forEach((s) =>
+        colsPorSetor[s].forEach((c, i) => {
+          const ja = m.get(c.title);
+          if (!ja) m.set(c.title, { cor: c.color, ordem: i });
+          else if (i < ja.ordem) ja.ordem = i;
+        }),
       );
-  }, [pontos]);
+    // Coluna apagada depois de o card entrar nela: fica fora da paleta e no fim
+    // da fila, como "Sem tipo" na rosca.
+    m.set(SEM_ETAPA, { cor: "var(--tx-3)", ordem: 99 });
+    return m;
+  }, [colsPorSetor]);
 
-  if (amostra === 0)
+  const { linhas, cortados, etapasUsadas, comOrigem } = useMemo(() => {
+    const por = new Map<string, Map<string, number>>();
+    const usadas = new Set<string>();
+    cards.forEach((c) => {
+      const origem = c.requesterSector?.trim() || SEM_ORIGEM;
+      const col = (colsPorSetor[c.sector] ?? []).find(
+        (x) => x.id === c.columnId,
+      );
+      const etapa = col?.title ?? SEM_ETAPA;
+      usadas.add(etapa);
+      const m = por.get(origem) ?? new Map<string, number>();
+      m.set(etapa, (m.get(etapa) ?? 0) + 1);
+      por.set(origem, m);
+    });
+
+    const ordemDa = (t: string) => etapas.get(t)?.ordem ?? 99;
+    const monta = (
+      chave: string,
+      label: string,
+      m: Map<string, number>,
+    ): LinhaOrigem => ({
+      chave,
+      label,
+      total: [...m.values()].reduce((a, b) => a + b, 0),
+      // Etapa com zero simplesmente não está no mapa, então não vira faixa
+      // nenhuma. Se virasse, o `min-width` de 3px do segmento a desenharia —
+      // uma cor na barra afirmando que há demanda ali onde não há.
+      segs: [...m.entries()]
+        .sort(
+          (a, b) =>
+            ordemDa(a[0]) - ordemDa(b[0]) || a[0].localeCompare(b[0], "pt-BR"),
+        )
+        .map(([etapa, n]) => ({
+          etapa,
+          cor: etapas.get(etapa)?.cor ?? "var(--tx-3)",
+          n,
+        })),
+    });
+
+    const nomeadas = [...por.entries()]
+      .filter(([o]) => o !== SEM_ORIGEM)
+      .map(([o, m]) => monta(o, o, m))
+      .sort((a, b) => b.total - a.total || a.label.localeCompare(b.label, "pt-BR"));
+
+    // Dobrar UMA barra em "Outros" não economiza linha e ainda troca o nome de
+    // quem pediu por um rótulo anônimo — daí o `+ 1`.
+    const dobra = nomeadas.length > TETO_ORIGENS + 1;
+    const cauda = dobra ? nomeadas.slice(TETO_ORIGENS) : [];
+    const fora = dobra ? nomeadas.slice(0, TETO_ORIGENS) : [...nomeadas];
+    if (cauda.length) {
+      const m = new Map<string, number>();
+      cauda.forEach((l) =>
+        l.segs.forEach((s) => m.set(s.etapa, (m.get(s.etapa) ?? 0) + s.n)),
+      );
+      fora.push(
+        monta("__outros__", `Outros (${cauda.length} setores)`, m),
+      );
+    }
+    // "Sem setor solicitante" fecha a lista, como "Sem tipo" fecha a rosca, e
+    // nunca entra em "Outros": campo em branco não é um setor pequeno, é uma
+    // resposta de outra natureza — some-lo com os pequenos esconderia as duas.
+    const sem = por.get(SEM_ORIGEM);
+    if (sem) fora.push(monta(SEM_ORIGEM, SEM_ORIGEM, sem));
+
+    return {
+      linhas: fora,
+      cortados: cauda.map((l) => l.label),
+      etapasUsadas: [...usadas].sort(
+        (a, b) => ordemDa(a) - ordemDa(b) || a.localeCompare(b, "pt-BR"),
+      ),
+      comOrigem: nomeadas.length,
+    };
+  }, [cards, colsPorSetor, etapas]);
+
+  if (!cards.length)
     return (
       <EmptyState
         size="compact"
-        icon="clock"
-        title="Nenhuma demanda concluída no período"
-        description="Sem conclusão não há cycle time. Amplie o período no topo da tela para alcançar semanas anteriores."
+        icon="kanban"
+        title="Nenhuma demanda neste recorte"
+        description="Cada setor que pedir vira uma barra aqui, dividida pelas etapas do quadro."
       />
     );
-  if (amostra < MIN_AMOSTRA)
+  // Não é o mesmo vazio de cima, e dizer "nenhuma demanda" aqui seria falso:
+  // há demanda, o que não há é de onde ela veio. E a saída é diferente —
+  // preencher o campo no card, não esperar chegar demanda.
+  if (!comOrigem)
     return (
       <EmptyState
         size="compact"
-        icon="clock"
-        title="Amostra pequena demais"
+        icon="info"
+        title="Nenhuma demanda tem setor solicitante"
         description={
           <>
-            Só {amostra} conclusão(ões) no período. Mediana com amostra assim
-            vira chute — as barras aparecem a partir de {MIN_AMOSTRA}.
+            {cards.length === 1
+              ? "A única demanda do recorte está"
+              : `As ${cards.length} demandas do recorte estão`}{" "}
+            com esse campo em branco. Preencha o setor solicitante no card para
+            este painel comparar as origens.
           </>
         }
       />
     );
 
-  // O 1 é guarda de divisão, não piso de escala: um recorte em que todo tipo
-  // fecha no mesmo dia tem mediana 0 em todas as linhas.
-  const max = Math.max(1, ...linhas.map((l) => l.mediana));
+  const max = Math.max(1, ...linhas.map((l) => l.total));
 
   return (
     <>
       <div className={styles.barras}>
         {linhas.map((l) => (
-          <div key={l.chave} className={styles.barraLinha}>
-            <div className={styles.barraNome} title={l.label}>
-              {l.label}
+          <div key={l.chave} className={styles.barraBloco}>
+            <div className={styles.barraLinha}>
+              <div className={styles.barraNome} title={l.label}>
+                {l.label}
+              </div>
+              <div className={styles.barraTrilho}>
+                {/* A pilha inteira é UM elemento, e é ela que cresce: são as
+                    faixas juntas que formam o comprimento que se lê. */}
+                <div
+                  className={styles.pilha}
+                  style={{ width: `${(l.total / max) * 100}%` }}
+                >
+                  {l.segs.map((s) => (
+                    <div
+                      key={s.etapa}
+                      role="img"
+                      aria-label={`${s.etapa}: ${s.n}`}
+                      className={styles.barraSeg}
+                      style={{
+                        width: `${(s.n / l.total) * 100}%`,
+                        background: s.cor,
+                      }}
+                      title={`${s.etapa} · ${s.n}`}
+                    />
+                  ))}
+                </div>
+              </div>
+              <div className={styles.origemNum}>{l.total}</div>
             </div>
-            <div className={styles.barraTrilho}>
-              {/* A barra é o desenho do número que já está escrito na linha ao
-                  lado — para quem usa leitor de tela ela é repetição, e para
-                  quem não distingue as cores o rótulo e o valor em texto já
-                  respondem tudo. */}
-              <div
-                aria-hidden="true"
-                className={styles.cycleFill}
-                style={{
-                  width: `${(l.mediana / max) * 100}%`,
-                  background: l.cor,
-                }}
-              />
-            </div>
-            <div className={styles.cycleDias}>{l.mediana}d</div>
-            <div className={styles.cycleN}>
-              {l.n} {l.n === 1 ? "conclusão" : "conclusões"}
+            {/* As mesmas etapas em texto, para quem não distingue as cores ler a
+                divisão sem passar o mouse em faixa nenhuma. `aria-hidden`
+                porque cada faixa acima já se anuncia com o mesmo par nome +
+                número: visível é complemento, falado seria eco. */}
+            <div className={styles.origemEtapas} aria-hidden="true">
+              {l.segs.map((s) => (
+                <span key={s.etapa} className={styles.origem}>
+                  <i style={{ background: s.cor }} />
+                  {s.etapa}
+                  <b>{s.n}</b>
+                </span>
+              ))}
             </div>
           </div>
         ))}
       </div>
-      <p className={styles.cycleNota}>
-        Mediana de dias entre a criação e a conclusão: metade das demandas de
-        cada tipo sai nesse prazo ou menos. O p50 e o p85 do cabeçalho são do
-        período inteiro, sem separar por tipo.
+      {etapasUsadas.length > 1 && (
+        <div className={styles.legenda}>
+          {etapasUsadas.map((e) => (
+            <span key={e}>
+              <i style={{ background: etapas.get(e)?.cor ?? "var(--tx-3)" }} />
+              {e}
+            </span>
+          ))}
+        </div>
+      )}
+      <p className={styles.nota}>
+        Conta a demanda entregue também — ela é a última faixa da barra, e sem
+        ela o total de cada setor seria menor do que o que ele pediu. Por isso a
+        soma aqui passa das demandas em aberto do topo da tela, e por isso o
+        período do topo não recorta este painel.
+        {cortados.length > 0 && (
+          <> Somados em “Outros”: {cortados.join(", ")}.</>
+        )}
       </p>
     </>
   );
