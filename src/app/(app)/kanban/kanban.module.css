@@ -136,10 +136,22 @@
   color: var(--brand);
 }
 
+/**
+ * `align-items: stretch` (o padrão do flex, agora que o `flex-start` saiu) é o
+ * que faz as colunas terminarem todas na mesma linha.
+ *
+ * Antes cada coluna tinha a altura do próprio conteúdo, e a borda de baixo do
+ * quadro saía serrilhada. O que custava mais não era a estética: **a coluna
+ * vazia virava um alvo de soltura de uns 100px**, e ela é justamente para onde
+ * mais se arrasta card. Com as colunas cheias até o pé do quadro, o alvo de
+ * cada uma é a coluna inteira, em qualquer altura dela.
+ *
+ * Quem paga por isso é `.collist`, que precisa poder encolher abaixo do próprio
+ * conteúdo para rolar por dentro — daí o `min-height` explícito lá embaixo.
+ */
 .board {
   display: flex;
   gap: 13px;
-  align-items: flex-start;
   padding: 4px 22px 22px;
   overflow-x: auto;
   flex: 1;
@@ -169,10 +181,25 @@
 .board::-webkit-scrollbar-thumb:hover {
   background: var(--brand-hover);
 }
+/**
+ * A LARGURA CRESCE, mas dentro de uma faixa. `290px` era fixo, e cinco colunas
+ * somavam ~1546px com os respiros: numa tela de 1920 sobravam quase 380px de vão
+ * morto à direita, e o quadro parecia encolhido no canto.
+ *
+ * `flex: 1 1 290px` com `min-width: 290px` faz as duas coisas certas de uma vez:
+ * a coluna CRESCE para dividir a sobra, e o `min-width` bloqueia o encolhimento
+ * — então, a partir de umas seis colunas, o quadro volta a rolar na horizontal
+ * em vez de espremer todas até o card não caber.
+ *
+ * O teto de 360px é o que impede o efeito oposto: um quadro de duas colunas
+ * dividiria 1876px em duas faixas de 930, e um card de demanda com 900px de
+ * largura tem título curto perdido numa linha vazia. 360 é onde o card ainda lê
+ * como card.
+ */
 .col {
-  flex: none;
-  width: 290px;
-  max-height: 100%;
+  flex: 1 1 290px;
+  min-width: 290px;
+  max-width: 360px;
   display: flex;
   flex-direction: column;
   background: var(--s1);
@@ -197,36 +224,75 @@
     transform: none;
   }
 }
+/**
+ * O ALVO DE SOLTURA É ESTÁTICO, e isso é a correção — não uma simplificação.
+ *
+ * Ele piscava: `dropPulse ... infinite`, um brilho interno indo e voltando a
+ * cada 1,1s enquanto o card estivesse por cima. Arrastar card é a interação de
+ * MAIS alta frequência do quadro — dezenas de vezes por dia, por pessoa —, e
+ * animação em laço para chamar atenção é exatamente o que a skill
+ * `design-motion-principles` reprova e o que AGENTS.md §3 chama de AI-slop
+ * motion. Pior: o pulso competia com a única coisa que a pessoa está olhando
+ * naquele instante, que é o card na ponta do ponteiro.
+ *
+ * O que ficou responde melhor sem se mexer: a coluna inteira ganha fundo da
+ * marca, o contorno tracejado fecha o alvo e o cabeçalho acende junto. Três
+ * sinais simultâneos e imóveis são mais fáceis de ler de canto de olho do que
+ * um sinal que aparece e some.
+ */
 .colDrop {
   outline: 2px dashed var(--brand);
   outline-offset: -3px;
   background: var(--brand-soft);
-  animation: dropPulse 1.1s ease-in-out infinite;
 }
-@keyframes dropPulse {
-  0%,
-  100% {
-    box-shadow: inset 0 0 0 0 transparent;
-  }
-  50% {
-    box-shadow: inset 0 0 26px 0 var(--brand-soft);
-  }
+.colDrop .colhead {
+  border-bottom-color: var(--brand-line);
+}
+.colDrop .colTitle {
+  color: var(--brand);
 }
 .colstripe {
   height: 3px;
-  border-radius: 14px 14px 0 0;
+  /* Mesmo raio do `--r-lg` da coluna: 2px a mais aqui e a faixa colorida
+     aparece por fora do canto arredondado, como um filete claro nas pontas. */
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+  flex: none;
 }
+/* A hairline marca onde começa a área que rola. Sem ela, o primeiro card
+   passava por baixo do título sem nada dizendo que ali havia uma borda — e o
+   cabeçalho, que é fixo, lia-se como parte da lista. */
 .colhead {
   display: flex;
   align-items: center;
   gap: 7px;
   padding: 10px 8px 8px 13px;
+  border-bottom: 1px solid var(--line-soft);
+  flex: none;
+  /* Sem isto, um título longo recusa encolher e empurra a contagem e os dois
+     botões para fora da coluna — literalmente para fora do alcance do clique. */
+  min-width: 0;
 }
+/**
+ * O título ocupa a sobra e corta com reticências.
+ *
+ * `flex: 1` aqui é o que substituiu o `<div style={{flex:1}}>` que havia no TSX
+ * entre a contagem e os botões: o espaço livre passou a ser do TÍTULO, e não de
+ * um vão. É a diferença entre "Aguardando retorno do so…  3  [+] [✎]" e o mesmo
+ * título empurrando os botões para fora da coluna.
+ *
+ * `min-width: 0` junto do `overflow` porque item de flex não encolhe abaixo do
+ * conteúdo sozinho — sem ele, `text-overflow` nunca chega a valer.
+ */
 .colTitle {
+  flex: 1;
+  min-width: 0;
   font-size: 13px;
   font-weight: 700;
   color: var(--tx);
   letter-spacing: 0.1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .colCount {
   min-width: 20px;
@@ -257,14 +323,54 @@
   background: var(--s3);
   color: var(--tx);
 }
+/**
+ * A área que rola.
+ *
+ * `min-height` explícito, e não `auto`: item de flex não encolhe abaixo do
+ * próprio conteúdo por padrão, e sem este valor a coluna com trinta cards
+ * esticaria para além do quadro em vez de rolar por dentro. Os 46px são o piso
+ * de "ainda dá para largar um card aqui".
+ *
+ * A BARRA DE ROLAGEM É DESENHADA, como a do quadro. A do sistema, no Windows,
+ * é grossa e fica por cima do conteúdo — duas barras de aparências diferentes na
+ * mesma tela, uma delas comendo a borda direita dos cards. Esta é mais fina que
+ * a do quadro de propósito: a do quadro anuncia que há mais coluna à direita, e
+ * é ela que precisa ser vista; esta só precisa dizer onde a lista está.
+ */
 .collist {
   flex: 1;
   min-height: 46px;
   overflow-y: auto;
-  padding: 2px 8px 10px;
+  padding: 8px 8px 10px;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--s3) transparent;
+}
+.collist::-webkit-scrollbar {
+  width: 8px;
+}
+.collist::-webkit-scrollbar-track {
+  background: transparent;
+}
+.collist::-webkit-scrollbar-thumb {
+  background: var(--s3);
+  border-radius: 999px;
+  /* A borda transparente afina o polegar sem mudar a área de arraste dele: o
+     alvo continua com 8px, e o traço aparece com 4. */
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.collist:hover::-webkit-scrollbar-thumb {
+  background: var(--line);
+  background-clip: content-box;
+}
+/* `margin: auto 0` num filho de flex-column é o jeito de centrar na altura sem
+   mexer em `justify-content` do pai — que centraria também as listas de dois ou
+   três cards, empurrando-as para o meio da coluna. */
+.colVazio {
+  margin: auto 0;
 }
 /* Aviso das listas que NÃO seguram o quadro.
 
@@ -1392,10 +1498,12 @@
 
 /* ---------- reduced motion ---------- */
 @media (prefers-reduced-motion: reduce) {
+  /* `.colDrop` saiu desta lista junto com o `dropPulse`: o alvo de soltura não
+     anima mais em movimento nenhum, então desligá-lo aqui prometeria uma
+     animação que não existe — e a próxima pessoa procuraria por ela. */
   .col,
   .board,
   .comment,
-  .colDrop,
   .kcard,
   .modal,
   .overlay,
