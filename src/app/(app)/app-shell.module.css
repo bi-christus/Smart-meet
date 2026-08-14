@@ -332,6 +332,16 @@
   font-size: 13px;
 }
 
+/* Aba negada: o `<EmptyState>` grande, centrado no miolo, com a barra do topo
+   inteira acima dele. A moldura fica no vão porque a mensagem precisa ler como
+   "esta aba, não", e não como "este app, não" — quem chega aqui tem as outras
+   abas funcionando a um clique de distância. */
+.semAcesso {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 56px 22px;
+}
+
 @media (max-width: 680px) {
   .uMeta {
     display: none;

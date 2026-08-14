@@ -23,6 +23,18 @@ import {
   type Solicitante,
   type SolicitanteSetor,
 } from "@/lib/solicitantes";
+import {
+  salvarPermissoes,
+  subscribePermissoes,
+} from "@/lib/permissoes";
+import {
+  ABAS_CONFIGURAVEIS,
+  PERMISSOES_ABERTAS,
+  regraFechadaParaTodos,
+  regraPadrao,
+  type Permissoes,
+  type RegraDaAba,
+} from "@/lib/permissoes-core";
 import { Icon } from "@/components/icons";
 import { Avatar } from "@/components/avatar";
 import { OverlayPortal } from "@/components/overlay-portal";
@@ -40,7 +52,7 @@ const SEM_PESSOAS: Solicitante[] = [];
 const SUBTABS = [
   { id: "usuarios", label: "Usuários", enabled: true },
   { id: "solicitantes", label: "Solicitantes", enabled: true },
-  { id: "permissoes", label: "Permissões", enabled: false },
+  { id: "permissoes", label: "Permissões", enabled: true },
   { id: "setores", label: "Setores", enabled: false },
   { id: "logs", label: "Logs", enabled: false },
 ];
@@ -169,12 +181,336 @@ export default function AdminPage() {
 
       {tab === "solicitantes" && <SolicitantesAdmin />}
 
+      {tab === "permissoes" && (
+        <PermissoesAdmin
+          actorEmail={profile.email}
+          users={users}
+          erroUsers={erroUsers}
+        />
+      )}
+
       {editing && (
         <UserModal
           user={editing === "new" ? null : editing}
           actorEmail={profile.email}
           onClose={() => setEditing(null)}
         />
+      )}
+    </div>
+  );
+}
+
+/**
+ * O quadro de Permissões — quem enxerga qual aba.
+ *
+ * A DECISÃO DE FORMA: uma tela por ABA, e não uma por pessoa. As duas versões
+ * guardam a mesma informação, mas respondem perguntas diferentes, e só uma
+ * delas é a que se faz na prática. "Quem pode ver o Dashboard?" é a pergunta de
+ * quem administra; "que abas o fulano vê?" é a de quem dá suporte a uma pessoa,
+ * e essa se responde olhando para o cadastro dela — que já existe, na aba
+ * Usuários. Uma tela por pessoa ainda espalharia a mesma decisão por N
+ * formulários: liberar uma aba nova para o setor inteiro seria abrir um cadastro
+ * por vez.
+ *
+ * NADA É SALVO A CADA CLIQUE. Uma aba tem modo, setores e pessoas, e as três
+ * coisas são uma decisão só — gravar a cada toque publicaria estados
+ * intermediários que ninguém quis, sendo o pior deles o instante entre "virei
+ * para restrito" e "escolhi quem entra", que é a aba fechada para todo mundo.
+ * Por isso há rascunho e um botão de salvar.
+ */
+function PermissoesAdmin({
+  actorEmail,
+  users,
+  erroUsers,
+}: {
+  actorEmail: string;
+  /** A mesma lista da aba Usuários — `null` enquanto ela não respondeu. */
+  users: UserProfile[] | null;
+  erroUsers: Error | null;
+}) {
+  const [servidor, setServidor] = useState<Permissoes | null>(null);
+  const [erro, setErro] = useState<Error | null>(null);
+  const [tentativa, setTentativa] = useState(0);
+  const [rascunho, setRascunho] = useState<Permissoes | null>(null);
+  const [salvando, setSalvando] = useState(false);
+  const [erroSalvar, setErroSalvar] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fechar = subscribePermissoes(
+      (p) => {
+        setServidor(p);
+        setErro(null);
+        // O rascunho só acompanha o servidor enquanto NÃO houver edição em
+        // andamento — `(r) => r ?? p` faz exatamente isso na primeira resposta,
+        // e o `sujo` abaixo o preserva depois. Sobrescrever o que o admin está
+        // digitando porque um snapshot chegou seria perder trabalho sem nada na
+        // tela dizendo por quê.
+        setRascunho((r) => r ?? p);
+      },
+      (e) => setErro(e),
+    );
+    return () => fechar();
+  }, [tentativa]);
+
+  const atual = rascunho ?? PERMISSOES_ABERTAS;
+  const sujo =
+    !!servidor &&
+    !!rascunho &&
+    JSON.stringify(servidor.abas) !== JSON.stringify(rascunho.abas);
+
+  /**
+   * Quem pode ser escolhido individualmente.
+   *
+   * Administrador fica FORA da lista, e não desmarcado dentro dela: admin
+   * enxerga toda aba por regra (`podeVerAba`), então uma caixa marcável ao lado
+   * do nome dele prometeria um controle que não existe — desmarcar não tiraria
+   * nada. E entram aqui os e-mails que já estão gravados na regra mas não têm
+   * mais cadastro: sem isso, quem foi removido de `/users` ficaria preso na
+   * configuração para sempre, sem nenhuma tela de onde tirá-lo.
+   */
+  const escolhiveis = useMemo(() => {
+    const gravados = new Set<string>();
+    Object.values(atual.abas).forEach((r) =>
+      r.pessoas.forEach((e) => gravados.add(e)),
+    );
+    const lista = (users ?? [])
+      .filter((u) => u.role !== "admin")
+      .map((u) => ({ email: u.email, perfil: u as UserProfile | undefined }));
+    const conhecidos = new Set(lista.map((p) => p.email));
+    gravados.forEach((e) => {
+      if (!conhecidos.has(e)) lista.push({ email: e, perfil: undefined });
+    });
+    return lista.sort((a, b) =>
+      (a.perfil?.name ?? a.email).localeCompare(
+        b.perfil?.name ?? b.email,
+        "pt-BR",
+      ),
+    );
+  }, [users, atual]);
+
+  /** Os setores oferecidos, mais os que já estão gravados e saíram da lista. */
+  const setoresOferecidos = useMemo(() => {
+    const s = new Set<string>(DEFAULT_SECTORS);
+    Object.values(atual.abas).forEach((r) => r.setores.forEach((x) => s.add(x)));
+    return [...s].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  }, [atual]);
+
+  function mexer(abaId: string, muda: (r: RegraDaAba) => RegraDaAba) {
+    setErroSalvar(null);
+    setRascunho((r) => {
+      const base = r ?? PERMISSOES_ABERTAS;
+      const antes = base.abas[abaId] ?? regraPadrao();
+      return { abas: { ...base.abas, [abaId]: muda(antes) } };
+    });
+  }
+
+  function alternar(lista: string[], valor: string): string[] {
+    return lista.includes(valor)
+      ? lista.filter((x) => x !== valor)
+      : [...lista, valor];
+  }
+
+  async function salvar() {
+    if (!rascunho || salvando) return;
+    setSalvando(true);
+    setErroSalvar(null);
+    try {
+      await salvarPermissoes(rascunho, actorEmail);
+    } catch (e) {
+      console.error("[salvar permissões]", codigoDe(e), e);
+      setErroSalvar(
+        fraseDeFalha(
+          "Não foi possível salvar as permissões.",
+          e,
+          navigator.onLine,
+        ),
+      );
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  if (erro)
+    return (
+      <ErrorState error={erro} onRetry={() => setTentativa((n) => n + 1)} />
+    );
+  if (!rascunho)
+    return <SkeletonRow rows={4} texto="Carregando as permissões das abas…" />;
+
+  return (
+    <div className={styles.permWrap}>
+      <p className={styles.permIntro}>
+        Cada aba pode ficar aberta a todos ou restrita a setores e pessoas
+        específicas. Quem não tiver acesso não vê a aba na barra do topo e recebe
+        um aviso ao abrir o endereço direto.{" "}
+        <strong>Administradores enxergam todas as abas</strong> — é assim que
+        sempre existe um caminho de volta para esta tela.
+      </p>
+
+      {erroUsers && (
+        <div className={styles.permAviso} role="status">
+          <Icon name="warn" size={14} />
+          <span>
+            A lista de pessoas não carregou. Dá para configurar por setor
+            normalmente; a escolha por pessoa volta quando a lista chegar.
+          </span>
+        </div>
+      )}
+
+      <div className={styles.permGrid}>
+        {ABAS_CONFIGURAVEIS.map((aba) => {
+          const regra = atual.abas[aba.id] ?? regraPadrao();
+          const restrito = regra.modo === "restrito";
+          const fechada = regraFechadaParaTodos(regra);
+          return (
+            <section key={aba.id} className={styles.permCard}>
+              <div className={styles.permTop}>
+                <span className={styles.permIcone}>
+                  <Icon name={aba.id} size={16} />
+                </span>
+                <div className={styles.permNomeBloco}>
+                  <div className={styles.permNome}>{aba.label}</div>
+                  <div className={styles.permHref}>{aba.href}</div>
+                </div>
+                <div
+                  className={styles.permModos}
+                  role="group"
+                  aria-label={`Acesso à aba ${aba.label}`}
+                >
+                  <button
+                    type="button"
+                    className={`${styles.permModo} ${!restrito ? styles.permModoOn : ""}`}
+                    aria-pressed={!restrito}
+                    onClick={() => mexer(aba.id, (r) => ({ ...r, modo: "todos" }))}
+                  >
+                    Todos
+                  </button>
+                  <button
+                    type="button"
+                    className={`${styles.permModo} ${restrito ? styles.permModoOn : ""}`}
+                    aria-pressed={restrito}
+                    onClick={() =>
+                      mexer(aba.id, (r) => ({ ...r, modo: "restrito" }))
+                    }
+                  >
+                    Restrito
+                  </button>
+                </div>
+              </div>
+
+              {restrito && (
+                <div className={styles.permCorpo}>
+                  <div className={styles.permBloco}>
+                    <div className={styles.permBlocoTitulo}>
+                      Setores com acesso
+                    </div>
+                    <div className={styles.permChips}>
+                      {setoresOferecidos.map((s) => (
+                        <button
+                          key={s}
+                          type="button"
+                          className={`${styles.permChip} ${regra.setores.includes(s) ? styles.permChipOn : ""}`}
+                          aria-pressed={regra.setores.includes(s)}
+                          onClick={() =>
+                            mexer(aba.id, (r) => ({
+                              ...r,
+                              setores: alternar(r.setores, s),
+                            }))
+                          }
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className={styles.permBloco}>
+                    <div className={styles.permBlocoTitulo}>
+                      Pessoas com acesso
+                    </div>
+                    {escolhiveis.length === 0 ? (
+                      <div className={styles.permNinguem}>
+                        Não há usuários fora do papel de administrador para
+                        escolher.
+                      </div>
+                    ) : (
+                      <div className={styles.permChips}>
+                        {escolhiveis.map(({ email, perfil }) => {
+                          const marcado = regra.pessoas.includes(email);
+                          return (
+                            <button
+                              key={email}
+                              type="button"
+                              className={`${styles.permChip} ${styles.permChipPessoa} ${marcado ? styles.permChipOn : ""}`}
+                              aria-pressed={marcado}
+                              title={email}
+                              onClick={() =>
+                                mexer(aba.id, (r) => ({
+                                  ...r,
+                                  pessoas: alternar(r.pessoas, email),
+                                }))
+                              }
+                            >
+                              {/* alt vazio: o nome está escrito no próprio chip. */}
+                              <Avatar
+                                pessoa={perfil ?? { name: "", email }}
+                                size={18}
+                                alt=""
+                              />
+                              {perfil?.name || email}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {fechada && (
+                    <div className={styles.permFechada} role="status">
+                      <Icon name="warn" size={14} />
+                      <span>
+                        Nenhum setor e nenhuma pessoa escolhidos: hoje só
+                        administradores veem esta aba.
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </section>
+          );
+        })}
+      </div>
+
+      {/* A barra só existe quando há o que salvar. Um botão permanentemente
+          clicável sem nada mudado convida ao clique que não faz nada — e, num
+          quadro que decide acesso, "não sei se salvou" é a pior dúvida
+          possível. */}
+      {sujo && (
+        <div className={styles.permBarra}>
+          <span className={styles.permBarraTx}>
+            Alterações ainda não salvas.
+          </span>
+          {erroSalvar && <span className={styles.err}>{erroSalvar}</span>}
+          <button
+            type="button"
+            className={styles.btnGhost}
+            disabled={salvando}
+            onClick={() => {
+              setErroSalvar(null);
+              setRascunho(servidor);
+            }}
+          >
+            Descartar
+          </button>
+          <button
+            type="button"
+            className={styles.btnSave}
+            disabled={salvando}
+            onClick={salvar}
+          >
+            {salvando ? "Salvando…" : "Salvar permissões"}
+          </button>
+        </div>
       )}
     </div>
   );
