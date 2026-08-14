@@ -4,11 +4,11 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
-import { ROLE_LABEL, pickColor } from "@/lib/users";
+import { ROLE_LABEL, pickColor, type MeuCadastro } from "@/lib/users";
 import { useTheme } from "@/lib/theme";
 import { Icon } from "@/components/icons";
 import { Avatar } from "@/components/avatar";
-import { FotoPerfilModal } from "@/components/foto-perfil-modal";
+import { PerfilModal } from "@/components/perfil-modal";
 import { RecoveryBanner } from "@/components/recovery-banner";
 import { RecordingProvider } from "@/lib/audio/recording-context";
 import { MiniPlayer } from "@/components/mini-player";
@@ -32,19 +32,21 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [fotoAberta, setFotoAberta] = useState(false);
+  const [perfilAberto, setPerfilAberto] = useState(false);
   /**
-   * A foto que a pessoa acabou de escolher — `undefined` enquanto ninguém
-   * mexeu nesta sessão, `null` depois de remover.
+   * O que a pessoa acabou de mudar no próprio perfil, campo a campo.
    *
    * O perfil é lido UMA vez, no login (`auth-context`), e não tem assinatura em
-   * tempo real. Sem este estado, quem trocasse a própria foto continuaria vendo
-   * a antiga na topbar até sair e entrar de novo — o app pareceria ter ignorado
-   * o clique em Salvar.
+   * tempo real. Sem este estado, quem trocasse a própria foto ou o próprio nome
+   * continuaria vendo os antigos na topbar até sair e entrar de novo — o app
+   * pareceria ter ignorado o clique em Salvar.
+   *
+   * É `Partial<MeuCadastro>`, e não um estado por campo: só entra aqui a chave
+   * que de fato foi gravada — o modal manda de volta exatamente o objeto que
+   * foi ao banco. Assim o merge abaixo nunca sobrescreve com `undefined` o que
+   * ninguém tocou, que é o modo de esta otimização virar apagamento.
    */
-  const [fotoLocal, setFotoLocal] = useState<string | null | undefined>(
-    undefined,
-  );
+  const [meuLocal, setMeuLocal] = useState<Partial<MeuCadastro>>({});
 
   useEffect(() => {
     if (!loading && !user) router.replace("/login");
@@ -73,8 +75,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
 
-  const eu =
-    fotoLocal === undefined ? profile : { ...profile, photo: fotoLocal };
+  const eu = { ...profile, ...meuLocal };
 
   return (
     <RecordingProvider ownerEmail={profile.email}>
@@ -111,7 +112,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             // Abaixo de 680px o `.uMeta` some e o avatar fica sozinho: sem este
             // rótulo, o botão que abre o menu da conta não tem nome nenhum para
             // quem usa leitor de tela justo no celular.
-            aria-label={`Conta de ${profile.name} — abrir menu`}
+            aria-label={`Conta de ${eu.name} — abrir menu`}
             aria-haspopup="menu"
             aria-expanded={menuOpen}
           >
@@ -119,9 +120,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 identifica o botão é o aria-label acima. */}
             <Avatar pessoa={eu} size={30} fotoDoGoogle={user.photoURL} alt="" />
             <span className={styles.uMeta}>
-              <span className={styles.uName}>
-                {profile.name?.split(" ")[0]}
-              </span>
+              <span className={styles.uName}>{eu.name?.split(" ")[0]}</span>
               <span className={styles.uRole}>{ROLE_LABEL[profile.role]}</span>
             </span>
           </button>
@@ -134,7 +133,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               />
               <div className={styles.pop}>
                 <div className={styles.popHead}>
-                  <div className={styles.popName}>{profile.name}</div>
+                  <div className={styles.popName}>{eu.name}</div>
                   <div className={styles.popEmail}>{profile.email}</div>
                   <span className={styles.popRole}>
                     {ROLE_LABEL[profile.role]}
@@ -142,16 +141,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 </div>
 
                 {/* Fica junto do nome e do e-mail, e não lá embaixo com Tema e
-                    Cor: quem procura a própria foto procura na sua identidade,
-                    não nas preferências de aparência do app. */}
+                    Cor: quem procura o próprio perfil procura na sua
+                    identidade, não nas preferências de aparência do app. */}
                 <button
                   className={styles.popItem}
                   onClick={() => {
                     setMenuOpen(false);
-                    setFotoAberta(true);
+                    setPerfilAberto(true);
                   }}
                 >
-                  <Icon name="edit" size={15} /> Foto de perfil
+                  <Icon name="users" size={15} /> Meu perfil
                 </button>
                 <div className={styles.popSep} />
 
@@ -215,13 +214,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </main>
       </div>
       <MiniPlayer />
-      {fotoAberta && (
-        <FotoPerfilModal
+      {perfilAberto && (
+        <PerfilModal
+          modo="eu"
           pessoa={eu}
-          email={profile.email}
-          temFoto={!!eu.photo}
-          onFoto={(uri) => setFotoLocal(uri)}
-          onClose={() => setFotoAberta(false)}
+          fotoDoGoogle={user.photoURL}
+          onMudou={(m) => setMeuLocal((atual) => ({ ...atual, ...m }))}
+          onClose={() => setPerfilAberto(false)}
         />
       )}
     </RecordingProvider>

@@ -10,7 +10,7 @@ import {
 } from "firebase/firestore";
 import type { User } from "firebase/auth";
 import { db } from "./firebase";
-import { conferirFoto, corDeAvatar } from "./avatar-core.ts";
+import { conferirFoto, conferirNome, corDeAvatar } from "./avatar-core.ts";
 
 // A regra do avatar mora em `avatar-core`, que é puro; aqui ela é reexportada
 // para quem JÁ importa este módulo — o modal da foto, que precisa do `photo` e
@@ -23,12 +23,15 @@ import { conferirFoto, corDeAvatar } from "./avatar-core.ts";
 export {
   avatarDe,
   conferirFoto,
+  conferirNome,
   corDeAvatar,
   inicialDe,
   LADO_FOTO_PX,
   LIMITE_FOTO_BYTES,
+  LIMITE_NOME_CHARS,
   tamanhoDataUri,
   type Avatar,
+  type NomeConferido,
   type PessoaDoAvatar,
 } from "./avatar-core.ts";
 
@@ -95,9 +98,16 @@ export async function ensureUserProfile(
 
   // Sem perfil: apenas o super admin é criado automaticamente.
   if (email === SUPER_ADMIN_EMAIL) {
+    // O `displayName` do Google passa pela MESMA conferência do resto, e cai
+    // para "Administrador" quando não passa. Não é preciosismo: desde que a
+    // regra exige nome na criação, um `displayName` vazio — que o Firebase Auth
+    // entrega como "" quando o provedor não manda nada, e o `??` deixava passar
+    // — faria o bootstrap do PRIMEIRO ADMIN ser recusado, que é o pior jeito
+    // conhecido de quebrar este app.
+    const doGoogle = conferirNome(user.displayName);
     const profile: UserProfile = {
       email,
-      name: user.displayName ?? "Administrador",
+      name: doGoogle.ok ? doGoogle.nome : "Administrador",
       role: "admin",
       cargo: "Administrador",
       sectors: [],
@@ -185,17 +195,28 @@ export function subscribeUsers(
   );
 }
 
-/** Cria ou atualiza um usuário. `isNew` controla os campos de criação. */
+/**
+ * Cria ou atualiza um usuário. `isNew` controla os campos de criação.
+ *
+ * O nome passa pela MESMA `conferirNome` que o dono do cadastro usa — a régua é
+ * do campo, não de quem escreve. Sem isto, o admin seria o único capaz de gravar
+ * um nome que a regra do Firestore recusa, e a recusa chegaria à tela como "sem
+ * permissão" (a aba Admin já barra o nome vazio, mas nada barrava o nome de 500
+ * caracteres colado de uma planilha).
+ */
 export async function saveUser(
   input: UserInput,
   actorEmail: string,
   isNew: boolean,
 ): Promise<void> {
+  const conferido = conferirNome(input.name);
+  if (!conferido.ok) throw new Error(conferido.motivo);
+
   const email = input.email.trim().toLowerCase();
   const ref = doc(db, "users", email);
   const base = {
     email,
-    name: input.name.trim(),
+    name: conferido.nome,
     role: input.role,
     cargo: input.cargo.trim(),
     sectors: input.sectors,
@@ -227,42 +248,65 @@ export async function deleteUser(email: string): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Foto de perfil — a única escrita em /users que NÃO é de admin.
+// O próprio cadastro — as escritas em /users que NÃO são de admin.
 //
 // Quem grava é o dono do doc, pelo braço do `hasOnly(['uid','lastLogin',
-// 'photo'])` em firestore.rules. As duas funções abaixo escrevem só `photo`, e
-// nada mais: mandar qualquer outro campo junto faz a regra negar a escrita
-// inteira, inclusive a foto.
+// 'photo','name'])` em firestore.rules. As funções abaixo escrevem SÓ os campos
+// dessa lista: mandar qualquer outro junto — `email`, `cargo`, `color`, ou o
+// documento inteiro que veio do `subscribeUsers` — faz a regra negar a escrita
+// inteira, e a pessoa lê "sem permissão" tendo permissão.
 // ---------------------------------------------------------------------------
 
 /**
- * Grava a foto do próprio usuário. Lança com a mensagem pronta para a tela
- * quando a imagem não passa.
+ * O que o dono do cadastro pode mudar de si mesmo.
  *
- * A conferência acontece AQUI, antes de ir ao banco, e a regra do Firestore é a
- * segunda barreira — não a primeira. A regra não sabe dizer "recorte mais perto
- * do rosto"; ela responde "sem permissão", que é a mensagem errada para quem
- * escolheu uma foto grande demais e não fez nada de errado.
+ * `photo` é opcional em TRÊS estados, e a diferença importa: ausente é "não
+ * mexa na foto", `null` é "tire a foto", string é "esta aqui". Sem o estado
+ * ausente, uma tela que só edita o nome apagaria a foto de quem a escolheu.
  */
-export async function setUserPhoto(
-  email: string,
-  foto: string,
-): Promise<void> {
-  const conferida = conferirFoto(foto);
-  if (!conferida.ok) throw new Error(conferida.motivo);
-  await updateDoc(doc(db, "users", email.trim().toLowerCase()), {
-    photo: foto.trim(),
-  });
-}
+export type MeuCadastro = {
+  name: string;
+  photo?: string | null;
+};
 
 /**
- * Tira a foto e volta para a inicial.
+ * Grava o próprio nome (e, se a tela quiser, a foto junto) NUMA ESCRITA SÓ.
  *
- * Grava `null` em vez de apagar o campo (`deleteField`) pelo mesmo motivo da
- * lixeira em `kanban.ts`: a regra precisa de um valor para examinar, e `null` é
- * o que `fotoOk()` aceita explicitamente. Campo que some do documento é campo
- * que a regra não vê.
+ * É uma escrita e não duas porque nome e foto são um formulário só, com um botão
+ * só. Em duas, a segunda pode falhar depois de a primeira ter entrado, e a
+ * pessoa fica com o cadastro pela metade sem nada na tela dizendo qual metade —
+ * mesmo princípio do `writeBatch` de `historico.ts`.
+ *
+ * A conferência acontece AQUI, antes de ir ao banco, e a regra do Firestore é a
+ * segunda barreira — não a primeira. A regra não sabe dizer "o nome precisa de
+ * uma letra"; ela responde "sem permissão", que é a mensagem errada para quem
+ * só digitou algo que não serve. A régua é a mesma nos dois lugares
+ * (`conferirNome` e `nomeOk()`), e `test-avatar.mjs` reprova se uma andar sem a
+ * outra.
  */
-export async function removeUserPhoto(email: string): Promise<void> {
-  await updateDoc(doc(db, "users", email.trim().toLowerCase()), { photo: null });
+export async function saveOwnProfile(
+  email: string,
+  dados: MeuCadastro,
+): Promise<void> {
+  const nome = conferirNome(dados.name);
+  if (!nome.ok) throw new Error(nome.motivo);
+
+  const patch: { name: string; photo?: string | null } = { name: nome.nome };
+
+  if (dados.photo !== undefined) {
+    if (dados.photo === null) {
+      // `null` gravado, e não `deleteField()`, pelo mesmo motivo da lixeira em
+      // `kanban.ts`: a regra precisa de um VALOR para examinar, e `null` é o que
+      // `fotoOk()` aceita explicitamente. Campo que some do documento é campo
+      // que a regra não vê.
+      patch.photo = null;
+    } else {
+      const foto = conferirFoto(dados.photo);
+      if (!foto.ok) throw new Error(foto.motivo);
+      patch.photo = dados.photo.trim();
+    }
+  }
+
+  await updateDoc(doc(db, "users", email.trim().toLowerCase()), patch);
 }
+
