@@ -331,82 +331,110 @@
   .barraNome {
     width: 100px;
   }
-  .barraOrigens {
+  .barraOrigens,
+  .origemEtapas {
     margin-left: 0;
     padding-right: 0;
   }
 }
-
-/* ---------- cycle time por tipo ---------- */
+/* ---------- barras por setor solicitante ---------- */
 /**
- * Este painel é irmão do de responsáveis, e reusa a linha inteira dele: nome à
- * esquerda (`.barraNome`), trilho no meio (`.barraTrilho`), valor na ponta. Só
- * as duas colunas de número mudam de largura, porque "120d" e "21 conclusões"
- * não cabem nos 22px e 66px de lá — daí `composes` em vez de classe nova.
+ * Este painel é irmão do de responsáveis e reusa a linha inteira dele: nome à
+ * esquerda (`.barraNome`), trilho no meio (`.barraTrilho`), total na ponta.
+ *
+ * O que muda é o MIOLO do trilho. Lá cada segmento mede sozinho contra o maior
+ * total da lista; aqui quem mede é a pilha — o comprimento que se compara de
+ * uma barra para outra é a soma do setor, e as faixas dividem essa soma por
+ * etapa. Por isso a pilha existe como elemento próprio: sem ela os segmentos
+ * eram filhos diretos do trilho, cada um com uma porcentagem de outra base, e
+ * um setor de 7 demandas desenhava mais comprido que um de 16.
  */
-
-/**
- * A barra CRESCE uma vez, quando o dado chega.
- *
- * O movimento vai no sentido em que o comprimento é lido, e é o que ensina em
- * 180ms que ali comprimento é medida — o único trabalho que sobra para motion
- * num painel de números. Não há stagger: cinco tipos entrando em cascata seria
- * a animação anunciando a si mesma, e o dado chegou todo junto de qualquer
- * forma.
- *
- * `scaleX` e não `width`: largura reflui a linha inteira a cada quadro, e são
- * até seis destas. De 0 de propósito — barra é comprimento, e sair de 0,9 seria
- * um empurrão de 10% que ninguém vê e que só custa quadros.
- *
- * TROCAR DE FILTRO NÃO REANIMA: cada linha tem `key` pelo tipo da demanda, o nó
- * permanece entre renderizações e a animação não recomeça. Só linha de tipo
- * novo — que de fato acabou de chegar — anima. Trocar de SETOR reanima, e deve:
- * ali a assinatura é refeita, o painel volta ao esqueleto e o dado chega outra
- * vez.
- */
-.cycleFill {
+.pilha {
+  display: flex;
+  height: 100%;
+  /* Igual ao painel irmão: 2px de superfície entre faixas, senão duas cores
+     vizinhas viram uma faixa só. O vão sai de DENTRO — os segmentos encolhem
+     para pagá-lo (flex-shrink é 1 por padrão), então a pilha continua medindo o
+     total exato. Pago por fora, cada etapa a mais alongaria a barra. */
+  gap: 2px;
+  border-radius: 5px;
+  /* A faixa é o recorte da pilha, não do trilho: a barra curta também termina
+     arredondada, e o número que não couber some cortado pela borda em vez de
+     escorrer para a superfície vazia ao lado. */
+  overflow: hidden;
+  /* A largura vem inline, em porcentagem do trilho. Sem `flex: none` o item
+     encolheria para caber junto de irmãos que não existem, e a medida deixaria
+     de ser a medida. */
+  flex: none;
+  min-width: 3px;
+}
+.pilhaSeg {
   composes: barraSeg;
-  transform-origin: left center;
-  animation: cycleCresce 0.18s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
 }
-@keyframes cycleCresce {
-  from {
-    transform: scaleX(0);
-  }
-  to {
-    transform: scaleX(1);
-  }
-}
-.cycleDias {
-  composes: barraNum;
-  width: 34px;
-}
-.cycleN {
-  composes: barraHoras;
-  width: 88px;
-  white-space: nowrap;
-}
-/* Frase, e não legenda de cores: os tipos já estão nomeados em cada linha, e o
-   que falta dizer é de que número a barra é o desenho. */
-.cycleNota {
-  margin-top: 13px;
-  font-size: 11px;
-  line-height: 1.45;
-  color: var(--tx-3);
-}
-
 /**
- * O arquivo não tinha bloco de movimento reduzido porque não tinha uma animação
- * sequer — só transições de hover, que o bloco global do `globals.css` já corta.
- * A barra que cresce é a primeira, e é ela que abre este bloco.
+ * A quantidade DENTRO da faixa.
  *
- * `animation: none` devolve a barra ao comprimento final na hora: o `width`
- * inline continua lá e, sem animação, não há `transform` nenhum aplicado. Quem
- * pediu menos movimento vê o mesmo gráfico, já pronto — nunca uma barra zerada.
+ * Ela não substitui a linha de etapas embaixo da barra: aquela é a leitura sem
+ * cor, e continua trazendo todos os números. Esta responde à pergunta que se
+ * faz olhando para a faixa — "esse pedaço azul é quanto?" — sem obrigar a
+ * descer o olho e casar cor com nome.
+ *
+ * A cor do texto vem inline, calculada da luminância da faixa (`corDoNumero`
+ * em page.tsx): a cor da etapa é escolhida pelo setor no quadro e pode ser
+ * qualquer uma, então nenhuma cor fixa serve para todas. Contorno de texto foi
+ * descartado — em 10px negrito o halo engorda o glifo e suja o número.
  */
-@media (prefers-reduced-motion: reduce) {
-  .cycleFill {
-    animation: none;
+.pilhaNum {
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0 3px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+/* O total do setor passa dos 99 que cabiam nos 22px do painel irmão: aqui a
+   barra soma o que o setor pediu no quadro inteiro, entregues inclusive. */
+.origemNum {
+  composes: barraNum;
+  width: 30px;
+}
+/**
+ * As etapas em texto, sob a barra — a leitura de quem não distingue as cores.
+ *
+ * Ela nasceu sem estilo nenhum, e o efeito era o relatado: os `span` são
+ * `inline-flex` e o JSX não põe espaço entre eles, então a bolinha de uma etapa
+ * encostava no número da anterior e a linha saía "Backlog 1A Fazer 1Em
+ * andamento 2". O respiro é assimétrico de propósito: 14px separam duas etapas
+ * na mesma linha, e 6px separam as linhas quando as seis etapas quebram — sem o
+ * segundo, a bolinha da linha de baixo sobe até encostar no texto da de cima.
+ *
+ * O recuo de 160px alinha o primeiro nome ao começo do trilho (150px do nome +
+ * 10px do gap da linha), e o de 40px à direita reserva a coluna do total.
+ */
+.origemEtapas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-left: 160px;
+  padding-right: 40px;
+}
+/**
+ * Abaixo daqui o número sai de dentro da faixa, e não por limiar nenhum.
+ *
+ * `LIMIAR_NUMERO` (page.tsx) esconde o número da faixa PEQUENA, e supõe um
+ * trilho de uns 300px — o mais estreito que a grade produz no desktop. Num
+ * celular de 480px o trilho inteiro tem ~230px e nem os 10% da MAIOR faixa
+ * comportam dois dígitos; insistir só entrega dígito cortado ao meio. A linha
+ * de etapas embaixo da barra continua trazendo todos, e é ela que responde no
+ * celular.
+ */
+@media (max-width: 520px) {
+  .pilhaNum {
+    display: none;
   }
 }
 

@@ -109,6 +109,44 @@
   box-shadow: 0 0 0 1px var(--line), 0 0 0 5px var(--s3);
 }
 
+/* O MESMO anel, na cor da marca, enquanto o que se vê ainda não está no banco.
+   Vem depois de `.foto` de propósito: mesma especificidade, e é a ordem no
+   arquivo que decide qual das duas sombras vale.
+
+   Ele responde à pergunta que o retrato sozinho não responde. O retrato é a
+   prévia do RESULTADO, então marcar a remoção troca a foto pelo que vai ficar —
+   e "o que vai ficar" pode ser outra foto (a da conta Google). Sem o anel, essa
+   troca lê como nada tendo acontecido; com ele, a tela diz que algo mudou e
+   ainda não foi salvo, que é exatamente o estado em que se está. */
+.fotoNaoSalva {
+  box-shadow: 0 0 0 1px var(--brand), 0 0 0 5px var(--brand-soft);
+}
+
+/* A frase que nomeia o retrato. Mais forte que a legenda (--tx-2 contra --tx-3)
+   porque ela é resposta a um clique, e a legenda é nota de rodapé.
+
+   `min-height` de duas linhas, e não `auto`: marcar e desfazer a remoção troca
+   uma frase de uma linha por uma de duas, e sem a reserva os botões logo abaixo
+   subiriam e desceriam a cada clique — o alvo fugindo do ponteiro de quem ainda
+   está decidindo. */
+.estado {
+  font-size: 12px;
+  line-height: 1.45;
+  min-height: 2.9em;
+  color: var(--tx-2);
+  text-align: center;
+  margin: 0 0 12px;
+}
+
+/* Não há vermelho aqui, e é escolha: nada foi apagado ainda, e um alerta
+   vermelho para uma marca que um clique desfaz treina a pessoa a ignorar
+   vermelho. A cor da marca diz o que é verdade — "mudou, falta salvar" — e é a
+   mesma do anel do retrato, para as duas afirmações lerem como uma só. */
+.estadoPendente {
+  color: var(--accent-2);
+  font-weight: 600;
+}
+
 .fotoAcoes {
   display: flex;
   flex-wrap: wrap;
@@ -288,7 +326,12 @@
   background: var(--s3);
 }
 
-.btnDanger {
+/* Os dois ocupam a MESMA vaga ao lado de "Escolher imagem" e têm a mesma
+   medida — o que muda é só a cor do hover, porque só um dos dois tira algo de
+   alguém. Geometria escrita uma vez: dois blocos completos divergiriam no
+   primeiro ajuste de altura, e a fila de botões passaria a ter dois pesos. */
+.btnDanger,
+.btnVolta {
   height: 42px;
   padding: 0 14px;
   border: none;
@@ -306,6 +349,12 @@
 .btnDanger:hover:not(:disabled) {
   background: var(--danger-bg);
   color: var(--danger);
+}
+/* Desfazer e descartar não são perda: o hover só confirma que o alvo é
+   clicável, com o mesmo cinza dos botões neutros do diálogo. */
+.btnVolta:hover:not(:disabled) {
+  background: var(--s3);
+  color: var(--tx);
 }
 
 .btnSave {
@@ -326,6 +375,7 @@
 
 .btnGhost:disabled,
 .btnDanger:disabled,
+.btnVolta:disabled,
 .btnSave:disabled {
   opacity: 0.5;
   cursor: default;

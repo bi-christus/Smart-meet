@@ -79,6 +79,12 @@ export function Avatar({
    * dizer o que o clique faz, e não só quem é a pessoa.
    */
   alt?: string;
+  /**
+   * A dica nativa do navegador — e ela SÓ existe fora do modo alvo. Em modo
+   * alvo o `title` é descartado de propósito (ver `AlvoDePerfil`), e o que
+   * sobra dele é servir de reserva para o rótulo do botão quando não veio
+   * `alt`.
+   */
   title?: string;
   /** Fica sempre no círculo, mesmo em modo alvo — quem estiliza "o avatar" está
    *  falando da bolinha, não do botão invisível que passou a envolvê-la. */
@@ -112,9 +118,9 @@ export function Avatar({
   const foto =
     escolha.tipo === "foto" && escolha.src !== srcQueFalhou ? escolha.src : null;
 
-  // Em modo alvo o nome e a dica sobem para o botão. Deixá-los também no filho
-  // faria o leitor de tela anunciar a pessoa duas vezes seguidas, e o `title`
-  // nativo brigar consigo mesmo em duas caixas empilhadas.
+  // Em modo alvo o nome sobe para o `aria-label` do botão e a dica nativa some
+  // (ver `AlvoDePerfil`). Deixar o nome também no filho faria o leitor de tela
+  // anunciar a pessoa duas vezes seguidas.
   const altDaCara = aoAbrirPerfil ? "" : alt;
   const titleDaCara = aoAbrirPerfil ? undefined : title;
 
@@ -179,12 +185,7 @@ export function Avatar({
   if (!aoAbrirPerfil) return cara;
 
   return (
-    <AlvoDePerfil
-      foto={foto}
-      rotulo={alt || title || ""}
-      title={title}
-      aoAbrir={aoAbrirPerfil}
-    >
+    <AlvoDePerfil foto={foto} rotulo={alt || title || ""} aoAbrir={aoAbrirPerfil}>
       {cara}
     </AlvoDePerfil>
   );
@@ -204,18 +205,27 @@ export function Avatar({
  * continua pegando o card inteiro (o botão não é `draggable`, e a foto lá em
  * cima é `draggable={false}`), e a prévia se fecha assim que qualquer arraste
  * começa.
+ *
+ * E AQUI NÃO HÁ `title`. A dica nativa é desenhada pelo navegador colada ao
+ * ponteiro — isto é, exatamente onde a prévia nasce 320 ms depois, e por cima
+ * dela: o retrato que a prévia existe para mostrar ficava tapado pela caixinha
+ * de texto. Não dá para reposicionar o `title`, ele é do sistema; então ele sai.
+ *
+ * QUEM NÃO PAUSA O PONTEIRO NÃO PERDE NADA. Teclado e leitor de tela nunca
+ * dependeram do `title` — quem os atende é o `aria-label`, que continua dizendo
+ * quem é a pessoa e o que o clique faz, e que não desenha caixa nenhuma. Para
+ * os olhos, quem responde "de quem é este rosto?" passou a ser o nome escrito
+ * ao lado dele no card.
  */
 function AlvoDePerfil({
   foto,
   rotulo,
-  title,
   aoAbrir,
   children,
 }: {
   /** A foto a ampliar, ou `null` para quem não tem — ver `pairou`. */
   foto: string | null;
   rotulo: string;
-  title?: string;
   aoAbrir: () => void;
   children: ReactNode;
 }) {
@@ -308,7 +318,7 @@ function AlvoDePerfil({
    * tamanho em que está, e ampliá-la seis vezes devolveria um quadrado colorido
    * enorme com um "M" no meio, que não informa nada e ainda cobre o quadro.
    * Quem não tem foto continua com o clique (o perfil dela existe e tem nome,
-   * papel e setores para ver) e com o `title`, que diz de quem é a demanda.
+   * papel e setores para ver) e com o nome escrito ao lado do rosto no card.
    */
   function pairou() {
     if (!foto || !temHover()) return;
@@ -366,7 +376,6 @@ function AlvoDePerfil({
         onMouseLeave={saiu}
         onFocus={focou}
         onBlur={saiu}
-        title={title}
         aria-label={rotulo || undefined}
       >
         {children}

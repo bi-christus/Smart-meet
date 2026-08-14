@@ -342,6 +342,20 @@
   line-height: 1.34;
   color: var(--tx);
 }
+/* Quem pediu a demanda, logo abaixo do que foi pedido — a assinatura do pedido.
+   Uma linha só, com elipse: o nome vem inteiro, mas o card tem 290px de coluna e
+   um "Maria Fernanda de Albuquerque Sobrinho" não pode virar duas linhas em todo
+   card do quadro. O `title` no elemento devolve o nome inteiro e o setor a quem
+   pausar o ponteiro — e ali não há prévia nenhuma para ele tapar, que é o
+   problema que tirou o `title` de cima do rosto do responsável. */
+.kPor {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--tx-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .kmeta {
   display: flex;
   align-items: center;
@@ -448,6 +462,43 @@
 /* `.miniAvatar` saiu daqui: o círculo do responsável é `<Avatar>` agora, com o
    mesmo desenho dos outros cinco lugares que o repetiam à mão. */
 
+/* O par nome + rosto do responsável, no canto direito do rodapé.
+   `inline-flex` para os dois andarem juntos: quando o rodapé enche e quebra a
+   linha, o nome não pode ficar numa linha e a foto na outra — seriam duas
+   informações soltas em vez de uma. O nome vem ANTES do rosto porque o rosto
+   fica na borda do card, onde o olho já o procura desde sempre.
+
+   NEM ISTO NEM O `.kPor` ANIMAM, e é decisão. São texto de card num quadro que
+   o ponteiro atravessa dezenas de vezes por minuto e que se arrasta o dia
+   inteiro: pelo AGENTS.md §3 e pela Frequency Gate da skill de motion, aparecer
+   no mesmo quadro do card é o mais rápido que existe, e qualquer fade aqui seria
+   lentidão percebida multiplicada por trezentos cards. Por isso nenhuma das
+   duas entra no bloco de `prefers-reduced-motion`: não há movimento a reduzir. */
+.kResp {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  /* Encosta na direita — e continua encostando quando o rodapé enche e este par
+     cai para a linha de baixo. É por isso que a margem automática substituiu o
+     `<div style={{ flex: 1 }} />` que empurrava o rosto: o espaçador só empurra
+     dentro da linha em que ele mesmo está, e deixava o par recém-quebrado
+     alinhado à esquerda, longe da borda onde o olho o procura. */
+  margin-left: auto;
+}
+/* Um pouco mais forte que os selos vizinhos (`--tx-2` contra `--tx-3`): é o
+   nome de uma pessoa, não uma contagem. A elipse é o segundo cinto de segurança
+   — o primeiro é o corte no primeiro nome, lá no card. */
+.kRespNome {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--tx-2);
+  max-width: 92px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ---------- modal ---------- */
 .overlay {
   position: fixed;
@@ -461,8 +512,23 @@
   z-index: 80;
   overflow-y: auto;
 }
+/* A LARGURA MORA AQUI, E SÓ AQUI.
+   Havia duas `.modal` neste arquivo: esta, com a caixa inteira, e uma segunda
+   lá embaixo (seção "aberturas") que redefinia `width` — e vencia, por ser a
+   última. Quem viesse mexer na largura tinha 50% de chance de editar a regra
+   que não vale e concluir que o CSS estava quebrado. Agora a de baixo cuida só
+   da animação, e a medida está neste bloco, junto do resto da caixa.
+
+   900px é a medida do modal da DEMANDA, que é quem não passa `width` ao
+   `<Modal>`. Histórico (480), lixeira (560) e coluna (420) passam, e o estilo
+   inline vence esta regra — são diálogos de uma lista curta, e esticá-los para
+   900 seria uma linha de texto atravessando a tela por nada.
+
+   `max-width: 100%` não é detalhe: o overlay reserva 20px de cada lado, então
+   em 1366px sobram 1326 e os 900 entram inteiros; abaixo de 940px de janela é
+   esta linha que impede o diálogo de vazar para fora dela. */
 .modal {
-  width: 540px;
+  width: 900px;
   max-width: 100%;
   background: var(--s2);
   border: 1px solid var(--line);
@@ -532,12 +598,79 @@
 .field {
   margin-bottom: 14px;
 }
-.row2 {
-  display: flex;
-  gap: 12px;
+
+/* ---------- o corpo do modal da demanda ----------
+   Duas colunas: os DADOS (o que a demanda é, de quem é, para quando) numa
+   coluna estreita à esquerda, e o CONTEÚDO (descrição, links, checklist,
+   comentários) na larga à direita.
+
+   POR QUE NÃO UMA COLUNA SÓ, agora que o diálogo tem 900px: porque largura
+   sobrando não é presente para ninguém. Um `<input type="date">` de 420px é
+   mais difícil de ler que um de 280 — o valor tem seis dígitos e o resto é
+   vazio —, e um parágrafo de descrição em linha de 850px faz o olho perder a
+   linha na volta. É por isso que livro tem margem. Repartir em duas resolve as
+   duas coisas de uma vez: os campos voltam a ter a largura que tinham (300px
+   contra os 272px do diálogo de 600), o texto ganha uma medida boa (~530px,
+   perto de 65 caracteres) e o diálogo encolhe quase pela metade na vertical —
+   que é o que a pessoa que abre uma demanda com checklist sentia como "isto não
+   cabe na tela".
+
+   A ORDEM DO DOM É A DA TELA. Os dados vêm primeiro no arquivo e primeiro à
+   esquerda; nada é reposicionado por CSS. Quem navega por Tab passa pelos
+   campos na mesma ordem de antes desta mudança, e o leitor de tela lê na mesma
+   ordem em que se enxerga.
+
+   `minmax(0, …)` nas duas faixas, e `min-width: 0` nos dois filhos: sem isso um
+   comentário com uma URL enorme e sem espaço define o mínimo da coluna e estufa
+   o diálogo inteiro para fora da janela. */
+.mcorpo {
+  display: grid;
+  grid-template-columns: minmax(0, 300px) minmax(0, 1fr);
+  column-gap: 26px;
+  row-gap: 0;
+  align-items: start;
 }
-.row2 > * {
-  flex: 1;
+/* Janela estreita: as duas viram uma só, e o diálogo volta a ser exatamente a
+   pilha que era antes — na mesma ordem, porque a ordem nunca mudou. O corte é
+   em 760px porque abaixo disso a coluna do conteúdo ficaria menor que a dos
+   dados, e aí a repartição passa a atrapalhar em vez de ajudar. */
+@media (max-width: 760px) {
+  .mcorpo {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.mdados,
+.mconteudo {
+  min-width: 0;
+}
+/* O primeiro rótulo de seção da direita nasce na mesma linha do primeiro rótulo
+   de campo da esquerda. Sem isto, "DESCRIÇÃO" começa 18px abaixo de "TIPO" e as
+   duas colunas parecem desalinhadas por descuido.
+
+   SÓ ENQUANTO SÃO DUAS COLUNAS. Empilhadas, aqueles 18px deixam de ser um
+   desalinhamento e voltam a ser o respiro que separa o fim dos dados do começo
+   do conteúdo — tirá-los grudaria "DESCRIÇÃO" nas tags. */
+@media (min-width: 761px) {
+  .mconteudo > .sectionLabel:first-child {
+    margin-top: 0;
+  }
+}
+
+/* Dois campos na mesma linha — quando dois cabem. Era `flex` com `flex: 1` em
+   cada filho, o que os obrigava a dividir a linha mesmo quando ela tinha 130px
+   para cada um. Em grade com `auto-fit`, a própria linha decide: na coluna
+   estreita dos dados cabe um por vez e eles se empilham; num diálogo largo (ou
+   numa janela estreita, onde as duas colunas viram uma) voltam a ser dois lado
+   a lado. Nenhum `@media` a mais para manter.
+
+   `row-gap: 0` porque quem separa um campo do outro na vertical é a margem do
+   próprio `.field`: com os dois, campos empilhados ficariam 26px afastados e os
+   vizinhos de fora da linha, 14px. */
+.row2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  column-gap: 12px;
+  row-gap: 0;
 }
 .label {
   display: block;
@@ -858,9 +991,12 @@
   flex: none;
 }
 
-/* ---------- modal: aberturas + seções + largura ---------- */
+/* ---------- modal: aberturas + seções ----------
+   Sem `width` aqui. Ela ficava neste bloco e vencia a do bloco lá de cima só
+   por vir depois no arquivo — duas regras para a mesma medida, e a que se lia
+   primeiro era a que não valia. A caixa é toda definida em um lugar só agora
+   (procure por "A LARGURA MORA AQUI"); daqui para baixo é só movimento. */
 .modal {
-  width: 600px;
   /* 0.18s e ease-out sem overshoot. A curva antiga tinha 1.15 no segundo
      parâmetro, ou seja, passava do lugar e voltava: bounce é celebração, e
      abrir uma demanda para editar não é. */

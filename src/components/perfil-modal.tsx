@@ -14,6 +14,7 @@ import {
   LADO_FOTO_PX,
   LIMITE_FOTO_BYTES,
   ROLE_LABEL,
+  avatarDe,
   conferirFoto,
   conferirNome,
   saveOwnProfile,
@@ -279,6 +280,25 @@ export function PerfilModal(props: PerfilModalProps) {
   const previa = meu ? { ...pessoa, name: nome, photo: fotoMostrada } : pessoa;
   const fotoDoGoogle = props.modo === "eu" ? props.fotoDoGoogle : null;
 
+  /**
+   * A conta Google tem retrato aproveitável? — PERGUNTADO A `avatarDe`, e não
+   * respondido aqui.
+   *
+   * ESTA É A PERGUNTA QUE FALTAVA NESTA TELA, e a falta dela era o defeito.
+   * `avatarDe` decide na ordem foto escolhida → foto do Google → inicial, então
+   * tirar a nossa foto não descobre a inicial: descobre a do Google, que quase
+   * todo mundo aqui tem (o login é Google, e o `photoURL` vem junto). Sem saber
+   * disso, esta tela prometia a inicial, mostrava o retrato do Google e parecia
+   * não ter feito nada — quem removia a foto concluía que o botão estava
+   * quebrado, porque o rosto continuava lá.
+   *
+   * Com uma pessoa VAZIA, a única saída "foto" que sobra é a do Google. É de
+   * propósito que a peneira de `https` não seja repetida aqui: ela mora em
+   * `avatar-core`, tem teste no `prebuild`, e uma segunda cópia divergiria no
+   * dia em que a primeira mudasse.
+   */
+  const fotoDoGoogleVale = avatarDe({}, fotoDoGoogle).tipo === "foto";
+
   const nomeMudou = meu && nome.trim() !== nomeSalvo;
   const fotoMudou = meu && fotoPendente !== undefined;
   const ocupado = preparando || gravando;
@@ -291,7 +311,11 @@ export function PerfilModal(props: PerfilModalProps) {
     if (!file) return;
 
     setErro(null);
-    setFotoPendente(undefined);
+    // O que estava marcado FICA marcado até haver com o que substituí-lo. A
+    // linha que zerava `fotoPendente` aqui perdia a única informação que não dá
+    // para recuperar: quem tinha pedido a remoção da foto e depois escolhia um
+    // arquivo que não era imagem via a marca de remoção sumir junto com o erro
+    // — voltando a "não mexa" sem ter pedido, e sem nada dizendo que voltou.
     setPreparando(true);
     const r = await prepararFoto(file);
     setPreparando(false);
@@ -363,19 +387,98 @@ export function PerfilModal(props: PerfilModalProps) {
    * sentido: tirar a que está gravada, desistir da que se acabou de escolher,
    * ou desfazer a remoção ainda não salva. Três botões fixos com dois sempre
    * inertes seriam a mesma informação, escrita de um jeito que obriga a ler.
+   *
+   * "DESFAZER A REMOÇÃO", e não mais "Manter a foto". O rótulo antigo era uma
+   * opção concorrente escrita onde só cabia um arrependimento: quem clicava em
+   * "Remover foto" via o mesmo botão virar "Manter a foto" e lia aquilo como o
+   * sistema dizendo que a foto continuava lá — a leitura mais natural sendo
+   * "não funcionou". Um botão de desfazer nomeia o que aconteceu antes de
+   * oferecer a volta, e não disputa com a ação que a pessoa acabou de tomar.
    */
   const voltaDaFoto: {
     texto: string;
     icone: string;
     vira: string | null | undefined;
+    /**
+     * Só a REMOÇÃO é destrutiva. Desfazer e descartar são a SAÍDA dela, e
+     * pintá-las de vermelho no hover — como o botão único fazia, por dividirem
+     * o mesmo estilo — punha a cor de perigo justamente no botão que devolve as
+     * coisas ao lugar. Quem hesita diante do "Desfazer" ficando vermelho volta
+     * a não saber o que o clique faz, que é o defeito que este conserto ataca.
+     */
+    perigo: boolean;
   } | null =
     fotoPendente === null
-      ? { texto: "Manter a foto", icone: "history", vira: undefined }
+      ? {
+          texto: "Desfazer a remoção",
+          icone: "history",
+          vira: undefined,
+          perigo: false,
+        }
       : typeof fotoPendente === "string"
-        ? { texto: "Descartar imagem", icone: "x", vira: undefined }
+        ? {
+            texto: "Descartar imagem",
+            icone: "x",
+            vira: undefined,
+            perigo: false,
+          }
         : fotoSalva
-          ? { texto: "Remover foto", icone: "trash", vira: null }
+          ? { texto: "Remover foto", icone: "trash", vira: null, perigo: true }
           : null;
+
+  /**
+   * O QUE O RETRATO É, dito em palavras — a frase que faltava nesta tela.
+   *
+   * O retrato aqui em cima sempre mostrou o RESULTADO (é a prévia do que vai
+   * ser gravado), mas nunca disse de onde ele vem. Enquanto a única origem
+   * possível era "a foto que você escolheu", isso não fazia falta. Com a foto
+   * do Google no meio, faz toda: dois retratos diferentes têm exatamente a
+   * mesma aparência de "tem foto", e a diferença entre eles é justamente o que
+   * responde "por que o botão de remover não funcionou".
+   *
+   * São cinco frases porque são cinco situações de verdade, e cada uma leva a
+   * uma conclusão diferente sobre o que fazer a seguir. A que mais importa é a
+   * quarta: quem só tem o retrato do Google não tem botão de remover — e agora
+   * lê o motivo, em vez de procurar um botão que nunca existiu. Ela é o mais
+   * longe que esta tela chega sozinha; remover de fato o retrato do Google
+   * exigiria um valor novo em `photo` que dissesse "nenhuma, nem a do
+   * provedor", e isso é decisão de `avatar-core` e da regra, não daqui.
+   *
+   * `role="status"` porque isto é a resposta ao clique: sem região viva, quem
+   * usa leitor de tela clica em "Remover foto", ouve silêncio, e fica com
+   * exatamente a mesma dúvida que originou este conserto.
+   */
+  const estadoDaFoto: { texto: string; pendente: boolean } =
+    fotoPendente === null
+      ? {
+          pendente: true,
+          texto: fotoDoGoogleVale
+            ? "A sua foto sai ao salvar. O que fica é o retrato acima: o da sua conta Google."
+            : "A sua foto sai ao salvar. O que fica é o retrato acima: a inicial do seu nome.",
+        }
+      : typeof fotoPendente === "string"
+        ? {
+            pendente: true,
+            texto:
+              "Imagem escolhida. Ela entra no lugar da sua foto quando você salvar.",
+          }
+        : fotoSalva
+          ? {
+              pendente: false,
+              texto: "Esta é a sua foto, guardada no seu cadastro.",
+            }
+          : fotoDoGoogleVale
+            ? {
+                pendente: false,
+                texto:
+                  "Este retrato vem da sua conta Google: ele não fica guardado aqui, e por " +
+                  "isso esta tela não o remove. Escolher uma imagem põe a sua no lugar dele.",
+              }
+            : {
+                pendente: false,
+                texto:
+                  "Você ainda não escolheu uma foto — o avatar é a inicial do seu nome.",
+              };
 
   // O rótulo NOMEIA o que o clique vai gravar, e depois o que ele está
   // gravando. Um "Salvar" genérico ao lado de dois campos não diz se a foto
@@ -428,13 +531,23 @@ export function PerfilModal(props: PerfilModalProps) {
             size={LADO_EXIBIDO}
             fotoDoGoogle={fotoDoGoogle}
             alt=""
-            className={styles.foto}
+            // O anel muda de cor enquanto houver mudança não salva — vale para
+            // a imagem nova E para a remoção marcada, porque a afirmação é a
+            // mesma: "o que você está vendo ainda não está no banco".
+            className={`${styles.foto} ${fotoMudou ? styles.fotoNaoSalva : ""}`}
           />
         )}
       </div>
 
       {meu ? (
         <>
+          <p
+            className={`${styles.estado} ${estadoDaFoto.pendente ? styles.estadoPendente : ""}`}
+            role="status"
+          >
+            {estadoDaFoto.texto}
+          </p>
+
           <div className={styles.fotoAcoes}>
             <button
               type="button"
@@ -454,12 +567,21 @@ export function PerfilModal(props: PerfilModalProps) {
                 seriam dois jeitos de a tela discordar do banco. E o botão
                 sempre oferece a VOLTA do estado em que se está — remover sem
                 como desfazer é um beco, e a saída não pode ser fechar o
-                diálogo e torcer. A foto do Google nunca aparece aqui: ela não
-                está no nosso banco, e não há o que remover. */}
+                diálogo e torcer.
+
+                A foto do Google não entra nesta fila, e a frase que explicava
+                isso ("ela não está no nosso banco, e não há o que remover")
+                estava certa sobre o banco e errada sobre a tela: o retrato
+                acima MOSTRA a foto do Google quando não há a nossa. Quem
+                precisa saber disso é quem está olhando o próprio rosto, e por
+                isso a explicação mudou de lugar — foi para `estadoDaFoto`, que
+                fala ao lado do retrato em vez de ficar comentada no código. */}
             {voltaDaFoto && (
               <button
                 type="button"
-                className={styles.btnDanger}
+                className={
+                  voltaDaFoto.perigo ? styles.btnDanger : styles.btnVolta
+                }
                 onClick={() => {
                   setErro(null);
                   setFotoPendente(voltaDaFoto.vira);
@@ -472,11 +594,15 @@ export function PerfilModal(props: PerfilModalProps) {
             )}
           </div>
 
+          {/* A regra de quem ESCOLHE uma imagem, e só ela. O braço que aqui
+              anunciava a remoção saiu por ser falso para quase todo mundo — ele
+              prometia a inicial do nome a quem ia receber o retrato do Google —
+              e porque o lugar de falar da remoção é ao lado do retrato, onde a
+              pessoa está olhando. O que sobrou vale em qualquer estado: o botão
+              de escolher imagem está sempre ali. */}
           <div className={styles.legenda}>
             {preparando ? (
               "Cortando e reduzindo a imagem…"
-            ) : fotoPendente === null ? (
-              "A foto sai ao salvar, e o avatar volta a ser a inicial do seu nome."
             ) : (
               <>
                 A imagem é cortada no centro e reduzida para {LADO}×{LADO}.
