@@ -133,6 +133,20 @@ const FOTO_GRANDE = PREFIXO_JPEG + "A".repeat(16408 - PREFIXO_JPEG.length);
 const FOTO_SVG = "data:image/svg+xml;base64," + "A".repeat(400);
 const PERFIL = { name: "Alguem", role: "operador", active: true, sectors: ["B.I."] };
 
+// --- nome ------------------------------------------------------------------
+// O teto e 80 UNIDADES UTF-16, que e o que `size()` conta em CEL — o mesmo
+// numero de `LIMITE_NOME_CHARS`, sem conversao nenhuma (a foto passa por
+// base64 no caminho; o nome, nao). Os valores abaixo cercam o numero pelos dois
+// lados e cercam tambem a definicao de "tem conteudo": o espaco inquebravel e o
+// caso que o `trim()` do CEL NAO apara.
+const NOME_NO_TETO = "a".repeat(80);
+const NOME_GRANDE = "a".repeat(81);
+const NOME_NBSP = " ";
+// 79 letras + um emoji = 80 code points, mas 81 unidades UTF-16. Se a regra
+// contasse code points, este passaria — e o modulo, que conta unidades, ja teria
+// dito nao. E a divergencia que faz a pessoa ler "sem permissao" tendo permissao.
+const NOME_COM_EMOJI = "a".repeat(79) + "\u{1f600}";
+
 const casos = [];
 /** `existente` = como esta gravado; `enviado` = como fica depois da escrita. */
 function caso(quem, rotulo, method, path, existente, enviado, mocksExtra = []) {
@@ -254,6 +268,74 @@ for (const quem of Object.keys(PESSOAS)) {
     lastLogin: QUANDO,
   });
 
+  // --- nome: o proprio doc -------------------------------------------------
+  // Aqui esta a mudanca desta versao: trocar o proprio nome deixa de ser coisa
+  // de admin. O que NAO pode mudar junto e o resto — e e por isso que os casos
+  // de "nome E role" e "nome E setores" ficam do lado dos de sucesso.
+  caso(quem, "gravar o proprio nome", "update", MEU, PERFIL, {
+    ...PERFIL,
+    name: "Nome Novo",
+  });
+  caso(quem, "gravar o proprio nome NO TETO", "update", MEU, PERFIL, {
+    ...PERFIL,
+    name: NOME_NO_TETO,
+  });
+  caso(quem, "gravar o proprio nome ACIMA do teto", "update", MEU, PERFIL, {
+    ...PERFIL,
+    name: NOME_GRANDE,
+  });
+  caso(quem, "gravar o proprio nome VAZIO", "update", MEU, PERFIL, {
+    ...PERFIL,
+    name: "",
+  });
+  caso(quem, "gravar o proprio nome SO COM ESPACO", "update", MEU, PERFIL, {
+    ...PERFIL,
+    name: "   ",
+  });
+  caso(quem, "gravar o proprio nome so com espaco inquebravel", "update", MEU, PERFIL, {
+    ...PERFIL,
+    name: NOME_NBSP,
+  });
+  caso(quem, "gravar nome de 79 letras + emoji (81 unidades)", "update", MEU, PERFIL, {
+    ...PERFIL,
+    name: NOME_COM_EMOJI,
+  });
+  // O `hasOnly` de novo, agora pelo caminho do nome: quem troca o proprio nome
+  // nao pode aproveitar a viagem.
+  caso(quem, "gravar nome E virar admin", "update", MEU, PERFIL, {
+    ...PERFIL,
+    name: "Nome Novo",
+    role: "admin",
+  });
+  caso(quem, "gravar nome E entrar em outro setor", "update", MEU, PERFIL, {
+    ...PERFIL,
+    name: "Nome Novo",
+    sectors: ["B.I.", "RH"],
+  });
+  // A tela de perfil grava os dois numa escrita so (`saveOwnProfile`).
+  caso(quem, "gravar nome E foto na mesma escrita", "update", MEU, PERFIL, {
+    ...PERFIL,
+    name: "Nome Novo",
+    photo: FOTO_OK,
+  });
+
+  // --- nome: o doc DE OUTRA PESSOA -----------------------------------------
+  caso(quem, "gravar o nome de outra pessoa", "update", U, PERFIL, {
+    ...PERFIL,
+    name: "Nome Novo",
+  });
+  // Cadastro sem nome e como nasce a pessoa que aparece pelo e-mail em todas as
+  // telas — e nao havia nada impedindo, fora a tela.
+  caso(quem, "criar pessoa SEM nome", "create", U, null, {
+    role: "operador",
+    active: true,
+    sectors: ["B.I."],
+  });
+  caso(quem, "criar pessoa com nome so de espaco", "create", U, null, {
+    ...PERFIL,
+    name: "   ",
+  });
+
   // --- foto de perfil: o doc DE OUTRA PESSOA -------------------------------
   caso(quem, "gravar a foto de outra pessoa", "update", U, PERFIL, comFoto);
   caso(quem, "gravar foto grande em outra pessoa", "update", U, PERFIL, {
@@ -357,6 +439,22 @@ for (const quem of Object.keys(PESSOAS)) {
         path: docMinusculo,
         method: "update",
         resource: { data: { ...antes, photo: FOTO_OK } },
+      },
+      resource: { data: antes },
+      functionMocks: mocks,
+      pathEncoding: "PLAIN",
+    },
+  });
+  casos.push({
+    rotulo: "e-mail com maiuscula · gravar o proprio nome",
+    tc: {
+      expectation: "ALLOW",
+      request: {
+        auth: tokenMisto,
+        time: QUANDO,
+        path: docMinusculo,
+        method: "update",
+        resource: { data: { ...antes, name: "Fulano da Silva" } },
       },
       resource: { data: antes },
       functionMocks: mocks,

@@ -30,6 +30,7 @@ import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
 import { SkeletonRow } from "@/components/skeleton";
 import { useAsyncData } from "@/lib/use-async-data";
+import { codigoDe, fraseDeFalha } from "@/lib/erro-ui-core";
 import styles from "./admin.module.css";
 
 /** Vazias constantes: `?? []` no corpo recria o array e invalida os `useMemo`. */
@@ -499,8 +500,21 @@ function UserModal({
       await saveUser(input, actorEmail, isNew);
       onClose();
     } catch (e) {
-      console.error(e);
-      setErr("Não foi possível salvar. Verifique suas permissões.");
+      console.error("[salvar usuário]", codigoDe(e), e);
+      // `saveUser` valida o nome antes de escrever e lança o motivo já em
+      // português (ver `conferirNome`). Engolir tudo em "verifique suas
+      // permissões" faria um admin colando um nome de 90 caracteres ler que o
+      // problema é acesso — e ele tem acesso. Erro do Firestore continua
+      // passando por `fraseDeFalha`, que é quem sabe traduzi-lo.
+      setErr(
+        e instanceof Error && !codigoDe(e)
+          ? e.message
+          : fraseDeFalha(
+              "Não foi possível salvar o usuário.",
+              e,
+              navigator.onLine,
+            ),
+      );
       setSaving(false);
     }
   }

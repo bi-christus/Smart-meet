@@ -2,11 +2,12 @@
    são valores de chamada — um `.tam30`, `.tam38`, `.tam22` reeditaria em CSS a
    mesma lista de tamanhos que o componente já recebe por prop.
 
-   Sem animação nenhuma aqui, e é decisão: o avatar aparece dezenas de vezes por
-   tela, em lista que rola e em quadro que arrasta. Fade de entrada em cada um
-   seria movimento de alta frequência — exatamente o que o AGENTS.md §3 manda
-   não fazer. Por isso também não há bloco de `prefers-reduced-motion`: não há
-   o que reduzir. */
+   O CÍRCULO NÃO ANIMA, e continua sendo decisão: o avatar aparece dezenas de
+   vezes por tela, em lista que rola e em quadro que arrasta. Fade de entrada em
+   cada um seria movimento de alta frequência — exatamente o que o AGENTS.md §3
+   manda não fazer. O que anima aqui embaixo é a PRÉVIA, que é outro elemento:
+   existe no máximo uma por vez, nasce de um gesto deliberado (pousar o ponteiro
+   e esperar) e some ao sair. */
 
 .raiz {
   border-radius: 50%;
@@ -31,4 +32,103 @@
   /* Sem isto a letra desce alguns pixels dentro do círculo nos tamanhos
      pequenos, porque o line-height herdado é maior que o próprio avatar. */
   line-height: 1;
+}
+
+/* ---------- o avatar como alvo ---------- */
+
+/* Botão sem cara de botão: o desenho continua sendo o círculo lá dentro. O que
+   ele acrescenta é a semântica (foco pelo teclado, Enter e Espaço) e os dois
+   sinais de que ali o clique faz OUTRA coisa que o resto do card.
+
+   SEM `transition` NENHUMA, de propósito. Este botão vive dentro de um card que
+   é arrastado centenas de vezes por dia e atravessado pelo ponteiro dezenas de
+   vezes por minuto; um anel que cresce em 140 ms aqui é o "AI-slop motion" do
+   AGENTS.md §3. O anel aparece no mesmo quadro do hover — é feedback, e feedback
+   instantâneo é o mais rápido que existe. */
+.alvo {
+  display: inline-flex;
+  flex: none;
+  padding: 0;
+  border: none;
+  background: none;
+  /* NÃO É ENFEITE. `button` traz a fonte do sistema por padrão, e o filho aqui
+     dentro pode ser a INICIAL da pessoa: sem isto, o avatar sem foto passaria a
+     desenhar a letra numa fonte que não é a do app — e só dentro do card, onde
+     o botão existe. */
+  font: inherit;
+  color: inherit;
+  border-radius: 50%;
+  /* O card tem `cursor: grab`. A troca para `pointer` é o primeiro aviso de que
+     este pedaço não é para arrastar nem abre a demanda. */
+  cursor: pointer;
+}
+/* `box-shadow` e não `outline` para o hover: ele segue o raio de 50% e desenha
+   um anel redondo, enquanto o `outline` de alguns navegadores ainda sai
+   quadrado. O anel importa mais para quem NÃO tem foto — sem prévia para
+   aparecer, ele e o cursor são o aviso inteiro. */
+.alvo:hover {
+  box-shadow: 0 0 0 2px var(--brand-line);
+}
+/* Mesmo contorno de foco do botão de histórico no card (`kanban.module.css`):
+   um alvo novo dentro do mesmo card não pode ter um vocabulário de foco só
+   dele. */
+.alvo:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}
+
+/* ---------- a prévia da foto ---------- */
+
+/* `position: fixed` com left/top escritos pelo componente antes da pintura. Sem
+   ponteiro: a caixa é grande e passa por cima de cards que continuam clicáveis
+   e arrastáveis por baixo dela. */
+.previa {
+  position: fixed;
+  left: 0;
+  top: 0;
+  /* 79: acima do quadro e abaixo do overlay dos modais (80). A prévia jamais
+     deve aparecer sobre o perfil que o clique dela acabou de abrir. */
+  z-index: 79;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 2px solid var(--line);
+  background: var(--s1);
+  box-shadow: var(--shadow);
+  pointer-events: none;
+  /* 150 ms: mesma entrada da prévia do Cronograma, e pelo mesmo motivo —
+     elemento pequeno numa ferramenta de trabalho, dentro do "ate 300ms, 180ms o
+     ideal" do AGENTS.md §3, e na ponta rápida porque aparece e some muitas vezes
+     por sessão. Só `opacity` e `transform`, que não pedem reflow. A saída não
+     anima: o ponteiro já foi embora, e segurar a foto por mais 120 ms é a
+     prévia atrapalhando a leitura do que está atrás dela.
+
+     Sem o `translateY` que a prévia do Cronograma tem: esta cresce do lado por
+     onde nasceu (`transform-origin` escrito pelo componente), e um empurrão
+     vertical brigaria com essa origem. */
+  animation: previaFotoEntra 0.15s cubic-bezier(0.32, 0.72, 0, 1) backwards;
+}
+@keyframes previaFotoEntra {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.previaFoto {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* O bloco do `globals.css` já corta a duração de tudo, mas o AGENTS.md §3 pede
+   que a animação nova traga a própria garantia: quem ler este arquivo tem de
+   encontrá-la aqui, sem depender de lembrar que existe uma regra global. */
+@media (prefers-reduced-motion: reduce) {
+  .previa {
+    animation: none !important;
+  }
 }

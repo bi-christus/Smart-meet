@@ -50,6 +50,7 @@ import {
 } from "@/lib/historico-core";
 import { Icon } from "@/components/icons";
 import { Avatar } from "@/components/avatar";
+import { PerfilModal } from "@/components/perfil-modal";
 import { Select, type SelectOption } from "@/components/select";
 import { Modal } from "@/components/modal";
 import { EmptyState } from "@/components/empty-state";
@@ -221,6 +222,15 @@ export default function KanbanPage() {
   const [edit, setEdit] = useState<EditState>(null);
   /** Demanda com o histórico aberto — independente do modal de edição. */
   const [histCard, setHistCard] = useState<Card | null>(null);
+  /**
+   * Perfil aberto pelo rosto do responsável no card.
+   *
+   * Guarda o `UserProfile` inteiro, e não o e-mail: o modal precisa da pessoa
+   * como ela está em `/users`, e reler `usersMap` a cada render abriria a porta
+   * para o perfil sumir sozinho no meio da leitura se a assinatura de `/users`
+   * devolvesse o mapa sem essa pessoa (desativada pelo Admin, por exemplo).
+   */
+  const [perfilDe, setPerfilDe] = useState<UserProfile | null>(null);
   /** Card que outra tela pediu para abrir, enquanto o setor não carregou. */
   const [alvoDireto, setAlvoDireto] = useState<string | null>(null);
   const [colEdit, setColEdit] = useState<ColEditState>(null);
@@ -742,6 +752,7 @@ export default function KanbanPage() {
                       }}
                       onClick={() => setEdit({ mode: "edit", card: c })}
                       onHistorico={() => setHistCard(c)}
+                      onPerfil={setPerfilDe}
                     />
                   ))
                 )}
@@ -789,6 +800,29 @@ export default function KanbanPage() {
           sector={sector}
           usersMap={usersMap}
           onClose={() => setHistCard(null)}
+        />
+      )}
+
+      {/**
+       * SEMPRE `"outra-pessoa"`, mesmo quando o responsável sou eu.
+       *
+       * Parece rigor demais, e não é. O modo `"eu"` exige `onMudou`, que existe
+       * para uma razão concreta: a topbar lê o perfil UMA vez, na entrada do
+       * app (`auth-context`), e é o shell quem guarda a versão editada. Desta
+       * página não há como alcançar aquele estado — trocar o nome aqui mudaria o
+       * card na hora (a assinatura de `/users` é ao vivo) e deixaria a topbar
+       * mostrando o nome velho até o próximo login. Um bug visível no mesmo
+       * print.
+       *
+       * A porta de editar o próprio perfil existe e é uma só: o menu do usuário
+       * na topbar. Daqui, o rosto no card é o que o card promete — ver de quem é
+       * a demanda.
+       */}
+      {perfilDe && (
+        <PerfilModal
+          modo="outra-pessoa"
+          pessoa={perfilDe}
+          onClose={() => setPerfilDe(null)}
         />
       )}
 
@@ -857,6 +891,7 @@ function CardItem({
   onDragEnd,
   onClick,
   onHistorico,
+  onPerfil,
 }: {
   card: Card;
   col: ColumnDoc;
@@ -869,6 +904,8 @@ function CardItem({
   onDragEnd: () => void;
   onClick: () => void;
   onHistorico: () => void;
+  /** Recebe a pessoa, e não o e-mail: quem já tem o perfil na mão é o card. */
+  onPerfil: (pessoa: UserProfile) => void;
 }) {
   const di = dueInfo(card.due, entregue);
   const startShort = card.startDate ? fmtShort(parseDue(card.startDate)) : "";
@@ -1011,14 +1048,27 @@ function CardItem({
           </span>
         )}
         {assignee && (
-          // Aqui o nome do responsável NÃO está escrito no card — só o do
-          // solicitante está. O avatar é a única coisa que diz de quem é a
-          // demanda, então ele leva a frase inteira no `alt`.
+          /**
+           * O único alvo do card que não abre a demanda.
+           *
+           * Aqui o nome do responsável NÃO está escrito no card — só o do
+           * solicitante está. O avatar é a única coisa que diz de quem é a
+           * demanda, então ele leva a frase inteira no `alt` (que em modo alvo
+           * vira o rótulo do botão) e no `title`.
+           *
+           * E O `title` FICA, ao contrário do que o Cronograma decidiu para o
+           * chip dele. Lá a prévia é um cartão com o nome escrito por extenso, e
+           * o `title` nativo seria uma segunda caixa de texto dizendo o mesmo. A
+           * prévia daqui é só a foto, sem uma palavra dentro — o `title` não
+           * repete nada dela, e é o único lugar do card onde o nome de quem
+           * responde pela demanda chega a aparecer escrito.
+           */
           <Avatar
             pessoa={assignee}
             size={22}
-            alt={`Responsável: ${assignee.name}`}
-            title={`Responsável: ${assignee.name}`}
+            alt={`Responsável: ${assignee.name} — ver perfil`}
+            title={`Responsável: ${assignee.name} — ver perfil`}
+            aoAbrirPerfil={() => onPerfil(assignee)}
           />
         )}
       </div>

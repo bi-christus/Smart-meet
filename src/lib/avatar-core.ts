@@ -1,11 +1,20 @@
 /**
- * Foto de perfil — o que dá para decidir sobre uma imagem sem abrir a imagem.
+ * O cadastro que a pessoa edita de si mesma — o que dá para decidir sobre uma
+ * foto sem abrir a imagem, e sobre um nome sem consultar o banco.
+ *
+ * Nasceu só para a foto, e ganhou o nome quando ele deixou de ser campo de
+ * admin. São a mesma frente: os dois são o que o DONO do cadastro escreve no
+ * próprio documento, os dois viajam em `subscribeUsers` para todo cliente, e os
+ * dois precisam da mesma decisão escrita duas vezes — aqui em TypeScript e em
+ * CEL dentro de `firestore.rules`. É o terceiro bloco de `test-avatar.mjs` que
+ * impede as duas cópias de se afastarem.
  *
  * Módulo puro, como `links-core`, `tags-ref` e `historico-core`: sem
  * `firebase/firestore` e — o que é menos óbvio — SEM DOM. Nada de `document`,
  * `Image` ou `canvas` aqui dentro. O redimensionamento acontece no navegador e
- * mora na interface; o que é REGRA (o que cabe, o que é imagem, qual avatar
- * ganha) mora aqui e é testado por `scripts/test-avatar.mjs` no Node puro.
+ * mora na interface; o que é REGRA (o que cabe, o que é imagem, o que é nome,
+ * qual avatar ganha) mora aqui e é testado por `scripts/test-avatar.mjs` no Node
+ * puro.
  *
  * ONDE A FOTO VIVE, e por quê. Ela é um campo do próprio doc de `/users`,
  * gravado como data URI. As duas alternativas foram descartadas por motivo
@@ -189,6 +198,115 @@ export function conferirFoto(uri: string): FotoConferida {
     };
   }
   return { ok: true };
+}
+
+/**
+ * Teto do nome, em UNIDADES UTF-16 — a régua que a regra do Firestore mede.
+ *
+ * A UNIDADE, primeiro, porque ela é a armadilha. `size()` sobre string em CEL
+ * não conta bytes nem caracteres percebidos: conta unidades UTF-16, o mesmo que
+ * `String.prototype.length` no JavaScript. Isso foi MEDIDO contra a API
+ * `firebaserules.projects.test`, não deduzido — `'😀'.size()` responde 2 (e não
+ * 1, nem 4), e `'Ítalo'.size()` responde 5 (e não 6). É por isso que este
+ * módulo compara `nome.length`, e não `[...nome].length`: o desdobramento em
+ * code points — que é o certo para `inicialDe`, logo abaixo — daria aqui uma
+ * régua 1 unidade menor a cada emoji, e a pessoa leria "sem permissão" tendo
+ * permissão.
+ *
+ * Descartado `toUtf8().size()`, que mediria os bytes de verdade: o teto passaria
+ * a depender dos acentos de quem se cadastra — "Conceição" custaria 11 para 9
+ * letras — e um limite que muda de tamanho conforme o nome da pessoa é um limite
+ * que ninguém entende. A conversão para byte fica documentada em vez de medida:
+ * uma unidade UTF-16 custa no máximo 3 bytes em UTF-8 (caractere do BMP: 1
+ * unidade, 3 bytes; fora do BMP: 2 unidades, 4 bytes — 2 por unidade), então 80
+ * unidades são no máximo 240 bytes.
+ *
+ * E O NÚMERO. Diferente de `LIMITE_FOTO_BYTES`, não é a rede que decide: no pior
+ * caso imaginável — 150 pessoas com o nome no teto — são 150 × 240 B = 35 KiB
+ * por tela, contra 1,76 MiB só de fotos. O nome é 2% do problema que a foto é.
+ *
+ * O que este teto protege é outra coisa: que `name` não vire campo de texto
+ * livre num documento que sete telas baixam inteiro, e que caiba onde é
+ * desenhado. O backup de 2026-08-12 tem 7 cadastros, e o maior nome guardado
+ * tem 19 caracteres (média 13; o maior solicitante, 18). 80 é quatro vezes o
+ * maior nome que existe hoje e ainda sobra sobre o nome civil completo com todos
+ * os conectivos ("Maria da Conceição Aparecida dos Santos Oliveira" tem 47).
+ *
+ * Quem for mexer aqui mexe em DOIS lugares: este número e o da regra são o
+ * mesmo, e `test-avatar.mjs` reprova se um andar sem o outro.
+ */
+export const LIMITE_NOME_CHARS = 80;
+
+/**
+ * "Tem conteúdo de verdade?" — pelo menos uma letra ou um dígito.
+ *
+ * A pergunta óbvia seria "não é vazio depois de aparado", e ela é insuficiente
+ * dos dois lados. Em CEL, `trim()` existe mas apara só o espaço ASCII: um nome
+ * feito de um único ESPAÇO INQUEBRÁVEL (U+00A0, que sai de qualquer cópia do
+ * Word) passa por `trim().size() > 0` — medido, não suposto. Em JavaScript,
+ * `trim()` apara também o U+00A0. Ou seja, a mesma pergunta escrita nas duas
+ * linguagens dava DUAS respostas — exatamente o que o teste existe para impedir.
+ *
+ * Exigir letra ou dígito responde igual nos dois lados, porque as duas engines
+ * usam as mesmas categorias Unicode, e ainda recusa o que "não vazio" aceitava:
+ * "...", "-", um emoji sozinho. E aceita o que precisa aceitar: acento, nome em
+ * qualquer alfabeto, e "3M Brasil".
+ *
+ * Idêntica em veredito à regex de `nomeOk()` em `firestore.rules`, que só
+ * precisa de `(?s).*` em volta porque lá o `matches()` é comparação com a string
+ * INTEIRA. `test-avatar.mjs` extrai aquela e roda as duas na mesma bateria.
+ */
+const NOME_COM_CONTEUDO = /[\p{L}\p{N}]/u;
+
+export type NomeConferido =
+  | { ok: true; nome: string }
+  | { ok: false; motivo: string };
+
+/**
+ * O nome serve? E, se serve, qual é o valor que se grava.
+ *
+ * Devolve o nome APARADO junto do "sim" — diferente de `conferirFoto`, que só
+ * responde sim ou não. É de propósito: a régua da regra do Firestore mede a
+ * string como ela ficou GRAVADA, e quem apara é este módulo. Devolver o valor
+ * conferido é o que garante que o que vai para o banco é o mesmo que passou pela
+ * conferência; deixar o chamador aparar de novo seria deixar a régua depender de
+ * ele lembrar.
+ *
+ * O `motivo` é texto de tela, como em `conferirFoto`: aparece do lado do campo
+ * que a pessoa acabou de digitar, e por isso diz o que fazer, não o nome da
+ * validação que falhou.
+ */
+export function conferirNome(bruto?: string | null): NomeConferido {
+  const nome = (bruto ?? "").trim();
+
+  if (!nome) {
+    return {
+      ok: false,
+      motivo:
+        "Informe o seu nome. Sem ele, você aparece pelo e-mail no quadro, no " +
+        "histórico e nos relatórios.",
+    };
+  }
+
+  if (!NOME_COM_CONTEUDO.test(nome)) {
+    return {
+      ok: false,
+      motivo: "O nome precisa ter pelo menos uma letra ou um número.",
+    };
+  }
+
+  // `.length` e não `[...nome].length`: ver a nota de `LIMITE_NOME_CHARS`.
+  if (nome.length > LIMITE_NOME_CHARS) {
+    return {
+      ok: false,
+      motivo:
+        `O nome ficou com ${nome.length} caracteres e o limite é ` +
+        `${LIMITE_NOME_CHARS}. Use o nome pelo qual as pessoas te chamam — ele ` +
+        `aparece em lista, card e relatório.`,
+    };
+  }
+
+  return { ok: true, nome };
 }
 
 /**

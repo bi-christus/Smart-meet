@@ -1,5 +1,5 @@
 /**
- * Testes da foto de perfil.
+ * Testes do cadastro que a pessoa edita de si mesma: a foto e o nome.
  *
  * Errar aqui é caro em duas moedas, e nenhuma das duas aparece como erro na
  * tela de quem errou:
@@ -18,10 +18,17 @@
  *    o desenha, e ele carrega `<script>`. Por isso a lista é de PERMISSÃO, e por
  *    isso ela é testada com os formatos que ninguém pediu.
  *
- * O terceiro bloco confere uma coisa que nenhum dos dois arquivos consegue
+ * O NOME chegou depois, quando trocar o próprio nome deixou de ser coisa de
+ * admin, e a moeda dele é outra: quem grava um nome em branco não fica com um
+ * espaço vazio na tela — cai na inicial do e-mail no avatar e some da ordenação
+ * de `subscribeUsers`, que ordena por nome. Some para todo mundo, não para si.
+ *
+ * O último bloco confere uma coisa que nenhum dos dois arquivos consegue
  * conferir sozinho: que `firestore.rules` e `avatar-core.ts` continuam dizendo o
- * MESMO teto e a MESMA lista. São duas linguagens diferentes escrevendo a mesma
- * decisão, e o dia em que uma mudar sozinha, a outra passa a mentir.
+ * MESMO teto e a MESMA lista, para a foto E para o nome. São duas linguagens
+ * diferentes escrevendo a mesma decisão, e o dia em que uma mudar sozinha, a
+ * outra passa a mentir — em silêncio, e sempre para o lado de "sem permissão"
+ * para quem tem permissão.
  *
  * Roda com o strip de tipos nativo do Node sobre o .ts real — sem cópia.
  */
@@ -29,11 +36,13 @@ import { readFileSync } from "node:fs";
 import {
   avatarDe,
   conferirFoto,
+  conferirNome,
   corDeAvatar,
   inicialDe,
   LADO_FOTO_PX,
   LIMITE_FOTO_BYTES,
   LIMITE_FOTO_CHARS,
+  LIMITE_NOME_CHARS,
   tamanhoDataUri,
 } from "../src/lib/avatar-core.ts";
 
@@ -229,6 +238,88 @@ checa(
   avatarDe({ email: "zelia@px.com.br" }).letra === "Z",
 );
 
+// --- o nome: o que passa, o que não passa, e o que se grava ----------------
+const NO_TETO_NOME = "a".repeat(LIMITE_NOME_CHARS);
+const ACIMA_NOME = "a".repeat(LIMITE_NOME_CHARS + 1);
+
+checa("nome comum passa", conferirNome("Ítalo Araujo").ok);
+checa("nome com acento e conectivo passa", conferirNome("Maria da Conceição Aparecida dos Santos Oliveira").ok);
+checa("nome em outro alfabeto passa", conferirNome("李").ok, "só ASCII excluiria gente de verdade");
+checa("nome que começa com dígito passa", conferirNome("3M Brasil").ok);
+checa("exatamente no teto ainda passa", conferirNome(NO_TETO_NOME).ok, `${LIMITE_NOME_CHARS} caracteres`);
+
+const rLongo = conferirNome(ACIMA_NOME);
+checa("um caractere acima do teto é recusado", !rLongo.ok, rLongo.motivo ?? "");
+checa(
+  "a recusa por tamanho diz o tamanho e o limite",
+  !rLongo.ok && rLongo.motivo.includes(String(LIMITE_NOME_CHARS + 1)) &&
+    rLongo.motivo.includes(String(LIMITE_NOME_CHARS)),
+  rLongo.motivo ?? "",
+);
+
+// O espaço é o caso que a tela produz sem ninguém querer: campo tocado e
+// apagado, ou nome colado de uma célula de planilha.
+const NOMES_RECUSADOS = [
+  ["", "string vazia"],
+  ["   ", "só espaços"],
+  ["\t\n", "só tabulação e quebra de linha"],
+  [" ", "só espaço inquebrável (o que vem colado do Word)"],
+  [" ", "só espaço de figura"],
+  ["...", "só pontuação"],
+  ["-", "só um hífen"],
+  ["😀", "só um emoji"],
+  [null, "null"],
+  [undefined, "undefined"],
+];
+NOMES_RECUSADOS.forEach(([valor, quem]) => {
+  const r = conferirNome(valor);
+  checa(`nome recusado: ${quem}`, !r.ok, r.ok ? "PASSOU" : "");
+});
+checa(
+  "toda recusa de nome vem com motivo em português, pronto para a tela",
+  NOMES_RECUSADOS.every(([v]) => {
+    const r = conferirNome(v);
+    return !r.ok && typeof r.motivo === "string" && r.motivo.trim().length > 10;
+  }),
+);
+// O U+00A0 é a razão de o teste de conteúdo ser "tem letra ou dígito" e não
+// "sobrou algo depois de aparar": o `trim()` do CEL não o apara, o do JavaScript
+// apara, e as duas cópias da mesma regra passariam a discordar em silêncio.
+checa(
+  "espaço inquebrável é recusado pelo CONTEÚDO, não por ter sido aparado",
+  !conferirNome(" ").ok && !conferirNome("  ").ok,
+);
+checa(
+  "espaço inquebrável NO MEIO de um nome de verdade não atrapalha",
+  conferirNome("Ana Maria").ok,
+);
+
+// O valor devolvido é o que vai para o banco — e é sobre ele que a regra mede.
+checa(
+  "o nome volta aparado, pronto para gravar",
+  conferirNome("  Ítalo Araujo \n").nome === "Ítalo Araujo",
+  JSON.stringify(conferirNome("  Ítalo Araujo \n").nome),
+);
+checa(
+  "espaço em volta não conta para o teto",
+  conferirNome(`   ${NO_TETO_NOME}   `).ok,
+  "quem apara é este módulo, antes de a regra medir",
+);
+checa(
+  "espaço no meio conta, porque fica gravado",
+  !conferirNome(`${"a".repeat(40)} ${"a".repeat(40)}`).ok,
+);
+
+// A régua é a unidade UTF-16, que é o que `size()` conta em CEL — medido contra
+// a API, não deduzido. Contar code points aceitaria um nome que a regra recusa,
+// e a pessoa leria "sem permissão" tendo permissão.
+const COM_EMOJI = "a".repeat(LIMITE_NOME_CHARS - 1) + "😀";
+checa(
+  "emoji custa 2, como na regra — contar code points erraria a régua",
+  !conferirNome(COM_EMOJI).ok && [...COM_EMOJI].length === LIMITE_NOME_CHARS,
+  `${COM_EMOJI.length} unidades UTF-16 · ${[...COM_EMOJI].length} code points`,
+);
+
 // --- a cor: a mesma pessoa, a mesma cor, em toda tela ----------------------
 checa("cor é estável entre chamadas", corDeAvatar("op@px.com.br") === corDeAvatar("op@px.com.br"));
 checa(
@@ -310,14 +401,99 @@ if (regexNaRegra) {
   );
 }
 
+// --- o nome: a mesma régua nas duas linguagens -----------------------------
+// Aqui não há conversão nenhuma a conferir, e é isso que precisa ficar provado:
+// `size()` em CEL conta unidades UTF-16 (medido contra a API: `'😀'.size()`
+// responde 2), e `String.prototype.length` conta a mesma unidade. O número da
+// regra é o número do módulo — o oposto do que acontece com a foto, onde ele
+// passa por base64 no caminho.
+const tetoNomeNaRegra = /n\.size\(\)\s*<=\s*(\d+)/.exec(regras);
 checa(
-  "o dono continua trancado em uid/lastLogin/photo — role e active fora",
-  /hasOnly\(\['uid', 'lastLogin', 'photo'\]\)/.test(regras),
+  "o teto de nome da regra é o mesmo do módulo, sem conversão",
+  tetoNomeNaRegra && Number(tetoNomeNaRegra[1]) === LIMITE_NOME_CHARS,
+  `regra: ${tetoNomeNaRegra?.[1] ?? "não encontrado"} · módulo: ${LIMITE_NOME_CHARS}`,
+);
+
+const regexNomeNaRegra = /n\.matches\('([^']+)'\)/.exec(regras);
+checa("a regra exige conteúdo no nome, e não só tamanho", !!regexNomeNaRegra);
+if (regexNomeNaRegra && tetoNomeNaRegra) {
+  // Traduzir a regex do CEL para JavaScript, sem reescrevê-la: desescapar a
+  // barra que o literal de string do CEL consome (`\\p` chega ao motor de regex
+  // como `\p`), trocar o `(?s)` — que o JavaScript não aceita inline — pela
+  // flag `s`, e ancorar, porque `matches()` compara com a string INTEIRA e
+  // `RegExp.test` procura em qualquer pedaço. A flag `u` é o que faz `\p{L}`
+  // valer aqui como vale lá.
+  const corpo = regexNomeNaRegra[1].replace(/\\\\/g, "\\").replace("(?s)", "");
+  const daRegra = new RegExp(`^(?:${corpo})$`, "su");
+  const teto = Number(tetoNomeNaRegra[1]);
+
+  /** O veredito da regra, sobre a string COMO ELA FICA GRAVADA. */
+  const regraAceita = (v) => v.length <= teto && daRegra.test(v);
+  /** E o que fica gravado é o que este módulo devolve — ele é quem apara. */
+  const comoSeriaGravado = (v) => {
+    const r = conferirNome(v);
+    return r.ok ? r.nome : String(v ?? "").trim();
+  };
+
+  const AMOSTRAS_NOME = [
+    "Ana",
+    "Ítalo Araujo",
+    "Maria da Conceição Aparecida dos Santos Oliveira",
+    "李",
+    "3M Brasil",
+    "  Ana  ",
+    `   ${NO_TETO_NOME}   `,
+    NO_TETO_NOME,
+    ACIMA_NOME,
+    COM_EMOJI,
+    "",
+    "   ",
+    "\t\n",
+    " ",
+    " ",
+    "...",
+    "-",
+    "😀",
+    "Ana\nMaria",
+  ];
+  const divergentesNome = AMOSTRAS_NOME.filter(
+    (v) => conferirNome(v).ok !== regraAceita(comoSeriaGravado(v)),
+  );
+  checa(
+    "regra e módulo aceitam e recusam exatamente os mesmos nomes",
+    divergentesNome.length === 0,
+    divergentesNome.map((v) => JSON.stringify(v).slice(0, 30)).join(" | ") ||
+      `${AMOSTRAS_NOME.length} amostras conferidas`,
+  );
+  // A regra mede o que está gravado, e quem apara é o módulo. Se um dia a
+  // escrita deixar de passar por `conferirNome`, é ISTO que a pessoa encontra:
+  // um nome que a tela aceitou e o banco recusou.
+  checa(
+    "a regra recusa o que a tela aceitaria se gravasse sem aparar",
+    !regraAceita(`   ${NO_TETO_NOME}   `) && regraAceita(NO_TETO_NOME),
+  );
+  checa(
+    "a regra recusa nome sem letra nem dígito, inclusive o espaço inquebrável",
+    !regraAceita(" ") && !regraAceita("...") && !regraAceita("😀"),
+  );
+}
+
+// A lista fechada é a única barreira entre "trocar a própria foto e o próprio
+// nome" e "promover a si mesmo a admin".
+checa(
+  "o dono agora escreve uid/lastLogin/photo/name — e nada mais",
+  /hasOnly\(\['uid', 'lastLogin', 'photo', 'name'\]\)/.test(regras),
+);
+const listaDoDono = /hasOnly\(\['uid'[^\]]*\]\)/.exec(regras)?.[0];
+checa(
+  "role, active e sectors continuam FORA do que o dono escreve",
+  !!listaDoDono && !/'(role|active|sectors)'/.test(listaDoDono),
+  listaDoDono ?? "lista do dono não encontrada na regra",
 );
 
 console.log(
   falhas === 0
-    ? "\nTodos os testes de foto de perfil passaram."
+    ? "\nTodos os testes de foto e nome de perfil passaram."
     : `\n${falhas} teste(s) falharam.`,
 );
 process.exit(falhas === 0 ? 0 : 1);

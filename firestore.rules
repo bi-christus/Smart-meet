@@ -61,6 +61,16 @@ rules_version = '2';
 //    — inclusive por que o número da regra não é o número do módulo — está em
 //    `fotoOk()`.
 //
+// O QUE MUDOU (2026-08-14):
+//  - `name` entra no `hasOnly` do dono: trocar o próprio nome deixa de ser
+//    coisa de admin. `role`, `active` e `sectors` continuam de fora — é para
+//    isso que aquele `hasOnly` existe, e quem pudesse escrever o próprio `role`
+//    viraria admin sozinho.
+//  - Com o nome aberto, ele ganha FORMA (`nomeOk()`), pelo mesmo motivo que a
+//    foto ganhou: campo que o cliente escreve tem o schema como defesa. Nome em
+//    branco não é só feio — a pessoa cai na inicial do e-mail no avatar e some
+//    da ordenação de `subscribeUsers`, que ordena por nome.
+//
 // Nota sobre consultas: as telas sempre filtram por setor (`==` ou `in`), e o
 // admin consulta DEFAULT_SECTORS. Por isso o escopo por setor na leitura não
 // quebra nenhuma query existente.
@@ -254,6 +264,52 @@ service cloud.firestore {
                  && f.matches('^data:image/(jpeg|png);base64,[A-Za-z0-9+/]+={0,2}$'));
     }
 
+    // O NOME, agora que ele não é mais campo só de admin.
+    //
+    // Ele importa mais do que parece: é o nome que aparece no responsável do
+    // card, no autor do histórico, no comentário e nos dois relatórios, e é por
+    // ele que `subscribeUsers` ORDENA a lista inteira. Nome em branco não deixa
+    // um espaço vazio — joga a pessoa para a inicial do e-mail no avatar e para
+    // o começo de toda lista ordenada. Por isso ele tem forma, e não só teto.
+    //
+    // 1. CONTEÚDO. A pergunta NÃO é "sobrou alguma coisa depois de aparar", e
+    //    essa diferença foi medida, não suposta: o `trim()` do CEL apara só o
+    //    espaço ASCII, então um nome feito de um único U+00A0 — o espaço
+    //    inquebrável que vem colado de qualquer texto copiado do Word — passaria
+    //    por `trim().size() > 0`. O `trim()` do JavaScript apara o U+00A0, e aí
+    //    as duas cópias da mesma regra passariam a discordar. Exigir pelo menos
+    //    uma LETRA ou um DÍGITO responde igual nas duas linguagens (as duas usam
+    //    as mesmas categorias Unicode) e ainda recusa "...", "-" e o emoji
+    //    solitário, que "não vazio" aceitava.
+    //
+    //    O `(?s).*` em volta existe porque `matches()` compara com a string
+    //    INTEIRA, e `.` não casa quebra de linha sem o `(?s)` — sem ele, um nome
+    //    colado com um "\n" no fim seria recusado por engano. A barra vem
+    //    dobrada porque quem desescapa primeiro é o literal de string do CEL: o
+    //    motor de regex recebe `\p{L}`.
+    //
+    // 2. TAMANHO. 80 unidades UTF-16, que é o que `size()` conta — medido:
+    //    `'😀'.size()` responde 2, não 1 nem 4. Esse é o mesmo número de
+    //    `LIMITE_NOME_CHARS` em avatar-core.ts, SEM conversão nenhuma, porque
+    //    `String.prototype.length` do JavaScript conta a mesma unidade. É o
+    //    oposto do que acontece com a foto, onde o número da regra não é o do
+    //    módulo — e a diferença entre os dois casos está escrita nos dois
+    //    lugares de propósito.
+    //
+    // A ordem é conteúdo depois de tamanho porque o teto é uma comparação e a
+    // regex é uma varredura: um nome de 1 MB é recusado sem ser varrido.
+    //
+    // Vale para TODO mundo, admin incluído. Ausente conta como vazio (`.get`
+    // com padrão, e não `.name` cru: ler chave ausente é erro de avaliação), o
+    // que fecha a criação de cadastro sem nome — que é como nasce a pessoa que
+    // aparece pelo e-mail em todas as telas.
+    function nomeOk() {
+      let n = request.resource.data.get('name', '');
+      return n is string
+             && n.size() <= 80
+             && n.matches('(?s).*[\\p{L}\\p{N}].*');
+    }
+
     // ---- usuários ----
     // A LEITURA é da coleção inteira, não do próprio doc, e isso é escolha.
     // `subscribeUsers` (src/lib/users.ts) assina /users em sete telas — Kanban,
@@ -296,22 +352,40 @@ service cloud.firestore {
       // Super admin cria o próprio doc (bootstrap); admin cria qualquer um.
       // `souEu` pelo mesmo motivo do `update` abaixo — e aqui o preço de errar
       // é o pior de todos: seria o bootstrap do primeiro admin não acontecendo.
-      allow create: if fotoOk()
+      //
+      // `nomeOk()` na criação fecha a porta de entrada do cadastro sem nome —
+      // e é por isso que `ensureUserProfile` deixou de confiar no `displayName`
+      // do Google: ele pode vir vazio, e um bootstrap recusado por nome em
+      // branco seria o primeiro admin não existindo.
+      allow create: if fotoOk() && nomeOk()
         && (isAdmin()
             || (isSuperAdmin() && souEu(userId)));
 
       // Admin edita todos; super admin edita o próprio; o dono pode atualizar
-      // os campos de sessão (uid / lastLogin) e A PRÓPRIA FOTO do próprio doc.
+      // os campos de sessão (uid / lastLogin), A PRÓPRIA FOTO e O PRÓPRIO NOME.
       //
-      // `photo` entra no hasOnly — e só ela. `role`, `active` e `sectors`
-      // continuam de fora, que é a razão de o hasOnly existir: sem ele, o mesmo
-      // caminho que grava a própria foto promoveria a si mesmo a admin, e a
-      // única barreira seria a tela não oferecer o campo.
+      // `photo` e `name` entram no hasOnly — e só elas. `role`, `active` e
+      // `sectors` continuam de fora, que é a razão de o hasOnly existir: sem
+      // ele, o mesmo caminho que grava a própria foto promoveria a si mesmo a
+      // admin, e a única barreira seria a tela não oferecer o campo.
       //
       // `fotoOk()` vem na FRENTE, e fora do ou-lógico, por dois motivos. Ele
       // vale para todo mundo (ver a nota da função), e não custa acesso a
       // documento nenhum: uma foto grande demais é recusada sem ler o cadastro,
       // como as comparações baratas no update de /cards.
+      //
+      // O NOME vem guardado por `!mudou(['name'])`, e a foto não — a diferença
+      // é o que separa "conferir o que está sendo escrito" de "conferir o que
+      // já estava lá". Num update, `request.resource.data` é o documento
+      // RESULTANTE, não o patch: o nome de quem já está cadastrado viaja em toda
+      // escrita seguinte, inclusive na de sessão do login. Sem essa guarda, um
+      // único cadastro antigo com nome fora do teto — ou em branco, que a aba
+      // Admin permitia gravar antes desta versão — passaria a ter TODA escrita
+      // negada, e a primeira a falhar seria a que ninguém vê: `uid`/`lastLogin`.
+      // É o mesmo raciocínio de `deletedByEhDoToken()` em /cards, e pelo mesmo
+      // motivo. A foto não precisa da guarda porque `null` (o estado de quem
+      // nunca escolheu uma) já passa por `fotoOk()`.
+      //
       // `souEu` e não `userId == userEmail()`, pelo motivo que já está escrito
       // acima do `read`: o doc id é minúsculo e o e-mail do token vem do Google
       // na caixa que ele quiser. Enquanto o dono só escrevia `lastLogin` — que
@@ -319,20 +393,22 @@ service cloud.firestore {
       // Com `photo` no mesmo braço deixa de ser: quem tem maiúscula no e-mail
       // clicaria em salvar a foto e receberia "sem permissão", tendo permissão.
       allow update: if fotoOk()
+        && (!mudou(['name']) || nomeOk())
         && (isAdmin()
             || (isSuperAdmin() && souEu(userId))
             || (souEu(userId) && isActive()
                 && request.resource.data.diff(resource.data).affectedKeys()
-                     .hasOnly(['uid', 'lastLogin', 'photo'])));
+                     .hasOnly(['uid', 'lastLogin', 'photo', 'name'])));
 
       allow delete: if isAdmin();
     }
 
     // ---- preferências do próprio usuário ----
-    // Subcoleção de propósito: o doc-pai só aceita ['uid','lastLogin'] do dono,
-    // e abrir aquele hasOnly seria arriscar role/active/sectors por causa de
-    // uma preferência de e-mail. O hasOnly aqui trava a FORMA do documento —
-    // preferência é dado que o cliente escreve, então o schema é a defesa.
+    // Subcoleção de propósito: o doc-pai só aceita do dono a lista curta do
+    // `hasOnly` acima (hoje uid, lastLogin, photo e name), e abrir aquele
+    // hasOnly seria arriscar role/active/sectors por causa de uma preferência
+    // de e-mail. O hasOnly aqui trava a FORMA do documento — preferência é dado
+    // que o cliente escreve, então o schema é a defesa.
     // Regras v2 não cascateiam, então este bloco aninhado é obrigatório.
     match /users/{userId}/prefs/{docId} {
       allow read: if isSignedIn() && (souEu(userId) || isAdmin());
