@@ -65,9 +65,19 @@ function refHistorico(cardId: string) {
 /**
  * Põe o evento no lote que já está gravando o card.
  *
- * Não commita: quem chama é dono do lote e sabe o que mais entra nele. Devolve
- * `false` quando não havia o que registrar, para quem chama não incrementar o
- * contador do card à toa.
+ * Não commita: quem chama é dono do lote e sabe o que mais entra nele.
+ *
+ * DEVOLVE O ID DO EVENTO, ou `null` quando não havia o que registrar. O `null`
+ * continua servindo de "não registrou" para quem só quer saber se incrementa o
+ * contador do card — era um `boolean` antes, e a troca preserva a truthiness em
+ * todos os pontos de uso.
+ *
+ * O id existe porque o AVISO NO DISCORD precisa apontar para um evento
+ * específico: sem ele, a rota teria de adivinhar "o último evento deste card",
+ * e duas pessoas salvando o mesmo card no mesmo segundo publicariam o aviso uma
+ * da outra. O id sai daqui e não do servidor porque o Firestore o gera no
+ * cliente — é o mesmo motivo que faz `createCard` criar a referência do card
+ * antes de escrever.
  *
  * Quais verbos valem por si, sem par de valores, é `registraSemMudancas` quem
  * diz — regra pura, com teste. Ver o comentário dela.
@@ -78,9 +88,10 @@ export function anexarEvento(
   ctx: ContextoHistorico,
   acao: Acao,
   mudancas: Mudanca[],
-): boolean {
-  if (mudancas.length === 0 && !registraSemMudancas(acao)) return false;
-  batch.set(doc(refHistorico(cardId)), {
+): string | null {
+  if (mudancas.length === 0 && !registraSemMudancas(acao)) return null;
+  const ref = doc(refHistorico(cardId));
+  batch.set(ref, {
     sector: ctx.sector,
     autor: ctx.autor,
     // `serverTimestamp` e não `Date.now()`: o relógio do navegador é do usuário,
@@ -90,7 +101,7 @@ export function anexarEvento(
     acao,
     mudancas: mudancas.slice(0, MAX_MUDANCAS),
   });
-  return true;
+  return ref.id;
 }
 
 /**
