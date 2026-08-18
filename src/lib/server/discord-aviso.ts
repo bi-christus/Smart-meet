@@ -20,10 +20,12 @@ import { FieldValue, type Firestore } from "firebase-admin/firestore";
 
 import { enviarAviso } from "./discord";
 import {
+  canalDoEvento,
   deveAvisar,
   montarAviso,
   montarResumoDeRecorrencias,
-  webhookDoSetor,
+  resolverWebhook,
+  type Canal,
   type CardDoAviso,
   type EventoDoAviso,
 } from "@/lib/discord-core";
@@ -81,13 +83,22 @@ async function pessoas(
   return out;
 }
 
-/** Para onde o setor avisa, lendo o ambiente. `null` = ninguém configurou. */
-export function webhookDe(sector: string): string | null {
-  return webhookDoSetor(
-    sector,
-    process.env.DISCORD_WEBHOOK_URL,
-    process.env.DISCORD_WEBHOOK_URLS,
-  );
+/**
+ * Para onde ESTE assunto avisa, lendo o ambiente. `null` = ninguém configurou.
+ *
+ * O canal entra por parâmetro, e não é deduzido aqui, porque quem sabe o
+ * assunto é quem chama: `publicarEvento` traduz a ação em canal, o resumo das
+ * recorrências vai sempre para `alertas`, e o resumo do dia para `resumo`.
+ * Deduzir aqui obrigaria esta função a conhecer os três casos.
+ */
+export function webhookDe(sector: string, canal: Canal): string | null {
+  return resolverWebhook({
+    canal,
+    setor: sector,
+    padrao: process.env.DISCORD_WEBHOOK_URL,
+    porSetor: process.env.DISCORD_WEBHOOK_URLS,
+    porCanal: process.env.DISCORD_WEBHOOK_CANAIS,
+  });
 }
 
 /**
@@ -139,7 +150,7 @@ export async function publicarEvento(
     return { enviado: false, motivo: "sem-noticia" };
   }
 
-  const url = webhookDe(sector);
+  const url = webhookDe(sector, canalDoEvento(acao));
   // Sem webhook configurado o app funciona igual — é o estado de qualquer
   // Preview antes de alguém colar a variável. Não é erro.
   if (!url) return { enviado: false, motivo: "sem-webhook" };
@@ -256,7 +267,11 @@ export async function publicarResumoDeRecorrencias(args: {
   const { sector, cards } = args;
   if (cards.length === 0) return { enviado: false, motivo: "nada-a-dizer" };
 
-  const url = webhookDe(sector);
+  // `alertas`, e não `novas`: a rodada do cron não é notícia de demanda
+  // nascendo — é rotina automática, e o canal de entrada existe para o trabalho
+  // que alguém pediu. Misturar as duas faz `#demandas-novas` amanhecer com
+  // quinze linhas de manutenção todo dia.
+  const url = webhookDe(sector, "alertas");
   if (!url) return { enviado: false, motivo: "sem-webhook" };
 
   // A montagem é regra e mora no módulo puro, com teste; o que sobra para cá é

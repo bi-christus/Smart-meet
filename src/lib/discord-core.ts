@@ -24,8 +24,9 @@
  *    caracteres não é caso de borda: é o tamanho que `updateCard` permite.
  *
  * 3. NADA AQUI VAI À REDE, e nada aqui lê `process.env` sozinho. O ambiente
- *    entra por parâmetro (`webhookDoSetor`), que é o que permite testar o
- *    roteamento por setor sem inventar variável de ambiente no teste.
+ *    entra por parâmetro (`resolverWebhook`), que é o que permite testar o
+ *    roteamento por canal e por setor sem inventar variável de ambiente no
+ *    teste.
  *
  * 4. O AVISO É CLICÁVEL. `/kanban?setor=X&card=<id>` já abre o card direto —
  *    ver `src/app/(app)/kanban/page.tsx:296`. Aviso que obriga a pessoa a
@@ -179,35 +180,105 @@ function dataBR(iso: string): string {
   return m ? `${m[3]}/${m[2]}/${m[1]}` : iso;
 }
 
+// ---------------------------------------------------------------------------
+// O roteamento: qual canal recebe o quê.
+//
+// O servidor do setor não tem UM canal de demandas — tem quatro, cada um com um
+// assunto (`#demandas-novas`, `#demandas-fluxo`, `#alertas-e-recorrencias`,
+// `#resumo-diario`). Publicar tudo num canal só desfaz de propósito a
+// organização que alguém montou: quem quer ver demanda nascendo passa a ler
+// também toda troca de etapa, e o jeito de sobreviver a isso é silenciar o
+// canal inteiro — que apaga junto o aviso que importava.
+// ---------------------------------------------------------------------------
+
+/** Os canais, por assunto. O nome é a CHAVE da configuração, não o do canal. */
+export const CANAIS = ["novas", "fluxo", "alertas", "resumo"] as const;
+export type Canal = (typeof CANAIS)[number];
+
 /**
- * Para onde este setor avisa.
+ * Em que canal este evento se lê.
  *
- * `porSetor` é um JSON opcional (`DISCORD_WEBHOOK_URLS`) e ganha do padrão. Um
- * setor sem entrada própria cai no `padrao` — que é o caso de hoje, com um setor
- * só executando demanda (ver `DEFAULT_SECTORS` em `users.ts`). A porta fica
- * aberta porque o dia em que um segundo setor entrar, ele vai querer o próprio
- * canal, e descobrir isso com o quadro em produção é tarde.
+ * "Nasceu uma demanda" é notícia para quem acompanha entrada de trabalho;
+ * "mudou de etapa", "foi editada", "foi para a lixeira" é acompanhamento de
+ * fluxo, e é o volume. Separar os dois é o que permite alguém seguir só o
+ * primeiro sem perder nada.
  *
- * JSON quebrado NÃO derruba o aviso: cai no padrão e segue. Variável de
- * ambiente mal colada é erro de configuração, e configuração errada não pode
+ * A lixeira fica no fluxo, e não num canal próprio: excluir e restaurar são
+ * raros o bastante para não incomodar, e um canal a mais por causa deles seria
+ * um canal que ninguém abre.
+ */
+export function canalDoEvento(acao: Acao): Canal {
+  return acao === "criada" ? "novas" : "fluxo";
+}
+
+/** Só o que se aceita como URL: string com conteúdo, já sem espaço em volta. */
+function comoUrl(v: unknown): string | null {
+  return typeof v === "string" && v.trim() ? v.trim() : null;
+}
+
+/**
+ * JSON de configuração, ou `null` quando não dá para ler.
+ *
+ * JSON quebrado NÃO derruba o aviso — quem chama cai no próximo degrau. Variável
+ * de ambiente mal colada é erro de configuração, e configuração errada não pode
  * calar a notificação inteira.
  */
-export function webhookDoSetor(
-  sector: string,
-  padrao: string | null | undefined,
-  porSetor?: string | null,
-): string | null {
-  const limpo = (padrao ?? "").trim();
-  if (porSetor) {
-    try {
-      const mapa = JSON.parse(porSetor) as Record<string, unknown>;
-      const achado = mapa?.[sector];
-      if (typeof achado === "string" && achado.trim()) return achado.trim();
-    } catch {
-      // Silêncio proposital — ver o comentário acima.
-    }
+function mapa(bruto?: string | null): Record<string, unknown> | null {
+  if (!bruto) return null;
+  try {
+    const v = JSON.parse(bruto) as unknown;
+    return v && typeof v === "object" && !Array.isArray(v)
+      ? (v as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
   }
-  return limpo || null;
+}
+
+/**
+ * Para onde ESTE aviso vai — o canal do assunto, dentro do setor.
+ *
+ * Quatro degraus, do mais específico ao mais genérico, e o primeiro que
+ * responde ganha:
+ *
+ *   1. `porSetor[setor][canal]` — o setor tem canais próprios.
+ *   2. `porSetor[setor]` como string — o setor tem UM canal para tudo. É a forma
+ *      antiga de `DISCORD_WEBHOOK_URLS`, e continua valendo: quem já a
+ *      configurou não precisa mexer em nada para o app continuar publicando.
+ *   3. `porCanal[canal]` — os canais do servidor, valendo para todos os setores.
+ *      É a configuração de hoje, com um setor só executando demanda.
+ *   4. `padrao` — `DISCORD_WEBHOOK_URL`, o canal único de antes de tudo isto.
+ *
+ * A ordem não é arbitrária: o que alguém escreveu para um setor específico é
+ * uma decisão mais informada do que a regra geral do servidor, e a regra geral
+ * é mais informada do que o padrão herdado. Inverter qualquer par faz uma
+ * configuração nova ser silenciosamente ignorada — o modo de falha em que tudo
+ * parece certo e as mensagens continuam saindo no canal errado.
+ */
+export function resolverWebhook(args: {
+  canal: Canal;
+  setor: string;
+  padrao?: string | null;
+  /** `DISCORD_WEBHOOK_URLS`: `{"B.I.": "url"}` ou `{"B.I.": {"novas": "url"}}`. */
+  porSetor?: string | null;
+  /** `DISCORD_WEBHOOK_CANAIS`: `{"novas": "url", "fluxo": "url", …}`. */
+  porCanal?: string | null;
+}): string | null {
+  const { canal, setor } = args;
+
+  const doSetor = mapa(args.porSetor)?.[setor];
+  if (doSetor && typeof doSetor === "object" && !Array.isArray(doSetor)) {
+    const m = doSetor as Record<string, unknown>;
+    // `padrao` dentro do setor é a saída para quem quer um canal só para os
+    // assuntos que não configurou, sem repetir a mesma URL quatro vezes.
+    const achado = comoUrl(m[canal]) ?? comoUrl(m.padrao);
+    if (achado) return achado;
+  } else {
+    const achado = comoUrl(doSetor);
+    if (achado) return achado;
+  }
+
+  return comoUrl(mapa(args.porCanal)?.[canal]) ?? comoUrl(args.padrao);
 }
 
 // ---------------------------------------------------------------------------
