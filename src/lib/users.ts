@@ -38,13 +38,13 @@ export {
 /** E-mail super admin (bootstrap). Precisa bater com o valor em firestore.rules. */
 export const SUPER_ADMIN_EMAIL = "setorbiunichristus@gmail.com";
 
-export type Role = "admin" | "gestor" | "operador";
-
-export const ROLE_LABEL: Record<Role, string> = {
-  admin: "Administrador",
-  gestor: "Gestor",
-  operador: "Operador",
-};
+// O papel e o rótulo dele moram em `perfil-core`, que é puro — este arquivo
+// importa `firebase/firestore` na primeira linha, e um core que buscasse a
+// tabela aqui deixaria de ser core. A porta continua sendo uma só para as
+// telas: elas seguem perguntando a `users.ts`, como sempre fizeram.
+export { ROLE_LABEL } from "./perfil-core.ts";
+export type { Role } from "./perfil-core.ts";
+import type { Role } from "./perfil-core.ts";
 
 export type UserProfile = {
   email: string;

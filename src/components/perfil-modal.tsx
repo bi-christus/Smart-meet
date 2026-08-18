@@ -14,7 +14,6 @@ import { fraseDeFalha } from "@/lib/erro-ui-core";
 import {
   LADO_FOTO_PX,
   LIMITE_FOTO_BYTES,
-  ROLE_LABEL,
   avatarDe,
   conferirFoto,
   conferirNome,
@@ -23,6 +22,10 @@ import {
   type MeuCadastro,
   type UserProfile,
 } from "@/lib/users";
+// O cabeçalho e o rótulo do botão são REGRA — que nome aparece quando o
+// cadastro está pela metade, o que o clique promete gravar — e moram no módulo
+// puro, com teste no `prebuild`. Aqui só há a pintura.
+import { cabecalhoDe, mudancasPendentes } from "@/lib/perfil-core";
 import styles from "./perfil-modal.module.css";
 
 /**
@@ -300,8 +303,25 @@ export function PerfilModal(props: PerfilModalProps) {
    */
   const fotoDoGoogleVale = avatarDe({}, fotoDoGoogle).tipo === "foto";
 
-  const nomeMudou = meu && nome.trim() !== nomeSalvo;
-  const fotoMudou = meu && fotoPendente !== undefined;
+  /**
+   * O que está pendente e o que o botão promete — PERGUNTADO ao módulo puro.
+   *
+   * No modo `"outra-pessoa"` nada é editável, então nada pende: passar o estado
+   * congelado do diálogo produziria um botão de salvar aceso numa tela que não
+   * salva. É por isso que o objeto é montado a partir do que ESTÁ GRAVADO
+   * quando não sou eu, e não a partir do que está na tela.
+   */
+  const pendencias = mudancasPendentes({
+    nome: meu ? nome : nomeSalvo,
+    nomeSalvo,
+    fotoPendente: meu ? fotoPendente : undefined,
+    // A moldura entra na frente seguinte. O eixo já existe no módulo puro de
+    // propósito — ver o comentário de `mudancasPendentes` —, e enquanto não há
+    // seletor ele fica desligado sem custo nenhum.
+    molduraPendente: undefined,
+    molduraSalva: "",
+    gravando,
+  });
   const ocupado = preparando || gravando;
 
   async function escolher(e: React.ChangeEvent<HTMLInputElement>) {
@@ -347,7 +367,7 @@ export function PerfilModal(props: PerfilModalProps) {
   async function salvar() {
     if (props.modo !== "eu") return;
     const { onMudou } = props;
-    if (!nomeMudou && !fotoMudou) return;
+    if (!pendencias.alguma) return;
 
     setErro(null);
 
@@ -481,182 +501,246 @@ export function PerfilModal(props: PerfilModalProps) {
                   "Você ainda não escolheu uma foto — o avatar é a inicial do seu nome.",
               };
 
-  // O rótulo NOMEIA o que o clique vai gravar, e depois o que ele está
-  // gravando. Um "Salvar" genérico ao lado de dois campos não diz se a foto
-  // entra junto — e é justamente essa a dúvida. "Salvando…" cru teria o mesmo
-  // defeito do "Carregando…" que o AGENTS.md §3 proíbe: anuncia que algo
-  // acontece sem dizer o quê.
-  const rotuloSalvar = gravando
-    ? nomeMudou && fotoMudou
-      ? "Salvando o perfil…"
-      : nomeMudou
-        ? "Salvando o nome…"
-        : fotoPendente === null
-          ? "Removendo a foto…"
-          : "Salvando a foto…"
-    : nomeMudou && fotoMudou
-      ? "Salvar nome e foto"
-      : nomeMudou
-        ? "Salvar nome"
-        : fotoPendente === null
-          ? "Remover foto"
-          : fotoMudou
-            ? "Salvar foto"
-            : "Salvar";
+  const cab = cabecalhoDe(pessoa);
 
   return (
     <Modal
       onClose={onClose}
-      ariaLabel={meu ? "Seu perfil" : `Perfil de ${pessoa.name || pessoa.email}`}
+      ariaLabel={meu ? "Seu perfil" : `Perfil de ${cab.nome}`}
       overlayClassName={styles.overlay}
       className={styles.modal}
-      width={460}
+      width={520}
     >
-      <div className={styles.head}>
-        <span className={styles.chip}>
-          <Icon name="users" size={12} /> {meu ? "Seu perfil" : "Perfil"}
-        </span>
-      </div>
+      {/* ------------------------------------------------------------------
+          CABECALHO — quem e esta pessoa, lido de relance.
 
-      <div className={styles.retrato}>
-        {preparando ? (
-          <SkeletonAvatar
-            sizes={[LADO_EXIBIDO]}
-            texto="Preparando a imagem…"
-          />
-        ) : (
-          // `alt` vazio: o nome vem escrito logo abaixo, e um `alt` com o nome
-          // faria o leitor de tela dizê-lo duas vezes seguidas.
-          <Avatar
-            pessoa={previa}
-            size={LADO_EXIBIDO}
-            fotoDoGoogle={fotoDoGoogle}
-            alt=""
-            // O anel muda de cor enquanto houver mudança não salva — vale para
-            // a imagem nova E para a remoção marcada, porque a afirmação é a
-            // mesma: "o que você está vendo ainda não está no banco".
-            className={`${styles.foto} ${fotoMudou ? styles.fotoNaoSalva : ""}`}
-          />
-        )}
-      </div>
+          Ele NAO TEM CONDICIONAL DE MODO, e e essa a mudanca que este arquivo
+          existe para fazer. Antes, o modo "outra-pessoa" era o nome solto em
+          cima de uma <dl> de quatro linhas: quem clicava no avatar do
+          responsavel no card do Kanban perguntava "quem e essa pessoa" e
+          recebia um formulario de cadastro sem os campos.
 
-      {meu ? (
-        <>
-          <p
-            className={`${styles.estado} ${estadoDaFoto.pendente ? styles.estadoPendente : ""}`}
-            role="status"
-          >
-            {estadoDaFoto.texto}
+          A <dl> desapareceu. Papel e setores sao o que IDENTIFICA alguem aqui
+          dentro, e por isso subiram para o lado do rosto; e-mail e cargo
+          continuam sendo cadastro, e ficam na linha de baixo, menores.
+          ------------------------------------------------------------------ */}
+      <header className={styles.cabecalho}>
+        <div className={styles.retrato}>
+          {preparando ? (
+            <SkeletonAvatar sizes={[LADO_EXIBIDO]} texto="Preparando a imagem…" />
+          ) : (
+            // `alt` vazio: o nome vem escrito ao lado, e um `alt` com o nome
+            // faria o leitor de tela dize-lo duas vezes seguidas.
+            <Avatar
+              pessoa={previa}
+              size={LADO_EXIBIDO}
+              fotoDoGoogle={fotoDoGoogle}
+              alt=""
+              className={styles.foto}
+            />
+          )}
+        </div>
+
+        <div className={styles.identidade}>
+          <h2 className={styles.nomeGrande}>{cab.nome}</h2>
+
+          <p className={styles.cargoLinha}>
+            {cab.cargo ?? (
+              <span className={styles.vazio}>cargo não informado</span>
+            )}
           </p>
 
-          <div className={styles.fotoAcoes}>
-            <button
-              type="button"
-              className={styles.btnGhost}
-              onClick={() => inputRef.current?.click()}
-              disabled={ocupado}
-            >
-              <Icon name="upload" size={15} />{" "}
-              {preparando
-                ? "Preparando…"
-                : fotoMostrada
-                  ? "Trocar imagem"
-                  : "Escolher imagem"}
-            </button>
-            {/* Nenhum destes é escrita imediata, como "Remover foto" era
-                antes: com nome e foto na mesma tela, dois caminhos de escrita
-                seriam dois jeitos de a tela discordar do banco. E o botão
-                sempre oferece a VOLTA do estado em que se está — remover sem
-                como desfazer é um beco, e a saída não pode ser fechar o
-                diálogo e torcer.
+          <div className={styles.chips}>
+            {/* `.srOnly` e nao `aria-label`: rotulo em <span> cru e ignorado
+                pelo leitor de tela, e estes chips perderiam o nome justamente
+                no dialogo cuja razao de existir e dizer quem a pessoa e. */}
+            <span className={styles.chipPapel}>
+              <span className={styles.srOnly}>Papel: </span>
+              {cab.papel}
+            </span>
+            {cab.setores.length ? (
+              cab.setores.map((st) => (
+                <span key={st} className={styles.chipSetor}>
+                  <span className={styles.srOnly}>Setor: </span>
+                  {st}
+                </span>
+              ))
+            ) : (
+              // "nenhum" e "ainda nao carregou" sao coisas diferentes, e aqui
+              // so a primeira existe: o perfil chega pronto de `/users`, junto
+              // com o clique que abriu este dialogo.
+              <span className={styles.chipVazio}>nenhum setor</span>
+            )}
+          </div>
 
-                A foto do Google não entra nesta fila, e a frase que explicava
-                isso ("ela não está no nosso banco, e não há o que remover")
-                estava certa sobre o banco e errada sobre a tela: o retrato
-                acima MOSTRA a foto do Google quando não há a nossa. Quem
-                precisa saber disso é quem está olhando o próprio rosto, e por
-                isso a explicação mudou de lugar — foi para `estadoDaFoto`, que
-                fala ao lado do retrato em vez de ficar comentada no código. */}
-            {voltaDaFoto && (
+          <p className={styles.emailLinha}>
+            <span className={styles.srOnly}>E-mail: </span>
+            {cab.email}
+          </p>
+
+          {/* O SINAL DE "NAO SALVO" MORA AQUI, e nao mais como um anel em volta
+              do retrato. Dois motivos independentes: o anel so sabia falar por
+              dois campos e a partir de agora sao tres (nome, foto e moldura), e
+              ele ocupa exatamente os pixels que a moldura do avatar vai usar.
+              Um chip NOMEIA o que mudou; um anel so diz que algo mudou. */}
+          {meu && pendencias.alguma && (
+            <p className={styles.naoSalvo} role="status">
+              {pendencias.rotulo === "Salvar" ? "Há mudanças" : pendencias.rotulo}
+              {" — ainda não salvo."}
+            </p>
+          )}
+        </div>
+      </header>
+
+      {/* ------------------------------------------------------------------
+          CORPO — a unica parte que rola.
+
+          `tabIndex={0}` resolve dois problemas de uma vez, e nenhum e obvio. Um
+          container rolavel sem nada focavel dentro nao rola por teclado (WCAG
+          2.1.1), e este pode ficar assim no modo "outra-pessoa". E ele passa a
+          ser o PRIMEIRO focavel do dialogo: o <Modal> foca o primeiro que
+          encontra ao abrir, e como este esta em `scrollTop: 0`, o dialogo deixa
+          de nascer com a rolagem no meio. Funciona sem tocar em `modal.tsx`
+          porque `[tabindex]:not([tabindex="-1"])` ja esta no seletor de la.
+          ------------------------------------------------------------------ */}
+      <div className={styles.corpo} tabIndex={0}>
+        {meu ? (
+          <section className={styles.secao} aria-labelledby="perfil-aparencia">
+            <h3 className={styles.secaoTitulo} id="perfil-aparencia">
+              Como você aparece
+            </h3>
+
+            <div className={styles.campo}>
+              <label className={styles.rotulo} htmlFor="perfil-nome">
+                Nome
+              </label>
+              <input
+                id="perfil-nome"
+                className={styles.input}
+                value={nome}
+                onChange={(e) => setNome(e.target.value)}
+                placeholder="Como você quer ser chamado"
+                disabled={gravando}
+                autoComplete="name"
+              />
+            </div>
+
+            <p
+              className={`${styles.estado} ${
+                estadoDaFoto.pendente ? styles.estadoPendente : ""
+              }`}
+              role="status"
+            >
+              {estadoDaFoto.texto}
+            </p>
+
+            <div className={styles.fotoAcoes}>
               <button
                 type="button"
-                className={
-                  voltaDaFoto.perigo ? styles.btnDanger : styles.btnVolta
-                }
-                onClick={() => {
-                  setErro(null);
-                  setFotoPendente(voltaDaFoto.vira);
-                }}
+                className={styles.btnGhost}
+                onClick={() => inputRef.current?.click()}
                 disabled={ocupado}
               >
-                <Icon name={voltaDaFoto.icone} size={15} />{" "}
-                {voltaDaFoto.texto}
+                <Icon name="upload" size={15} />{" "}
+                {preparando
+                  ? "Preparando…"
+                  : fotoMostrada
+                    ? "Trocar imagem"
+                    : "Escolher imagem"}
               </button>
-            )}
-          </div>
+              {/* Nenhum destes e escrita imediata: com tres campos na mesma
+                  tela, dois caminhos de escrita seriam dois jeitos de a tela
+                  discordar do banco. E o botao sempre oferece a VOLTA do estado
+                  em que se esta — remover sem como desfazer e um beco, e a
+                  saida nao pode ser fechar o dialogo e torcer. */}
+              {voltaDaFoto && (
+                <button
+                  type="button"
+                  className={
+                    voltaDaFoto.perigo ? styles.btnDanger : styles.btnVolta
+                  }
+                  onClick={() => {
+                    setErro(null);
+                    setFotoPendente(voltaDaFoto.vira);
+                  }}
+                  disabled={ocupado}
+                >
+                  <Icon name={voltaDaFoto.icone} size={15} /> {voltaDaFoto.texto}
+                </button>
+              )}
+            </div>
 
-          {/* A regra de quem ESCOLHE uma imagem, e só ela. O braço que aqui
-              anunciava a remoção saiu por ser falso para quase todo mundo — ele
-              prometia a inicial do nome a quem ia receber o retrato do Google —
-              e porque o lugar de falar da remoção é ao lado do retrato, onde a
-              pessoa está olhando. O que sobrou vale em qualquer estado: o botão
-              de escolher imagem está sempre ali. */}
-          <div className={styles.legenda}>
-            {preparando ? (
-              "Cortando e reduzindo a imagem…"
-            ) : (
-              <>
-                A imagem é cortada no centro e reduzida para {LADO}×{LADO}.
-                {/* O peso aparece porque ele é baixado por todo mundo em toda
-                    tela — quem escolhe a foto é a única pessoa em posição de
-                    preferir uma mais leve, e para isso precisa saber o número. */}
-                {typeof fotoPendente === "string" &&
-                  ` ${emKB(tamanhoDataUri(fotoPendente))} de ${emKB(LIMITE_FOTO_BYTES)}.`}
-              </>
-            )}
-          </div>
+            <div className={styles.legenda}>
+              {preparando ? (
+                "Cortando e reduzindo a imagem…"
+              ) : (
+                <>
+                  A imagem é cortada no centro e reduzida para {LADO}×{LADO}.
+                  {/* O peso aparece porque ele e baixado por todo mundo em toda
+                      tela — quem escolhe a foto e a unica pessoa em posicao de
+                      preferir uma mais leve, e para isso precisa do numero. */}
+                  {typeof fotoPendente === "string" &&
+                    ` ${emKB(tamanhoDataUri(fotoPendente))} de ${emKB(LIMITE_FOTO_BYTES)}.`}
+                </>
+              )}
+            </div>
 
-          <div
-            className={styles.mini}
-            role="group"
-            aria-label="Prévia do avatar nos tamanhos reais"
-          >
-            {TAMANHOS_REAIS.map((s) => (
-              <Avatar
-                key={s}
-                pessoa={previa}
-                size={s}
-                fotoDoGoogle={fotoDoGoogle}
-                alt=""
-              />
-            ))}
-            <span className={styles.miniTexto}>
-              No card, na barra do topo e na lista de usuários.
-            </span>
-          </div>
+            <div
+              className={styles.mini}
+              role="group"
+              aria-label="Prévia do avatar nos tamanhos reais"
+            >
+              {TAMANHOS_REAIS.map((sz) => (
+                <Avatar
+                  key={sz}
+                  pessoa={previa}
+                  size={sz}
+                  fotoDoGoogle={fotoDoGoogle}
+                  alt=""
+                />
+              ))}
+              <span className={styles.miniTexto}>
+                No card, na barra do topo e na lista de usuários.
+              </span>
+            </div>
+          </section>
+        ) : (
+          /* O modo "outra-pessoa" nao tem corpo proprio, e isso e resultado, nao
+             falta: tudo o que ele mostrava subiu para o cabecalho. A frase
+             abaixo existe para o container rolavel nao ficar vazio — um <div> de
+             altura zero entre o cabecalho e o rodape desmontaria o espacamento
+             dos dois. */
+          <p className={styles.somenteLeitura}>
+            Este é o cadastro de {cab.nome} no Smart Meeting. Só a própria pessoa
+            edita o nome e a foto dela.
+          </p>
+        )}
 
-          <div className={styles.campo}>
-            <label className={styles.rotulo} htmlFor="perfil-nome">
-              Nome
-            </label>
-            <input
-              id="perfil-nome"
-              className={styles.input}
-              value={nome}
-              onChange={(e) => setNome(e.target.value)}
-              placeholder="Como você quer ser chamado"
-              disabled={gravando}
-              autoComplete="name"
-            />
-          </div>
+        {/* O Discord e o unico bloco que a propria pessoa liga e desliga por
+            conta propria, e por isso vem depois do que ela edita e antes da nota
+            sobre o que ela nao pode mudar. A secao assina o proprio cadastro em
+            tempo real — o vinculo se fecha no Discord, na outra janela, e e la
+            que a confirmacao precisa nascer. */}
+        {meu && <DiscordVinculo email={pessoa.email} />}
 
-          {/* Escondido de propósito: o input de arquivo cru não aceita estilo,
-              não deve receber Tab, e quem lhe dá rótulo é o botão lá em cima.
-              FICA NO FIM DO DIÁLOGO por causa do `<Modal>`: ao abrir, ele põe o
-              foco no primeiro elemento focável que encontra, e um `<input>` com
-              `display: none` casa com aquele seletor e engole o foco em
-              silêncio — o diálogo abriria com o foco em lugar nenhum, e o Tab
-              de quem usa teclado recomeçaria do topo da página. */}
+        {meu && (
+          <p className={styles.nota}>
+            Papel, cargo e setores são definidos por quem administra o sistema.
+          </p>
+        )}
+
+        {erro && (
+          <div className={styles.err} role="alert">
+            {erro}
+          </div>
+        )}
+
+        {/* Escondido de proposito: o input de arquivo cru nao aceita estilo, nao
+            deve receber Tab, e quem lhe da rotulo e o botao la em cima. FICA NO
+            FIM porque o <Modal> poe o foco no primeiro elemento focavel que
+            encontra, e um <input> com `display: none` casa com aquele seletor e
+            engoliria o foco em silencio. */}
+        {meu && (
           <input
             ref={inputRef}
             type="file"
@@ -666,63 +750,12 @@ export function PerfilModal(props: PerfilModalProps) {
             tabIndex={-1}
             aria-hidden="true"
           />
-        </>
-      ) : (
-        <div className={styles.nomeLido}>{pessoa.name || pessoa.email}</div>
-      )}
+        )}
+      </div>
 
-      <dl className={styles.dados}>
-        <dt>E-mail</dt>
-        <dd className={styles.mono}>{pessoa.email}</dd>
-
-        <dt>Papel</dt>
-        <dd>{ROLE_LABEL[pessoa.role]}</dd>
-
-        <dt>Cargo</dt>
-        <dd className={pessoa.cargo ? undefined : styles.vazio}>
-          {pessoa.cargo || "não informado"}
-        </dd>
-
-        <dt>Setores</dt>
-        <dd>
-          {pessoa.sectors?.length ? (
-            <span className={styles.setores}>
-              {pessoa.sectors.map((s) => (
-                <span key={s} className={styles.setor}>
-                  {s}
-                </span>
-              ))}
-            </span>
-          ) : (
-            // "nenhum" e "ainda não carregou" são coisas diferentes, e aqui só
-            // a primeira existe: o perfil chega pronto de `/users`, junto com o
-            // clique que abriu este diálogo. Não há espera para esqueletar.
-            <span className={styles.vazio}>nenhum setor</span>
-          )}
-        </dd>
-      </dl>
-
-      {/* O Discord fica DEPOIS dos dados e antes da nota de quem administra, e
-          o lugar não é arbitrário: é o único bloco desta tela que a própria
-          pessoa liga e desliga por conta própria. Acima dele está o que ela
-          edita (nome e foto); abaixo, a frase que explica o que ela NÃO pode
-          mudar. A seção assina o próprio cadastro em tempo real — o vínculo se
-          fecha no Discord, na outra janela, e é lá que a confirmação precisa
-          nascer. */}
-      {meu && <DiscordVinculo email={pessoa.email} />}
-
-      {meu && (
-        <p className={styles.nota}>
-          Papel, cargo e setores são definidos por quem administra o sistema.
-        </p>
-      )}
-
-      {erro && (
-        <div className={styles.err} role="alert">
-          {erro}
-        </div>
-      )}
-
+      {/* RODAPE FIXO. Ele existe para nao sair da tela quando o corpo cresce — e
+          e o `min-height: 0` do `.corpo`, na folha, que faz isso funcionar de
+          verdade. */}
       <div className={styles.acoes}>
         <button
           type="button"
@@ -737,9 +770,12 @@ export function PerfilModal(props: PerfilModalProps) {
             type="button"
             className={styles.btnSave}
             onClick={() => void salvar()}
-            disabled={ocupado || (!nomeMudou && !fotoMudou)}
+            // `ocupado` continua explicito e SEPARADO de `pendencias.alguma`: o
+            // modulo puro responde "ha o que gravar?", e nao "da para gravar
+            // agora?" — cortar a imagem e uma espera que ele nao conhece.
+            disabled={ocupado || !pendencias.alguma}
           >
-            {rotuloSalvar}
+            {pendencias.rotulo}
           </button>
         )}
       </div>
