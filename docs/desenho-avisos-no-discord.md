@@ -425,3 +425,68 @@ No portal do Discord, **OAuth2 → Redirects** precisa conter exatamente `https:
 
 Sem `DISCORD_CLIENT_ID`, o botão explica que a conexão em um clique não está configurada e aponta para o código. O app não quebra.
 
+---
+
+## O resumo do dia
+
+Todos os outros avisos contam o que **acabou de acontecer**. Nenhum deles conta o que está parado — e é justamente o que está parado que dói. Uma demanda que venceu na sexta e ninguém tocou não gera evento nenhum: ela some do canal **por não estar andando**, que é exatamente o motivo de alguém precisar saber dela.
+
+O resumo é o único aviso que fala do que **não** aconteceu. Uma mensagem por setor, uma vez por dia, em `#resumo-diario`.
+
+```
+Resumo do dia
+┃ 2 demandas atrasadas
+┃ 5 demandas em aberto no quadro.
+┃ Atrasadas — 2
+┃ • Painel do refeitório — Kauã
+┃ • Carga do DW — Ítalo
+┃ Vencem hoje — 1
+┃ • Relatório do RH — Kauã
+┃ Sem responsável — 1
+┃ • Conferência de acessos — sem responsável
+┃ No quadro
+┃ A fazer: 2 · Em andamento: 2 · Aguardando: 1
+┃ Smart Meet · B.I.
+```
+
+### As decisões
+
+**Entregue não é atraso.** Prazo vencido de demanda já entregue não é atraso — a data passou depois que o trabalho terminou. É a regra do app inteiro (`colunasEntregues`, em `kanban-columns.ts`), não uma escolha deste arquivo. Um resumo que cobra entrega já feita é um resumo que se aprende a ignorar em duas semanas.
+
+**Quadro vazio não vira mensagem.** `montarResumoDiario` devolve `null`, e a rota não publica. Um aviso diário que chega dizendo que não há nada é o aviso que ensina a não abrir o canal — e quando ele finalmente tiver notícia, já terá virado ruído de fundo.
+
+**Mas "está tudo em dia" *é* notícia**, e sai em verde. É a única forma de alguém confiar no silêncio dos outros dias: sem essa confirmação, "não chegou resumo" e "está tudo certo" ficam indistinguíveis.
+
+**A cor é o resumo do resumo** — vermelho com atraso, âmbar com vencimento hoje, verde sem nenhum dos dois. Quem rola o canal sem ler sabe o estado do setor pela barra lateral.
+
+**O panorama por etapa vem por último.** Quem abre o resumo quer saber o que precisa de ação hoje; o total por coluna é o que ele confere depois, se conferir.
+
+**Ninguém é mencionado**, pelo mesmo motivo do cron das recorrências: ser marcado por um relógio é o tipo de notificação que ensina a ignorar as que vêm de gente.
+
+### O corte que se perdia
+
+O teto de oito linhas não bastava sozinho, e este bloco nasceu errado por causa disso: oito títulos longos com link passam dos 1024 caracteres do campo, e o corte da borda apagava justamente a última linha — a que dizia *"…e mais 32"*. O resultado era uma lista que **parecia completa e não era**, que é a única forma de errar aqui que ninguém percebe.
+
+Agora o orçamento é conferido a cada linha, já descontando o espaço da frase do corte. O teste cobre a aritmética: listadas + anunciadas = total.
+
+### O fuso é o de quem trabalha
+
+A função roda em UTC. Às 03:00 de São Paulo já é o dia seguinte em UTC, e um "hoje" tirado de `new Date()` cru marcaria como **atrasada** a demanda que vence hoje — no dia em que ela ainda pode ser entregue. Erro de fuso em relatório de prazo não parece erro: parece cobrança.
+
+### Uma leitura, não uma por setor
+
+A rota lê `/cards` inteiro e agrupa. Uma consulta por setor exigiria saber a lista de setores **antes** de perguntar — e setor que ainda não personalizou colunas não aparece em `/columns`, então a lista sairia incompleta e o setor ficaria sem resumo sem ninguém perceber. Com o quadro do tamanho de hoje, é uma leitura por dia. Se crescer, o lugar de paginar é ali, e o sintoma será tempo de função, não resumo faltando.
+
+Um setor com webhook errado não cala os outros: cada resumo é publicado dentro do seu próprio `try`.
+
+### Disparo
+
+| | |
+|---|---|
+| Cron | `0 11 * * 1-5` em `vercel.json` — 08:00 em São Paulo, dias úteis |
+| À mão | `POST /api/discord/resumo-diario` com sessão de **gestor ou admin** |
+
+Dias úteis e não todo dia: resumo de sábado é resumo que ninguém lê e que treina o olho a passar por cima da mensagem de segunda.
+
+> **Atenção ao plano da Vercel.** Este é o **terceiro** cron do projeto. O plano Hobby limita a quantidade de cron jobs por projeto e só permite disparo diário — se o deploy recusar o `vercel.json`, a saída é subir o plano ou fundir este disparo dentro de um dos crons existentes.
+
