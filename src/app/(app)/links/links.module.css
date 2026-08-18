@@ -260,3 +260,45 @@
     width: 100%;
   }
 }
+
+/* O selo virou BOTÃO: ele abre o seletor de ícone.
+
+   `font: inherit` não é higiene. `.icone` fixa tamanho e peso da letra mas não
+   a família, e `<button>` NÃO herda a fonte do documento — sem esta linha o
+   monograma sairia na fonte padrão do sistema, fora da IBM Plex do resto da
+   tela, e só nos links de domínio desconhecido (que são justamente os que
+   mostram monograma). */
+.icone {
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  /* O anel de foco fica FORA do selo: por dentro ele cairia sobre a cor de
+     marca, que é justamente o fundo de contraste calculado por `seloDoLink`. */
+  outline-offset: 2px;
+}
+
+.icone:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+/* Nada de `transition` aqui: o selo é alvo de clique numa grade que a pessoa
+   varre com o olho, e escurecer com atraso leria como travamento. */
+.icone:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.erroIcone {
+  margin: 8px 0 0;
+  padding: 7px 9px;
+  border-radius: var(--r-sm);
+  background: var(--danger-bg);
+  color: var(--danger-tx);
+  font-size: 12px;
+  line-height: 1.4;
+}

@@ -4,7 +4,12 @@ import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { subscribeUsers, DEFAULT_SECTORS, type UserProfile } from "@/lib/users";
-import { subscribeCardsForSectors, type Card } from "@/lib/kanban";
+import {
+  definirIconeDoLink,
+  subscribeCardsForSectors,
+  type Card,
+} from "@/lib/kanban";
+import { iconeDoLink } from "@/lib/icones-core";
 import {
   seloDoLink,
   dominioDe,
@@ -14,12 +19,13 @@ import {
   servicoDe,
   SERVICO_ROTULO,
   type CardLink,
-  type ServicoLink,
 } from "@/lib/links-core";
 import { fmtDayMonth, toISO } from "@/lib/datas";
+import { fraseDeFalha } from "@/lib/erro-ui-core";
 import { juntarFontes } from "@/lib/async-data-core";
 import { useAsyncData } from "@/lib/use-async-data";
 import { Icon } from "@/components/icons";
+import { IconePicker } from "@/components/icone-picker";
 import { Select, type SelectOption } from "@/components/select";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
@@ -89,37 +95,20 @@ function setorSolicitanteDe(card: Card): string | null {
 type LinkNaTela = { link: CardLink; card: Card };
 
 /**
- * O ícone do serviço é DESENHADO, nunca buscado.
+ * O ÍCONE MUDOU DE CASA — e o mapa que ficava aqui não existe mais.
  *
- * O caminho óbvio seria `google.com/s2/favicons?domain=…`, e ele custa caro:
- * uma requisição externa POR CARD, que entrega ao Google a lista de domínios
- * internos da rede a cada visita, e um quadrado quebrado toda vez que a rede da
- * escola bloquear a chamada. `servicoDe` já identifica o serviço a partir da
- * própria URL, então a cor e o desenho saem de dado que já está na mão.
+ * Ele decidia serviço → desenho dentro desta página, sem teste, e invisível
+ * para o modal da demanda, que mostra os mesmos links. Agora a decisão é
+ * `iconeDoLink` (`lib/icones-core`), que ainda deduz do endereço exatamente
+ * como esta constante fazia — e passa na frente qualquer ícone que alguém tenha
+ * escolhido no seletor abaixo.
  *
- * O que o ícone diz é o TIPO da coisa do outro lado — documento, planilha,
- * vídeo, conversa — e não a marca. Quem nomeia a marca é o selo embaixo do
- * título; quem a colore é `seloDoLink`. Manter dezoito logotipos aqui dentro
- * seria carregar dezoito marcas registradas para dizer o que uma palavra diz.
+ * O que NÃO mudou é o motivo de o desenho ser nosso e não do site: o caminho
+ * óbvio (`google.com/s2/favicons?domain=…`) custaria uma requisição externa POR
+ * CARD, entregaria ao Google a lista de domínios internos da rede a cada visita
+ * e devolveria um quadrado quebrado toda vez que a rede da escola bloqueasse a
+ * chamada.
  */
-const ICONE_DO_SERVICO: Partial<Record<ServicoLink, string>> = {
-  docs: "relatorios",
-  notion: "relatorios",
-  pdf: "relatorios",
-  sheets: "kanban",
-  planilha: "kanban",
-  trello: "kanban",
-  looker: "trend",
-  powerbi: "trend",
-  slides: "online",
-  meet: "online",
-  youtube: "play",
-  calendar: "calendar",
-  whatsapp: "chat",
-  forms: "check",
-  drive: "upload",
-  figma: "edit",
-};
 
 export default function LinksPage() {
   const { profile } = useAuth();
@@ -148,6 +137,60 @@ export default function LinksPage() {
   const [filtroSetor, setFiltroSetor] = useState("");
   const [filtroResp, setFiltroResp] = useState("");
   const [busca, setBusca] = useState("");
+
+  /**
+   * A gravação do ícone, CHAVEADA POR LINK — nunca um estado único.
+   *
+   * A grade mostra dezenas de links ao mesmo tempo. Um `erro: string | null`
+   * global pintaria a falha de um link na borda de todos, e um `salvando:
+   * boolean` desabilitaria os selos de toda a tela por causa de um clique. A
+   * chave é `${card.id}:${link.id}` — a mesma que a `key` da grade já usa, e
+   * pelo mesmo motivo: link só é único dentro do card em que mora.
+   */
+  const [salvando, setSalvando] = useState<string | null>(null);
+  const [erroIcone, setErroIcone] = useState<{ chave: string; texto: string } | null>(
+    null,
+  );
+
+  /**
+   * Grava o ícone escolhido.
+   *
+   * `sem-mudanca` é silêncio de propósito: escolher o que já estava lá não é
+   * erro, e uma faixa dizendo "nada mudou" seria o app repreendendo quem clicou.
+   * `sumiu` é a única saída que fala, porque é a única em que insistir no clique
+   * não adianta — o card ou o link deixou de existir enquanto esta aba estava
+   * aberta, e o snapshot vai atualizar a tela sozinho em seguida.
+   */
+  const escolherIcone = useCallback(
+    async (card: Card, linkId: string, nome: string | null) => {
+      const chave = `${card.id}:${linkId}`;
+      setSalvando(chave);
+      setErroIcone(null);
+      try {
+        const desfecho = await definirIconeDoLink(card.id, linkId, nome);
+        if (desfecho === "sumiu") {
+          setErroIcone({
+            chave,
+            texto:
+              "Este link não está mais na demanda — alguém o removeu enquanto esta tela estava aberta.",
+          });
+        }
+      } catch (e) {
+        console.error("Erro ao trocar o ícone do link:", e);
+        setErroIcone({
+          chave,
+          texto: fraseDeFalha(
+            "Não foi possível trocar o ícone.",
+            e,
+            navigator.onLine,
+          ),
+        });
+      } finally {
+        setSalvando(null);
+      }
+    },
+    [],
+  );
 
   const usersMap = useMemo(() => {
     const m: Record<string, UserProfile> = {};
@@ -421,6 +464,15 @@ export default function LinksPage() {
                   card={card}
                   nomeDe={nomeDe}
                   anoAtual={anoAtual}
+                  salvando={salvando === `${card.id}:${link.id}`}
+                  erro={
+                    erroIcone?.chave === `${card.id}:${link.id}`
+                      ? erroIcone.texto
+                      : null
+                  }
+                  onEscolherIcone={(nome) =>
+                    void escolherIcone(card, link.id, nome)
+                  }
                 />
               ))}
             </div>
@@ -440,15 +492,27 @@ function LinkCard({
   card,
   nomeDe,
   anoAtual,
+  salvando,
+  erro,
+  onEscolherIcone,
 }: {
   link: CardLink;
   card: Card;
   nomeDe: (e: string | null) => string;
   anoAtual: number;
+  salvando: boolean;
+  erro: string | null;
+  onEscolherIcone: (nome: string | null) => void;
 }) {
   const servico = servicoDe(link.url);
   const rotulo = rotuloDoLink(link);
   const selo = seloDoLink(link.url);
+  // O desenho que o selo mostra AGORA: a escolha de alguém, ou a dedução.
+  const icone = iconeDoLink(link);
+  // E o que o "Automático" entregaria — a mesma dedução, sem a escolha por
+  // cima. É o que deixa a pessoa comparar antes de voltar ao padrão, em vez de
+  // ter de escolher às cegas e conferir depois.
+  const padrao = iconeDoLink({ ...link, icone: undefined });
   // O portão roda de novo sobre o que veio do banco. Quem grava passa por
   // `normalizarUrl`, mas o campo aceita escrita de qualquer pessoa do setor e do
   // console do Firestore — e o React não recusa um `javascript:` em `href`, só
@@ -464,17 +528,23 @@ function LinkCard({
             `DEMAND_TYPE_COLOR`. Fundo e tinta saem JUNTOS de `seloDoLink`
             porque um depende do outro: branco chapado some no amarelo do
             Drive, e a marca sozinha não garante que a letra em cima se leia. */}
-        <span
+        <IconePicker
+          valor={link.icone ?? null}
+          deduzido={padrao}
+          rotulo={rotulo}
+          onEscolher={onEscolherIcone}
+          disabled={salvando}
           className={styles.icone}
           style={{ background: selo.fundo, color: selo.tinta }}
-          aria-hidden="true"
         >
-          {servico === "generico" ? (
-            monogramaDe(link.url)
+          {icone ? (
+            <Icon name={icone} size={19} />
           ) : (
-            <Icon name={ICONE_DO_SERVICO[servico] ?? "link"} size={19} />
+            // Sem serviço reconhecido e sem escolha, a pista é o monograma do
+            // domínio — o mesmo que esta tela sempre mostrou.
+            monogramaDe(link.url)
           )}
-        </span>
+        </IconePicker>
 
         <div className={styles.cardTitulo}>
           {/* Texto, e não link. O destaque mudou de dono, mas quem chega nesta
@@ -519,6 +589,15 @@ function LinkCard({
           <Icon name="kanban" size={14} />
         </Link>
       </div>
+
+      {/* O erro mora NO CARD em que o clique aconteceu, e não no topo da tela:
+          numa grade de dezenas, uma faixa lá em cima obrigaria a pessoa a
+          descobrir sozinha a qual link ela se refere. */}
+      {erro && (
+        <div className={styles.erroIcone} role="alert">
+          {erro}
+        </div>
+      )}
 
       <div className={styles.cardPe}>
         {/* Quem aparece no rodapé é o setor SOLICITANTE, para casar com o que
