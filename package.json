@@ -29,7 +29,8 @@
     "test:permissoes": "node scripts/test-permissoes.mjs",
     "test:rank": "node scripts/test-rank.mjs",
     "test:discord": "node scripts/test-discord.mjs && node scripts/test-discord-vinculo.mjs",
-    "discord:comandos": "node scripts/discord-registrar-comandos.mjs"
+    "discord:comandos": "node scripts/discord-registrar-comandos.mjs",
+    "discord:testar": "node scripts/discord-testar.mjs"
   },
   "dependencies": {
     "firebase": "^12.16.0",
