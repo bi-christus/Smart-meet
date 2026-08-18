@@ -1,10 +1,11 @@
 "use client";
 
 import { useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { Modal } from "./modal";
 import { Avatar } from "./avatar";
 import { DiscordVinculo } from "./discord-vinculo";
-import { SkeletonAvatar } from "./skeleton";
+import { SkeletonAvatar, SkeletonRow } from "./skeleton";
 import { Icon } from "./icons";
 import { fraseDeFalha } from "@/lib/erro-ui-core";
 // As regras puras (`conferirFoto`, `conferirNome`, os tetos) chegam pela porta
@@ -31,6 +32,29 @@ import {
   normalizarMoldura,
 } from "@/lib/molduras-core";
 import styles from "./perfil-modal.module.css";
+
+/**
+ * O bloco de emblemas entra SOB DEMANDA, e o `dynamic` não é otimização
+ * prematura — é o que impede uma regressão concreta.
+ *
+ * Este diálogo é renderizado por `app/(app)/layout.tsx`, ou seja está em TODA
+ * página do app. `layout.tsx` não importa `@/lib/kanban` hoje; o bloco de
+ * emblemas importa (para assinar cards e colunas), e `kanban.ts` arrasta
+ * `historico.ts` e `discord.ts` junto. Pendurar isso estaticamente aqui poria
+ * tudo no pacote do shell — baixado por quem só abre a tela inicial e nunca
+ * clica num avatar.
+ *
+ * O `loading` é o MESMO esqueleto que o bloco desenha por dentro enquanto conta
+ * as entregas, e não um estado novo: quem abre o perfil vê uma espera só, com
+ * uma frase só, quer o gargalo seja baixar o código ou ler o quadro.
+ */
+const EmblemasDoPerfil = dynamic(
+  () => import("./emblemas-perfil").then((m) => m.EmblemasDoPerfil),
+  {
+    ssr: false,
+    loading: () => <SkeletonRow rows={1} texto="Contando as entregas…" />,
+  },
+);
 
 /**
  * O perfil de uma pessoa — o único lugar do app onde a foto não é um selo.
@@ -626,6 +650,13 @@ export function PerfilModal(props: PerfilModalProps) {
           porque `[tabindex]:not([tabindex="-1"])` ja esta no seletor de la.
           ------------------------------------------------------------------ */}
       <div className={styles.corpo} tabIndex={0}>
+        {/* OS EMBLEMAS VÊM PRIMEIRO, e nos DOIS modos. Eles são a única coisa
+            neste diálogo que é sobre o que a pessoa FEZ — o resto é cadastro e
+            configuração. No modo "outra-pessoa" eles são praticamente o corpo
+            inteiro, e é isso que transforma "quem é essa pessoa" numa pergunta
+            com resposta. */}
+        <EmblemasDoPerfil pessoa={pessoa} />
+
         {meu ? (
           <section className={styles.secao} aria-labelledby="perfil-aparencia">
             <h3 className={styles.secaoTitulo} id="perfil-aparencia">

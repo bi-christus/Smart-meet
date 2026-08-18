@@ -17,6 +17,12 @@ import {
   montarRank,
   type Colocacao,
 } from "@/lib/rank-core";
+// A regra "este card conta como entrega, e de quem" saiu deste arquivo e virou
+// módulo puro, porque os emblemas do perfil precisam EXATAMENTE dela. Duas
+// cópias divergiriam no primeiro ajuste — e o sintoma seria o pódio e o emblema
+// discordando sobre a mesma demanda, cada um com o próprio jeito de comparar
+// e-mail.
+import { entregasPorPessoa } from "@/lib/entregas-core";
 import { juntarFontes } from "@/lib/async-data-core";
 import { useAsyncData } from "@/lib/use-async-data";
 import { Avatar } from "@/components/avatar";
@@ -96,15 +102,7 @@ export default function RankPage() {
 
   /** Entregas por pessoa, e o total do recorte — inclusive o que não tem dono. */
   const { colocacoes, totalEntregas } = useMemo(() => {
-    const por = new Map<string, number>();
-    let total = 0;
-    cards.forEach((c) => {
-      if (!entreguesPorSetor[c.sector]?.has(c.columnId)) return;
-      total++;
-      const quem = c.assignee;
-      if (!quem) return;
-      por.set(quem, (por.get(quem) ?? 0) + 1);
-    });
+    const { por, total } = entregasPorPessoa(cards, entreguesPorSetor);
     return {
       colocacoes: montarRank(
         [...por.entries()].map(([email, entregues]) => ({

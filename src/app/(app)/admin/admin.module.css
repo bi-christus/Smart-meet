@@ -634,3 +634,146 @@
     flex: 1;
   }
 }
+
+/* ---------- quadro de Emblemas ---------- */
+
+.embDegraus {
+  padding: 14px 16px;
+  background: var(--s1);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  margin-bottom: 16px;
+}
+
+.embDegrausCampos {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.embDegrau {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.embDegrauRotulo {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--tx-3);
+}
+
+.embInputNum {
+  width: 74px;
+  height: 38px;
+  padding: 0 10px;
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--tx);
+  font-family: inherit;
+  font-size: 14px;
+  /* Tabular para os três campos não dançarem de largura conforme o dígito. */
+  font-variant-numeric: tabular-nums;
+}
+
+.embInputNum:focus {
+  outline: none;
+  border-color: var(--brand);
+}
+
+.embDegrauSufixo {
+  font-size: 12px;
+  color: var(--tx-3);
+}
+
+/* A prévia de impacto. Ela é a razão de este quadro existir num formato próprio
+   em vez de copiar o de Permissões: três números são abstratos até alguém ver
+   quantas pessoas eles alcançam. */
+.embImpacto {
+  margin: 12px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--tx-2);
+}
+
+.embImpacto strong {
+  color: var(--tx);
+  font-variant-numeric: tabular-nums;
+}
+
+.embErro {
+  margin: 12px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--danger-tx);
+}
+
+.embLista {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.embLinha {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Largura fixa para os nomes de setor formarem coluna: sem ela, cada campo de
+   nome começaria numa posição diferente e a lista viraria escada. */
+.embSetor {
+  flex: none;
+  width: 160px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--tx);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.embInputNome {
+  flex: 1;
+  min-width: 0;
+  height: 38px;
+  padding: 0 12px;
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--tx);
+  font-family: inherit;
+  font-size: 14px;
+}
+
+.embInputNome:focus {
+  outline: none;
+  border-color: var(--brand);
+}
+
+.embInputNome::placeholder {
+  color: var(--tx-3);
+  font-style: italic;
+}
+
+.embVazio {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--tx-3);
+  margin: 0;
+}
+
+@media (max-width: 560px) {
+  .embLinha {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+  }
+  .embSetor {
+    width: auto;
+  }
+}
