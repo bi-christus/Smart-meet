@@ -76,6 +76,22 @@ async function conferir(r: Response): Promise<unknown> {
   return dados;
 }
 
+/**
+ * Pede o endereço da autorização do Discord.
+ *
+ * Quem abre a janela é a tela, e não esta função — e isso não é detalhe de
+ * organização: `window.open` chamado DEPOIS de um `await` já não conta como
+ * resposta a um clique, e o navegador bloqueia. A tela abre a aba primeiro e
+ * manda o endereço para ela quando ele chega.
+ */
+export async function iniciarVinculoDiscord(): Promise<{ url: string }> {
+  const r = await fetch("/api/discord/oauth/iniciar", {
+    method: "POST",
+    headers: await cabecalho(),
+  });
+  return (await conferir(r)) as { url: string };
+}
+
 export type CodigoDeVinculo = { codigo: string; expiraEmSegundos: number };
 
 /** Pede um código novo. O anterior desta pessoa morre no mesmo pedido. */
