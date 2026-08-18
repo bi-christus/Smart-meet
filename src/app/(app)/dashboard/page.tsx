@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { subscribeUsers, DEFAULT_SECTORS, type UserProfile } from "@/lib/users";
@@ -24,9 +24,12 @@ import {
   daysBetween,
   fmtDayMonth,
   hh,
+  rotuloSemana,
+  semanaPorExtenso,
   startOfDay,
   startOfWeek,
 } from "@/lib/datas";
+import { escalaDoEixo } from "@/lib/grafico-core";
 import { juntarFontes, type Fonte } from "@/lib/async-data-core";
 import { useAsyncData } from "@/lib/use-async-data";
 import { Icon } from "@/components/icons";
@@ -522,8 +525,16 @@ export default function DashboardPage() {
  * de `calcularFluxo`, e guardá-la era peso num `useMemo` que percorre o quadro
  * inteiro a cada troca de filtro.
  */
+type Semana = {
+  inicio: Date;
+  /** "3–9 ago" — o intervalo, para o eixo x. */
+  rotulo: string;
+  /** "3 a 9 de agosto de 2026" — a mesma semana para o balão e o leitor de tela. */
+  porExtenso: string;
+};
+
 type Fluxo = {
-  semanas: { inicio: Date; rotulo: string }[];
+  semanas: Semana[];
   entradas: number[];
   entregas: number[];
   fila: number[];
@@ -550,9 +561,21 @@ function calcularFluxo(
   semanasN: number,
 ): Fluxo {
   const primeira = addDays(startOfWeek(hoje), -(semanasN - 1) * 7);
-  const semanas = Array.from({ length: semanasN }, (_, i) => {
+  /**
+   * O rótulo nomeia o INTERVALO, não o primeiro dia.
+   *
+   * Era `${dia}/${mês}` do começo da semana: uma coluna de sete dias escrita
+   * "3/08", que se lê "3 de agosto". Os usuários leram assim e concluíram que o
+   * gráfico era diário — a leitura estava certa, o rótulo é que prometia o que
+   * o desenho não tem. As duas formas moram em `datas.ts`, com teste.
+   */
+  const semanas: Semana[] = Array.from({ length: semanasN }, (_, i) => {
     const inicio = addDays(primeira, i * 7);
-    return { inicio, rotulo: `${inicio.getDate()}/${String(inicio.getMonth() + 1).padStart(2, "0")}` };
+    return {
+      inicio,
+      rotulo: rotuloSemana(inicio),
+      porExtenso: semanaPorExtenso(inicio),
+    };
   });
   const indiceDa = (ms: number) => {
     const i = Math.floor((ms - primeira.getTime()) / (86400000 * 7));
@@ -984,158 +1007,562 @@ function Rosca({ cards }: { cards: Card[] }) {
 }
 
 /**
- * Entradas × entregas por semana, com a fila acumulada por cima.
+ * A geometria do desenho, em unidades de viewBox.
  *
- * Um gráfico só: as colunas e a linha respondem à mesma pergunta ("a fila
- * cresce ou encolhe?") e liam-se pior separadas, obrigando a saltar de um eixo
- * x para outro para cruzar a semana da entrada com a fila daquela semana.
+ * Fora do componente porque são constantes, e dentro dele seriam recalculadas a
+ * cada movimento do ponteiro — esta peça re-renderiza a cada semana que o
+ * cursor atravessa.
  *
- * A fila tem eixo PRÓPRIO, à direita e rotulado. Ela é acumulada e cresce numa
- * ordem de grandeza acima do movimento semanal — na escala das colunas, viraria
- * uma linha colada no topo, sem informação. Dois eixos exigem estar declarados,
- * e é por isso que o da direita carrega números e a legenda diz de quem ele é.
+ * `W` continua 1120 pelo motivo de antes: o painel ocupa a largura inteira, e
+ * um viewBox estreito faria o SVG escalar ~3×, entregando o rótulo de 9,5px com
+ * 30px na tela. As duas faixas empilhadas — barras em cima, fila embaixo —
+ * dividem o mesmo eixo x, e é só por isso que dá para ler na vertical "nesta
+ * semana entrou tanto, e a fila ficou assim".
+ */
+const W = 1120;
+const PL = 40;
+const PR = 14;
+const TOPO = 26;
+const BASE = 156;
+const FILA_TOPO = 192;
+const FILA_BASE = 232;
+const H = 258;
+
+/**
+ * Barra com o topo arredondado e a base reta.
+ *
+ * `rx` num `<rect>` arredonda os quatro cantos, e o canto de baixo é o ZERO do
+ * eixo: arredondado, ele descola da linha de base e a barra passa a flutuar
+ * alguns pixels acima do valor que representa. Numa barra de 3px de altura —
+ * uma semana de uma demanda só — isso é a diferença inteira.
+ */
+function barra(
+  x: number,
+  topo: number,
+  largura: number,
+  altura: number,
+): string {
+  const r = Math.min(3, largura / 2, altura);
+  const base = topo + altura;
+  return `M${x} ${base}V${topo + r}A${r} ${r} 0 0 1 ${x + r} ${topo}H${x + largura - r}A${r} ${r} 0 0 1 ${x + largura} ${topo + r}V${base}Z`;
+}
+
+/**
+ * A frase que o balão escreve embaixo dos números.
+ *
+ * É o miolo desta Issue. "5 entradas, 3 entregas, fila 12" são três números
+ * certos que não respondem à pergunta do título do painel — entrou mais ou saiu
+ * mais? Quem lê tem de subtrair de cabeça, e a fila acumulada não ajuda, porque
+ * ela mistura o saldo desta semana com o de todas as anteriores. A conta é de
+ * uma linha e o app já tem os dois números na mão: escrevê-la é mais barato do
+ * que esperar que cada pessoa a refaça toda vez.
+ */
+function leituraDaSemana(entrou: number, saiu: number): string {
+  const saldo = entrou - saiu;
+  if (!entrou && !saiu) return "Semana sem demanda nova e sem entrega.";
+  if (saldo === 1) return "Entrou 1 a mais do que saiu — a fila subiu.";
+  if (saldo > 1)
+    return `Entraram ${saldo} a mais do que saíram — a fila subiu.`;
+  if (saldo === -1) return "Saiu 1 a mais do que entrou — a fila desceu.";
+  if (saldo < -1)
+    return `Saíram ${-saldo} a mais do que entraram — a fila desceu.`;
+  return "Entrou o mesmo tanto que saiu — a fila ficou onde estava.";
+}
+
+/**
+ * Entradas × entregas por semana, e a fila acumulada logo abaixo.
+ *
+ * ERAM DOIS EIXOS Y NO MESMO DESENHO. As barras mediam pela escala da esquerda
+ * e a linha da fila pela da direita, e onde as duas se cruzavam não havia
+ * informação nenhuma: o alinhamento entre duas escalas independentes é
+ * arbitrário — escolher outro teto para a direita move a linha inteira sem que
+ * um único dado tenha mudado. O olho, porém, lê cruzamento como fato, e o
+ * gráfico inventava correlação que ninguém pôs nele.
+ *
+ * Agora são dois desenhos empilhados, cada um com UM eixo, dividindo o eixo x.
+ * Ficam no mesmo `<svg>` e não em dois elementos: o alinhamento das colunas
+ * entre as faixas é o que faz a leitura vertical funcionar, e dois SVGs
+ * separados ficariam alinhados só até alguém mexer no padding de um deles.
+ *
+ * A FILA CONTINUA SENDO LINHA, e não uma terceira barra. Ela é um estoque
+ * medido no fim da semana, não uma quantidade que aconteceu naquela semana;
+ * barra ao lado de barra convidaria a somá-la com as outras duas, que é o erro
+ * de leitura mais caro que este painel pode induzir.
+ *
+ * AS CORES SAEM DE `--serie-*`, não mais de `--brand`/`--ok`. `--brand` é
+ * trocado pelo acento escolhido: no tema azul, as barras de entrada ficavam
+ * azuis contra a linha índigo da fila, a ΔE 11,5 em OKLab — abaixo do piso de
+ * 15, ou seja, um par difícil de separar mesmo para quem enxerga cor
+ * normalmente. A paleta categórica no topo desta folha existe por ter sido
+ * validada exatamente para isso, e este painel era o único da tela que não a
+ * usava.
+ *
+ * MOTION: nenhum, e isso é decisão, não esquecimento. Varrer o ponteiro pelo
+ * gráfico troca a semana em foco dezenas de vezes por segundo — é o caso de
+ * alta frequência do AGENTS.md §3, onde animar vira lentidão percebida. O balão
+ * aparece e some na hora, e a faixa de destaque é UM retângulo que muda de `x`,
+ * não um por semana acendendo e apagando (que deixaria rastro aceso atrás do
+ * cursor). O único movimento da peça é a transição de cor dos botões do
+ * alternador, nos mesmos 180ms do resto da tela.
  */
 function FluxoSemanal({ fluxo }: { fluxo: Fluxo }) {
   const { semanas, entradas, entregas, fila } = fluxo;
+  const [foco, setFoco] = useState<number | null>(null);
+  const [modo, setModo] = useState<"grafico" | "numeros">("grafico");
+  const n = semanas.length;
+  const filaFinal = fila[n - 1] ?? 0;
+
   if (!entradas.some(Boolean) && !entregas.some(Boolean))
     return (
       <EmptyState
         size="compact"
         icon="trend"
         title="Sem movimento no período"
-        description="As séries aparecem quando houver demanda criada ou concluída. Amplie o período no topo da tela para alcançar semanas anteriores."
+        description={
+          filaFinal
+            ? `Nenhuma demanda foi criada nem concluída nestas ${n} semanas — as ${filaFinal} que estão em aberto vêm de antes. Amplie o período no topo da tela para alcançar quando elas entraram.`
+            : "As séries aparecem quando houver demanda criada ou concluída. Amplie o período no topo da tela para alcançar semanas anteriores."
+        }
       />
     );
 
-  // Painel de largura inteira: o viewBox acompanha, senão o SVG escala ~3× e o
-  // rótulo de eixo de 9,5px chega na tela com 30. Larguras em unidades de
-  // viewBox só significam alguma coisa em relação a W.
-  const W = 1120;
-  const H = 190;
-  const pl = 34;
-  const pr = 42;
-  const pt = 12;
-  const pb = 24;
-  const n = semanas.length;
-  const base = H - pb;
-  const max = Math.max(1, ...entradas, ...entregas);
-  const maxFila = Math.max(1, ...fila);
-  const passo = (W - pl - pr) / n;
-  // Espessura proporcional ao passo, e não um teto fixo: com 12 semanas num
-  // gráfico largo, barra travada em 10 vira um risco perdido em 140px de vão.
-  const bw = Math.max(3, Math.min(passo * 0.32, (passo - 6) / 2));
-  const Y = (v: number) => pt + (1 - v / max) * (base - pt);
-  const Yf = (v: number) => pt + (1 - v / maxFila) * (base - pt);
-  const X = (i: number) => pl + i * passo + passo / 2;
+  const eixoBarras = escalaDoEixo(Math.max(...entradas, ...entregas));
+  // Uma faixa só na fila: a tira tem 40px de altura, e três rótulos de 9,5px
+  // empilhados nela encostam uns nos outros. Duas linhas — o zero e o teto —
+  // são o que cabe, e são o que uma tira de tendência precisa declarar.
+  const eixoFila = escalaDoEixo(Math.max(...fila), 1);
 
-  const linhaFila = fila
-    .map((v, i) => `${i ? "L" : "M"} ${X(i).toFixed(1)} ${Yf(v).toFixed(1)}`)
-    .join(" ");
+  const passo = (W - PL - PR) / n;
+  const X = (i: number) => PL + i * passo + passo / 2;
+  const Y = (v: number) => BASE - (v / eixoBarras.teto) * (BASE - TOPO);
+  const Yf = (v: number) =>
+    FILA_BASE - (v / eixoFila.teto) * (FILA_BASE - FILA_TOPO);
+  // Espessura proporcional ao passo, com 2px de respiro entre as duas barras da
+  // mesma semana: é esse vão que separa as séries sem precisar de contorno.
+  const bw = Math.max(3, Math.min(passo * 0.3, (passo - 8) / 2));
+  // Piso de 2,5px: sem ele, uma semana de uma demanda contra um teto de 40
+  // desenha meio pixel e some — e some parecendo semana zerada, que é outra
+  // coisa.
+  const altura = (v: number) => (v > 0 ? Math.max(2.5, BASE - Y(v)) : 0);
+
+  /**
+   * De quantas em quantas semanas o eixo escreve um rótulo — contado a partir
+   * do FIM.
+   *
+   * Do fim porque a última semana é a que interessa (é "esta semana"), e
+   * contando do começo era justamente ela que ficava sem nome quando o período
+   * não dividia redondo. 64 é a largura que o rótulo mais longo ("27 jul–2
+   * ago") ocupa com folga.
+   */
+  const passoRotulo = Math.max(1, Math.ceil(64 / passo));
+
+  const pontos = fila.map((v, i) => `${X(i).toFixed(1)} ${Yf(v).toFixed(1)}`);
+  const linhaFila = `M${pontos.join("L")}`;
+  const areaFila = `${linhaFila}L${X(n - 1).toFixed(1)} ${FILA_BASE}L${X(0).toFixed(1)} ${FILA_BASE}Z`;
+  // Ponto em toda semana só enquanto der para mirar em cada um. Com 52 semanas
+  // num gráfico de 1120, eles ficam a 20px de distância e viram um tracejado
+  // grosso que esconde a própria linha.
+  const pontoEmTudo = n <= 16;
+  const yNum = Yf(filaFinal);
+
+  const emFoco =
+    foco === null
+      ? null
+      : {
+          semana: semanas[foco],
+          entradas: entradas[foco],
+          entregas: entregas[foco],
+          fila: fila[foco],
+        };
+  /**
+   * O balão fica ao LADO da coluna, nunca em cima dela.
+   *
+   * Centrado no ponteiro, ele tapa exatamente as duas barras que a pessoa está
+   * tentando ler. Abrindo para a direita na metade esquerda do gráfico e para a
+   * esquerda na metade direita, ele tapa vizinhas — o que é inevitável — e
+   * nunca a semana em foco.
+   *
+   * A âncora é a BORDA da coluna, e não o centro dela. Ancorado no centro com
+   * `-100%`, a borda direita do balão cai no meio da própria coluna em foco e
+   * tapa metade das duas barras — o defeito exato que este balão existe para
+   * não ter. `passo / 2` é o que separa o centro da borda.
+   */
+  const abreADireita = foco === null || X(foco) <= W / 2;
+  const ancora =
+    foco === null ? W / 2 : X(foco) + (abreADireita ? passo / 2 : -passo / 2);
+  const pct = (ancora / W) * 100;
+  const desloc = abreADireita
+    ? "translateX(10px)"
+    : "translateX(calc(-100% - 10px))";
+
+  const andar = (d: number) =>
+    setFoco((f) => Math.max(0, Math.min(n - 1, f === null ? n - 1 : f + d)));
+
+  const teclado = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "ArrowRight") andar(1);
+    else if (e.key === "ArrowLeft") andar(-1);
+    else if (e.key === "Home") setFoco(0);
+    else if (e.key === "End") setFoco(n - 1);
+    else if (e.key === "Escape") setFoco(null);
+    else return;
+    e.preventDefault();
+  };
 
   return (
     <>
-      <svg
-        viewBox={`0 0 ${W} ${H}`}
-        className={styles.chart}
-        role="img"
-        aria-label="Entradas, entregas e fila acumulada por semana"
-      >
-        {[0, 1, 2, 3].map((g) => {
-          const v = (max * g) / 3;
-          return (
-            <g key={g}>
-              <line
-                x1={pl}
-                y1={Y(v)}
-                x2={W - pr}
-                y2={Y(v)}
-                className={styles.grade}
-              />
-              <text
-                x={pl - 6}
-                y={Y(v) + 3.5}
-                textAnchor="end"
-                className={styles.eixo}
-              >
-                {Math.round(v)}
-              </text>
-              <text x={W - pr + 6} y={Y(v) + 3.5} className={styles.eixoFila}>
-                {Math.round((maxFila * g) / 3)}
-              </text>
-            </g>
-          );
-        })}
-
-        {semanas.map((s, i) => (
-          <g key={s.rotulo}>
-            <rect
-              x={X(i) - bw - 1}
-              y={Y(entradas[i])}
-              width={bw}
-              height={base - Y(entradas[i])}
-              rx={3}
-              className={styles.barEntrada}
-            >
-              <title>{`${s.rotulo} · ${entradas[i]} entrada(s)`}</title>
-            </rect>
-            <rect
-              x={X(i) + 1}
-              y={Y(entregas[i])}
-              width={bw}
-              height={base - Y(entregas[i])}
-              rx={3}
-              className={styles.barEntrega}
-            >
-              <title>{`${s.rotulo} · ${entregas[i]} entrega(s)`}</title>
-            </rect>
-            {/* Mais rótulos do que cabiam na metade da tela: a série é
-                semanal, e ler a data de 1 em cada 6 obriga a contar barras. */}
-            {i % Math.ceil(n / 12) === 0 && (
-              <text
-                x={X(i)}
-                y={H - 7}
-                textAnchor="middle"
-                className={styles.eixo}
-              >
-                {s.rotulo}
-              </text>
-            )}
-          </g>
-        ))}
-
-        {/* A linha vem depois das colunas: desenhada antes, sumiria atrás delas
-            exatamente nas semanas de mais movimento — as que interessam. */}
-        <path d={linhaFila} className={styles.filaHalo} />
-        <path d={linhaFila} className={styles.filaLinha} />
-        {fila.map((v, i) => (
-          <g key={i}>
-            <circle cx={X(i)} cy={Yf(v)} r={2.6} className={styles.filaPonto} />
-            {/* Alvo de hover maior que o traço, e o resumo da semana INTEIRA
-                nele: sobrepondo as colunas, ele roubaria o hover delas. */}
-            <circle cx={X(i)} cy={Yf(v)} r={7} className={styles.alvo}>
-              <title>
-                {`${semanas[i].rotulo} · ${entradas[i]} entrada(s) · ${entregas[i]} entrega(s) · fila de ${v}`}
-              </title>
-            </circle>
-          </g>
-        ))}
-      </svg>
-
-      <div className={styles.legenda}>
-        <span>
-          <i className={styles.swEntrada} />
-          Entradas (demanda nova)
-        </span>
-        <span>
-          <i className={styles.swEntrega} />
-          Entregas
-        </span>
-        <span>
-          <i className={styles.swFila} />
-          Fila acumulada (eixo à direita)
-        </span>
+      <div className={styles.fluxoTopo}>
+        {/* A frase existe porque a reclamação era exatamente esta. O eixo já
+            nomeia o intervalo, mas dizer de segunda a domingo tira a última
+            dúvida sobre onde uma semana começa. */}
+        <p className={styles.fluxoDica}>
+          Cada coluna é uma semana inteira, de segunda a domingo.
+        </p>
+        {/**
+         * "Números" não é um extra: no tema claro, duas das três séries ficam
+         * abaixo de 3:1 contra o fundo do painel (2,93 e 2,58 medidos). Cor com
+         * esse contraste exige um caminho que não dependa de enxergá-la, e a
+         * tabela é esse caminho — a mesma razão pela qual cada série carrega
+         * nome escrito na legenda, e não só uma cor.
+         */}
+        <div className={styles.modos} role="group" aria-label="Como ver o fluxo">
+          <button
+            type="button"
+            className={`${styles.modo} ${modo === "grafico" ? styles.modoAtivo : ""}`}
+            aria-pressed={modo === "grafico"}
+            onClick={() => setModo("grafico")}
+          >
+            Gráfico
+          </button>
+          <button
+            type="button"
+            className={`${styles.modo} ${modo === "numeros" ? styles.modoAtivo : ""}`}
+            aria-pressed={modo === "numeros"}
+            onClick={() => setModo("numeros")}
+          >
+            Números
+          </button>
+        </div>
       </div>
+
+      {modo === "numeros" ? (
+        <TabelaFluxo fluxo={fluxo} />
+      ) : (
+        <>
+          {/**
+           * O quadro inteiro é UM ponto de tabulação, não um por semana.
+           *
+           * 52 paradas de Tab para atravessar um gráfico é pior do que não ser
+           * navegável: quem usa teclado ficaria preso aqui só para chegar ao
+           * painel seguinte. As setas andam de semana em semana, e a região
+           * `aria-live` logo abaixo lê o mesmo que o balão mostra — o requisito
+           * é que foco e ponteiro entreguem a MESMA informação.
+           */}
+          <div
+            className={styles.fluxoWrap}
+            tabIndex={0}
+            role="group"
+            aria-label={`Fluxo das últimas ${n} semanas. Use as setas para percorrer as semanas.`}
+            onKeyDown={teclado}
+            onFocus={() => setFoco((f) => (f === null ? n - 1 : f))}
+            onBlur={() => setFoco(null)}
+          >
+            <svg
+              viewBox={`0 0 ${W} ${H}`}
+              className={styles.chart}
+              role="img"
+              aria-label="Entradas e entregas por semana, com a fila acumulada numa faixa abaixo"
+              onPointerLeave={() => setFoco(null)}
+            >
+              {/* A faixa de destaque é um retângulo só, que muda de x. Uma por
+                  semana deixaria rastro: cada uma levaria o próprio tempo para
+                  apagar enquanto a seguinte já acendeu. */}
+              {foco !== null && (
+                <rect
+                  className={styles.faixaFoco}
+                  x={PL + foco * passo}
+                  y={20}
+                  width={passo}
+                  height={FILA_BASE - 16}
+                  rx={4}
+                />
+              )}
+
+              <text x={PL} y={15} className={styles.eixoCap}>
+                demandas na semana
+              </text>
+              {eixoBarras.ticks.map((v) => (
+                <g key={v}>
+                  <line
+                    x1={PL}
+                    y1={Y(v)}
+                    x2={W - PR}
+                    y2={Y(v)}
+                    className={v === 0 ? styles.gradeZero : styles.grade}
+                  />
+                  <text
+                    x={PL - 8}
+                    y={Y(v) + 3.4}
+                    textAnchor="end"
+                    className={styles.eixo}
+                  >
+                    {v}
+                  </text>
+                </g>
+              ))}
+
+              {semanas.map((s, i) => {
+                const hEntrada = altura(entradas[i]);
+                const hEntrega = altura(entregas[i]);
+                return (
+                  <g key={s.inicio.getTime()}>
+                    {hEntrada > 0 && (
+                      <path
+                        className={styles.barEntrada}
+                        d={barra(X(i) - bw - 1, BASE - hEntrada, bw, hEntrada)}
+                      />
+                    )}
+                    {hEntrega > 0 && (
+                      <path
+                        className={styles.barEntrega}
+                        d={barra(X(i) + 1, BASE - hEntrega, bw, hEntrega)}
+                      />
+                    )}
+                  </g>
+                );
+              })}
+
+              <text x={PL} y={181} className={styles.eixoCap}>
+                fila acumulada — o que ficou em aberto ao fim de cada semana
+              </text>
+              {eixoFila.ticks.map((v) => (
+                <g key={v}>
+                  <line
+                    x1={PL}
+                    y1={Yf(v)}
+                    x2={W - PR}
+                    y2={Yf(v)}
+                    className={v === 0 ? styles.gradeZero : styles.grade}
+                  />
+                  <text
+                    x={PL - 8}
+                    y={Yf(v) + 3.4}
+                    textAnchor="end"
+                    className={styles.eixo}
+                  >
+                    {v}
+                  </text>
+                </g>
+              ))}
+              {/* A área embaixo da linha não é enfeite: numa tira de 40px, um
+                  traço de 2px sozinho quase some, e é o preenchimento que faz a
+                  subida e a descida ficarem legíveis de relance. */}
+              <path d={areaFila} className={styles.filaArea} />
+              <path d={linhaFila} className={styles.filaLinha} />
+              {fila.map((v, i) =>
+                pontoEmTudo || i === foco || i === n - 1 ? (
+                  <circle
+                    key={i}
+                    cx={X(i)}
+                    cy={Yf(v)}
+                    r={i === foco ? 4 : 2.8}
+                    className={styles.filaPonto}
+                  />
+                ) : null,
+              )}
+              {/* Rótulo direto só na ponta: é o número que o painel promete no
+                  chip do cabeçalho, e o único que precisa estar legível sem que
+                  ninguém passe o mouse. */}
+              <text
+                x={X(n - 1)}
+                y={yNum < FILA_TOPO + 14 ? yNum + 15 : yNum - 9}
+                textAnchor="end"
+                className={styles.filaNum}
+              >
+                {filaFinal}
+              </text>
+
+              {semanas.map((s, i) =>
+                (n - 1 - i) % passoRotulo === 0 ? (
+                  <text
+                    key={s.inicio.getTime()}
+                    x={X(i)}
+                    y={250}
+                    textAnchor="middle"
+                    className={i === foco ? styles.eixoAtivo : styles.eixo}
+                  >
+                    {s.rotulo}
+                  </text>
+                ) : null,
+              )}
+
+              {/* Os alvos por último, para ficarem POR CIMA de tudo: a coluna
+                  inteira é o alvo, e não a barra de 6px — mirar em barra de
+                  semana magra é o que fazia o balão do sistema mal aparecer. */}
+              {semanas.map((s, i) => (
+                <rect
+                  key={s.inicio.getTime()}
+                  className={styles.alvoSemana}
+                  x={PL + i * passo}
+                  y={18}
+                  width={passo}
+                  height={FILA_BASE + 4}
+                  onPointerEnter={() => setFoco(i)}
+                  onPointerDown={() => setFoco(i)}
+                />
+              ))}
+            </svg>
+
+            {emFoco && (
+              <div
+                className={styles.balao}
+                style={{ left: `${pct}%`, transform: desloc }}
+                aria-hidden="true"
+              >
+                <p className={styles.balaoTitulo}>
+                  Semana de {emFoco.semana.porExtenso}
+                </p>
+                {/* Número primeiro, nome depois: aqui quem lê já sabe de qual
+                    série se trata e quer o valor — é a hierarquia da legenda ao
+                    contrário, de propósito. */}
+                <ul className={styles.balaoLista}>
+                  <li>
+                    <i className={styles.kEntrada} />
+                    <b>{emFoco.entradas}</b>
+                    <span>entraram</span>
+                  </li>
+                  <li>
+                    <i className={styles.kEntrega} />
+                    <b>{emFoco.entregas}</b>
+                    <span>saíram entregues</span>
+                  </li>
+                  <li>
+                    <i className={styles.kFila} />
+                    <b>{emFoco.fila}</b>
+                    <span>ficaram na fila</span>
+                  </li>
+                </ul>
+                <p className={styles.balaoLeitura}>
+                  {leituraDaSemana(emFoco.entradas, emFoco.entregas)}
+                </p>
+              </div>
+            )}
+          </div>
+
+          <p className={styles.srOnly} aria-live="polite">
+            {emFoco
+              ? `Semana de ${emFoco.semana.porExtenso}: ${emFoco.entradas} entraram, ${emFoco.entregas} saíram entregues, ${emFoco.fila} ficaram na fila. ${leituraDaSemana(emFoco.entradas, emFoco.entregas)}`
+              : ""}
+          </p>
+
+          <div className={styles.legenda}>
+            <span>
+              <i className={styles.swEntrada} />
+              Entradas — demanda criada na semana
+            </span>
+            <span>
+              <i className={styles.swEntrega} />
+              Entregas — demanda que chegou na etapa de entrega
+            </span>
+            <span>
+              <i className={styles.swFila} />
+              Fila acumulada — o que sobrou em aberto
+            </span>
+          </div>
+        </>
+      )}
     </>
+  );
+}
+
+/**
+ * As mesmas séries em tabela, para quem quer o número e não a forma.
+ *
+ * Nasce no mesmo PR do gráfico porque é dele que ela é o par obrigatório, e não
+ * um componente à espera de consumidor: no tema claro, duas séries ficam abaixo
+ * de 3:1 contra o fundo, e cor nesse contraste exige um caminho que não dependa
+ * de enxergá-la. Serve também a quem só quer conferir uma conta — o balão
+ * mostra uma semana por vez, e comparar duas pelo ponteiro é impossível.
+ *
+ * A ORDEM É A DO GRÁFICO, da semana mais velha para a mais nova. Inverter para
+ * "a mais recente primeiro" seria mais cômodo de ler sozinho e péssimo ao lado
+ * do desenho: o alternador troca um pelo outro no mesmo lugar da tela, e a
+ * primeira linha da tabela tem de ser a primeira coluna do gráfico.
+ */
+function TabelaFluxo({ fluxo }: { fluxo: Fluxo }) {
+  const { semanas, entradas, entregas, fila } = fluxo;
+  const soma = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
+  const totEntradas = soma(entradas);
+  const totEntregas = soma(entregas);
+
+  const saldoTxt = (v: number) => (v > 0 ? `+${v}` : String(v));
+  const saldoCls = (v: number) =>
+    v > 0 ? styles.saldoSobe : v < 0 ? styles.saldoDesce : styles.saldoZero;
+
+  return (
+    <div className={styles.tabelaFluxoWrap}>
+      <table className={styles.tabela}>
+        <caption className={styles.srOnly}>
+          Entradas, entregas, saldo e fila acumulada, semana a semana
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Semana</th>
+            <th scope="col" className={styles.num}>
+              Entraram
+            </th>
+            <th scope="col" className={styles.num}>
+              Saíram
+            </th>
+            <th scope="col" className={styles.num}>
+              Saldo
+            </th>
+            <th scope="col" className={styles.num}>
+              Fila no fim
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {semanas.map((s, i) => {
+            const saldo = entradas[i] - entregas[i];
+            return (
+              <tr key={s.inicio.getTime()}>
+                <th scope="row" className={styles.tabelaSemana}>
+                  {s.porExtenso}
+                </th>
+                <td className={styles.num}>{entradas[i]}</td>
+                <td className={styles.num}>{entregas[i]}</td>
+                <td className={`${styles.num} ${saldoCls(saldo)}`}>
+                  {saldoTxt(saldo)}
+                </td>
+                <td className={styles.num}>{fila[i]}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+        {/**
+         * O rodapé soma entradas e entregas, e NÃO soma a fila.
+         *
+         * Somar a coluna da fila daria um número grande e sem sentido nenhum:
+         * ela é um estoque medido toda semana, então a soma contaria a mesma
+         * demanda tantas vezes quantas semanas ela passou em aberto. O que a
+         * última célula mostra é o valor final, que é o que a palavra "fila"
+         * quer dizer — e é o mesmo número do chip no cabeçalho do painel.
+         */}
+        <tfoot>
+          <tr>
+            <th scope="row">No período todo</th>
+            <td className={styles.num}>{totEntradas}</td>
+            <td className={styles.num}>{totEntregas}</td>
+            <td
+              className={`${styles.num} ${saldoCls(totEntradas - totEntregas)}`}
+            >
+              {saldoTxt(totEntradas - totEntregas)}
+            </td>
+            <td className={styles.num}>{fila[fila.length - 1] ?? 0}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
   );
 }
 
