@@ -1,0 +1,233 @@
+/* A seção Discord do Perfil.
+
+   NADA ANIMA AQUI, e é escolha. Os três momentos desta seção — o código
+   aparecer, a contagem descer, o quadro virar "Conectado" — são todos resposta
+   direta a uma ação que a pessoa acabou de tomar, e nos três ela está com o
+   Discord aberto na outra janela esperando para digitar. Animar a entrada do
+   código atrasaria o único dado que ela veio buscar; animar a virada para
+   "Conectado" atrasaria a confirmação. É exatamente o AI-slop motion que o
+   AGENTS.md §3 e a skill design-motion-principles reprovam: movimento vendendo
+   lentidão como polimento numa interação de alta frequência.
+
+   O que existe é FEEDBACK: esqueleto enquanto não se sabe, estados separados
+   para "ainda não respondeu" e "respondeu e está solto", e contagem regressiva
+   porque o código morre. */
+
+.bloco {
+  margin-top: 18px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--s1);
+}
+
+/* ---------- cabeça ---------- */
+
+.cabeca {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--s3);
+  color: var(--tx-2);
+  flex: none;
+}
+
+.titulo {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--tx-2);
+}
+
+/* ---------- estados ---------- */
+
+.estado {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--tx-3);
+}
+
+/* O verde do vínculo feito. É a única cor forte da seção, e ela responde à
+   pergunta que a pessoa foi ao Discord fazer. */
+.ok {
+  color: var(--tx-2);
+}
+.ok svg {
+  color: var(--ok, #3fa66b);
+  flex: none;
+  margin-top: 2px;
+}
+.ok strong {
+  color: var(--tx);
+}
+
+.instrucao {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--tx-2);
+}
+
+.comando {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 12px;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--s3);
+  color: var(--tx);
+}
+
+/* ---------- o código ---------- */
+
+.codigoLinha {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* Espaçamento entre letras generoso e monoespaçado: este texto existe para ser
+   DIGITADO NOUTRA TELA, muitas vezes do computador para o celular. Uma fonte
+   proporcional apertada é o que faz confundir o que já não pode ser confundido
+   — e por isso o alfabeto do código também não tem I, L, O, 0 nem 1. */
+.codigo {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-align: center;
+  padding: 10px 12px;
+  border: 1px dashed var(--line);
+  border-radius: 9px;
+  background: var(--s2);
+  color: var(--tx);
+  user-select: all;
+}
+
+.btnCopiar {
+  height: 42px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  background: var(--s1);
+  color: var(--tx);
+  border-radius: 9px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+.btnCopiar:hover:not(:disabled) {
+  background: var(--s3);
+}
+
+.contagem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--tx-3);
+  /* Tabular para o número não empurrar o texto a cada segundo — a linha inteira
+     tremendo é a diferença entre uma contagem e um defeito. */
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- ações ---------- */
+
+.acoes {
+  display: flex;
+  justify-content: flex-start;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.btnSave {
+  height: 42px;
+  padding: 0 18px;
+  border: none;
+  background: var(--brand);
+  color: #fff;
+  border-radius: 9px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.btnSave:hover:not(:disabled) {
+  background: var(--brand-hover);
+}
+
+/* Desconectar não é perda de dado — o vínculo se refaz com um comando. O hover
+   neutro é o mesmo dos botões de volta do diálogo do perfil. */
+.btnVolta {
+  height: 42px;
+  padding: 0 14px;
+  border: none;
+  background: none;
+  color: var(--tx-3);
+  border-radius: 9px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.btnVolta:hover:not(:disabled) {
+  background: var(--s3);
+  color: var(--tx);
+}
+
+.btnSave:disabled,
+.btnVolta:disabled,
+.btnCopiar:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.legenda {
+  margin: 10px 0 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--tx-3);
+}
+.legenda code {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 11px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--s3);
+}
+
+.err {
+  color: var(--danger-tx);
+  font-size: 12.5px;
+  line-height: 1.5;
+  margin-top: 12px;
+}

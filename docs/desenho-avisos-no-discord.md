@@ -141,3 +141,119 @@ Copiá-los para dentro da rota criaria dois mapas envelhecendo separados: no dia
 `DISCORD_WEBHOOK_URLS` ganha do padrão quando o setor tem entrada própria. Hoje um setor só executa demanda (`DEFAULT_SECTORS`), então o padrão basta — a porta fica aberta porque o dia em que um segundo setor entrar, ele vai querer o próprio canal, e descobrir isso com o quadro em produção é tarde.
 
 JSON quebrado **não cala o aviso**: cai no padrão e segue. Variável mal colada é erro de configuração, e configuração errada não pode calar a notificação inteira.
+
+---
+
+# O vínculo — quem é quem nos dois lados
+
+> Segunda metade do mesmo pedido: *"quero linkar o usuário do discord com o usuário do smart meet! Com um bot"*.
+
+## Em uma frase
+
+A pessoa gera um código no Perfil, digita `/vincular <codigo>` no Discord, e a partir daí é **mencionada** nos avisos das demandas onde é a responsável.
+
+---
+
+## Por que um bot HTTP, e não um bot de verdade
+
+Bot com conexão de gateway precisa de **processo vivo**. A Vercel é serverless — não existe processo vivo. Um `discord.js` aqui não ficaria de pé: a função morre entre requisições, e a conexão com ele.
+
+O caminho que funciona é o **Interactions Endpoint URL**: o Discord faz POST HTTPS na nossa rota a cada comando, assinado com Ed25519. Mesmo bot, mesmos comandos de barra, sem processo nenhum.
+
+Quem chegar aqui achando que falta uma biblioteca de bot rodando: não falta, e colocar uma quebraria o deploy.
+
+---
+
+## As decisões que importam
+
+### 1. Dois segredos, um de cada lado
+
+| Prova | Quem dá |
+|---|---|
+| "este e-mail é meu" | o código, que só aparece para quem está logado no Smart Meet |
+| "esta conta do Discord é minha" | o `user.id`, que vem do Discord assinado, nunca do corpo |
+
+Nenhum dos dois lados vincula sozinho. É por isso que o código pode ser **curto**: ele é inútil sem uma conta do Discord digitando-o, morre em dez minutos e serve uma vez só.
+
+### 2. A assinatura é o único portão, e vem antes do `JSON.parse`
+
+`/api/discord/interactions` é pública por obrigação — o Discord chama de fora, sem token nosso, sem sessão, sem cookie. E o que ela faz é gravar vínculo de conta.
+
+Ler o JSON antes, para "decidir se precisa verificar", é o jeito de abrir a porta sem perceber. A conferência acontece sobre o corpo **cru**: um `req.json()` seguido de `JSON.stringify` reordena chaves e reformata números, e a assinatura deixa de bater por um espaço.
+
+Assinatura inválida responde **401**, e não 403 — é o código que o Discord exige. Ele testa a URL com uma assinatura propositalmente errada no momento em que ela é salva no portal, e só aceita o endpoint se levar 401. Uma rota que responde 200 para assinatura inválida **passa nesse cadastro**, e é aí que o defeito passa despercebido: tudo parece configurado.
+
+### 3. Ed25519 sem dependência nova
+
+`discord-interactions` e `tweetnacl` fazem exatamente isto, e o Node 24 já sabe fazer sozinho. O que falta é um envelope de doze bytes: a chave vem em hex de 32 bytes crus, e `createPublicKey` quer DER/SPKI, então o prefixo `302a300506032b6570032100` (cabeçalho SPKI do OID 1.3.101.112) vai na frente.
+
+Instalar um pacote por causa de doze bytes constantes é dívida que se paga em toda auditoria de dependência daqui para frente. O teste usa um par de chaves **de verdade**, gerado na hora, e verifica os dois lados: o que passa e o que não pode passar.
+
+### 4. Uma conta do Discord responde por uma pessoa
+
+Sem isso, duas demandas de donos diferentes mencionariam o mesmo `@`, e não haveria como saber qual era para quem — a menção deixaria de ser endereço e viraria enfeite.
+
+Vincular uma conta já ligada a outro cadastro **muda** o vínculo, não recusa. Quem digitou o comando provou as duas pontas; recusar mandaria a pessoa desvincular primeiro, e ela chegaria lá sem saber que existia um vínculo antigo. A resposta diz que a ligação anterior foi desfeita.
+
+### 5. A resposta do comando é sempre efêmera
+
+Sem a flag, "Pronto — vinculado a `ia02@px.com.br`" vira mensagem pública no canal: o e-mail corporativo de quem vinculou fica visível para o servidor inteiro, e a lista de quem trabalha em quê vira histórico de chat. O vínculo é assunto de uma pessoa só.
+
+### 6. O código é o **id** do documento
+
+Assim a busca do `/vincular` é um `get` direto pelo caminho — sem consulta, sem índice — e a unicidade é do banco, não de uma checagem que alguém pode esquecer de fazer. `create` em vez de `set` faz a colisão virar retentativa em vez de roubo silencioso do código de outra pessoa.
+
+Gerar um código novo apaga os anteriores da mesma pessoa. Quem apertasse o botão três vezes deixaria três segredos vivos por dez minutos.
+
+### 7. O alfabeto não tem `I`, `L`, `O`, `0` nem `1`
+
+O código é **lido numa tela e digitado noutra**, às vezes do computador para o celular. `l1O0` é o jeito conhecido de transformar um fluxo de dez segundos em três tentativas e uma desistência — e a pessoa conclui que "não funciona", não que digitou errado.
+
+Sobram 31 caracteres; seis deles dão 887 milhões de combinações, muito além do necessário para um segredo que vive dez minutos e serve uma vez.
+
+### 8. A tela do Perfil assina o próprio cadastro
+
+O vínculo **não acontece nesta tela** — acontece no Discord, na outra janela, segundos depois. O `pessoa` que o modal recebe vem do perfil carregado no login e não muda até o próximo; quem confiasse nele mostraria "não conectado" para sempre, e a pessoa ficaria olhando um código morto sem saber que já deu certo.
+
+Com a assinatura em `users/{email}`, o instante em que ela aperta Enter no Discord é o instante em que o quadro vira **Conectado**. É a única confirmação que o fluxo tem, e ela chega sozinha.
+
+**Motion: nenhum**, e é escolha. Os três momentos — o código aparecer, a contagem descer, o quadro virar Conectado — são todos resposta direta a uma ação, com a pessoa esperando para digitar do outro lado. Animar a entrada do código atrasaria o único dado que ela veio buscar. O que existe é feedback: esqueleto enquanto não se sabe, estados separados para "ainda não respondeu" e "respondeu e está solto", contagem regressiva porque o código morre.
+
+---
+
+## Regras do Firestore: nenhuma muda
+
+- `/discordCodigos` cai no `match /{document=**} { allow read, write: if false }` do fim do arquivo. O cliente nunca a enxerga, que é o certo.
+- `discordId` em `/users` é escrito só pelo Admin SDK. O `hasOnly` do dono (`uid`, `lastLogin`, `photo`, `name`) continua fechado — abri-lo para mais um campo seria arriscar `role`, `active` e `sectors` por causa de um id que nem é segredo.
+
+Por isso `npm run test:regras` não se aplica a esta frente.
+
+---
+
+## Variáveis de ambiente
+
+| Variável | Onde | O que é |
+|---|---|---|
+| `DISCORD_PUBLIC_KEY` | **Vercel** | confere a assinatura das interações |
+| `DISCORD_APP_ID` | só local | o script de registro dos comandos |
+| `DISCORD_BOT_TOKEN` | só local | idem |
+| `DISCORD_GUILD_ID` | só local | idem |
+
+O token do bot **não vai para a Vercel**: nada em produção o usa. As interações são autenticadas por assinatura, não por token nosso. Guardá-lo lá seria expor uma credencial que só o script, rodando na máquina de quem administra, tem motivo para conhecer.
+
+---
+
+## O passo a passo de quem configura
+
+1. https://discord.com/developers/applications → **New Application**.
+2. **Bot** → *Reset Token* → guarde o token (ele só aparece uma vez).
+3. **OAuth2 → URL Generator** → escopo `applications.commands` (e `bot`, se quiser vê-lo na lista de membros) → abra a URL e adicione ao servidor.
+4. Registre os comandos, na sua máquina:
+   ```bash
+   DISCORD_APP_ID=… DISCORD_BOT_TOKEN=… DISCORD_GUILD_ID=… npm run discord:comandos
+   ```
+5. **General Information** → copie a **Public Key** → na Vercel, `DISCORD_PUBLIC_KEY`.
+6. Depois do deploy, volte a **General Information** → **Interactions Endpoint URL** =
+   `https://<seu-dominio>/api/discord/interactions` → **Save**. O Discord manda um PING assinado na hora; se a chave estiver certa, ele aceita.
+
+A ordem dos passos 5 e 6 não é negociável: salvar a URL antes de a chave estar na Vercel faz o Discord recusar o endpoint, porque a rota responde 401 para tudo enquanto não souber conferir.

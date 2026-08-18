@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { Modal } from "./modal";
 import { Avatar } from "./avatar";
+import { DiscordVinculo } from "./discord-vinculo";
 import { SkeletonAvatar } from "./skeleton";
 import { Icon } from "./icons";
 import { fraseDeFalha } from "@/lib/erro-ui-core";
@@ -700,6 +701,15 @@ export function PerfilModal(props: PerfilModalProps) {
           )}
         </dd>
       </dl>
+
+      {/* O Discord fica DEPOIS dos dados e antes da nota de quem administra, e
+          o lugar não é arbitrário: é o único bloco desta tela que a própria
+          pessoa liga e desliga por conta própria. Acima dele está o que ela
+          edita (nome e foto); abaixo, a frase que explica o que ela NÃO pode
+          mudar. A seção assina o próprio cadastro em tempo real — o vínculo se
+          fecha no Discord, na outra janela, e é lá que a confirmação precisa
+          nascer. */}
+      {meu && <DiscordVinculo email={pessoa.email} />}
 
       {meu && (
         <p className={styles.nota}>
