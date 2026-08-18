@@ -18,7 +18,7 @@ import {
   type Priority,
 } from "@/lib/kanban";
 import type { Rotulos } from "@/lib/historico-core";
-import type { PessoaDoAvatar } from "@/components/avatar";
+import type { PessoaDaMoldura, PessoaDoAvatar } from "@/components/avatar";
 import { pickColor, type UserProfile } from "@/lib/users";
 
 export const PRIORITY_COLOR: Record<Priority, string> = {
@@ -57,13 +57,30 @@ export function relTime(ts: number): string {
  * sai do mesmo `pickColor` que o perfil usaria, para o círculo da pessoa não
  * trocar de cor no dia em que ela for removida do sistema. O `#555` chumbado
  * que estava aqui pintava TODOS os ex-usuários do mesmo cinza.
+ *
+ * O RETORNO DIZ `& PessoaDaMoldura` DE PROPÓSITO, e o `moldura: null` do braço
+ * de reserva é explícito pelo mesmo motivo. Hoje a moldura já chega às três
+ * telas que passam por aqui — histórico, comentário e Cronograma — por ACIDENTE
+ * DE TIPAGEM: `perfil ?? {...}` devolve o objeto do `usersMap` por referência,
+ * com todos os campos dele. No dia em que alguém montar o objeto explícito, que
+ * é a leitura natural daquele `??`, a moldura sumiria das três de uma vez e
+ * nenhum portão deste projeto reclamaria. O tipo passa a dizer que ela faz parte
+ * do contrato.
  */
 export function autorDoRegistro(
   email: string,
   nome: string,
   perfil: UserProfile | undefined,
-): PessoaDoAvatar {
-  return perfil ?? { name: nome, email, color: pickColor(email), photo: null };
+): PessoaDoAvatar & PessoaDaMoldura {
+  return (
+    perfil ?? {
+      name: nome,
+      email,
+      color: pickColor(email),
+      photo: null,
+      moldura: null,
+    }
+  );
 }
 
 /**

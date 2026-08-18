@@ -268,6 +268,40 @@ for (const quem of Object.keys(PESSOAS)) {
     lastLogin: QUANDO,
   });
 
+  // --- moldura do avatar: o proprio doc ------------------------------------
+  // A regra daqui e DE PROPOSITO mais frouxa que a da foto e a do nome: ela nao
+  // confere pertinencia ao catalogo, so teto e alfabeto (ver molduraOk() em
+  // firestore.rules). O caso da moldura desconhecida abaixo e a prova
+  // EXECUTAVEL disso, contra o servidor do Google — sem ele, a proxima pessoa a
+  // ler a regra concluiria que faltou fechar a lista e a fecharia, quebrando a
+  // publicacao de toda moldura nova a partir dali.
+  caso(quem, "gravar a propria moldura", "update", MEU, PERFIL, {
+    ...PERFIL,
+    moldura: "aurora",
+  });
+  caso(quem, "gravar moldura que o catalogo nao conhece", "update", MEU, PERFIL, {
+    ...PERFIL,
+    moldura: "que-nao-existe-ainda",
+  });
+  caso(quem, "voltar a moldura para nula", "update", MEU, { ...PERFIL, moldura: "aurora" }, {
+    ...PERFIL,
+    moldura: null,
+  });
+  caso(quem, "gravar moldura acima do teto de 24", "update", MEU, PERFIL, {
+    ...PERFIL,
+    moldura: "a".repeat(25),
+  });
+  caso(quem, "gravar moldura com maiuscula, espaco ou url(", "update", MEU, PERFIL, {
+    ...PERFIL,
+    moldura: "url(https://x/y.png)",
+  });
+  // O mesmo `hasOnly` que barra a foto+role tem de barrar moldura+role.
+  caso(quem, "gravar moldura E virar admin", "update", MEU, PERFIL, {
+    ...PERFIL,
+    moldura: "marca",
+    role: "admin",
+  });
+
   // --- nome: o proprio doc -------------------------------------------------
   // Aqui esta a mudanca desta versao: trocar o proprio nome deixa de ser coisa
   // de admin. O que NAO pode mudar junto e o resto — e e por isso que os casos

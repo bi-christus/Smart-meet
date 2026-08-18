@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { LADO_FOTO_PX, avatarDe, type PessoaDoAvatar } from "@/lib/avatar-core";
+import { molduraDe, type PessoaDaMoldura } from "@/lib/molduras-core";
 import { OverlayPortal } from "./overlay-portal";
 import styles from "./avatar.module.css";
 
@@ -36,6 +37,9 @@ import styles from "./avatar.module.css";
 
 /** Reexportado para quem monta a pessoa na mão (autor de comentário, por ex.). */
 export type { PessoaDoAvatar };
+/** Idem — quem monta a pessoa à mão precisa dizer, explicitamente, que ela não
+ *  tem moldura. Ver `autorDoRegistro` em `kanban/comum.ts`. */
+export type { PessoaDaMoldura };
 
 /**
  * O atraso entre pousar o ponteiro e a prévia aparecer.
@@ -63,8 +67,9 @@ export function Avatar({
   title,
   className,
   aoAbrirPerfil,
+  semMoldura,
 }: {
-  pessoa: PessoaDoAvatar;
+  pessoa: PessoaDoAvatar & PessoaDaMoldura;
   /** Diâmetro em px. A fonte da inicial acompanha, para a letra nunca vazar. */
   size?: number;
   /**
@@ -108,6 +113,20 @@ export function Avatar({
    * ainda não tem perfil para abrir).
    */
   aoAbrirPerfil?: () => void;
+  /**
+   * IGNORA A MOLDURA ESCOLHIDA PELA PESSOA. Um lugar só usa isto, e ele é o
+   * motivo de a prop existir: o pódio do Rank.
+   *
+   * Lá o avatar JÁ está dentro de uma moldura — `rank.module.css` desenha um
+   * anel em volta de cada degrau, e o do primeiro lugar é pintado na cor da
+   * marca, com halo. Uma moldura pessoal por dentro dessa daria três anéis
+   * concêntricos no mesmo rosto; e quem escolhesse `marca` apareceria no
+   * pódio exibindo o vocabulário visual reservado a quem está em primeiro.
+   *
+   * A saída honesta é esta, e não fazer o pódio perder o anel dele: sem o
+   * anel do degrau, `marca` continuaria imitando o campeão.
+   */
+  semMoldura?: boolean;
 }) {
   // Guardamos a URL que falhou, e não um booleano: trocar de pessoa (ou de
   // foto) tem de dar uma chance nova à imagem, e um booleano deixaria o avatar
@@ -182,11 +201,56 @@ export function Avatar({
     );
   }
 
-  if (!aoAbrirPerfil) return cara;
+  /**
+   * `null` na esmagadora maioria dos avatares — e é por isso que ele é `null`
+   * e não um objeto vazio. Ver o contrato de custo em `molduraDe`: sem essa
+   * saída, o componente montaria um `<span>` a mais em volta de cada rosto do
+   * quadro do Kanban para não pintar coisa nenhuma.
+   */
+  const moldura = semMoldura ? null : molduraDe(pessoa, size);
+
+  /**
+   * `--m-anel` VAI NO NÓ MAIS EXTERNO, e não no `<span>` da moldura.
+   *
+   * Custom property não sobe na árvore, só desce. Em modo alvo o nó externo é
+   * o `<button className={styles.alvo}>`, e é ele quem precisa do valor: o
+   * hover dele desenha `box-shadow: 0 0 0 2px` e o foco usa `outline-offset:
+   * 1px`, os dois medidos a partir da borda do botão. Com uma moldura de 6 px
+   * por dentro, o anel de hover cairia POR BAIXO dela e o contorno de foco
+   * pousaria em cima — sumiria justamente o aviso de que ali o clique faz
+   * outra coisa, e no card do Kanban, que é onde ele importa.
+   *
+   * Fora do modo alvo o nó externo é o próprio `<span>` da moldura, e a
+   * declaração cai nele sem intermediário.
+   */
+  const varDoAnel = moldura
+    ? ({ "--m-anel": `${moldura.anel}px` } as React.CSSProperties)
+    : undefined;
+
+  const comMoldura = moldura ? (
+    <span
+      className={styles.moldura}
+      data-moldura={moldura.id}
+      data-detalhe={moldura.detalhe}
+      style={aoAbrirPerfil ? undefined : varDoAnel}
+      aria-hidden="true"
+    >
+      {cara}
+    </span>
+  ) : (
+    cara
+  );
+
+  if (!aoAbrirPerfil) return comMoldura;
 
   return (
-    <AlvoDePerfil foto={foto} rotulo={alt || title || ""} aoAbrir={aoAbrirPerfil}>
-      {cara}
+    <AlvoDePerfil
+      foto={foto}
+      rotulo={alt || title || ""}
+      aoAbrir={aoAbrirPerfil}
+      style={varDoAnel}
+    >
+      {comMoldura}
     </AlvoDePerfil>
   );
 }
@@ -221,12 +285,15 @@ function AlvoDePerfil({
   foto,
   rotulo,
   aoAbrir,
+  style,
   children,
 }: {
   /** A foto a ampliar, ou `null` para quem não tem — ver `pairou`. */
   foto: string | null;
   rotulo: string;
   aoAbrir: () => void;
+  /** Só `--m-anel`. Ver a nota de `varDoAnel`, em `<Avatar>`. */
+  style?: React.CSSProperties;
   children: ReactNode;
 }) {
   /**
@@ -364,6 +431,7 @@ function AlvoDePerfil({
         ref={botao}
         type="button"
         className={styles.alvo}
+        style={style}
         // O card inteiro é clicável e abre a demanda. Sem isto, ver o rosto de
         // quem responde por ela abriria as duas coisas de uma vez — e o modal da
         // demanda, que é maior, cobriria o perfil que a pessoa pediu.

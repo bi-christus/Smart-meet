@@ -11,6 +11,7 @@ import {
 import type { User } from "firebase/auth";
 import { db } from "./firebase";
 import { conferirFoto, conferirNome, corDeAvatar } from "./avatar-core.ts";
+import { normalizarMoldura } from "./molduras-core.ts";
 
 // A regra do avatar mora em `avatar-core`, que é puro; aqui ela é reexportada
 // para quem JÁ importa este módulo — o modal da foto, que precisa do `photo` e
@@ -76,6 +77,19 @@ export type UserProfile = {
   discordId?: string | null;
   /** Como a pessoa se chama no Discord, para a tela do Perfil mostrar. */
   discordUser?: string | null;
+  /**
+   * O id da moldura que a pessoa escolheu para o próprio avatar.
+   *
+   * ID CURTO, nunca a pintura — o mais longo do catálogo tem 7 caracteres.
+   * É o mesmo raciocínio que trancou o tamanho da `photo` logo acima, e pelo
+   * mesmo motivo: `subscribeUsers` assina esta coleção INTEIRA em sete telas,
+   * então todo byte daqui é baixado por todo cliente em toda tela. O CSS da
+   * moldura mora em `avatar.module.css` e sai de graça.
+   *
+   * Ausente ou `null` = sem moldura. Quem traduz isso — e quem neutraliza um
+   * id que o catálogo não conhece — é `normalizarMoldura`, na LEITURA.
+   */
+  moldura?: string | null;
 };
 
 const DEFAULT_COLOR = "#ff6a2b";
@@ -281,6 +295,12 @@ export async function deleteUser(email: string): Promise<void> {
 export type MeuCadastro = {
   name: string;
   photo?: string | null;
+  /**
+   * Mesma convenção da foto, e ela importa pelo mesmo motivo: ausente é "não
+   * mexa na moldura", e `"nenhuma"` é "tire a moldura". Sem o estado ausente,
+   * uma tela que só corrige o nome apagaria a escolha de quem a fez.
+   */
+  moldura?: string;
 };
 
 /**
@@ -305,7 +325,11 @@ export async function saveOwnProfile(
   const nome = conferirNome(dados.name);
   if (!nome.ok) throw new Error(nome.motivo);
 
-  const patch: { name: string; photo?: string | null } = { name: nome.nome };
+  const patch: {
+    name: string;
+    photo?: string | null;
+    moldura?: string;
+  } = { name: nome.nome };
 
   if (dados.photo !== undefined) {
     if (dados.photo === null) {
@@ -319,6 +343,22 @@ export async function saveOwnProfile(
       if (!foto.ok) throw new Error(foto.motivo);
       patch.photo = dados.photo.trim();
     }
+  }
+
+  /**
+   * `!== undefined` E NÃO UM `normalizarMoldura` INCONDICIONAL.
+   *
+   * `normalizarMoldura(undefined)` devolve `"nenhuma"`, que é um valor
+   * perfeitamente válido — e gravá-lo sempre faria TODA correção de nome
+   * apagar, em silêncio, a moldura de quem nunca abriu o seletor. É
+   * exatamente a armadilha que o bloco da foto logo acima já documenta.
+   *
+   * A normalização acontece mesmo assim quando o campo veio: a tela só
+   * oferece ids do catálogo, mas isto é a última parada antes do banco, e a
+   * regra do Firestore de propósito não confere pertinência ao catálogo.
+   */
+  if (dados.moldura !== undefined) {
+    patch.moldura = normalizarMoldura(dados.moldura);
   }
 
   await updateDoc(doc(db, "users", email.trim().toLowerCase()), patch);
