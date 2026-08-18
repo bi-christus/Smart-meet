@@ -27,9 +27,11 @@ import {
   montarAviso,
   montarAvisoDireto,
   montarResumoDeRecorrencias,
+  montarResumoDiario,
   resolverWebhook,
   type Canal,
   type CardDoAviso,
+  type CardDoResumo,
   type EventoDoAviso,
 } from "@/lib/discord-core";
 import { rotuloPrioridade, rotuloTipo } from "@/lib/demanda-rotulos";
@@ -319,5 +321,38 @@ export async function publicarResumoDeRecorrencias(args: {
     url,
     montarResumoDeRecorrencias({ sector, cards, appUrl: appUrl() }),
   );
+  return { enviado: true };
+}
+
+/**
+ * O panorama do dia, num canal só e uma vez por dia.
+ *
+ * Os outros avisos contam o que ACABOU de acontecer; este é o único que fala do
+ * que NÃO aconteceu. Uma demanda que venceu na sexta e ninguém tocou não gera
+ * evento nenhum — ela some do canal justamente por estar parada, que é o motivo
+ * de alguém precisar saber dela.
+ *
+ * `null` do montador significa quadro vazio, e vira `nada-a-dizer` sem publicar.
+ * Um aviso diário que chega dizendo que não há nada é o aviso que ensina a não
+ * abrir o canal.
+ */
+export async function publicarResumoDiario(args: {
+  sector: string;
+  cards: CardDoResumo[];
+  /** aaaa-mm-dd, no fuso de quem trabalha — quem sabe o fuso é quem chama. */
+  hoje: string;
+}): Promise<Resultado> {
+  const corpo = montarResumoDiario({
+    sector: args.sector,
+    cards: args.cards,
+    hoje: args.hoje,
+    appUrl: appUrl(),
+  });
+  if (!corpo) return { enviado: false, motivo: "nada-a-dizer" };
+
+  const url = webhookDe(args.sector, "resumo");
+  if (!url) return { enviado: false, motivo: "sem-webhook" };
+
+  await enviarAviso(url, corpo);
   return { enviado: true };
 }
