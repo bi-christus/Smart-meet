@@ -1,0 +1,155 @@
+/* O bloco de emblemas no card do perfil.
+
+   ELE NÃO TEM ANIMAÇÃO PRÓPRIA. A chegada dos dados usa `classeAparece`
+   (`skeleton.tsx`), que é a mesma classe que `EmptyState` e `ErrorState` já
+   aplicam na própria raiz — um segundo fade por cima seriam dois fades no mesmo
+   subtree e duas durações diferentes para "os dados chegaram".
+
+   E NÃO HÁ ESCALONAMENTO nos chips. O diálogo inteiro já anima na entrada;
+   coreografar um bloco de 40px dentro de algo que está entrando é motion sobre
+   motion, e não passa na Frequency Gate do AGENTS.md §3. */
+
+.bloco {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.cabeca {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--tx-3);
+  margin-bottom: 10px;
+}
+
+.faixa {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* O CHIP. Os três níveis se distinguem por PESO E SUPERFÍCIE, nunca por cor
+   sozinha — ouro/prata/bronze foram descartados pelo mesmo motivo que o Rank já
+   registrou (três plásticos brigando com o laranja da marca), e cor sozinha não
+   sobrevive a daltonismo nem a captura em escala de cinza, que é como este app
+   aparece em documento. O algarismo romano ao lado carrega a mesma informação
+   por um canal que nenhuma dessas coisas apaga. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px 3px 10px;
+  border-radius: 20px;
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+.chipNome {
+  font-weight: 600;
+}
+
+/* Tabular para os romanos ficarem alinhados entre chips de larguras
+   diferentes — I, II e III têm larguras muito distintas em fonte proporcional. */
+.chipNivel {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+
+.n1 {
+  background: var(--s3);
+  border: 1px solid var(--line);
+  color: var(--tx-2);
+}
+
+.n2 {
+  background: var(--s2);
+  border: 1px solid var(--brand-line);
+  color: var(--tx);
+  box-shadow: inset 0 0 0 1px var(--brand-line);
+}
+
+.n3 {
+  background: var(--brand-soft);
+  border: 1px solid var(--brand);
+  color: var(--accent-2);
+  font-weight: 700;
+}
+
+/* O "+N" não é um chip: ele resume, e por isso é tracejado. Um chip cheio ali
+   leria como mais um emblema, com um nome que ninguém entende. */
+.mais {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 20px;
+  border: 1px dashed var(--line);
+  color: var(--tx-3);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: help;
+}
+
+.vazio {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--tx-3);
+  margin: 0;
+}
+
+.progresso {
+  margin-top: 10px;
+}
+
+.trilho {
+  height: 5px;
+  border-radius: 3px;
+  background: var(--s3);
+  overflow: hidden;
+}
+
+/* Sem `transition`: a barra nasce com o bloco e não se move depois. Animar o
+   preenchimento seria enfeite num número que não muda enquanto a tela está
+   aberta. */
+.preenchido {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--brand);
+}
+
+.progressoTx {
+  display: block;
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--tx-3);
+}
+
+.aviso {
+  margin: 10px 0 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--warn-tx);
+}
+
+/* Copiada de `skeleton.module.css`, pelo mesmo motivo do card do perfil:
+   `aria-label` em `<span>` cru não é anunciado, e o nível e a contagem de cada
+   chip existem só como cor e como um romano de 10px. */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

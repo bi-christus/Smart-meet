@@ -295,6 +295,19 @@ const PATHS: Record<string, ReactNode> = {
   estrela: (
     <path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1.1 6.2-5.5-2.9-5.5 2.9 1.1-6.2L3.2 9.5l6.1-.9z" />
   ),
+  /* fita de premiacao: o disco em cima e as duas pontas embaixo.
+
+     E DESENHO NOVO, e nao o `shield` reaproveitado, por um motivo concreto: o
+     `d` de `shield` e LITERALMENTE identico ao de `admin` (as duas linhas sao a
+     mesma). Reusa-lo faria emblema e administracao terem o mesmo simbolo em
+     telas vizinhas — o perfil e a aba Admin, que e justamente onde os emblemas
+     sao configurados. */
+  emblema: (
+    <>
+      <circle cx="12" cy="8.5" r="5.5" />
+      <path d="M8.5 13.2L7 22l5-2.8 5 2.8-1.5-8.8" />
+    </>
+  ),
   chevronLeft: <path d="M15 6l-6 6 6 6" />,
   chevronRight: <path d="M9 6l6 6-6 6" />,
 };
