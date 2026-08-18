@@ -357,3 +357,71 @@ O token do bot **passou a ir para a Vercel** — ver "O token do bot passou a ex
    `https://<seu-dominio>/api/discord/interactions` → **Save**. O Discord manda um PING assinado na hora; se a chave estiver certa, ele aceita.
 
 A ordem dos passos 5 e 6 não é negociável: salvar a URL antes de a chave estar na Vercel faz o Discord recusar o endpoint, porque a rota responde 401 para tudo enquanto não souber conferir.
+
+---
+
+## O vínculo em um clique
+
+O `/vincular <codigo>` funciona e continua existindo. Mas ele cobra cinco passos de quem só queria ser avisado: abrir o Perfil, gerar, copiar, trocar de janela, digitar — e o código morre em dez minutos no meio disso. Numa equipe de cinco pessoas, "cada um faz quando puder" termina com duas vinculadas e três recebendo aviso de canal que não é para elas. **A integração inteira depende do vínculo, e o vínculo estava dependendo de paciência.**
+
+O botão **Conectar Discord** resolve numa tela: abre a autorização do Discord numa aba nova, a pessoa confirma, e a aba do Perfil vira **Conectado** sozinha — ela já assinava `users/{email}` desde antes do clique.
+
+### O clique prova exatamente o que o código provava
+
+| Ponta | O código provava por | O clique prova por |
+|---|---|---|
+| "este e-mail é meu" | o segredo que só aparece logado | a **sessão do Firebase**, que criou o `state` |
+| "esta conta do Discord é minha" | o `user.id` da interação assinada | o `id` que volta da **troca de token** |
+
+Nenhum dos dois lados vincula sozinho, nos dois caminhos. A diferença é uma janela a menos.
+
+Um `code` roubado sem o `DISCORD_CLIENT_SECRET` não vale nada, e um `state` roubado sem a conta do Discord também não.
+
+### Por que `email` no escopo, se a sessão já diz quem é
+
+Ele não é necessário para o caminho normal — é o que salva o caminho torto. Se o `state` morrer no meio (dez minutos, ou a aba aberta desde ontem), o e-mail **verificado** pelo Discord ainda permite achar o cadastro certo sem mandar a pessoa começar de novo.
+
+`alvoDoVinculo` decide, e a precedência não é negociável:
+
+1. **O `state` ganha sempre que existir.** Ele nasceu dentro de uma sessão autenticada e diz quem apertou o botão.
+2. **O e-mail do Discord é plano B**, e só vale se for `verified` **e** houver cadastro **ativo** com ele.
+3. **Nenhum dos dois? `null`.** Vincular "no melhor palpite" entrega as notificações de alguém para a conta errada — e ninguém descobre pelo lado de quem deixou de receber.
+
+Inverter 1 e 2 faria o cadastro errado ganhar sempre que os dois e-mails diferissem, que é o caso comum: quase ninguém usa o e-mail corporativo no Discord pessoal. E `verified` é trava, não detalhe — o Discord deixa cadastrar e-mail sem confirmar.
+
+### O código não virou legado
+
+Ele é o caminho de quem já está no Discord no celular e não quer abrir o app, e o de quem tem **popup bloqueado**. Por isso aparece como segunda opção visível no Perfil, e não escondido atrás de "problemas?": esconder faria a única saída de um popup bloqueado ser invisível justamente para quem precisa dela.
+
+E a tela abre a aba **antes** do `await`. `window.open` chamado depois da resposta do servidor já não conta como resposta ao clique, e o navegador bloqueia — o sintoma seria um botão que não faz nada.
+
+### A escrita do vínculo mora num lugar só
+
+`server/discord-vinculo.ts` (`ligarConta`) é chamada pelos dois caminhos. Copiar a transação para o segundo criaria duas versões de "o que acontece ao vincular", e o defeito seria silencioso: um dos caminhos deixaria de desligar o vínculo anterior, e duas pessoas passariam a receber a menção uma da outra sem nada ficar vermelho.
+
+O que cada caminho ainda faz sozinho é **provar** quem é quem. Daqui para baixo as duas provas valem o mesmo.
+
+> **O código passou a ser consumido numa transação própria**, antes da escrita. O preço está assumido: cadastro inativo queima o código e a pessoa gera outro. A alternativa — apagar só depois de o vínculo dar certo — deixaria o código vivo durante a escrita, que é exatamente a janela em que "uso único" deixa de ser único.
+
+### A página de retorno responde HTML
+
+É o fim da linha de um fluxo que abriu uma aba nova: não há tela do app atrás dela, e um JSON cru na cara de quem só queria ser avisado das demandas é o pior fim possível. A página é autossuficiente — sem CSS do app, sem fonte remota, sem script —, porque qualquer dependência externa ali viraria tela em branco no exato momento em que a pessoa precisa saber se deu certo.
+
+Cancelar no Discord volta por essa mesma rota e **não é apresentado como erro**: nada aconteceu, e é isso que a frase diz.
+
+### Regras do Firestore: nenhuma muda
+
+`/discordOauth` cai no `match /{document=**} { allow read, write: if false }` do fim do arquivo, como `/discordCodigos`. O cliente nunca a enxerga, que é o certo.
+
+### Variáveis de ambiente
+
+| Variável | Onde | O que é |
+|---|---|---|
+| `DISCORD_CLIENT_ID` | **Vercel** | o Application ID; monta a URL de autorização |
+| `DISCORD_CLIENT_SECRET` | **Vercel** | troca o `code` por token, servidor a servidor |
+| `APP_URL` | já existia | base do `redirect_uri` — tem de bater com o que está cadastrado no portal |
+
+No portal do Discord, **OAuth2 → Redirects** precisa conter exatamente `https://<dominio>/api/discord/oauth/callback`. O Discord compara texto: uma barra a mais recusa no meio do fluxo, e a mensagem que a pessoa vê é do lado deles.
+
+Sem `DISCORD_CLIENT_ID`, o botão explica que a conexão em um clique não está configurada e aponta para o código. O app não quebra.
+
