@@ -17,14 +17,25 @@
  * responde 200 para assinatura inválida passa nesse cadastro — e é aí que o
  * defeito passa despercebido, porque tudo parece configurado.
  *
- * TRÊS SEGUNDOS. É o prazo do Discord para a resposta inicial. Tudo aqui é uma
- * transação curta; nada de chamada externa, nada de varredura.
+ * TRÊS SEGUNDOS. É o prazo do Discord para a resposta inicial, e é ele que
+ * limita o que cabe aqui dentro: transação curta, consulta por campo único, teto
+ * baixo de documentos. Nada de chamada externa e nada de varredura. Os tetos das
+ * consultas moram em `server/discord-consulta.ts`, com o motivo.
  */
 import { NextResponse } from "next/server";
 import { FieldValue, type Firestore } from "firebase-admin/firestore";
 
 import { adminDb } from "@/lib/server/drive-server";
 import { assinaturaConfere } from "@/lib/server/discord-assinatura";
+import { ligarConta } from "@/lib/server/discord-vinculo";
+import { appUrl } from "@/lib/server/discord-aviso";
+import {
+  cadastroDe,
+  demandasDe,
+  demandasDoSetor,
+} from "@/lib/server/discord-consulta";
+import { montarBusca, montarMinhasDemandas } from "@/lib/discord-consulta-core";
+import { hojeNoFuso } from "@/lib/datas";
 import {
   TIPO_INTERACAO,
   codigoValido,
@@ -51,13 +62,22 @@ async function vincular(
   }
 
   const codRef = db.collection(COL_CODIGOS).doc(codigo);
-  const usuarios = db.collection("users");
 
+  // O CÓDIGO É CONSUMIDO NUMA TRANSAÇÃO PRÓPRIA, antes da escrita do vínculo.
+  //
+  // Antes as duas coisas moravam na mesma transação, e isso foi desfeito de
+  // propósito quando o vínculo em um clique apareceu: a escrita passou a ser
+  // compartilhada (`ligarConta`), e arrastar a leitura do código para dentro
+  // dela obrigaria o outro caminho a fingir que tem um código.
+  //
+  // O preço é conhecido e aceito: se o cadastro estiver inativo, o código
+  // morre junto com a recusa e a pessoa precisa gerar outro. A alternativa —
+  // apagar só depois de o vínculo dar certo — deixaria o código VIVO durante a
+  // escrita, e é justamente a janela em que o uso único deixa de ser único.
+  // Entre "gerar outro código" e "o mesmo segredo servindo duas vezes", a
+  // escolha não é difícil.
   let email = "";
-  let desligou = 0;
-
   await db.runTransaction(async (tx) => {
-    // Todas as leituras antes de qualquer escrita — exigência do Firestore.
     const cod = await tx.get(codRef);
     if (!cod.exists) throw new Error("nao-encontrado");
 
@@ -66,56 +86,20 @@ async function vincular(
     if (!email) throw new Error("nao-encontrado");
     if (expirado(dados.criadoEm ?? 0, Date.now())) throw new Error("expirado");
 
-    const userRef = usuarios.doc(email);
-    const user = await tx.get(userRef);
-    if (!user.exists || user.data()?.active !== true) {
-      throw new Error("sem-acesso");
-    }
-
-    // Uma conta do Discord responde por UMA pessoa do Smart Meet. Sem isto,
-    // duas demandas de donos diferentes mencionariam o mesmo @, e não haveria
-    // como saber qual das duas era para quem — a menção deixaria de ser
-    // endereço e viraria enfeite.
-    //
-    // A escolha é MUDAR o vínculo, não recusar: quem digitou o comando provou
-    // as duas pontas (o código veio da sessão do Smart Meet, o id veio do
-    // Discord). Recusar mandaria a pessoa desvincular primeiro, e ela chegaria
-    // aqui sem saber que existia um vínculo antigo.
-    const anteriores = await tx.get(usuarios.where("discordId", "==", cmd.discordId));
-
-    // ---- daqui para baixo, só escrita ----
-    anteriores.forEach((d) => {
-      if (d.id === email) return;
-      desligou++;
-      tx.update(d.ref, {
-        discordId: FieldValue.delete(),
-        discordUser: FieldValue.delete(),
-      });
-    });
-
-    tx.update(userRef, {
-      discordId: cmd.discordId,
-      discordUser: cmd.discordNome,
-    });
-    // Uso único: o código morre no mesmo instante em que serve. Deixá-lo vivo
-    // pelos dez minutos restantes daria uma segunda chance a quem tivesse visto
-    // a tela por cima do ombro.
     tx.delete(codRef);
+  });
 
-    tx.create(db.collection("logs").doc(), {
-      tipo: "discord.vinculado",
-      por: email,
-      em: new Date(),
-      discordId: cmd.discordId,
-      discordUser: cmd.discordNome,
-      substituiu: desligou,
-    });
+  const { desligou } = await ligarConta(db, {
+    email,
+    discordId: cmd.discordId,
+    discordNome: cmd.discordNome,
+    origem: "comando",
   });
 
   const aviso = desligou
     ? "\n\nEsta conta do Discord estava ligada a outro cadastro; a ligação anterior foi desfeita."
     : "";
-  return `Pronto — **${cmd.discordNome}** agora responde por \`${email}\` no Smart Meet. Você vai ser mencionado nos avisos das demandas onde for o responsável.${aviso}`;
+  return `Pronto — **${cmd.discordNome}** agora responde por \`${email}\` no Smart Meet. Você vai ser mencionado nos avisos das demandas onde for o responsável, e receber aqui no privado o que mexer nelas.${aviso}`;
 }
 
 async function desvincular(
@@ -147,6 +131,56 @@ async function desvincular(
   await lote.commit();
 
   return "Desfeito. Você não será mais mencionado nos avisos das demandas. Para ligar de novo, gere um código novo no seu Perfil.";
+}
+
+/** A frase de quem ainda não ligou as contas. Uma só, para as duas consultas. */
+const SEM_VINCULO =
+  "Esta conta do Discord ainda não está ligada ao Smart Meet, então não sei quais demandas são suas. " +
+  "Abra o seu Perfil no app e toque em **Conectar Discord** — leva um clique. " +
+  "Se preferir, gere um código lá e use `/vincular <codigo>` aqui.";
+
+async function minhasDemandas(
+  db: Firestore,
+  cmd: ComandoRecebido,
+): Promise<string> {
+  const quem = await cadastroDe(db, cmd.discordId);
+  if (!quem) return SEM_VINCULO;
+
+  return montarMinhasDemandas({
+    cards: await demandasDe(db, quem.email),
+    hoje: hojeNoFuso(),
+    appUrl: appUrl(),
+  });
+}
+
+async function buscarDemanda(
+  db: Firestore,
+  cmd: ComandoRecebido,
+): Promise<string> {
+  const quem = await cadastroDe(db, cmd.discordId);
+  if (!quem) return SEM_VINCULO;
+
+  // Os setores da PESSOA, e não o quadro inteiro: a busca não pode virar a
+  // porta pela qual alguém lê a demanda de um setor onde não entra. É a mesma
+  // fronteira que as telas respeitam (`permissoes.ts`), aplicada aqui.
+  //
+  // O corte em três é orçamento de tempo, não de permissão — ver a nota dos
+  // três segundos em `server/discord-consulta.ts`. Hoje ninguém tem mais de um.
+  const setores = quem.sectors.slice(0, 3);
+  if (setores.length === 0) {
+    return "O seu cadastro no Smart Meet ainda não está em nenhum setor. Fale com o administrador.";
+  }
+
+  const listas = await Promise.all(
+    setores.map((s) => demandasDoSetor(db, s)),
+  );
+
+  return montarBusca({
+    termo: cmd.opcoes.busca ?? "",
+    cards: listas.flat(),
+    hoje: hojeNoFuso(),
+    appUrl: appUrl(),
+  });
 }
 
 export async function POST(req: Request) {
@@ -182,7 +216,9 @@ export async function POST(req: Request) {
   const cmd = lerComando(payload);
   if (!cmd) {
     return NextResponse.json(
-      respostaEfemera("Não entendi esse comando. Tente `/vincular` ou `/desvincular`."),
+      respostaEfemera(
+        "Não entendi esse comando. Os que existem são `/minhas-demandas`, `/demanda`, `/vincular` e `/desvincular`.",
+      ),
     );
   }
 
@@ -194,6 +230,12 @@ export async function POST(req: Request) {
     if (cmd.nome === "desvincular") {
       return NextResponse.json(respostaEfemera(await desvincular(db, cmd)));
     }
+    if (cmd.nome === "minhas-demandas") {
+      return NextResponse.json(respostaEfemera(await minhasDemandas(db, cmd)));
+    }
+    if (cmd.nome === "demanda") {
+      return NextResponse.json(respostaEfemera(await buscarDemanda(db, cmd)));
+    }
     return NextResponse.json(
       respostaEfemera("Esse comando não existe mais por aqui."),
     );
@@ -201,6 +243,8 @@ export async function POST(req: Request) {
     // A pessoa está esperando dentro do Discord: toda falha vira frase, nunca
     // um erro HTTP. Um 500 aqui aparece para ela como "a aplicação não
     // respondeu", que não diz o que fazer a seguir.
+    // `VinculoRecusado` (de `server/discord-vinculo.ts`) é subclasse de `Error`
+    // e traz o motivo na mensagem, então cai aqui junto com os locais.
     const motivo = e instanceof Error ? e.message : "";
     const frase =
       motivo === "nao-encontrado"

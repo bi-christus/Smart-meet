@@ -36,9 +36,14 @@ import {
   canalDoEvento,
   cortar,
   deveAvisar,
+  deveMandarDireto,
+  linhaDoDireto,
   linkDoCard,
   montarAviso,
+  montarAvisoDireto,
   montarResumoDeRecorrencias,
+  montarResumoDiario,
+  panoramaDoDia,
   pesoDoEmbed,
   resolverWebhook,
 } from "../src/lib/discord-core.ts";
@@ -367,6 +372,214 @@ const pequeno = { title: "oi", fields: [{ name: "a", value: "b" }] };
 checa(
   "embed que já cabe sai intacto",
   aparar(pequeno) === pequeno,
+);
+
+// --- a mensagem direta ao responsável --------------------------------------
+//
+// A recusa é o que importa testar aqui. Um direto a mais é ruído no telefone de
+// alguém, e ruído no telefone é o que faz a pessoa desligar o bot inteiro — e
+// junto com ele os avisos que ela queria.
+const baseDm = {
+  acao: "editada",
+  mudancas: [{ campo: "prazo", de: "01/09", para: "10/09" }],
+  autorEmail: "italo@px.com.br",
+  responsavelEmail: "kaua@px.com.br",
+  responsavelDiscordId: "999",
+};
+
+checa("responsável vinculado e mudança de outra pessoa: manda", deveMandarDireto(baseDm));
+checa(
+  "sem vínculo não há para onde mandar",
+  !deveMandarDireto({ ...baseDm, responsavelDiscordId: null }),
+);
+checa(
+  "vínculo em branco também não",
+  !deveMandarDireto({ ...baseDm, responsavelDiscordId: "   " }),
+);
+checa(
+  "demanda sem responsável não tem destinatário",
+  !deveMandarDireto({ ...baseDm, responsavelEmail: null }),
+);
+checa(
+  "quem mexeu na PRÓPRIA demanda não se avisa",
+  !deveMandarDireto({ ...baseDm, autorEmail: "kaua@px.com.br" }),
+);
+checa(
+  "e a comparação ignora caixa e espaço, que é como o e-mail chega",
+  !deveMandarDireto({ ...baseDm, autorEmail: "  Kaua@PX.com.BR " }),
+);
+checa(
+  "evento sem notícia não vira direto, pela MESMA régua do canal",
+  !deveMandarDireto({ ...baseDm, mudancas: [] }),
+);
+checa(
+  "mas excluir não precisa de par para ser notícia",
+  deveMandarDireto({ ...baseDm, acao: "excluida", mudancas: [] }),
+);
+
+checa(
+  "a linha diz por que a mensagem chegou",
+  linhaDoDireto("criada", []) === "Abriram uma demanda no seu nome.",
+);
+checa(
+  "troca de responsável ganha das outras — é o que muda o dia da pessoa",
+  linhaDoDireto("movida", [
+    { campo: "coluna", de: "A fazer", para: "Fazendo" },
+    { campo: "responsavel", de: "Ítalo", para: "Kauã" },
+  ]) === "Esta demanda passou a ser sua.",
+);
+checa(
+  "cada ação tem a sua frase, e nenhuma sai vazia",
+  ["criada", "editada", "movida", "excluida", "restaurada"].every(
+    (a) => linhaDoDireto(a, []).length > 0,
+  ),
+);
+
+const dm = montarAvisoDireto({
+  card: CARD,
+  evento: EVENTO,
+  appUrl: "https://app.exemplo.com",
+  rotulo: { prioridade: (p) => p, tipo: (t) => t },
+});
+const noCanal = montarAviso({
+  card: CARD,
+  evento: EVENTO,
+  appUrl: "https://app.exemplo.com",
+  rotulo: { prioridade: (p) => p, tipo: (t) => t },
+});
+checa(
+  "a DM conta a MESMA história do canal — um embed só, idêntico",
+  JSON.stringify(dm.embeds) === JSON.stringify(noCanal.embeds),
+);
+checa(
+  "o `content` da DM é o porquê, e não a menção",
+  dm.content === linhaDoDireto(EVENTO.acao, EVENTO.mudancas) &&
+    !dm.content.includes("<@"),
+);
+checa(
+  "dentro da DM não se menciona ninguém",
+  dm.allowed_mentions.parse.length === 0 &&
+    dm.allowed_mentions.users === undefined,
+);
+
+// --- o resumo do dia -------------------------------------------------------
+//
+// Este é o único aviso que fala do que NÃO aconteceu, e o jeito de estragá-lo é
+// cobrar entrega já feita: um resumo que lista como atrasada a demanda entregue
+// semana passada é um resumo que se aprende a ignorar em duas semanas.
+const HOJE_DIA = "2026-08-18";
+const QUADRO_DIA = [
+  { id: "a", title: "Painel do refeitório", responsavel: "Kauã", prazo: "2026-08-10", etapa: "Em andamento", entregue: false },
+  { id: "b", title: "Carga do DW", responsavel: "Ítalo", prazo: "2026-08-17", etapa: "A fazer", entregue: false },
+  { id: "c", title: "Relatório do RH", responsavel: "Kauã", prazo: "2026-08-18", etapa: "Em andamento", entregue: false },
+  { id: "d", title: "Conferência de acessos", responsavel: null, prazo: null, etapa: "A fazer", entregue: false },
+  { id: "e", title: "Dashboard antigo", responsavel: "Ítalo", prazo: "2026-01-05", etapa: "Concluído", entregue: true },
+  { id: "f", title: "Sem prazo mesmo", responsavel: "Emerson", prazo: null, etapa: "Aguardando", entregue: false },
+];
+const panDia = panoramaDoDia({ cards: QUADRO_DIA, hoje: HOJE_DIA });
+
+checa("entregue não entra na contagem de abertas", panDia.abertas === 5);
+checa(
+  "prazo vencido de demanda ENTREGUE não é atraso",
+  !panDia.atrasadas.some((c) => c.id === "e"),
+  panDia.atrasadas.map((c) => c.id).join(","),
+);
+checa(
+  "as atrasadas vêm da mais antiga para a mais nova",
+  panDia.atrasadas.map((c) => c.id).join(",") === "a,b",
+);
+checa("o que vence hoje não conta como atraso", panDia.vencemHoje.map((c) => c.id).join(",") === "c");
+checa("demanda sem prazo não aparece em nenhum dos dois", panDia.atrasadas.length + panDia.vencemHoje.length === 3);
+checa(
+  "o buraco de quem não tem dono aparece",
+  panDia.semResponsavel.map((c) => c.id).join(",") === "d",
+);
+checa(
+  "a contagem por etapa só conta o que está aberto",
+  JSON.stringify(panDia.porEtapa.sort()) ===
+    JSON.stringify([["A fazer", 2], ["Aguardando", 1], ["Em andamento", 2]].sort()),
+  JSON.stringify(panDia.porEtapa),
+);
+
+const diario = montarResumoDiario({
+  sector: "B.I.",
+  cards: QUADRO_DIA,
+  hoje: HOJE_DIA,
+  appUrl: "https://app.exemplo.com",
+});
+const embDia = diario.embeds[0];
+checa("o título diz o que precisa de ação hoje", embDia.title === "2 demandas atrasadas");
+checa("vermelho quando há atraso — é o que se lê antes do texto", embDia.color === 0xd64545);
+checa(
+  "cada linha leva ao card",
+  embDia.fields[0].value.includes("(https://app.exemplo.com/kanban?setor=B.I.&card=a)"),
+  embDia.fields[0].value.split("\n")[0],
+);
+checa("o panorama por etapa vem por último, não primeiro", embDia.fields.at(-1).name === "No quadro");
+checa("rotina diária NÃO menciona ninguém", embDia.description !== undefined && diario.allowed_mentions.parse.length === 0 && diario.allowed_mentions.users === undefined);
+checa(
+  "todo campo cabe no teto de 1024",
+  embDia.fields.every((f) => f.value.length <= LIMITE_CAMPO_VALOR),
+);
+
+const soVenceHoje = montarResumoDiario({
+  sector: "B.I.",
+  cards: [QUADRO_DIA[2], QUADRO_DIA[4]],
+  hoje: HOJE_DIA,
+});
+checa("âmbar quando só há vencimento de hoje", soVenceHoje.embeds[0].color === 0xf5b13d);
+checa("e o título fala no singular", soVenceHoje.embeds[0].title === "1 demanda vence hoje");
+
+const tudoEmDia = montarResumoDiario({
+  sector: "B.I.",
+  cards: [{ id: "z", title: "Tranquila", responsavel: "Kauã", prazo: "2026-12-01", etapa: "A fazer", entregue: false }],
+  hoje: HOJE_DIA,
+});
+checa("verde e dito na cara quando está tudo em dia", tudoEmDia.embeds[0].color === 0x3fa66b);
+checa(
+  '"está tudo em dia" É notícia — é o que faz alguém confiar no silêncio dos outros dias',
+  tudoEmDia.embeds[0].title === "Nada atrasado por aqui",
+);
+
+checa(
+  "quadro vazio NÃO vira mensagem — aviso diário sem notícia ensina a não abrir o canal",
+  montarResumoDiario({ sector: "B.I.", cards: [], hoje: HOJE_DIA }) === null,
+);
+checa(
+  "quadro só com entregues também não",
+  montarResumoDiario({ sector: "B.I.", cards: [QUADRO_DIA[4]], hoje: HOJE_DIA }) === null,
+);
+
+const muitasDoDia = Array.from({ length: 40 }, (_, i) => ({
+  id: `x${i}`,
+  title: `Demanda número ${i} com um título razoavelmente comprido para ocupar espaço`,
+  responsavel: "Kauã",
+  prazo: "2026-08-01",
+  etapa: "A fazer",
+  entregue: false,
+}));
+const grandeDoDia = montarResumoDiario({ sector: "B.I.", cards: muitasDoDia, hoje: HOJE_DIA, appUrl: "https://app.exemplo.com" });
+checa(
+  "quarenta atrasadas continuam UMA mensagem",
+  grandeDoDia.embeds.length === 1,
+);
+const listaDoDia = grandeDoDia.embeds[0].fields[0].value.split("\n");
+const anuncio = /^• …e mais (\d+)$/.exec(listaDoDia.at(-1) ?? "");
+checa(
+  "o corte é anunciado, e a conta fecha — 40 = listadas + anunciadas",
+  !!anuncio && listaDoDia.length - 1 + Number(anuncio[1]) === 40,
+  listaDoDia.at(-1),
+);
+checa(
+  "e o anúncio SOBREVIVE ao teto do campo (era aqui que ele se perdia)",
+  grandeDoDia.embeds[0].fields[0].value.length <= LIMITE_CAMPO_VALOR &&
+    grandeDoDia.embeds[0].fields[0].value.includes("…e mais"),
+  `${grandeDoDia.embeds[0].fields[0].value.length}`,
+);
+checa(
+  "e o embed inteiro cabe nos 6000",
+  pesoDoEmbed(grandeDoDia.embeds[0]) <= LIMITE_TOTAL_EMBED,
+  `${pesoDoEmbed(grandeDoDia.embeds[0])}`,
 );
 
 // --- o resumo da rodada de recorrências ------------------------------------
