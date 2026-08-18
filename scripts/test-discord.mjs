@@ -27,6 +27,7 @@ import {
   COR_POR_ACAO,
   LIMITE_CAMPOS,
   LIMITE_CAMPO_VALOR,
+  LIMITE_DESCRICAO,
   LIMITE_TITULO,
   LIMITE_TOTAL_EMBED,
   aparar,
@@ -34,6 +35,7 @@ import {
   deveAvisar,
   linkDoCard,
   montarAviso,
+  montarResumoDeRecorrencias,
   pesoDoEmbed,
   webhookDoSetor,
 } from "../src/lib/discord-core.ts";
@@ -298,6 +300,91 @@ const pequeno = { title: "oi", fields: [{ name: "a", value: "b" }] };
 checa(
   "embed que já cabe sai intacto",
   aparar(pequeno) === pequeno,
+);
+
+// --- o resumo da rodada de recorrências ------------------------------------
+const TRES = [
+  { id: "c1", title: "Backup mensal do Looker", responsavel: "Kauã Silva" },
+  { id: "c2", title: "Conferência de acessos" },
+  { id: "c3", title: "" },
+];
+const resumo = montarResumoDeRecorrencias({
+  sector: "B.I.",
+  cards: TRES,
+  appUrl: "https://app.exemplo.com",
+});
+const re = resumo.embeds[0];
+
+checa("o resumo é UMA mensagem, não uma por card", resumo.embeds.length === 1);
+checa(
+  "o título conta quantas abriram",
+  re.title === "3 demandas de manutenção foram abertas",
+  re.title,
+);
+checa(
+  "com uma só, o título fica no singular",
+  montarResumoDeRecorrencias({ sector: "B.I.", cards: [TRES[0]] }).embeds[0]
+    .title === "1 demanda de manutenção foi aberta",
+);
+checa(
+  "cada linha leva ao card",
+  re.description.includes("(https://app.exemplo.com/kanban?setor=B.I.&card=c1)"),
+  re.description.split("\n")[0],
+);
+checa(
+  "o responsável aparece quando existe, e some quando não",
+  re.description.includes("— Kauã Silva") &&
+    !re.description.split("\n")[1].includes("—"),
+  re.description,
+);
+checa(
+  "card sem título não vira linha vazia",
+  re.description.includes("Demanda sem título"),
+);
+checa(
+  "rotina automática NÃO menciona ninguém",
+  resumo.allowed_mentions.parse.length === 0 &&
+    resumo.allowed_mentions.users === undefined &&
+    resumo.content === undefined,
+);
+checa(
+  "sem APP_URL, o resumo sai sem link em vez de com link quebrado",
+  !montarResumoDeRecorrencias({ sector: "B.I.", cards: TRES })
+    .embeds[0].description.includes("]("),
+);
+
+// Uma rodada grande é o caso que o cron produz de verdade.
+const sessenta = Array.from({ length: 60 }, (_, i) => ({
+  id: `c${i}`,
+  title: `Manutenção ${i} ${"z".repeat(300)}`,
+  responsavel: "Alguém",
+}));
+const grande = montarResumoDeRecorrencias({
+  sector: "B.I.",
+  cards: sessenta,
+  appUrl: "https://app.exemplo.com",
+});
+checa(
+  "60 cards continuam UMA mensagem",
+  grande.embeds.length === 1 && grande.embeds[0].title.startsWith("60 "),
+);
+checa(
+  "a descrição cabe no teto de 4096",
+  grande.embeds[0].description.length <= LIMITE_DESCRICAO,
+  `${grande.embeds[0].description.length}`,
+);
+checa(
+  "a lista é cortada e o corte é anunciado",
+  /e mais 45/.test(grande.embeds[0].description),
+  grande.embeds[0].description.split("\n").at(-1),
+);
+checa(
+  "colchete no título não quebra o link do Markdown ao meio",
+  !montarResumoDeRecorrencias({
+    sector: "B.I.",
+    cards: [{ id: "c1", title: "Ajuste [urgente] (rev 2)" }],
+    appUrl: "https://a.b",
+  }).embeds[0].description.includes("[urgente]"),
 );
 
 console.log(

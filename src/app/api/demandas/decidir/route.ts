@@ -16,6 +16,7 @@
 import { NextResponse } from "next/server";
 
 import { HttpError, adminDb, requireUser } from "@/lib/server/drive-server";
+import { publicarEventoSemQuebrar } from "@/lib/server/discord-aviso";
 import { TIPOS_DEMANDA, type TipoDemanda } from "@/lib/server/demandas-schema";
 // Módulo puro (sem SDK do cliente): serve os dois lados, e é o que mantém o
 // histórico escrito aqui com a mesma forma do que o quadro escreve.
@@ -215,6 +216,10 @@ export async function POST(req: Request) {
 
     const agoraMs = agora.getTime();
     const cardRef = db.collection("cards").doc();
+    // A referência do primeiro evento nasce AQUI, e não inline no `tx.create`,
+    // porque o aviso no Discord precisa apontar para um evento específico —
+    // mesma razão que fez `anexarEvento` devolver o id no lado do navegador.
+    const eventoRef = cardRef.collection("historico").doc();
 
     /**
      * O estado inicial como o histórico vai mostrar.
@@ -281,7 +286,7 @@ export async function POST(req: Request) {
         // reunião abriria o histórico vazio — e "não tem registro" leria como
         // "ninguém mexeu", quando na verdade ela veio de uma decisão tomada
         // aqui, por alguém, num instante que o sistema conhece.
-        tx.create(cardRef.collection("historico").doc(), {
+        tx.create(eventoRef, {
           sector: sectorAlvo,
           autor: caller.email,
           em: agora,
@@ -290,6 +295,13 @@ export async function POST(req: Request) {
         });
       },
     );
+
+    // Depois da transação, sempre: avisar antes publicaria no canal uma demanda
+    // que ainda pode não existir. E `await` com engolidor de erro dentro —
+    // a função serverless morre ao devolver a resposta, então promessa solta
+    // não enviaria nada; e um webhook fora do ar não pode transformar "aceitei
+    // a demanda" em erro na tela de quem aceitou.
+    await publicarEventoSemQuebrar(db, cardRef.id, eventoRef.id);
 
     return NextResponse.json({ ok: true, status: "aceita", cardId: cardRef.id });
   } catch (e) {

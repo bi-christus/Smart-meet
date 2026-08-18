@@ -391,3 +391,67 @@ export function montarAviso(args: {
     allowed_mentions: alvo ? { parse: [], users: [alvo] } : { parse: [] },
   };
 }
+
+/**
+ * UMA mensagem para a rodada inteira do cron de recorrências.
+ *
+ * E não um aviso por card, que é a escolha óbvia e a errada: o cron pode abrir
+ * dezenas de cards às 06:10, e vinte mensagens seguidas no canal — todas iguais
+ * menos o título — é o jeito de fazer alguém silenciar o canal. Canal
+ * silenciado apaga também os avisos que importam, que é um preço alto demais
+ * por uma rotina automática que ninguém precisa acompanhar card a card.
+ *
+ * Mora aqui, e não na rota, pelo motivo de sempre (AGENTS.md §4): montar a
+ * mensagem é REGRA, e regra tem teste. O que fica na rota é o envio.
+ */
+export function montarResumoDeRecorrencias(args: {
+  sector: string;
+  cards: { id: string; title: string; responsavel?: string | null }[];
+  appUrl?: string | null;
+}): CorpoWebhook {
+  const { sector, cards, appUrl } = args;
+
+  // 15 linhas cabem folgadas nos 4096 da descrição e ainda são legíveis num
+  // celular; o resto vira contagem. Uma lista de sessenta títulos não é lista,
+  // é parede.
+  const TETO_LINHAS = 15;
+  const mostradas = cards.slice(0, TETO_LINHAS);
+  const sobrando = cards.length - mostradas.length;
+
+  const linhas = mostradas.map((c) => {
+    const alvo = linkDoCard(appUrl, sector, c.id);
+    // Os colchetes e parênteses do título quebrariam o link do Markdown ao
+    // meio, e o que sobraria na tela seria a URL crua no meio da frase.
+    const titulo = cortar(c.title || "Demanda sem título", 120).replace(
+      /[[\]()]/g,
+      "",
+    );
+    const nome = alvo ? `[${titulo}](${alvo})` : titulo;
+    return `• ${nome}${c.responsavel ? ` — ${c.responsavel}` : ""}`;
+  });
+  if (sobrando > 0) linhas.push(`• …e mais ${sobrando}`);
+
+  return {
+    embeds: [
+      {
+        author: { name: cortar("Recorrências do dia", LIMITE_AUTOR) },
+        title: cortar(
+          cards.length === 1
+            ? "1 demanda de manutenção foi aberta"
+            : `${cards.length} demandas de manutenção foram abertas`,
+          LIMITE_TITULO,
+        ),
+        description: cortar(linhas.join("\n"), LIMITE_DESCRICAO),
+        // O verde-água de `manutencao` em `DEMAND_TYPE_COLOR`: é o tipo que a
+        // recorrência abre, e a cor faz o resumo se reconhecer de longe entre
+        // os avisos de demanda comuns.
+        color: 0x2dd4bf,
+        footer: { text: cortar(`Smart Meet · ${sector}`, LIMITE_RODAPE) },
+      },
+    ],
+    // Rotina automática não menciona ninguém. O responsável de cada card ganha
+    // menção quando alguém MEXER na demanda dele; ser acordado às 6h por um
+    // cron é o tipo de notificação que ensina a ignorar todas as outras.
+    allowed_mentions: { parse: [] },
+  };
+}

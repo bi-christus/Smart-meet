@@ -28,11 +28,17 @@ Webhook **não recebe** nada — ele é uma URL que aceita POST e publica. Bot *
 
 ## As seis decisões que importam
 
-### 1. O gancho mora em `kanban.ts`, não nas telas
+### 1. O gancho mora em `kanban.ts`, não nas telas — e no servidor, num lugar só
 
-Seis lugares escrevem card: `card-modal.tsx`, `kanban/page.tsx`, `cronograma/page.tsx`, `api/demandas/decidir`, `api/recorrencias/gerar` e a própria lixeira. Pendurar o aviso em cada um deles é o desenho que apodrece calado — o sétimo caminho que alguém abrir no mês que vem nasce sem aviso, e ninguém percebe, porque a tela funciona perfeitamente.
+Escrever card acontece em duas famílias de caminho, e as duas precisam do gancho. Pendurar o aviso em cada tela é o desenho que apodrece calado: o caminho novo que alguém abrir no mês que vem nasce sem aviso, e ninguém percebe, porque a tela funciona perfeitamente.
 
-O aviso entra nas cinco funções de `src/lib/kanban.ts` que já gravam o evento no mesmo lote (`createCard`, `updateCard`, `moveCard`, `moverParaLixeira`, `restaurarDaLixeira`), uma linha depois do `batch.commit()`. É o mesmo argumento que fez `registro` virar parâmetro **obrigatório** de `updateCard`: aqui é impossível gravar sem avisar, porque é a mesma função.
+**No navegador**, o aviso entra nas cinco funções de `src/lib/kanban.ts` que já gravam o evento no mesmo lote (`createCard`, `updateCard`, `moveCard`, `moverParaLixeira`, `restaurarDaLixeira`), uma linha depois do `batch.commit()`. É o mesmo argumento que fez `registro` virar parâmetro **obrigatório** de `updateCard`: ali é impossível gravar sem avisar, porque é a mesma função.
+
+**No servidor**, quem cria card pelo Admin SDK chama `publicarEvento` de `src/lib/server/discord-aviso.ts` direto — sem salto HTTP e sem forjar um token para o servidor falar consigo mesmo. São dois: `api/demandas/decidir` (a proposta de reunião que um humano aceitou) e `api/recorrencias/gerar` (o cron das 06:10).
+
+> **Isto foi um furo, e a nota fica.** O #89 entregou só a metade do navegador e a documentação afirmava cobrir tudo. Demanda nascida de reunião e de recorrência entrava no quadro com o canal mudo — exatamente o modo de falha que esta seção diz evitar. Consertado em #93. A regra que sobrou: **quem cria card ou evento pelo Admin SDK chama `discord-aviso.ts`.**
+
+O cron é a exceção de FORMATO, não de cobertura: ele publica **um resumo por rodada**, não um aviso por card. Ver "O resumo das recorrências".
 
 ### 2. O cliente manda dois ids, e mais nada
 
@@ -105,6 +111,18 @@ Tudo que virou linha na timeline, menos evento sem notícia.
 O que `deveAvisar` recusa é o verbo que precisa de par e não tem: "editada" sem nenhuma mudança viraria "fulano editou a demanda" sem dizer o quê.
 
 É a política mais generosa possível, e é onde mexer quando o canal encher — um lugar, com teste.
+
+---
+
+## O resumo das recorrências
+
+O cron das 06:10 é a única exceção ao "um evento, um aviso", e a razão é aritmética: ele pode abrir dezenas de cards de uma vez (ver `LIMITE_POR_EXECUCAO` em `api/recorrencias/gerar`). Vinte mensagens seguidas no canal, todas iguais menos o título, é o jeito de fazer alguém **silenciar o canal** — e canal silenciado apaga também os avisos que importam. Preço alto demais por uma rotina automática que ninguém precisa acompanhar card a card.
+
+Então a rodada publica **uma** mensagem por setor, com até 15 títulos clicáveis e a contagem do que sobrou. Cor verde-água, a mesma de `manutencao` em `DEMAND_TYPE_COLOR`, para o resumo se reconhecer de longe entre os avisos comuns.
+
+E ele **não menciona ninguém**, mesmo com todo mundo vinculado. O responsável ganha menção quando alguém *mexer* na demanda dele; ser acordado às 6h por um cron é o tipo de notificação que ensina a ignorar todas as outras.
+
+Sem marca de idempotência aqui, ao contrário de `publicarEvento`: a chamada acontece uma vez por rodada, e a rodada já é protegida contra repetição pela transação que cria a ocorrência (um card por data prevista). Não há evento único a marcar.
 
 ---
 
