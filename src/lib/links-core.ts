@@ -37,6 +37,21 @@ export type CardLink = {
   addedBy: string;
   /** Milissegundos. */
   addedAt: number;
+  /**
+   * O ícone que ALGUÉM ESCOLHEU para este link, sobrepondo o deduzido.
+   *
+   * Ausente é o caso normal e continua sendo para sempre: sem ele, `iconeDoLink`
+   * (em `icones-core`) deduz pelo serviço, como esta tela sempre fez. O campo só
+   * existe para a exceção — o endereço interno que cai no genérico, o Doc que a
+   * pessoa quer marcar como planilha porque é isso que ele é para ela.
+   *
+   * O VALOR É OPACO AQUI, e isso não é desleixo. Quem sabe quais nomes existem é
+   * `icones-core`, que conhece o catálogo; este módulo conhece URL. Pôr a
+   * validação aqui obrigaria `links-core` a importar o catálogo, e o catálogo
+   * importa daqui — as duas metades ficariam num ciclo para responder uma
+   * pergunta que nenhuma das duas faz sozinha.
+   */
+  icone?: string;
 };
 
 export type ServicoLink =

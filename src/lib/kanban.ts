@@ -56,6 +56,11 @@ export type { TagRef };
 import type { CardLink } from "./links-core";
 export type { CardLink };
 
+// O ícone escolhido de um link é regra pura — que nome vale, qual vence o
+// deduzido, como se volta ao automático — e mora num módulo com teste próprio.
+// Aqui só passa a escrita.
+import { aplicarIcone } from "./icones-core.ts";
+
 // Prioridade e tipo saíram daqui pelo mesmo motivo das colunas e da lixeira: o
 // SERVIDOR precisa deles. A rota do aviso no Discord monta a mensagem lendo
 // `/cards` pelo Admin SDK, e não pode importar este arquivo — ele traz o SDK do
@@ -483,6 +488,68 @@ export async function removeComment(
     atuais.splice(i, 1);
     tx.update(ref, { comments: atuais });
   });
+}
+
+/**
+ * Troca o ícone de UM link de uma demanda. `null` volta ao automático.
+ *
+ * TRANSAÇÃO, e não `updateDoc` com a lista que a tela tem na mão — pelo mesmo
+ * motivo de `editComment` logo acima. `links` é um array, e gravar a cópia da
+ * tela apaga, em silêncio, o link que outra pessoa colou entre o último
+ * snapshot e este clique. A aba Links mostra links de dezenas de demandas de um
+ * setor inteiro; a chance de duas pessoas mexerem no mesmo card não é teórica.
+ *
+ * ISTO NÃO PASSA POR `updateCard`, E A OMISSÃO É ESCOLHIDA — não esquecimento.
+ * O registro é parâmetro obrigatório de `updateCard` porque trilha que depende
+ * de disciplina no ponto de uso apodrece calada. Mas a regra do AGENTS.md §4 é
+ * "escrita E REGISTRO andam no mesmo lote" — ela obriga a atomicidade de um
+ * registro que precisa existir, e não obriga todo campo a virar registro. O
+ * histórico da demanda responde "o que mudou nesta demanda?", e a resposta
+ * "alguém trocou o desenho do selo de um link" empurra para baixo, uma linha de
+ * cada vez, o que aquela trilha existe para preservar: mudança de prazo, de
+ * responsável, de coluna. O que se perde ao não registrar é a autoria de uma
+ * escolha cosmética, reversível em dois cliques por qualquer pessoa do setor,
+ * e que a própria tela mostra o tempo todo — o ícone ESTÁ ali, visível, sem
+ * precisar de auditoria.
+ *
+ * Pelo mesmo raciocínio não há aviso no Discord: `avisarDiscord` conta que uma
+ * demanda mudou, e nada mudou na demanda.
+ *
+ * O DESFECHO É TIPADO porque as três saídas pedem telas diferentes. `"gravado"`
+ * fecha o seletor; `"sem-mudanca"` também fecha, calado (escolher o que já
+ * estava lá não é erro); `"sumiu"` precisa dizer alguma coisa — o card ou o
+ * link deixou de existir enquanto esta aba estava aberta, e insistir no clique
+ * não vai adiantar. Lançar nos três casos faria a tela tratar como falha o
+ * caminho mais comum de todos.
+ */
+export type DesfechoIcone = "gravado" | "sem-mudanca" | "sumiu";
+
+export async function definirIconeDoLink(
+  cardId: string,
+  linkId: string,
+  icone: string | null,
+): Promise<DesfechoIcone> {
+  const ref = doc(db, "cards", cardId);
+  let desfecho: DesfechoIcone = "sem-mudanca";
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) {
+      desfecho = "sumiu";
+      return;
+    }
+    const atuais = (snap.data().links ?? []) as CardLink[];
+    // `null` do módulo puro cobre três casos de uma vez: link inexistente,
+    // valor já igual e nome fora do catálogo. Distinguir "sumiu" dos outros
+    // dois é a única pergunta que a tela ainda precisa fazer.
+    const novos = aplicarIcone(atuais, linkId, icone);
+    if (!novos) {
+      desfecho = atuais.some((l) => l.id === linkId) ? "sem-mudanca" : "sumiu";
+      return;
+    }
+    tx.update(ref, { links: novos });
+    desfecho = "gravado";
+  });
+  return desfecho;
 }
 
 /**

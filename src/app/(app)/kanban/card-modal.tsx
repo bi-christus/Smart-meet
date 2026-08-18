@@ -38,14 +38,13 @@ import {
 import {
   normalizarUrl,
   dominioDe,
-  servicoDe,
   seloDoLink,
   monogramaDe,
   rotuloDoLink,
   jaTem,
   novoIdLink,
-  SERVICO_ROTULO,
 } from "@/lib/links-core";
+import { aplicarIcone, iconeDoLink } from "@/lib/icones-core";
 import {
   MES_LONGO,
   ehFimDeSemanaISO,
@@ -56,6 +55,7 @@ import { codigoDe, fraseDeFalha } from "@/lib/erro-ui-core";
 import { diffCard, mudancasIniciais, type Rotulos } from "@/lib/historico-core";
 import { type UserProfile } from "@/lib/users";
 import { Icon } from "@/components/icons";
+import { IconePicker } from "@/components/icone-picker";
 import { Avatar } from "@/components/avatar";
 import { Select, type SelectOption } from "@/components/select";
 import { Combobox } from "@/components/combobox";
@@ -680,6 +680,20 @@ export function CardModal({
     setLinks((c) => c.filter((l) => l.id !== id));
   }
   /** O rótulo é de quem lê depois: "Planilha de custos" acha; a URL, não. */
+  /**
+   * O ícone escolhido — NO RASCUNHO, como o título ao lado.
+   *
+   * A aba Links grava direto no banco porque lá não existe rascunho: o card não
+   * está aberto para edição. Aqui existe, e escrever no banco no clique faria a
+   * troca do ícone escapar do Cancelar — a pessoa desistiria da demanda inteira
+   * e o ícone teria ficado. `aplicarIcone` devolve `null` quando não há o que
+   * mudar, e aí o estado não é tocado: um `setLinks` com a mesma lista
+   * remontaria a seção a cada clique repetido.
+   */
+  function editIconeLink(id: string, icone: string | null) {
+    setLinks((c) => aplicarIcone(c, id, icone) ?? c);
+  }
+
   function editTituloLink(id: string, title: string) {
     setLinks((c) => c.map((l) => (l.id === id ? { ...l, title } : l)));
   }
@@ -1381,18 +1395,29 @@ export function CardModal({
       {links.map((l) => (
         <div key={l.id} className={styles.linkRow}>
           {/* Fundo e tinta saem juntos: branco chapado desaparece no amarelo
-              do Drive, e o monograma é a única pista visual da linha. */}
-          <span
+              do Drive, e o selo é a única pista visual da linha.
+
+              Ele DESENHA o ícone agora, e não só o monograma. Antes esta linha
+              e o card da aba Links mostravam coisas diferentes para o mesmo
+              link — aqui duas letras, lá o desenho do serviço —, e quem
+              cadastrava não tinha como saber o que ia aparecer. */}
+          <IconePicker
+            valor={l.icone ?? null}
+            deduzido={iconeDoLink({ ...l, icone: undefined })}
+            rotulo={rotuloDoLink(l)}
+            onEscolher={(nome) => editIconeLink(l.id, nome)}
             className={styles.linkIcone}
             style={{
               background: seloDoLink(l.url).fundo,
               color: seloDoLink(l.url).tinta,
             }}
-            title={SERVICO_ROTULO[servicoDe(l.url)]}
-            aria-hidden="true"
           >
-            {monogramaDe(l.url)}
-          </span>
+            {iconeDoLink(l) ? (
+              <Icon name={iconeDoLink(l) as string} size={15} />
+            ) : (
+              monogramaDe(l.url)
+            )}
+          </IconePicker>
           <div className={styles.linkMain}>
             <input
               className={styles.linkTitulo}

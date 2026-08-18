@@ -2048,3 +2048,25 @@
   padding: 0 14px;
   font-size: 12.5px;
 }
+
+/* O selo do link virou BOTÃO — ele abre o seletor de ícone.
+
+   `font: inherit` pelo mesmo motivo do `.icone` da aba Links: `<button>` não
+   herda a fonte do documento, e sem esta linha o monograma sairia fora da IBM
+   Plex — só nos links de domínio desconhecido, que são justamente os que
+   mostram monograma. */
+.linkIcone {
+  font: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  outline-offset: 2px;
+}
+
+.linkIcone:hover {
+  filter: brightness(1.08);
+}

@@ -182,6 +182,119 @@ const PATHS: Record<string, ReactNode> = {
       <path d="M15 21v-8h5v8" />
     </>
   ),
+  /* ---------------------------------------------------------------------
+     Icones de CONTEUDO, para o seletor do card de link (`icones-core.ts`).
+
+     Os de cima sao de NAVEGACAO: eles nomeiam uma aba, e por isso podem ser
+     abstratos. Estes nomeiam o que esta do outro lado de uma URL, e a regra
+     deles e outra — tem de ser reconheciveis em 18px dentro de uma grade de
+     trinta, sem rotulo ao lado no primeiro olhar.
+
+     NENHUM E LOGOTIPO, de proposito. Quem diz a marca e o selo de texto embaixo
+     do titulo do card; guardar dezoito marcas registradas aqui dentro seria
+     carregar dezoito riscos juridicos para dizer o que uma palavra ja diz.
+
+     O `d` de cada um e DISTINTO do de todos os outros do catalogo, e isso e
+     asserção de `scripts/test-icones.mjs` — o repositorio ja tem tres pares
+     identicos por acidente (`admin`/`shield`, `cronograma`/`calendar`,
+     `dashboard`/`trend`), e um seletor com gemeos pede a quem usa que escolha
+     entre duas celulas que desenham a mesma coisa.
+     --------------------------------------------------------------------- */
+  pasta: (
+    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+  ),
+  /* grade com cabecalho: o que separa isto do `kanban` (tres retangulos soltos)
+     e do `calendar` (retangulo com dois ganchos em cima) sao as colunas
+     internas descendo ate a base */
+  planilha: (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M3 9h18M3 14.5h18M9 9v11M15 9v11" />
+    </>
+  ),
+  /* tela de projecao com o pe: `online` e um monitor de mesa (base larga e
+     curta); aqui a tela pendura de uma barra e o pe e um trepe */
+  apresentacao: (
+    <>
+      <path d="M3 4h18" />
+      <path d="M4.5 4v9a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V4" />
+      <path d="M9 21l3-3 3 3" />
+    </>
+  ),
+  prancheta: (
+    <>
+      <rect x="5" y="4" width="14" height="17" rx="2" />
+      <path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1" />
+      <path d="M9 11h6M9 15h4" />
+    </>
+  ),
+  livro: (
+    <>
+      <path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v18H6.5A2.5 2.5 0 0 0 4 22z" />
+      <path d="M4 17.5A2.5 2.5 0 0 1 6.5 15H20" />
+    </>
+  ),
+  banco: (
+    <>
+      <ellipse cx="12" cy="5.5" rx="8" ry="3" />
+      <path d="M4 5.5v13c0 1.66 3.58 3 8 3s8-1.34 8-3v-13" />
+      <path d="M20 12c0 1.66-3.58 3-8 3s-8-1.34-8-3" />
+    </>
+  ),
+  dinheiro: (
+    <>
+      <rect x="2" y="6" width="20" height="12" rx="2" />
+      <circle cx="12" cy="12" r="3" />
+      <path d="M6 10v4M18 10v4" />
+    </>
+  ),
+  alvo: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <circle cx="12" cy="12" r="5" />
+      <circle cx="12" cy="12" r="1.4" />
+    </>
+  ),
+  /* `play` sozinho e o botao de tocar (uma acao); com a moldura em volta vira o
+     substantivo "video", que e o que um link e */
+  video: (
+    <>
+      <rect x="2" y="5" width="20" height="14" rx="3" />
+      <path d="M10 9.5l5 2.5-5 2.5z" />
+    </>
+  ),
+  imagem: (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <circle cx="8.5" cy="9.5" r="1.8" />
+      <path d="M21 16l-5-5-9 9" />
+    </>
+  ),
+  globo: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18" />
+      <path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18" />
+    </>
+  ),
+  mapa: (
+    <>
+      <path d="M12 21.5s7-6.4 7-11.5a7 7 0 1 0-14 0c0 5.1 7 11.5 7 11.5z" />
+      <circle cx="12" cy="10" r="2.6" />
+    </>
+  ),
+  /* as duas pontas mais a barra inclinada: sem a barra, as pontas sozinhas sao
+     `chevronLeft` e `chevronRight` coladas, que e o desenho de navegacao */
+  codigo: (
+    <>
+      <path d="M8.5 17.5L3 12l5.5-5.5" />
+      <path d="M15.5 6.5L21 12l-5.5 5.5" />
+      <path d="M13.5 3.5l-3 17" />
+    </>
+  ),
+  estrela: (
+    <path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1.1 6.2-5.5-2.9-5.5 2.9 1.1-6.2L3.2 9.5l6.1-.9z" />
+  ),
   chevronLeft: <path d="M15 6l-6 6 6 6" />,
   chevronRight: <path d="M9 6l6 6-6 6" />,
 };
