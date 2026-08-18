@@ -18,8 +18,10 @@
  *    servidor inteiro. E menção escrita DENTRO do embed não notifica ninguém,
  *    que é o jeito de a integração parecer pronta e não chegar em ninguém.
  *
- *  - O ROTEAMENTO. `webhookDoSetor` com JSON quebrado não pode calar o aviso; e
- *    o setor errado publica demanda de um time no canal de outro.
+ *  - O ROTEAMENTO. `resolverWebhook` com JSON quebrado não pode calar o aviso;
+ *    o setor errado publica demanda de um time no canal de outro; e o canal
+ *    errado joga acompanhamento de fluxo dentro do canal de entrada, que é o
+ *    jeito de fazer alguém silenciar os dois.
  *
  * Roda com o strip de tipos nativo do Node sobre o .ts real — sem cópia.
  */
@@ -31,13 +33,14 @@ import {
   LIMITE_TITULO,
   LIMITE_TOTAL_EMBED,
   aparar,
+  canalDoEvento,
   cortar,
   deveAvisar,
   linkDoCard,
   montarAviso,
   montarResumoDeRecorrencias,
   pesoDoEmbed,
-  webhookDoSetor,
+  resolverWebhook,
 } from "../src/lib/discord-core.ts";
 
 let falhas = 0;
@@ -124,33 +127,97 @@ checa(
   linkDoCard("https://a.b", "T. I.", "x"),
 );
 
-// --- webhookDoSetor: roteamento -------------------------------------------
+// --- canalDoEvento + resolverWebhook: roteamento ---------------------------
 checa(
-  "sem mapa, cai no padrão",
-  webhookDoSetor("B.I.", "https://padrao") === "https://padrao",
+  "demanda nascendo vai para o canal de entrada",
+  canalDoEvento("criada") === "novas",
 );
 checa(
-  "mapa por setor ganha do padrão",
-  webhookDoSetor("B.I.", "https://padrao", '{"B.I.":"https://bi"}') ===
+  "o resto do ciclo de vida vai para o fluxo",
+  ["editada", "movida", "excluida", "restaurada"].every(
+    (a) => canalDoEvento(a) === "fluxo",
+  ),
+);
+
+const rota = (extra) =>
+  resolverWebhook({ canal: "novas", setor: "B.I.", ...extra });
+
+checa(
+  "sem mapa nenhum, cai no padrão",
+  rota({ padrao: "https://padrao" }) === "https://padrao",
+);
+checa(
+  "mapa por canal ganha do padrão",
+  rota({ padrao: "https://padrao", porCanal: '{"novas":"https://novas"}' }) ===
+    "https://novas",
+);
+checa(
+  "canal sem entrada própria volta para o padrão",
+  resolverWebhook({
+    canal: "resumo",
+    setor: "B.I.",
+    padrao: "https://padrao",
+    porCanal: '{"novas":"https://novas"}',
+  }) === "https://padrao",
+);
+checa(
+  "mapa por setor ganha do mapa por canal — o específico manda",
+  rota({
+    padrao: "https://padrao",
+    porCanal: '{"novas":"https://novas"}',
+    porSetor: '{"B.I.":{"novas":"https://bi-novas"}}',
+  }) === "https://bi-novas",
+);
+checa(
+  "a forma antiga do mapa por setor continua valendo",
+  rota({ padrao: "https://padrao", porSetor: '{"B.I.":"https://bi"}' }) ===
     "https://bi",
 );
 checa(
+  "`padrao` dentro do setor cobre o canal que ele não listou",
+  resolverWebhook({
+    canal: "resumo",
+    setor: "B.I.",
+    padrao: "https://padrao",
+    porSetor:
+      '{"B.I.":{"novas":"https://bi-novas","padrao":"https://bi-tudo"}}',
+  }) === "https://bi-tudo",
+);
+checa(
+  "setor com canais próprios mas sem este canal cai no mapa por canal",
+  resolverWebhook({
+    canal: "resumo",
+    setor: "B.I.",
+    padrao: "https://padrao",
+    porCanal: '{"resumo":"https://resumo"}',
+    porSetor: '{"B.I.":{"novas":"https://bi-novas"}}',
+  }) === "https://resumo",
+);
+checa(
   "setor fora do mapa volta para o padrão",
-  webhookDoSetor("RH", "https://padrao", '{"B.I.":"https://bi"}') ===
-    "https://padrao",
+  resolverWebhook({
+    canal: "novas",
+    setor: "RH",
+    padrao: "https://padrao",
+    porSetor: '{"B.I.":"https://bi"}',
+  }) === "https://padrao",
 );
 checa(
   "JSON quebrado NÃO cala o aviso — cai no padrão",
-  webhookDoSetor("B.I.", "https://padrao", "{isto nao e json") ===
+  rota({ padrao: "https://padrao", porSetor: "{isto nao e json" }) ===
     "https://padrao",
 );
 checa(
+  "JSON quebrado no mapa por canal também não cala",
+  rota({ padrao: "https://padrao", porCanal: "[1,2,3]" }) === "https://padrao",
+);
+checa(
   "sem padrão e sem mapa, não há para onde avisar",
-  webhookDoSetor("B.I.", "", null) === null,
+  rota({ padrao: "" }) === null,
 );
 checa(
   "entrada vazia no mapa não vale como destino",
-  webhookDoSetor("B.I.", "https://padrao", '{"B.I.":"   "}') ===
+  rota({ padrao: "https://padrao", porSetor: '{"B.I.":"   "}' }) ===
     "https://padrao",
 );
 

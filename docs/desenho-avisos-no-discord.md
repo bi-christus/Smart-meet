@@ -114,6 +114,26 @@ O que `deveAvisar` recusa é o verbo que precisa de par e não tem: "editada" se
 
 ---
 
+## Um canal por assunto
+
+O servidor do setor não tem um canal de demandas — tem quatro, e a organização é de quem montou:
+
+| Canal | Chave | O que cai ali |
+|---|---|---|
+| `#demandas-novas` | `novas` | demanda nascendo (`criada`) |
+| `#demandas-fluxo` | `fluxo` | `editada`, `movida`, `excluida`, `restaurada` |
+| `#alertas-e-recorrencias` | `alertas` | o resumo da rodada do cron, e o que for alerta |
+| `#resumo-diario` | `resumo` | o panorama do dia |
+
+**Por que separar entrada de fluxo.** "Nasceu uma demanda" é notícia para quem acompanha entrada de trabalho; "mudou de etapa" é acompanhamento, e é o volume — num quadro ativo, um card criado gera cinco ou seis eventos até ser entregue. Jogar os dois no mesmo canal obriga quem só quer o primeiro a ler todos, e o jeito conhecido de sobreviver a isso é silenciar o canal, que apaga junto o aviso que importava. É a mesma aritmética que fez o cron das recorrências publicar um resumo em vez de vinte mensagens.
+
+**A lixeira fica no fluxo**, e não num canal próprio: excluir e restaurar são raros o bastante para não incomodar ali, e um canal a mais por causa deles seria um canal que ninguém abre.
+
+**O cron das recorrências deixou de cair em `novas`.** O canal de entrada existe para o trabalho que alguém pediu; rotina automática de manutenção não é isso, e quinze linhas de recorrência amanhecendo lá dentro apagariam justamente a demanda nova que alguém precisa ver.
+
+Quem decide é `canalDoEvento` em `discord-core.ts` — módulo puro, com teste. Como `deveAvisar`, é política de ruído: um lugar só para mexer quando um canal encher.
+
+
 ## O resumo das recorrências
 
 O cron das 06:10 é a única exceção ao "um evento, um aviso", e a razão é aritmética: ele pode abrir dezenas de cards de uma vez (ver `LIMITE_POR_EXECUCAO` em `api/recorrencias/gerar`). Vinte mensagens seguidas no canal, todas iguais menos o título, é o jeito de fazer alguém **silenciar o canal** — e canal silenciado apaga também os avisos que importam. Preço alto demais por uma rotina automática que ninguém precisa acompanhar card a card.
@@ -152,11 +172,14 @@ Copiá-los para dentro da rota criaria dois mapas envelhecendo separados: no dia
 
 | Variável | Obrigatória | O que é |
 |---|---|---|
-| `DISCORD_WEBHOOK_URL` | para o aviso sair | webhook do canal padrão |
-| `DISCORD_WEBHOOK_URLS` | não | JSON `{"B.I.":"https://…"}`, um canal por setor |
+| `DISCORD_WEBHOOK_CANAIS` | para o aviso sair | JSON `{"novas":"https://…","fluxo":"https://…","alertas":"https://…"}` — um webhook por assunto |
+| `DISCORD_WEBHOOK_URL` | não | canal único, para quando nenhum dos dois acima responde |
+| `DISCORD_WEBHOOK_URLS` | não | JSON por setor: `{"B.I.":"https://…"}` ou `{"B.I.":{"novas":"https://…","padrao":"https://…"}}` |
 | `APP_URL` | já existia | base do link que abre o card |
 
-`DISCORD_WEBHOOK_URLS` ganha do padrão quando o setor tem entrada própria. Hoje um setor só executa demanda (`DEFAULT_SECTORS`), então o padrão basta — a porta fica aberta porque o dia em que um segundo setor entrar, ele vai querer o próprio canal, e descobrir isso com o quadro em produção é tarde.
+A resolução tem quatro degraus, do mais específico ao mais genérico, e o primeiro que responde ganha: canal do setor → canal único do setor → canal do servidor → `DISCORD_WEBHOOK_URL`. A ordem não é arbitrária — o que alguém escreveu para um setor específico é decisão mais informada do que a regra geral do servidor, e inverter qualquer par faz uma configuração nova ser silenciosamente ignorada, que é o modo de falha em que tudo parece certo e a mensagem continua saindo no canal errado.
+
+`DISCORD_WEBHOOK_URLS` na forma antiga (setor → string) continua valendo sem alteração nenhuma: quem já a configurou não precisa mexer em nada.
 
 JSON quebrado **não cala o aviso**: cai no padrão e segue. Variável mal colada é erro de configuração, e configuração errada não pode calar a notificação inteira.
 
