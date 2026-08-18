@@ -11,6 +11,11 @@
  *  - o cron da Vercel, de manhã (cabeçalho com CRON_SECRET);
  *  - um gestor ou admin chamando à mão, para conferir sem esperar amanhã.
  *
+ * O "hoje" sai de `hojeNoFuso` (`lib/datas.ts`), no fuso da Rede e não no do
+ * servidor. A função roda em UTC, e às 22h de Fortaleza já é o dia seguinte lá:
+ * um hoje cru marcaria como atrasada a demanda que vence hoje, no dia em que
+ * ela ainda pode ser entregue.
+ *
  * LÊ TODOS OS CARDS DE UMA VEZ, e a escolha é consciente. Uma consulta por
  * setor exigiria saber a lista de setores antes de perguntar — e setor que
  * ainda não personalizou colunas não aparece em `/columns`, então a lista sairia
@@ -22,31 +27,12 @@ import { NextResponse } from "next/server";
 
 import { HttpError, adminDb, requireUser } from "@/lib/server/drive-server";
 import { DEFAULT_COLUMNS, colunasEntregues } from "@/lib/kanban-columns";
+import { hojeNoFuso } from "@/lib/datas";
 import { naLixeira } from "@/lib/lixeira-core";
 import { publicarResumoDiario } from "@/lib/server/discord-aviso";
 import type { CardDoResumo } from "@/lib/discord-core";
 
 export const runtime = "nodejs";
-
-/**
- * O fuso de quem trabalha, e não o do servidor.
- *
- * A função roda em UTC. Às 03:00 de São Paulo já é dia seguinte em UTC, e um
- * "hoje" tirado de `new Date()` cru marcaria como ATRASADA a demanda que vence
- * hoje — no dia em que ela ainda pode ser entregue. Erro de fuso em relatório
- * de prazo não parece erro: parece cobrança.
- */
-const FUSO = "America/Sao_Paulo";
-
-/** aaaa-mm-dd de hoje, no fuso acima. `en-CA` já formata nessa ordem. */
-function hojeNoFuso(): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: FUSO,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
-}
 
 type CardDoc = {
   sector?: string;

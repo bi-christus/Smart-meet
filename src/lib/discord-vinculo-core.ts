@@ -169,6 +169,27 @@ export const COMANDOS = [
     description: "Desfaz a ligação com o Smart Meet e para de te mencionar",
     options: [],
   },
+  // Os dois de consulta. Eles não vinculam nada — mas moram na MESMA lista
+  // porque o script de registro manda esta lista inteira com PUT, e PUT
+  // substitui: um comando que ficasse numa segunda lista sumiria do Discord no
+  // primeiro registro feito a partir daqui.
+  {
+    name: "minhas-demandas",
+    description: "Lista as suas demandas em aberto, da mais urgente para a menos",
+    options: [],
+  },
+  {
+    name: "demanda",
+    description: "Procura uma demanda do seu setor pelo título",
+    options: [
+      {
+        name: "busca",
+        description: "Parte do título — acento e maiúscula não importam",
+        type: OPCAO_TEXTO,
+        required: true,
+      },
+    ],
+  },
 ] as const;
 
 export type ComandoRecebido = {
