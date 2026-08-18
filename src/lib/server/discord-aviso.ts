@@ -19,10 +19,13 @@
 import { FieldValue, type Firestore } from "firebase-admin/firestore";
 
 import { enviarAviso } from "./discord";
+import { enviarDireto, type ResultadoDireto } from "./discord-dm";
 import {
   canalDoEvento,
   deveAvisar,
+  deveMandarDireto,
   montarAviso,
+  montarAvisoDireto,
   montarResumoDeRecorrencias,
   resolverWebhook,
   type Canal,
@@ -53,7 +56,12 @@ type EventoDoc = {
   discordAt?: unknown;
 };
 
-export type Resultado = { enviado: boolean; motivo?: string };
+export type Resultado = {
+  enviado: boolean;
+  motivo?: string;
+  /** Ausente quando não havia a quem mandar direto — ver `deveMandarDireto`. */
+  direto?: ResultadoDireto;
+};
 
 /** O evento já virou mensagem. Erro de controle, não de falha. */
 class JaAvisado extends Error {}
@@ -204,6 +212,8 @@ export async function publicarEvento(
     throw e;
   }
 
+  const rotulo = { prioridade: rotuloPrioridade, tipo: rotuloTipo };
+
   try {
     await enviarAviso(
       url,
@@ -211,7 +221,7 @@ export async function publicarEvento(
         card: cardDoAviso,
         evento: eventoDoAviso,
         appUrl: appUrl(),
-        rotulo: { prioridade: rotuloPrioridade, tipo: rotuloTipo },
+        rotulo,
       }),
     );
   } catch (e) {
@@ -219,7 +229,36 @@ export async function publicarEvento(
     throw e;
   }
 
-  return { enviado: true };
+  // O DIRETO VEM DEPOIS DO CANAL, e o fracasso dele não desfaz nada.
+  //
+  // O aviso do canal é o registro — ele já está publicado quando esta linha
+  // roda. A DM é o toque no ombro de quem precisa agir. Desfazer o `discordAt`
+  // porque uma caixa de mensagens estava fechada mandaria o reenvio duplicar a
+  // mensagem do canal para tentar de novo uma coisa que vai falhar igual.
+  //
+  // E ele NÃO tem marca própria de idempotência: `discordAt` cobre o evento
+  // inteiro. Uma segunda marca só para a DM abriria a possibilidade de as duas
+  // discordarem, e o sintoma seria uma DM repetida sem nada repetido no canal.
+  const alvoDireto = (resp?.discordId ?? "").trim();
+  const direto = deveMandarDireto({
+    acao,
+    mudancas,
+    autorEmail,
+    responsavelEmail: respEmail,
+    responsavelDiscordId: alvoDireto,
+  })
+    ? await enviarDireto(
+        alvoDireto,
+        montarAvisoDireto({
+          card: cardDoAviso,
+          evento: eventoDoAviso,
+          appUrl: appUrl(),
+          rotulo,
+        }),
+      )
+    : undefined;
+
+  return { enviado: true, direto };
 }
 
 /**

@@ -36,8 +36,11 @@ import {
   canalDoEvento,
   cortar,
   deveAvisar,
+  deveMandarDireto,
+  linhaDoDireto,
   linkDoCard,
   montarAviso,
+  montarAvisoDireto,
   montarResumoDeRecorrencias,
   pesoDoEmbed,
   resolverWebhook,
@@ -367,6 +370,94 @@ const pequeno = { title: "oi", fields: [{ name: "a", value: "b" }] };
 checa(
   "embed que já cabe sai intacto",
   aparar(pequeno) === pequeno,
+);
+
+// --- a mensagem direta ao responsável --------------------------------------
+//
+// A recusa é o que importa testar aqui. Um direto a mais é ruído no telefone de
+// alguém, e ruído no telefone é o que faz a pessoa desligar o bot inteiro — e
+// junto com ele os avisos que ela queria.
+const baseDm = {
+  acao: "editada",
+  mudancas: [{ campo: "prazo", de: "01/09", para: "10/09" }],
+  autorEmail: "italo@px.com.br",
+  responsavelEmail: "kaua@px.com.br",
+  responsavelDiscordId: "999",
+};
+
+checa("responsável vinculado e mudança de outra pessoa: manda", deveMandarDireto(baseDm));
+checa(
+  "sem vínculo não há para onde mandar",
+  !deveMandarDireto({ ...baseDm, responsavelDiscordId: null }),
+);
+checa(
+  "vínculo em branco também não",
+  !deveMandarDireto({ ...baseDm, responsavelDiscordId: "   " }),
+);
+checa(
+  "demanda sem responsável não tem destinatário",
+  !deveMandarDireto({ ...baseDm, responsavelEmail: null }),
+);
+checa(
+  "quem mexeu na PRÓPRIA demanda não se avisa",
+  !deveMandarDireto({ ...baseDm, autorEmail: "kaua@px.com.br" }),
+);
+checa(
+  "e a comparação ignora caixa e espaço, que é como o e-mail chega",
+  !deveMandarDireto({ ...baseDm, autorEmail: "  Kaua@PX.com.BR " }),
+);
+checa(
+  "evento sem notícia não vira direto, pela MESMA régua do canal",
+  !deveMandarDireto({ ...baseDm, mudancas: [] }),
+);
+checa(
+  "mas excluir não precisa de par para ser notícia",
+  deveMandarDireto({ ...baseDm, acao: "excluida", mudancas: [] }),
+);
+
+checa(
+  "a linha diz por que a mensagem chegou",
+  linhaDoDireto("criada", []) === "Abriram uma demanda no seu nome.",
+);
+checa(
+  "troca de responsável ganha das outras — é o que muda o dia da pessoa",
+  linhaDoDireto("movida", [
+    { campo: "coluna", de: "A fazer", para: "Fazendo" },
+    { campo: "responsavel", de: "Ítalo", para: "Kauã" },
+  ]) === "Esta demanda passou a ser sua.",
+);
+checa(
+  "cada ação tem a sua frase, e nenhuma sai vazia",
+  ["criada", "editada", "movida", "excluida", "restaurada"].every(
+    (a) => linhaDoDireto(a, []).length > 0,
+  ),
+);
+
+const dm = montarAvisoDireto({
+  card: CARD,
+  evento: EVENTO,
+  appUrl: "https://app.exemplo.com",
+  rotulo: { prioridade: (p) => p, tipo: (t) => t },
+});
+const noCanal = montarAviso({
+  card: CARD,
+  evento: EVENTO,
+  appUrl: "https://app.exemplo.com",
+  rotulo: { prioridade: (p) => p, tipo: (t) => t },
+});
+checa(
+  "a DM conta a MESMA história do canal — um embed só, idêntico",
+  JSON.stringify(dm.embeds) === JSON.stringify(noCanal.embeds),
+);
+checa(
+  "o `content` da DM é o porquê, e não a menção",
+  dm.content === linhaDoDireto(EVENTO.acao, EVENTO.mudancas) &&
+    !dm.content.includes("<@"),
+);
+checa(
+  "dentro da DM não se menciona ninguém",
+  dm.allowed_mentions.parse.length === 0 &&
+    dm.allowed_mentions.users === undefined,
 );
 
 // --- o resumo da rodada de recorrências ------------------------------------

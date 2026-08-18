@@ -134,6 +134,64 @@ O servidor do setor não tem um canal de demandas — tem quatro, e a organizaç
 Quem decide é `canalDoEvento` em `discord-core.ts` — módulo puro, com teste. Como `deveAvisar`, é política de ruído: um lugar só para mexer quando um canal encher.
 
 
+## A mensagem direta ao responsável
+
+O canal resolve *"o setor precisa saber"*. Ele não resolve *"você precisa saber"*: a menção chega junto com todas as outras, e quem está com o Discord no celular durante uma aula lê a notificação do servidor uma vez por dia. A demanda que mudou de prazo hoje de manhã é justamente a que menos pode esperar por isso.
+
+Por isso existe o direto, e por isso ele é **estreito de propósito**.
+
+### O que o faz sair, e o que o segura
+
+`deveMandarDireto` recusa três casos, e cada um vale ser lido:
+
+| Recusa | Por quê |
+|---|---|
+| sem vínculo | não há para onde mandar; é o caso comum enquanto ninguém conectou a conta, e o aviso do canal sai igual |
+| **o autor é o próprio responsável** | quem arrastou o próprio card acabou de ver a tela responder — a DM chegaria antes de ele soltar o mouse |
+| evento sem notícia | mesma régua do canal (`deveAvisar`), e é a **mesma função** de propósito |
+
+A segunda é a que importa. Mensagem direta é o canal mais caro que existe: ela vibra o telefone e não dá para silenciar sem silenciar o bot inteiro. Gastá-la com eco do próprio clique é o jeito mais rápido de ensinar alguém a ignorar todas as outras.
+
+Duas réguas separadas para canal e DM divergiriam no dia em que alguém mexesse numa só, e a diferença entre "apareceu no canal" e "chegou na DM" seria impossível de explicar para quem usa. Por isso `deveMandarDireto` termina chamando `deveAvisar`.
+
+**O que ele não cobre, e a nota fica:** quem *perdeu* a demanda não é avisado. A mudança de responsável guarda só o nome de quem saiu (`Mudanca.de`), não o e-mail — e sem e-mail não há vínculo a procurar. Resolver isso exigiria o evento carregar identidade além de rótulo, o que é mudança no histórico, não aqui.
+
+### A primeira linha é o porquê
+
+Uma DM do nada com um embed dentro é um susto: a pessoa não pediu, e o embed sozinho não diz se ela precisa fazer alguma coisa. `linhaDoDireto` resolve em cinco palavras — e é o que aparece na prévia da notificação do celular, antes de qualquer toque.
+
+```
+Esta demanda passou a ser sua.
+┃ Painel de consumo do refeitório
+┃ Responsável: Ítalo → Kauã Silva
+┃ Smart Meet · B.I. · Nova implementação
+```
+
+"passou a ser sua" ganha das outras frases quando o responsável mudou, porque é a única que muda o que a pessoa tem a fazer hoje.
+
+O embed é o **mesmo** do canal, montado por `montarAviso`. Um segundo montador acabaria mostrando um campo a mais aqui e um a menos ali, e quem lesse os dois teria de decidir em qual acreditar.
+
+### Duas chamadas, e nenhum id guardado
+
+O Discord não aceita "mande para o usuário X": ele exige abrir (ou reencontrar) o canal privado e só então publicar. `POST /users/@me/channels` é idempotente — chamá-lo de novo devolve o mesmo canal.
+
+O id desse canal **não é guardado**. Guardá-lo economizaria ~100 ms num caminho que ninguém está esperando, e custaria um campo a mais para manter certo: no dia em que o cadastro trocasse de conta do Discord, o canal guardado apontaria para a caixa da pessoa anterior — e a demanda de alguém chegaria em quem não tem nada com ela.
+
+### O direto vem depois do canal, e falhar nele não desfaz nada
+
+`enviarDireto` **nunca lança**, ao contrário de `enviarAviso`. É diferença de contrato, e é deliberada: quem chama usa a exceção de `enviarAviso` para desfazer o `discordAt`. Se o direto lançasse, uma caixa de mensagens fechada desfaria a marca de um aviso **já publicado** no canal — e o reenvio duplicaria a mensagem de lá para tentar de novo uma coisa que vai falhar igual.
+
+Pelo mesmo motivo o direto não tem marca própria de idempotência: `discordAt` cobre o evento inteiro. Uma segunda marca abriria a possibilidade de as duas discordarem, e o sintoma seria uma DM repetida sem nada repetido no canal.
+
+`403` na abertura do canal significa que a pessoa desligou "mensagens diretas de membros do servidor" na privacidade dela. É escolha dela, não defeito nosso — vira `motivo: "dm-fechada"` no log, e o aviso do canal já saiu de qualquer jeito.
+
+### O token do bot passou a existir em produção
+
+Isto **contradiz o que este documento dizia**, e a nota fica. Enquanto o bot só recebia comandos, produção não precisava do token: interação se autentica por assinatura. Mandar DM é *agir* como o aplicativo, e a API exige `Authorization: Bot <token>`. Não existe caminho sem isso.
+
+Sem `DISCORD_BOT_TOKEN` na Vercel, o app funciona igual — só sem DM (`motivo: "sem-token"`). É o estado de qualquer Preview.
+
+
 ## O resumo das recorrências
 
 O cron das 06:10 é a única exceção ao "um evento, um aviso", e a razão é aritmética: ele pode abrir dezenas de cards de uma vez (ver `LIMITE_POR_EXECUCAO` em `api/recorrencias/gerar`). Vinte mensagens seguidas no canal, todas iguais menos o título, é o jeito de fazer alguém **silenciar o canal** — e canal silenciado apaga também os avisos que importam. Preço alto demais por uma rotina automática que ninguém precisa acompanhar card a card.
@@ -175,6 +233,7 @@ Copiá-los para dentro da rota criaria dois mapas envelhecendo separados: no dia
 | `DISCORD_WEBHOOK_CANAIS` | para o aviso sair | JSON `{"novas":"https://…","fluxo":"https://…","alertas":"https://…"}` — um webhook por assunto |
 | `DISCORD_WEBHOOK_URL` | não | canal único, para quando nenhum dos dois acima responde |
 | `DISCORD_WEBHOOK_URLS` | não | JSON por setor: `{"B.I.":"https://…"}` ou `{"B.I.":{"novas":"https://…","padrao":"https://…"}}` |
+| `DISCORD_BOT_TOKEN` | para a DM sair | token do bot; sem ele só o canal recebe aviso |
 | `APP_URL` | já existia | base do link que abre o card |
 
 A resolução tem quatro degraus, do mais específico ao mais genérico, e o primeiro que responde ganha: canal do setor → canal único do setor → canal do servidor → `DISCORD_WEBHOOK_URL`. A ordem não é arbitrária — o que alguém escreveu para um setor específico é decisão mais informada do que a regra geral do servidor, e inverter qualquer par faz uma configuração nova ser silenciosamente ignorada, que é o modo de falha em que tudo parece certo e a mensagem continua saindo no canal errado.
@@ -277,10 +336,10 @@ Por isso `npm run test:regras` não se aplica a esta frente.
 |---|---|---|
 | `DISCORD_PUBLIC_KEY` | **Vercel** | confere a assinatura das interações |
 | `DISCORD_APP_ID` | só local | o script de registro dos comandos |
-| `DISCORD_BOT_TOKEN` | só local | idem |
+| `DISCORD_BOT_TOKEN` | **Vercel** e local | manda a DM em produção; registra os comandos aqui |
 | `DISCORD_GUILD_ID` | só local | idem |
 
-O token do bot **não vai para a Vercel**: nada em produção o usa. As interações são autenticadas por assinatura, não por token nosso. Guardá-lo lá seria expor uma credencial que só o script, rodando na máquina de quem administra, tem motivo para conhecer.
+O token do bot **passou a ir para a Vercel** — ver "O token do bot passou a existir em produção", acima. Enquanto o bot só recebia comandos isto era desnecessário, e este documento dizia o contrário com razão; a mensagem direta inverteu o quadro, porque mandar DM exige que o aplicativo se identifique.
 
 ---
 
