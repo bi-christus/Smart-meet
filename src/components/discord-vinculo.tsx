@@ -10,6 +10,7 @@ import { fraseDeFalha } from "@/lib/erro-ui-core";
 import {
   desvincularDiscord,
   gerarCodigoDiscord,
+  iniciarVinculoDiscord,
   type CodigoDeVinculo,
 } from "@/lib/discord";
 import {
@@ -33,6 +34,13 @@ import styles from "./discord-vinculo.module.css";
  * que este quadro vira "Conectado". É a única confirmação que o fluxo tem — e
  * ela chega sozinha, sem pedir para ninguém atualizar a página.
  *
+ * DOIS CAMINHOS, E UM DELES É O PADRÃO. O clique (`Conectar Discord`) resolve
+ * em uma tela: a pessoa autoriza no Discord e volta. O código existe para quem
+ * já está no Discord no celular e não quer abrir o app, e para quem tem popup
+ * bloqueado — por isso ele fica visível como segunda opção, e não escondido
+ * atrás de "problemas?". Escondê-lo faria a única saída de um popup bloqueado
+ * ser invisível exatamente para quem precisa dela.
+ *
  * MOTION (AGENTS.md §3): nenhum. Isto é FEEDBACK DE SISTEMA, não enfeite —
  * esqueleto enquanto não se sabe, estados separados para "ainda não respondeu"
  * e "respondeu e está solto", contagem regressiva porque o código morre. Um
@@ -50,6 +58,14 @@ export function DiscordVinculo({ email }: { email: string }) {
   const [ocupado, setOcupado] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [copiado, setCopiado] = useState(false);
+  /**
+   * Endereço da autorização, quando o navegador bloqueou a aba nova.
+   *
+   * Popup bloqueado é silencioso: `window.open` devolve `null` e mais nada
+   * acontece. Sem este estado, a pessoa clicaria em Conectar e veria a tela
+   * ficar igual — o modo de falha em que ela conclui que o botão está quebrado.
+   */
+  const [autorizacao, setAutorizacao] = useState<string | null>(null);
 
   // O código não é estado derivável do banco: ele nasce de um clique e some
   // sozinho. A ref guarda se havia um na tela quando o vínculo chegou, para
@@ -96,8 +112,43 @@ export function DiscordVinculo({ email }: { email: string }) {
     return () => clearInterval(t);
   }, [codigo]);
 
+  /**
+   * Abre a autorização do Discord numa aba nova.
+   *
+   * A ABA É ABERTA ANTES DO `await`, e é o detalhe que faz isto funcionar:
+   * `window.open` chamado depois da resposta do servidor já não conta como
+   * resposta ao clique, e o navegador bloqueia. Então a aba abre vazia agora e
+   * recebe o endereço quando ele chega.
+   *
+   * Nada muda nesta tela ao voltar — quem avisa é a assinatura de
+   * `users/{email}`, que vira "Conectado" no instante em que o servidor grava.
+   */
+  async function conectar() {
+    setErro(null);
+    setAutorizacao(null);
+    setOcupado(true);
+    const janela = window.open("", "_blank", "noopener,noreferrer");
+    try {
+      const { url } = await iniciarVinculoDiscord();
+      if (janela) {
+        janela.location.replace(url);
+      } else {
+        // Sem aba, o endereço vira link na tela. É feio de propósito: é o
+        // caminho de exceção, e ele precisa ser óbvio.
+        setAutorizacao(url);
+      }
+    } catch (e) {
+      janela?.close();
+      console.error("[conectar discord]", e);
+      setErro(fraseDeFalha("Não deu para abrir a autorização do Discord.", e));
+    } finally {
+      setOcupado(false);
+    }
+  }
+
   async function gerar() {
     setErro(null);
+    setAutorizacao(null);
     setOcupado(true);
     setCopiado(false);
     try {
@@ -165,8 +216,8 @@ export function DiscordVinculo({ email }: { email: string }) {
             <span>
               Conectado como <strong>{ligado.nome}</strong>.
               {acabouDeLigar
-                ? " Pronto — a partir de agora você é mencionado nos avisos das demandas onde for o responsável."
-                : " Você é mencionado nos avisos das demandas onde for o responsável."}
+                ? " Pronto — a partir de agora você é mencionado nos avisos das suas demandas e recebe no privado o que mexer nelas."
+                : " Você é mencionado nos avisos das suas demandas e recebe no privado o que mexer nelas."}
             </span>
           </p>
           <div className={styles.acoes}>
@@ -214,27 +265,44 @@ export function DiscordVinculo({ email }: { email: string }) {
           <p className={styles.estado} role="status">
             {expirado
               ? "Esse código passou da validade. Gere outro e digite-o no Discord dentro de 10 minutos."
-              : "O aviso da demanda já chega no canal. Conecte a sua conta para ser mencionado nele — assim o Discord te notifica, em vez de você precisar estar olhando."}
+              : "O aviso da demanda já chega no canal. Conecte a sua conta para ser mencionado nele e receber no privado o que mexer nas suas demandas — assim o Discord te notifica, em vez de você precisar estar olhando."}
           </p>
           <div className={styles.acoes}>
             <button
               type="button"
               className={styles.btnSave}
-              onClick={() => void gerar()}
+              onClick={() => void conectar()}
               disabled={ocupado}
             >
               <Icon name="link" size={15} />{" "}
-              {ocupado
-                ? "Gerando o código…"
-                : expirado
-                  ? "Gerar outro código"
-                  : "Conectar Discord"}
+              {ocupado ? "Abrindo o Discord…" : "Conectar Discord"}
+            </button>
+            <button
+              type="button"
+              className={styles.btnVolta}
+              onClick={() => void gerar()}
+              disabled={ocupado}
+            >
+              <Icon name="chat" size={15} />{" "}
+              {expirado ? "Gerar outro código" : "Prefiro usar um código"}
             </button>
           </div>
+          {autorizacao && (
+            <p className={styles.estado} role="alert">
+              O navegador bloqueou a aba nova.{" "}
+              <a href={autorizacao} target="_blank" rel="noopener noreferrer">
+                Abra a autorização do Discord por aqui
+              </a>
+              .
+            </p>
+          )}
           <p className={styles.legenda}>
-            O código vale {VALIDADE_CODIGO_MS / 60000} minutos e serve uma vez
-            só. Para desfazer depois, use <code>/desvincular</code> no Discord ou
-            o botão que aparece aqui.
+            Conectar abre uma aba do Discord e pede só o seu nome de usuário e
+            o e-mail — nada é publicado no seu nome. Pelo código, você digita{" "}
+            <code>/vincular</code> no servidor; ele vale{" "}
+            {VALIDADE_CODIGO_MS / 60000} minutos e serve uma vez só. Para
+            desfazer depois, use <code>/desvincular</code> no Discord ou o botão
+            que aparece aqui.
           </p>
         </>
       )}
