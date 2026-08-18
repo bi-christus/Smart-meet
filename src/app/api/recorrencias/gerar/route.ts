@@ -3,6 +3,7 @@ import { HttpError, adminDb, requireUser } from "@/lib/server/drive-server";
 import { DEFAULT_COLUMNS } from "@/lib/kanban-columns";
 import { proximoDiaUtilISO, startOfDay } from "@/lib/datas";
 import { dataBR } from "@/lib/historico-core";
+import { publicarResumoDeRecorrencias } from "@/lib/server/discord-aviso";
 import {
   cardDescriptionFor,
   cardTitleFor,
@@ -135,6 +136,19 @@ async function executar(req: Request, corpo: Corpo) {
   }
 
   const criados: string[] = [];
+  /**
+   * O mesmo que `criados`, com o que o resumo do Discord precisa dizer.
+   *
+   * Separado porque `criados` é a RESPOSTA da rota, e a forma dela já é
+   * consumida por quem chama `antecipar` na aba Recorrências. Enriquecer aquele
+   * array mudaria um contrato por causa de uma mensagem de chat.
+   */
+  const paraAviso: {
+    id: string;
+    title: string;
+    responsavel: string | null;
+    sector: string;
+  }[] = [];
   const colunasPorSetor = new Map<string, { colId: string; title: string }[]>();
   const nomesPorEmail = new Map<string, string>();
 
@@ -272,6 +286,15 @@ async function executar(req: Request, corpo: Corpo) {
           });
         });
         criados.push(cardRef.id);
+        // Fora da transação, e com o título recalculado: `cardTitleFor` é puro
+        // (`recorrencias-core`), então isto devolve exatamente o texto que
+        // acabou de ser gravado, sem uma segunda leitura do banco.
+        paraAviso.push({
+          id: cardRef.id,
+          title: cardTitleFor(rec, iso),
+          responsavel: nomeDono || null,
+          sector: rec.sector,
+        });
       } catch (e) {
         // Corrida perdida (outra execução criou a mesma data) não é erro: o
         // resultado desejado — um card só — está exatamente onde deveria.
@@ -279,6 +302,31 @@ async function executar(req: Request, corpo: Corpo) {
         console.warn("recorrencias/gerar: falha ao abrir card", id, iso, e);
       }
     }
+  }
+
+  /**
+   * UM resumo por setor, depois de tudo criado — e nunca um aviso por card.
+   *
+   * O cron pode abrir dezenas de cards às 06:10 (ver `LIMITE_POR_EXECUCAO`), e
+   * vinte mensagens seguidas no canal, todas iguais menos o título, é o jeito
+   * de fazer alguém silenciar o canal. Canal silenciado apaga também os avisos
+   * que importam.
+   *
+   * `await`, e não fire-and-forget: a função serverless morre no instante em
+   * que devolve a resposta, e uma promessa solta morreria junto, sem ter
+   * enviado nada. O `catch` é o que impede o webhook de derrubar uma rodada
+   * cujos cards já estão no quadro.
+   */
+  const porSetor = new Map<string, typeof paraAviso>();
+  for (const c of paraAviso) {
+    const lista = porSetor.get(c.sector) ?? [];
+    lista.push(c);
+    porSetor.set(c.sector, lista);
+  }
+  for (const [sector, cards] of porSetor) {
+    await publicarResumoDeRecorrencias({ sector, cards }).catch((e) =>
+      console.warn("recorrencias/gerar: resumo do discord não saiu", sector, e),
+    );
   }
 
   return NextResponse.json({ criados: criados.length, cards: criados });
