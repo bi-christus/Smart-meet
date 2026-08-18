@@ -463,6 +463,117 @@ export function montarAviso(args: {
   };
 }
 
+// ---------------------------------------------------------------------------
+// O aviso direto — a mesma notícia, na caixa de quem ela é.
+//
+// O canal resolve "o setor precisa saber". Ele NÃO resolve "você precisa
+// saber": a menção no canal chega junto com todas as outras, e quem está com o
+// Discord no celular durante uma aula lê a notificação do servidor uma vez por
+// dia. A demanda que mudou de prazo hoje de manhã é a que menos pode esperar
+// por isso.
+//
+// Por isso o direto existe, e por isso ele é ESTREITO de propósito: só o
+// responsável, só o que mexeu na demanda dele, e nunca o que ele mesmo fez.
+// Mensagem direta é o canal mais caro que existe — ela vibra o telefone e não
+// dá para silenciar sem silenciar o bot inteiro. Gastá-la com eco do próprio
+// clique é o jeito de ensinar alguém a ignorar todas.
+// ---------------------------------------------------------------------------
+
+/**
+ * Se este evento merece uma mensagem direta ao responsável.
+ *
+ * Três recusas, e cada uma vale ser lida:
+ *
+ * 1. SEM VÍNCULO não há para onde mandar. É o caso comum enquanto ninguém
+ *    conectou a conta, e o aviso do canal sai igual.
+ *
+ * 2. O AUTOR NÃO SE AVISA. Quem arrastou o próprio card acabou de ver a tela
+ *    responder; a mensagem chegaria antes de ele soltar o mouse. Este é o
+ *    ruído que mais rápido faz alguém desligar o bot.
+ *
+ * 3. EVENTO SEM NOTÍCIA não vira direto, pelo mesmo motivo que não vira aviso
+ *    de canal (`deveAvisar`) — e a régua é a MESMA função, de propósito: duas
+ *    réguas separadas divergiriam no dia em que alguém mexesse numa só, e a
+ *    diferença entre "apareceu no canal" e "chegou na DM" seria impossível de
+ *    explicar para quem usa.
+ *
+ * O que ela NÃO cobre, e a nota fica: quem PERDEU a demanda não é avisado. A
+ * mudança do responsável guarda só o nome de quem saiu (`Mudanca.de`), não o
+ * e-mail, e sem e-mail não há vínculo a procurar. Resolver isso exigiria o
+ * evento carregar identidade além de rótulo — mudança no histórico, não aqui.
+ */
+export function deveMandarDireto(args: {
+  acao: Acao;
+  mudancas: Mudanca[];
+  /** E-mail de quem fez a mudança. */
+  autorEmail: string;
+  /** E-mail do responsável ATUAL do card. */
+  responsavelEmail?: string | null;
+  responsavelDiscordId?: string | null;
+}): boolean {
+  const { acao, mudancas, autorEmail, responsavelEmail, responsavelDiscordId } =
+    args;
+  if (!(responsavelDiscordId ?? "").trim()) return false;
+
+  const resp = (responsavelEmail ?? "").trim().toLowerCase();
+  if (!resp) return false;
+  if (resp === (autorEmail ?? "").trim().toLowerCase()) return false;
+
+  return deveAvisar(acao, mudancas);
+}
+
+/**
+ * A primeira linha da mensagem direta: por que ela chegou.
+ *
+ * Uma DM do nada com um embed dentro é um susto — a pessoa não pediu, e o
+ * embed sozinho não diz se ela precisa fazer alguma coisa. A frase resolve isso
+ * em cinco palavras, e é o que aparece na prévia da notificação do celular,
+ * antes de qualquer toque.
+ *
+ * "passou a ser sua" ganha das outras quando o responsável mudou porque é a
+ * única que muda o que a pessoa tem a fazer hoje.
+ */
+export function linhaDoDireto(acao: Acao, mudancas: Mudanca[]): string {
+  if (mudancas.some((m) => m.campo === "responsavel")) {
+    return "Esta demanda passou a ser sua.";
+  }
+  if (acao === "criada") return "Abriram uma demanda no seu nome.";
+  if (acao === "excluida") return "Uma demanda sua foi para a lixeira.";
+  if (acao === "restaurada") return "Uma demanda sua voltou da lixeira.";
+  if (acao === "movida") return "Uma demanda sua mudou de etapa.";
+  return "Alteraram uma demanda sua.";
+}
+
+/**
+ * A mensagem direta, a partir do MESMO embed do canal.
+ *
+ * Reaproveitar `montarAviso` não é economia de linhas: é a garantia de que a DM
+ * e o canal contam a mesma história. Um segundo montador acabaria mostrando um
+ * campo a mais aqui e um a menos ali, e a pessoa que lesse os dois teria de
+ * decidir em qual acreditar.
+ *
+ * Duas diferenças, e só duas:
+ *
+ * - `content` vira a frase do porquê, e não a menção. Mencionar alguém dentro da
+ *   própria DM dele é ruído: ele já está sendo notificado por estar ali.
+ * - `allowed_mentions` fecha tudo. Não há ninguém a notificar além do
+ *   destinatário, e um `@everyone` digitado no título de uma demanda não pode
+ *   virar nada aqui dentro.
+ */
+export function montarAvisoDireto(args: {
+  card: CardDoAviso;
+  evento: EventoDoAviso;
+  appUrl?: string | null;
+  rotulo?: { prioridade?: (p: string) => string; tipo?: (t: string) => string };
+}): CorpoWebhook {
+  const { evento } = args;
+  return {
+    content: cortar(linhaDoDireto(evento.acao, evento.mudancas), LIMITE_CONTEUDO),
+    embeds: montarAviso(args).embeds,
+    allowed_mentions: { parse: [] },
+  };
+}
+
 /**
  * UMA mensagem para a rodada inteira do cron de recorrências.
  *

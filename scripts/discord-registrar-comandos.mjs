@@ -21,10 +21,13 @@
  * da Rede — então o global não traria vantagem nenhuma e custaria a espera
  * justamente no momento em que alguém está tentando conferir se funcionou.
  *
- * O token do bot NÃO precisa ir para a Vercel: nada em produção o usa. As
- * interações são autenticadas por assinatura, não por token nosso. Guardá-lo
- * como variável de ambiente do projeto seria expor uma credencial que só este
- * script, rodando na sua máquina, tem motivo para conhecer.
+ * O TOKEN DO BOT AGORA VAI TAMBÉM PARA A VERCEL — e isto mudou. Enquanto o bot
+ * só recebia comandos, produção não precisava dele: interação se autentica por
+ * assinatura, não por token nosso. A mensagem direta ao responsável inverteu
+ * isso. Mandar DM é AGIR como o aplicativo, e a API do Discord exige que ele se
+ * identifique (`Authorization: Bot <token>`); não existe caminho sem isso. A
+ * nota fica porque o comentário anterior dizia o contrário, com razão, para o
+ * mundo em que a DM não existia.
  */
 import { COMANDOS } from "../src/lib/discord-vinculo-core.ts";
 
