@@ -26,6 +26,10 @@ import {
 // cadastro está pela metade, o que o clique promete gravar — e moram no módulo
 // puro, com teste no `prebuild`. Aqui só há a pintura.
 import { cabecalhoDe, mudancasPendentes } from "@/lib/perfil-core";
+import {
+  MOLDURAS,
+  normalizarMoldura,
+} from "@/lib/molduras-core";
 import styles from "./perfil-modal.module.css";
 
 /**
@@ -269,6 +273,14 @@ export function PerfilModal(props: PerfilModalProps) {
   const [fotoPendente, setFotoPendente] = useState<string | null | undefined>(
     undefined,
   );
+  /**
+   * A moldura ainda não gravada. `undefined` = ninguém mexeu, string = escolheu
+   * — a MESMA convenção de três estados da foto, e pelo mesmo motivo: sem o
+   * estado ausente, salvar o nome apagaria a moldura de quem a escolheu.
+   */
+  const [molduraPendente, setMolduraPendente] = useState<string | undefined>(
+    undefined,
+  );
   const [preparando, setPreparando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [gravando, setGravando] = useState(false);
@@ -281,7 +293,17 @@ export function PerfilModal(props: PerfilModalProps) {
    * pessoa como ela está, direto do prop: `nome` e `fotoPendente` congelaram no
    * momento em que o diálogo abriu, e ali eles não têm o que representar.
    */
-  const previa = meu ? { ...pessoa, name: nome, photo: fotoMostrada } : pessoa;
+  /**
+   * O que está gravado hoje — normalizado, porque é contra ele que "mudou?" é
+   * medido. Um documento com id fora do catálogo vale `"nenhuma"` na tela, e
+   * precisa valer `"nenhuma"` aqui também: senão o botão de salvar nasceria
+   * aceso, prometendo gravar uma diferença que a pessoa não fez.
+   */
+  const molduraSalva = normalizarMoldura(pessoa.moldura);
+  const molduraMostrada = molduraPendente ?? molduraSalva;
+  const previa = meu
+    ? { ...pessoa, name: nome, photo: fotoMostrada, moldura: molduraMostrada }
+    : pessoa;
   const fotoDoGoogle = props.modo === "eu" ? props.fotoDoGoogle : null;
 
   /**
@@ -315,11 +337,8 @@ export function PerfilModal(props: PerfilModalProps) {
     nome: meu ? nome : nomeSalvo,
     nomeSalvo,
     fotoPendente: meu ? fotoPendente : undefined,
-    // A moldura entra na frente seguinte. O eixo já existe no módulo puro de
-    // propósito — ver o comentário de `mudancasPendentes` —, e enquanto não há
-    // seletor ele fica desligado sem custo nenhum.
-    molduraPendente: undefined,
-    molduraSalva: "",
+    molduraPendente: meu ? molduraPendente : undefined,
+    molduraSalva,
     gravando,
   });
   const ocupado = preparando || gravando;
@@ -383,10 +402,13 @@ export function PerfilModal(props: PerfilModalProps) {
      * `photo: null` por descuido faria uma correção de nome apagar a imagem de
      * quem nem chegou a abrir o seletor de arquivo.
      */
-    const gravado: MeuCadastro =
-      fotoPendente === undefined
-        ? { name: conferido.nome }
-        : { name: conferido.nome, photo: fotoPendente };
+    const gravado: MeuCadastro = { name: conferido.nome };
+    if (fotoPendente !== undefined) gravado.photo = fotoPendente;
+    // Mesma regra da foto: o campo só entra quando MUDOU. Mandá-lo sempre
+    // faria uma correção de nome regravar a moldura — inofensivo hoje, e a
+    // porta aberta para o dia em que `normalizarMoldura` mudar de opinião
+    // sobre um id antigo e a correção de nome o apagasse em silêncio.
+    if (molduraPendente !== undefined) gravado.moldura = molduraPendente;
 
     setGravando(true);
     try {
@@ -683,6 +705,57 @@ export function PerfilModal(props: PerfilModalProps) {
                     ` ${emKB(tamanhoDataUri(fotoPendente))} de ${emKB(LIMITE_FOTO_BYTES)}.`}
                 </>
               )}
+            </div>
+
+            {/* O SELETOR VEM DEPOIS DO BOTÃO DE ESCOLHER IMAGEM, e o lugar
+                não é arbitrário: o `<Modal>` põe o foco no primeiro elemento
+                focável que encontra, e pôr uma fila de seis botões antes do
+                campo de nome mudaria onde o diálogo abre.
+
+                AS AMOSTRAS SÃO DE 38px, que já é tamanho real (a lista da aba
+                Admin) e está acima do limiar de detalhe. Em 28px todas
+                simplificariam para cor sólida, e a pessoa escolheria entre seis
+                anéis chapados — as duas decisões se anulariam. A tira de
+                22/30/38 logo abaixo mostra, honestamente, que abaixo de 34 elas
+                simplificam mesmo. */}
+            <div className={styles.molduraBloco}>
+              <div className={styles.rotulo} id="perfil-moldura">
+                Moldura
+              </div>
+              <div
+                className={styles.molduraGrade}
+                role="radiogroup"
+                aria-labelledby="perfil-moldura"
+              >
+                {MOLDURAS.map((m) => {
+                  const escolhida = molduraMostrada === m.id;
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={escolhida}
+                      className={`${styles.molduraOpcao} ${
+                        escolhida ? styles.molduraEscolhida : ""
+                      }`}
+                      title={m.resumo}
+                      onClick={() => {
+                        setErro(null);
+                        setMolduraPendente(m.id);
+                      }}
+                      disabled={gravando}
+                    >
+                      <Avatar
+                        pessoa={{ ...previa, moldura: m.id }}
+                        size={38}
+                        fotoDoGoogle={fotoDoGoogle}
+                        alt=""
+                      />
+                      <span className={styles.molduraNome}>{m.nome}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             <div

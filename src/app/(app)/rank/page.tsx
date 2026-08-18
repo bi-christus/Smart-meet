@@ -295,11 +295,20 @@ function Degrau({
       style={{ ["--atraso" as string]: `${atraso}ms` }}
     >
       <div className={styles.rosto}>
-        {/* alt vazio: o nome está escrito logo abaixo, dentro do mesmo bloco. */}
+        {/* alt vazio: o nome está escrito logo abaixo, dentro do mesmo bloco.
+
+            `semMoldura` porque o degrau JÁ é uma moldura: `.rosto` desenha um
+            anel em volta de cada rosto, e o do primeiro lugar é pintado na cor
+            da marca com halo. Uma moldura pessoal por dentro daria três anéis
+            concêntricos — e quem escolhesse a moldura "Cor da casa" apareceria
+            no pódio exibindo o vocabulário visual reservado a quem está em
+            primeiro. Tirar o anel do degrau não resolveria: "Cor da casa"
+            continuaria imitando o campeão. */}
         <Avatar
           pessoa={perfil ?? { name: rotulo, email: colocacao.chave }}
           size={TAM_AVATAR[posicao] ?? 88}
           alt=""
+          semMoldura
         />
       </div>
       <div className={styles.nome} title={rotulo}>

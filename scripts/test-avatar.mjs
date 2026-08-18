@@ -480,9 +480,12 @@ if (regexNomeNaRegra && tetoNomeNaRegra) {
 
 // A lista fechada é a única barreira entre "trocar a própria foto e o próprio
 // nome" e "promover a si mesmo a admin".
+// `moldura` entrou nesta lista junto com o seletor do perfil. A asserção muda
+// no MESMO PR da regra, e não depois: o prebuild roda de verdade na Vercel e é o
+// portão do deploy — esquecer não dá erro de tela, dá deploy que não sai.
 checa(
-  "o dono agora escreve uid/lastLogin/photo/name — e nada mais",
-  /hasOnly\(\['uid', 'lastLogin', 'photo', 'name'\]\)/.test(regras),
+  "o dono agora escreve uid/lastLogin/photo/name/moldura — e nada mais",
+  /hasOnly\(\['uid', 'lastLogin', 'photo', 'name', 'moldura'\]\)/.test(regras),
 );
 const listaDoDono = /hasOnly\(\['uid'[^\]]*\]\)/.exec(regras)?.[0];
 checa(
