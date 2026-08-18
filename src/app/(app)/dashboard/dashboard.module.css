@@ -462,10 +462,10 @@
   flex: none;
 }
 .swEntrada {
-  background: var(--serie-2);
+  background: var(--brand);
 }
 .swEntrega {
-  background: var(--serie-3);
+  background: var(--ok);
 }
 /* Traço e não quadrado: a fila é linha no gráfico, e a legenda tem de dizer
    qual das duas formas ela representa antes de dizer qual cor. */
@@ -552,77 +552,50 @@
 .grade {
   stroke: var(--line-soft);
 }
-/* O zero é a única linha que significa alguma coisa por si — é contra ela que a
-   altura da barra é lida. Um tom acima do resto da grade basta para ela parar de
-   se confundir com as divisões. */
-.gradeZero {
-  stroke: var(--line);
-}
 .eixo {
   font-size: 9.5px;
   fill: var(--tx-3);
 }
-/* O rótulo da semana em foco fica em tinta cheia. É o único destaque que sobra
-   quando a coluna em foco não é uma das rotuladas — e custa zero pixel novo. */
-.eixoAtivo {
-  font-size: 9.5px;
-  font-weight: 700;
-  fill: var(--tx);
-}
-/* Cada uma das duas faixas diz o que mede, dentro do próprio desenho. Legenda
-   embaixo obrigaria a sair do gráfico e voltar para saber de qual grandeza é o
-   eixo que se está lendo. */
-.eixoCap {
-  font-size: 9.5px;
-  letter-spacing: 0.3px;
-  fill: var(--tx-3);
-}
-
-/**
- * As séries saem da paleta categórica, não dos tokens de marca.
- *
- * Eram `--brand` e `--ok`. `--brand` é trocado pelo acento escolhido em
- * `globals.css`, então no tema azul as barras de entrada ficavam azuis contra a
- * linha índigo da fila — ΔE 11,5 em OKLab, abaixo do piso de 15, ou seja um par
- * que nem quem enxerga cor normalmente separa. Estes três passos foram medidos
- * nas seis superfícies do app (escuro e claro × laranja, azul e café) e passam
- * em todas; no claro, dois deles ficam abaixo de 3:1 contra o fundo, e é por
- * isso que o painel carrega nome na legenda e o alternador "Números".
- */
+/* Nos elementos do grafico a transicao e mais curta: sao dezenas deles, e o
+   ponteiro atravessa varios de uma vez. 150ms confirma a mira sem deixar um
+   rastro aceso atras do cursor. */
 .barEntrada {
-  fill: var(--serie-2);
-  fill-opacity: 0.92;
+  fill: var(--brand);
+  fill-opacity: 0.9;
+  transition: fill-opacity 0.15s;
 }
 .barEntrega {
-  fill: var(--serie-3);
-  fill-opacity: 0.92;
+  fill: var(--ok);
+  fill-opacity: 0.88;
+  transition: fill-opacity 0.15s;
 }
-/* Sem hover por barra, de propósito: quem responde ao ponteiro é a faixa da
-   semana inteira, atrás das duas. Barra de 6px é alvo pequeno demais, e acender
-   uma de cada vez responderia metade da pergunta que a pessoa está fazendo. */
-.faixaFoco {
-  fill: var(--tx);
-  fill-opacity: 0.085;
+.barEntrada:hover,
+.barEntrega:hover {
+  fill-opacity: 1;
 }
-/* A coluna INTEIRA é o alvo, das barras até a tira da fila: é o que faz o
-   ponteiro nunca precisar mirar, e o que liga as duas faixas num gesto só. */
-.alvoSemana {
-  fill: transparent;
-  pointer-events: all;
-}
-
 /**
- * A fila usa `--serie-7` (índigo) desde antes, e continua.
+ * A fila usa `--serie-7` (índigo), não `--warn`.
  *
- * Âmbar era a escolha semântica — fila crescendo é alerta — mas `--warn` e o
- * laranja das entradas são o mesmo matiz, e uma linha da cor da barra por onde
- * passa não é uma série, é ruído. Índigo contra laranja e verde é a separação
- * máxima que a paleta oferece, inclusive sob daltonismo. O alerta continua
- * sendo dado pelo número, no chip do painel e na ponta da linha.
+ * Âmbar era a escolha semântica — fila crescendo é alerta — mas `--warn` e
+ * `--brand` (as barras de entrada) são o mesmo matiz laranja, e uma linha
+ * cruzando barras da própria cor não é uma série, é ruído. A paleta categórica
+ * existe justamente por ter sido validada para separar vizinhos, inclusive
+ * para daltonismo: índigo contra laranja e verde é a separação máxima que ela
+ * oferece. O alerta continua sendo dado pelo número no chip do painel.
  */
-.filaArea {
+.eixoFila {
+  font-size: 9.5px;
   fill: var(--serie-7);
-  fill-opacity: 0.16;
+}
+/* Traço da cor do painel por baixo da linha: ela cruza as colunas, e sem essa
+   folga se confunde com a barra por onde passa justo nas semanas cheias. */
+.filaHalo {
+  fill: none;
+  stroke: var(--s1);
+  stroke-width: 5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  opacity: 0.85;
 }
 .filaLinha {
   fill: none;
@@ -636,278 +609,14 @@
   stroke: var(--s1);
   stroke-width: 1.2;
 }
-/* Tinta de texto, e não a cor da série: quem carrega a identidade é a linha
-   embaixo do número. Número pintado da cor da série é dado e rótulo disputando
-   o mesmo canal, e some contra a área justamente quando a fila está alta. */
-.filaNum {
-  font-size: 11px;
-  font-weight: 700;
-  fill: var(--tx);
-  font-variant-numeric: tabular-nums;
+/* Alvo de hover maior que o traço — a linha sozinha é fina demais para mirar. */
+.alvo {
+  fill: transparent;
+  transition: fill 0.15s, fill-opacity 0.15s;
 }
-
-/* ---------- balão do gráfico de fluxo ---------- */
-.fluxoTopo {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-bottom: 12px;
-}
-.fluxoDica {
-  flex: 1;
-  min-width: 190px;
-  font-size: 11.5px;
-  color: var(--tx-3);
-}
-.modos {
-  display: inline-flex;
-  gap: 2px;
-  padding: 2px;
-  flex: none;
-  border: 1px solid var(--line);
-  background: var(--s1);
-  border-radius: 9px;
-}
-.modo {
-  height: 25px;
-  padding: 0 11px;
-  border: 0;
-  background: transparent;
-  border-radius: 7px;
-  color: var(--tx-3);
-  font-family: inherit;
-  font-size: 11.5px;
-  font-weight: 600;
-  cursor: pointer;
-  /* Os mesmos 180ms de `.limpar`: é o único movimento desta peça, e responde a
-     um clique, não a uma varredura de ponteiro. */
-  transition: color 0.18s, background 0.18s;
-}
-.modo:hover {
-  color: var(--tx-2);
-}
-.modoAtivo,
-.modoAtivo:hover {
-  background: var(--s3);
-  color: var(--tx);
-}
-
-/* O balão é posicionado em % dentro deste wrapper, e a conta só fecha porque o
-   SVG ocupa 100% dele sem padding: X do viewBox dividido por W é exatamente a
-   fração da largura em que a coluna está. */
-.fluxoWrap {
-  position: relative;
-}
-.fluxoWrap:focus {
-  outline: none;
-}
-.fluxoWrap:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 4px;
-  border-radius: var(--r);
-}
-/**
- * Sem transição nenhuma, e isso é decisão.
- *
- * O balão troca de semana dezenas de vezes por segundo quando o ponteiro varre
- * o gráfico. Qualquer entrada animada aqui vira atraso percebido — é o caso de
- * alta frequência do AGENTS.md §3 — e uma transição de `left` transformaria o
- * balão num objeto correndo atrás do cursor. Ele aparece onde tem de aparecer,
- * na hora.
- */
-.balao {
-  position: absolute;
-  top: 6px;
-  z-index: 2;
-  pointer-events: none;
-  min-width: 208px;
-  max-width: 300px;
-  padding: 10px 12px 11px;
-  background: var(--s2);
-  border: 1px solid var(--line);
-  border-radius: var(--r);
-  box-shadow: var(--shadow);
-}
-.balaoTitulo {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.2px;
-  color: var(--tx);
-}
-.balaoLista {
-  list-style: none;
-  display: grid;
-  gap: 5px;
-  margin-top: 9px;
-}
-.balaoLista li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.balaoLista b {
-  min-width: 24px;
-  text-align: right;
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--tx);
-  font-variant-numeric: tabular-nums;
-}
-.balaoLista span {
-  font-size: 11.5px;
-  color: var(--tx-2);
-}
-/* Traço e não quadrado: no balão, quem já sabe de que série se trata quer o
-   número — um bloco de cor cheio aqui é tinta de peso de dado fazendo trabalho
-   de rótulo. A legenda continua com quadrado, que é a forma das barras. */
-.kEntrada,
-.kEntrega,
-.kFila {
-  display: block;
-  width: 12px;
-  height: 3px;
-  border-radius: 2px;
-  flex: none;
-}
-.kEntrada {
-  background: var(--serie-2);
-}
-.kEntrega {
-  background: var(--serie-3);
-}
-.kFila {
-  background: var(--serie-7);
-}
-/* A frase é o motivo de o balão existir. Os três números já estavam no gráfico;
-   o que faltava era a subtração entre dois deles, que é a pergunta do título do
-   painel. */
-.balaoLeitura {
-  margin-top: 9px;
-  padding-top: 8px;
-  border-top: 1px solid var(--line-soft);
-  font-size: 11.5px;
-  line-height: 1.45;
-  color: var(--tx-2);
-}
-
-.srOnly {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
-/* ---------- tabela do fluxo semanal ---------- */
-/**
- * A altura é limitada e o cabeçalho gruda.
- *
- * O período de 12 meses são 52 linhas: soltas, elas empurram os painéis
- * seguintes uma tela e meia para baixo, e a barra do Dashboard inteiro passa a
- * rolar por causa de um alternador que alguém clicou. Com o cabeçalho e o total
- * grudados, a coluna continua nomeada e o número do período continua à vista em
- * qualquer ponto da rolagem — que é o que se vai conferir na tabela.
- */
-.tabelaFluxoWrap {
-  /* 528px é a conta de caber as 12 semanas — o período padrão — inteiras, sem
-     rolagem nenhuma: 12 linhas de 38px, mais o cabeçalho e o total. Nos
-     períodos de 6 e 12 meses a tabela rola, e é para isso que os dois ficam
-     grudados nas pontas. */
-  max-height: 528px;
-  overflow: auto;
-  border: 1px solid var(--line-soft);
-  border-radius: var(--r);
-}
-/* Linha mais baixa que a da tabela de prazos: lá cada linha é um card com nome
-   de pessoa e chip de prazo, aqui é uma data e quatro números. */
-.tabelaFluxoWrap th,
-.tabelaFluxoWrap td {
-  padding: 6px 12px;
-}
-.tabelaFluxoWrap thead th {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background: var(--s1);
-}
-/**
- * O total gruda no rodapé, e precisa PARECER que está por cima.
- *
- * Grudado sem relevo, ele encosta na última linha visível e as duas viram um
- * bloco de texto só — dá para ler "20 a 26 de julho" e "No período todo" como
- * se fossem a mesma linha. A sombra e a borda mais forte são o que diz que ele
- * flutua sobre a rolagem em vez de ser a linha seguinte.
- */
-.tabelaFluxoWrap tfoot th,
-.tabelaFluxoWrap tfoot td {
-  position: sticky;
-  bottom: 0;
-  z-index: 1;
-  background: var(--s2);
-  border-top: 1px solid var(--line);
-  border-bottom: 0;
-  box-shadow: 0 -6px 12px -6px var(--overlay);
-  color: var(--tx);
-  font-weight: 700;
-}
-.tabelaFluxoWrap tfoot th {
-  text-transform: none;
-  letter-spacing: 0;
-  font-size: 12px;
-}
-/* As quatro colunas de número ficam com largura fixa, e a semana absorve a
-   sobra. Repartidas em cinco partes iguais numa tela de 1500px, os números
-   ficam a 200px uns dos outros e ler a linha inteira vira trabalho de régua. */
-.tabelaFluxoWrap th.num,
-.tabelaFluxoWrap td.num {
-  width: 118px;
-}
-.num {
-  text-align: right;
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-/* `.tabela th` alinha à esquerda com a mesma força de uma classe só, então o
-   alinhamento das colunas de número precisa do seletor mais específico — sem
-   isto, o cabeçalho fica à esquerda e os valores à direita. */
-.tabela th.num {
-  text-align: right;
-}
-/* A semana é `<th scope="row">` para a leitura em voz alta dizer de qual semana
-   é cada número. Isso a joga na regra de cabeçalho, que é caixa-alta de 10px —
-   ilegível para "27 de julho a 2 de agosto de 2026". */
-.tabela th.tabelaSemana {
-  text-transform: none;
-  letter-spacing: 0;
-  white-space: normal;
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--tx-2);
-}
-/**
- * O saldo é a única coluna colorida, e usa cor de ESTADO, não de série.
- *
- * Ele não é uma quarta série: é o sinal de uma subtração, e subir ou descer tem
- * significado fixo no produto — fila crescendo é problema. A cor nunca vai
- * sozinha: o sinal `+` e o `-` já dizem a mesma coisa em texto, que é o que faz
- * a coluna continuar legível impressa, sem cor, ou por quem não a distingue.
- */
-/* Escrito com o `td` junto porque `.tabela td` já pinta a célula de `--tx-2` e
-   empata em especificidade com uma classe sozinha — sem isto, a coluna do saldo
-   sai cinza e a única cor da tabela some sem avisar. */
-.tabela td.saldoSobe {
-  color: var(--danger-tx);
-}
-.tabela td.saldoDesce {
-  color: var(--ok-tx);
-}
-.tabela td.saldoZero {
-  color: var(--tx-3);
+.alvo:hover {
+  fill: var(--serie-7);
+  fill-opacity: 0.25;
 }
 
 /* ---------- tabela de prazos ---------- */

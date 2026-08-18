@@ -40,8 +40,6 @@ import {
   relDay,
   rotuloDoDia,
   rotuloDoDiaISO,
-  rotuloSemana,
-  semanaPorExtenso,
   startOfDay,
   startOfWeek,
   toISO,
@@ -555,73 +553,6 @@ checa(
   "a coluna de cada dia útil bate com o rótulo do cabeçalho",
   Array.from({ length: 5 }, (_, i) => addDays(startOfWeek(parseISO("2026-08-13")), i)).every(
     (x, i) => DOW_SHORT[x.getDay()].slice(0, 3).toLowerCase() === DOW_MINI_UTEIS[i].toLowerCase(),
-  ),
-);
-
-// ---- rótulo de semana ---------------------------------------------------
-/**
- * O bug que estas asserções fecham: o gráfico de fluxo do Dashboard rotulava a
- * coluna da SEMANA com o dia em que ela começa. "3/08" embaixo de uma barra que
- * cobre sete dias é lido como "3 de agosto", e os usuários leram exatamente
- * assim. Nenhum teste pegaria isso — o número estava certo, o significado é que
- * não era —, então o que dá para travar é o formato novo.
- */
-checa(
-  "semana inteira dentro do mês nomeia o intervalo, com o mês uma vez",
-  rotuloSemana(parseISO("2026-08-03")) === "3–9 ago",
-  rotuloSemana(parseISO("2026-08-03")),
-);
-checa(
-  "semana que vira o mês nomeia os dois meses",
-  rotuloSemana(parseISO("2026-07-27")) === "27 jul–2 ago",
-  rotuloSemana(parseISO("2026-07-27")),
-);
-checa(
-  "semana que vira o ano também nomeia os dois meses",
-  rotuloSemana(parseISO("2025-12-29")) === "29 dez–4 jan",
-  rotuloSemana(parseISO("2025-12-29")),
-);
-// O rótulo do eixo precisa caber em ~40px com 52 semanas na tela. Nenhum dos
-// formatos pode estourar isso sem que alguém perceba — daí o teto de largura.
-checa(
-  "nenhum rótulo de semana do ano passa de 13 caracteres",
-  Array.from({ length: 53 }, (_, i) =>
-    rotuloSemana(addDays(startOfWeek(parseISO("2026-01-05")), i * 7)),
-  ).every((r) => r.length <= 13),
-);
-checa(
-  "por extenso: semana dentro do mês diz o mês uma vez, com o ano",
-  semanaPorExtenso(parseISO("2026-08-03")) === "3 a 9 de agosto de 2026",
-  semanaPorExtenso(parseISO("2026-08-03")),
-);
-checa(
-  "por extenso: semana que vira o mês diz os dois, e um ano só",
-  semanaPorExtenso(parseISO("2026-07-27")) === "27 de julho a 2 de agosto de 2026",
-  semanaPorExtenso(parseISO("2026-07-27")),
-);
-checa(
-  "por extenso: semana que vira o ano diz os DOIS anos",
-  semanaPorExtenso(parseISO("2025-12-29")) ===
-    "29 de dezembro de 2025 a 4 de janeiro de 2026",
-  semanaPorExtenso(parseISO("2025-12-29")),
-);
-// As duas formas descrevem a MESMA semana e são escritas separadas. Se alguém
-// mexer numa e esquecer a outra, o balão e o eixo passam a discordar sobre o
-// dia em que a semana termina — e o balão é justamente onde se vai conferir.
-checa(
-  "o eixo e o balão concordam sobre o primeiro e o último dia da semana",
-  Array.from({ length: 53 }, (_, i) => addDays(startOfWeek(parseISO("2026-01-05")), i * 7)).every(
-    (ini) => {
-      const fim = addDays(ini, 6);
-      const curto = rotuloSemana(ini);
-      const longo = semanaPorExtenso(ini);
-      return (
-        curto.startsWith(String(ini.getDate())) &&
-        curto.endsWith(MES_CURTO[fim.getMonth()]) &&
-        longo.startsWith(`${ini.getDate()} `) &&
-        longo.includes(`${fim.getDate()} de ${MES_LONGO[fim.getMonth()]}`)
-      );
-    },
   ),
 );
 
