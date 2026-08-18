@@ -490,3 +490,44 @@ Dias úteis e não todo dia: resumo de sábado é resumo que ninguém lê e que 
 
 > **Atenção ao plano da Vercel.** Este é o **terceiro** cron do projeto. O plano Hobby limita a quantidade de cron jobs por projeto e só permite disparo diário — se o deploy recusar o `vercel.json`, a saída é subir o plano ou fundir este disparo dentro de um dos crons existentes.
 
+---
+
+## Os comandos de consulta
+
+O aviso e a DM contam o que **mudou**. Nenhum dos dois responde *"o que eu tenho para hoje?"* — e essa é a pergunta que faz alguém abrir o quadro dez vezes por dia. Quem está no Discord o dia inteiro paga uma troca de janela e um login por uma lista de cinco linhas.
+
+| Comando | O que responde |
+|---|---|
+| `/minhas-demandas` | as suas em aberto, da mais urgente para a menos |
+| `/demanda busca:<texto>` | as do seu setor com aquilo no título, entregues incluídas |
+
+### As decisões
+
+**A resposta é sempre efêmera.** A lista de demandas de uma pessoa é assunto dela: publicada no canal, vira histórico de chat sobre quem está atrasado em quê — e isso muda o jeito como as pessoas usam o quadro.
+
+**É texto, não embed.** Embed dentro de resposta efêmera fica pesado no celular para o que é uma lista curta, e o Markdown do `content` já dá link clicável. O embed existe para o aviso, que chega **sem ser pedido** e precisa se distinguir do resto do canal; aqui a pessoa acabou de digitar o comando e sabe o que está lendo.
+
+**Atrasada primeiro, sem prazo por último.** A ordem que sai de graça da consulta é a de criação, e ela põe a demanda de março na frente da que vence amanhã. Ausência de prazo não é urgência — tratá-la como tal empurraria para cima justamente o que ninguém datou.
+
+**O atraso vem por extenso e em negrito** (`**atrasada desde 10/03**`), não como cor nem emoji: no Discord a linha é texto puro, e um ícone vermelho no meio de dez linhas some. "atrasada" é a palavra que a pessoa procura com o olho.
+
+**A busca ignora acento e caixa, e casa as palavras em qualquer ordem.** Quem digita no celular não acentua; "relatorio" tem de achar "Relatório", senão a busca parece quebrada. E termo vazio casa com **nada** — devolver o quadro inteiro faria alguém achar que digitou certo.
+
+**A busca inclui as entregues**, marcadas com `✓`. "Aquilo ficou pronto?" é metade das perguntas que o comando existe para responder.
+
+**O corte é anunciado, e cabe.** Mesma armadilha do resumo do dia: cortar na borda dos 2000 caracteres apagaria justamente a linha que diz quantas ficaram de fora. Aqui o custo de errar é maior, porque a pessoa **perguntou** — ela vai agir achando que viu tudo. O teste cobre a aritmética.
+
+**A busca respeita o setor de quem pergunta.** Ela não pode virar a porta pela qual alguém lê a demanda de um setor onde não entra.
+
+### Os três segundos, e o risco que fica
+
+É o prazo do Discord para a resposta da interação, e ele manda em tudo: consulta por campo **único** (que o Firestore indexa sozinho), teto baixo de documentos, nenhuma chamada externa.
+
+O risco, dito na cara: **cold start** de função serverless com `firebase-admin` pode passar de um segundo, e em três segundos isso é muito. É o mesmo risco que `/vincular` já corre desde o começo. Se "a aplicação não respondeu" virar rotina, a saída é a resposta adiada (`type: 5`) — que exige uma segunda chamada **depois** de responder, e numa função que morre ao responder isso pede `waitUntil`. É trabalho, e não estava pago; a nota fica para quem for pagar.
+
+### A lista de comandos é conferida por inteiro
+
+O script de registro manda `COMANDOS` com **PUT**, e PUT substitui. Um comando que sumisse da lista sumiria do Discord no registro seguinte, e o sintoma seria "esse comando não existe" para quem já usava. Por isso o teste compara a lista inteira, e não "contém".
+
+> Depois de trazer estas mudanças, **rode `npm run discord:comandos` de novo**. Sem isso, `/minhas-demandas` e `/demanda` não aparecem para ninguém — o código está pronto e o Discord não sabe.
+

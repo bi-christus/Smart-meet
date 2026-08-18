@@ -88,6 +88,40 @@ export function addDays(d: Date, n: number): Date {
   return x;
 }
 
+/**
+ * O fuso de quem trabalha, e não o de onde o código roda.
+ *
+ * Fortaleza, onde a Rede está — o mesmo fuso que `scripts/test-datas.mjs` já
+ * usa para provar a armadilha do `new Date(iso)`. As funções serverless da
+ * Vercel rodam em UTC: às 21:00 daqui já é o dia seguinte lá, e um "hoje"
+ * tirado do relógio cru marcaria como ATRASADA a demanda que vence hoje, no dia
+ * em que ela ainda pode ser entregue. Erro de fuso em relatório de prazo não
+ * parece erro: parece cobrança.
+ */
+export const FUSO_DO_SETOR = "America/Fortaleza";
+
+/**
+ * Que dia é hoje (aaaa-mm-dd) no fuso de quem trabalha.
+ *
+ * `en-CA` já formata nessa ordem, e é por isso que ele aparece aqui em vez de
+ * `pt-BR` — não é descuido: `pt-BR` daria `18/08/2026`, que não se compara com
+ * o `due` do card por ordenação de string, que é como todo o resto do app trata
+ * data (ver `toISO`).
+ *
+ * `agora` entra por parâmetro para o teste ter relógio.
+ */
+export function hojeNoFuso(
+  agora: Date = new Date(),
+  fuso: string = FUSO_DO_SETOR,
+): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: fuso,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(agora);
+}
+
 export function startOfDay(d: Date = new Date()): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
