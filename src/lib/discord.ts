@@ -52,3 +52,46 @@ export function avisarDiscord(cardId: string, eventoId: string | null): void {
     }
   })();
 }
+
+// ---------------------------------------------------------------------------
+// O vínculo, do lado da tela.
+//
+// Ao contrário do aviso, ESTAS DUAS ESPERAM e ESTAS DUAS LANÇAM: a pessoa está
+// olhando o botão que apertou, e "não deu" precisa chegar até ela. É a
+// diferença entre um efeito colateral do trabalho e uma ação que alguém pediu.
+// ---------------------------------------------------------------------------
+
+async function cabecalho(): Promise<HeadersInit> {
+  const user = auth.currentUser;
+  if (!user) throw new Error("Faça login de novo para continuar.");
+  return {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${await user.getIdToken()}`,
+  };
+}
+
+async function conferir(r: Response): Promise<unknown> {
+  const dados = (await r.json().catch(() => null)) as { error?: string } | null;
+  if (!r.ok) throw new Error(dados?.error || "Não deu para falar com o servidor.");
+  return dados;
+}
+
+export type CodigoDeVinculo = { codigo: string; expiraEmSegundos: number };
+
+/** Pede um código novo. O anterior desta pessoa morre no mesmo pedido. */
+export async function gerarCodigoDiscord(): Promise<CodigoDeVinculo> {
+  const r = await fetch("/api/discord/vinculo", {
+    method: "POST",
+    headers: await cabecalho(),
+  });
+  return (await conferir(r)) as CodigoDeVinculo;
+}
+
+/** Desfaz o vínculo pelo lado do app. */
+export async function desvincularDiscord(): Promise<void> {
+  const r = await fetch("/api/discord/vinculo", {
+    method: "DELETE",
+    headers: await cabecalho(),
+  });
+  await conferir(r);
+}

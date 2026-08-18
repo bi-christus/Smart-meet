@@ -62,6 +62,20 @@ export type UserProfile = {
    * em `avatar-core.ts`: este campo é baixado por todo cliente em toda tela.
    */
   photo?: string | null;
+  /**
+   * Id da pessoa no Discord, quando ela vinculou a conta.
+   *
+   * Quem grava é o SERVIDOR (`api/discord/interactions`, pelo Admin SDK), nunca
+   * a tela — por isso ele fica fora do `hasOnly` do dono em `firestore.rules`.
+   * Abrir aquela lista para mais um campo seria arriscar `role`, `active` e
+   * `sectors` por causa de um id que nem é segredo.
+   *
+   * É o que transforma o aviso da demanda no Discord em notificação de verdade:
+   * sem ele a mensagem chega no canal e depende de alguém estar olhando.
+   */
+  discordId?: string | null;
+  /** Como a pessoa se chama no Discord, para a tela do Perfil mostrar. */
+  discordUser?: string | null;
 };
 
 const DEFAULT_COLOR = "#ff6a2b";
