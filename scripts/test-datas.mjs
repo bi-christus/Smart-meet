@@ -31,7 +31,9 @@ import {
   ehFimDeSemana,
   ehFimDeSemanaISO,
   fmtDayMonth,
+  FUSO_DO_SETOR,
   hh,
+  hojeNoFuso,
   MES_CURTO,
   MES_LONGO,
   parseISO,
@@ -83,6 +85,36 @@ checa(
   toISO(ano) === "2026-01-01",
   toISO(ano),
 );
+
+// --- hojeNoFuso: o dia de quem trabalha, não o do servidor ----------------
+// A Vercel roda em UTC. Este bloco existe porque o erro aqui não parece erro:
+// a demanda que vence hoje aparece como atrasada, e o resumo do dia vira
+// cobrança indevida às 21h.
+// 01:00 em UTC = 22:00 do dia anterior em Fortaleza. É a janela em que o
+// relógio do servidor e o de quem trabalha discordam — e a única em que o erro
+// aparece.
+const NOITE = new Date("2026-08-19T01:00:00Z");
+checa(
+  "às 22h de Fortaleza ainda é hoje",
+  hojeNoFuso(NOITE) === "2026-08-18",
+  hojeNoFuso(NOITE),
+);
+checa(
+  "e o MESMO instante lido em UTC já é o dia seguinte — a armadilha",
+  hojeNoFuso(NOITE, "UTC") === "2026-08-19",
+  hojeNoFuso(NOITE, "UTC"),
+);
+checa(
+  "meia-noite e dez de Fortaleza já é o dia novo",
+  hojeNoFuso(new Date("2026-08-19T03:10:00Z")) === "2026-08-19",
+  hojeNoFuso(new Date("2026-08-19T03:10:00Z")),
+);
+checa(
+  "o formato é o mesmo do `due` do card — dois dígitos, comparável como string",
+  /^\d{4}-\d{2}-\d{2}$/.test(hojeNoFuso(new Date("2026-01-05T12:00:00Z"))),
+  hojeNoFuso(new Date("2026-01-05T12:00:00Z")),
+);
+checa("o fuso padrão é o da Rede", FUSO_DO_SETOR === "America/Fortaleza");
 
 // --- toISO: dois dígitos, sempre ------------------------------------------
 // "2026-1-5" ordena depois de "2026-10-01" em comparação de string, e é assim
