@@ -67,14 +67,114 @@
    quadrado. O anel importa mais para quem NÃO tem foto — sem prévia para
    aparecer, ele e o cursor são o aviso inteiro. */
 .alvo:hover {
-  box-shadow: 0 0 0 2px var(--brand-line);
+  box-shadow: 0 0 0 calc(var(--m-anel, 0px) + 2px) var(--brand-line);
 }
 /* Mesmo contorno de foco do botão de histórico no card (`kanban.module.css`):
    um alvo novo dentro do mesmo card não pode ter um vocabulário de foco só
    dele. */
 .alvo:focus-visible {
   outline: 2px solid var(--brand);
-  outline-offset: 1px;
+  outline-offset: calc(var(--m-anel, 0px) + 1px);
+}
+
+/* ---------- a moldura escolhida pela pessoa ---------- */
+
+/* A MARGEM NEGATIVA É O DESENHO INTEIRO, e ela não parece nada.
+
+   O anel é um `padding` com fundo: o círculo do avatar fica por dentro, e a
+   coroa que sobra é a moldura. Só que um padding aumenta a caixa — um avatar de
+   22px com anel de 1,5px passaria a ocupar 25px, e a altura da linha do card do
+   Kanban mudaria conforme QUEM é o responsável. A margem negativa de mesmo valor
+   devolve ao layout a caixa original: a moldura transborda visualmente e não
+   empurra nada.
+
+   As duas alternativas foram descartadas por motivo concreto:
+
+   - `box-shadow` no próprio círculo só pinta cor chapada. Não há degradê, e não
+     há como abrir os vãos do tracejado.
+   - `border: transparent` + `background-clip` não serve porque `<Avatar>` já
+     escreve `style={{ background: inicial.cor }}` inline no círculo, e o atalho
+     `background` zera o `background-image` da folha. A moldura sumiria
+     justamente para quem NÃO tem foto — que é a maioria.
+
+   NADA AQUI ANIMA. Não é esquecimento: uma moldura que gira não é disparada por
+   gesto nenhum, roda para sempre, e quarenta pessoas podem ligar a sua ao mesmo
+   tempo na tela em que se trabalha o dia inteiro. É o `prefers-reduced-motion`
+   ficando sem nada para reduzir, que é uma garantia mais forte do que honrá-lo. */
+.moldura {
+  display: inline-flex;
+  flex: none;
+  border-radius: 50%;
+  padding: var(--m-anel);
+  margin: calc(-1 * var(--m-anel));
+  /* O fundo do avatar não vaza pelo vão do tracejado: o `--s2` por baixo é a
+     superfície de card e de diálogo, que é onde o avatar aparece. */
+  background-color: var(--s2);
+}
+
+/* Cada moldura pinta o `background-image` da coroa. O `data-` é o valor cru do
+   banco, e a folha só tem regra para os ids do catálogo — moldura desconhecida
+   simplesmente não pinta, que é a razão de a regra do Firestore poder ser
+   frouxa (ver `molduras-core.ts`). */
+.moldura[data-moldura="marca"] {
+  background-image: linear-gradient(var(--brand), var(--brand));
+}
+.moldura[data-moldura="mar"] {
+  background-image: conic-gradient(
+    from 200deg,
+    var(--info),
+    var(--ok),
+    var(--info)
+  );
+}
+.moldura[data-moldura="aurora"] {
+  background-image: conic-gradient(
+    from 210deg,
+    var(--susp),
+    var(--brand),
+    var(--info),
+    var(--susp)
+  );
+}
+.moldura[data-moldura="mata"] {
+  background-image: conic-gradient(
+    from 40deg,
+    var(--ok),
+    var(--info),
+    var(--ok)
+  );
+}
+/* Os vãos são OPACOS (`--s2`), e não transparentes: transparentes, eles
+   deixariam ver o fundo de qualquer superfície em que o avatar caísse — e ele
+   cai em `--s1`, `--s2` e `--s3` conforme a tela. Opacos, o tracejado é sempre
+   o mesmo desenho. */
+.moldura[data-moldura="traco"] {
+  background-image: repeating-conic-gradient(
+    var(--tx-3) 0 12deg,
+    var(--s2) 0 24deg
+  );
+}
+
+/* Abaixo de `LIMIAR_DETALHE_PX` (34px) toda moldura vira cor sólida: um degradê
+   cônico de três paradas dentro de um anel de 2px é uma faixa cinza-suja, igual
+   em todas elas. As cinco tintas são DISTINTAS entre si — é o que impede o
+   catálogo de virar uma opção só justamente nos tamanhos em que o avatar mais
+   aparece. `molduras-core.ts` guarda a mesma lista em `tintaSimples`, e
+   `test-molduras.mjs` reprova se as duas se afastarem. */
+.moldura[data-detalhe="simples"][data-moldura="marca"] {
+  background-image: linear-gradient(var(--brand), var(--brand));
+}
+.moldura[data-detalhe="simples"][data-moldura="mar"] {
+  background-image: linear-gradient(var(--info), var(--info));
+}
+.moldura[data-detalhe="simples"][data-moldura="aurora"] {
+  background-image: linear-gradient(var(--susp), var(--susp));
+}
+.moldura[data-detalhe="simples"][data-moldura="mata"] {
+  background-image: linear-gradient(var(--ok), var(--ok));
+}
+.moldura[data-detalhe="simples"][data-moldura="traco"] {
+  background-image: linear-gradient(var(--tx-3), var(--tx-3));
 }
 
 /* ---------- a prévia da foto ---------- */

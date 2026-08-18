@@ -310,6 +310,43 @@ service cloud.firestore {
              && n.matches('(?s).*[\\p{L}\\p{N}].*');
     }
 
+    // A MOLDURA DO AVATAR. Escrita pelo dono, como `photo` e `name` — e por isso
+    // precisa de régua aqui. Mas a régua é OUTRA, de propósito: ela NÃO confere
+    // pertinência ao catálogo, e isso é decisão, não esquecimento.
+    //
+    // O que uma regra existe para conter é DANO, e os danos que fizeram
+    // `fotoOk()` e `nomeOk()` serem literais não existem aqui. A foto vira `src`
+    // de um `<img>` na sessão de quem só abriu o quadro; o nome em branco joga a
+    // pessoa para o começo de toda lista ordenada. A moldura vira o valor de um
+    // `data-moldura`, e a folha só tem regra para os ids que ela conhece: o pior
+    // caso de um id desconhecido é um anel que não pinta. `normalizarMoldura`
+    // (src/lib/molduras-core.ts) o neutraliza NA LEITURA, e tem teste no
+    // prebuild provando isso.
+    //
+    // E repetir a lista de ids aqui custaria o que não se paga uma vez só. Pelo
+    // AGENTS.md §2, toda moldura nova passaria a exigir deploy de REGRAS antes
+    // do deploy do app — sob pena de a primeira pessoa que a escolhesse ler "sem
+    // permissão" tendo permissão. Acrescentar moldura é decisão de design, e não
+    // deveria carregar ordem obrigatória de publicação. Fora que não compraria
+    // segurança nenhuma: o normalizador na leitura é necessário de qualquer
+    // jeito, porque o Admin SDK ignora estas regras e porque o catálogo pode
+    // ENCOLHER, deixando ids antigos gravados.
+    //
+    // O TETO E O ALFABETO FICAM, porque eles sim contêm dano: sem o teto,
+    // `moldura` vira um campo de texto livre de 1 MB num documento que sete
+    // telas baixam inteiro; sem o alfabeto, 24 caracteres fora do ASCII pesam
+    // até 4x e `size()` conta caracteres, não bytes — o mesmo argumento que já
+    // está escrito em `fotoOk()`. Os dois números são os de
+    // `LIMITE_MOLDURA_CHARS` e `ALFABETO_MOLDURA`, e `test-molduras.mjs` reprova
+    // se as duas cópias se afastarem.
+    function molduraOk() {
+      let m = request.resource.data.get('moldura', null);
+      return m == null
+             || (m is string
+                 && m.size() <= 24
+                 && m.matches('^[a-z][a-z0-9-]*$'));
+    }
+
     // ---- usuários ----
     // A LEITURA é da coleção inteira, não do próprio doc, e isso é escolha.
     // `subscribeUsers` (src/lib/users.ts) assina /users em sete telas — Kanban,
@@ -357,7 +394,7 @@ service cloud.firestore {
       // e é por isso que `ensureUserProfile` deixou de confiar no `displayName`
       // do Google: ele pode vir vazio, e um bootstrap recusado por nome em
       // branco seria o primeiro admin não existindo.
-      allow create: if fotoOk() && nomeOk()
+      allow create: if fotoOk() && nomeOk() && molduraOk()
         && (isAdmin()
             || (isSuperAdmin() && souEu(userId)));
 
@@ -392,13 +429,22 @@ service cloud.firestore {
       // falha em silêncio, com `.catch(() => {})` no login — isto era invisível.
       // Com `photo` no mesmo braço deixa de ser: quem tem maiúscula no e-mail
       // clicaria em salvar a foto e receberia "sem permissão", tendo permissão.
+      // `moldura` entra guardada por `mudou()`, e o nome NÃO por acaso: é o
+      // mesmo raciocínio escrito acima do `name`. Num update,
+      // `request.resource.data` é o documento RESULTANTE, não o patch — então um
+      // valor inválido gravado pelo console ou pelo Admin SDK (que ignoram estas
+      // regras) travaria TODA escrita seguinte daquele documento. A primeira a
+      // falhar seria a que ninguém vê: `uid`/`lastLogin` do login, que morre no
+      // `.catch(() => {})` de `ensureUserProfile`. Depois dela, "sem permissão"
+      // para quem tem permissão. Custo: zero acessos a documento.
       allow update: if fotoOk()
         && (!mudou(['name']) || nomeOk())
+        && (!mudou(['moldura']) || molduraOk())
         && (isAdmin()
             || (isSuperAdmin() && souEu(userId))
             || (souEu(userId) && isActive()
                 && request.resource.data.diff(resource.data).affectedKeys()
-                     .hasOnly(['uid', 'lastLogin', 'photo', 'name'])));
+                     .hasOnly(['uid', 'lastLogin', 'photo', 'name', 'moldura'])));
 
       allow delete: if isAdmin();
     }
