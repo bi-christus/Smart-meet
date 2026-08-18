@@ -22,6 +22,13 @@ import { anexarEvento, type ContextoHistorico } from "./historico";
 import type { Acao, Mudanca } from "./historico-core";
 export type { ContextoHistorico };
 
+// O aviso no Discord entra AQUI, e não nas telas, pelo mesmo motivo que fez
+// `registro` virar parâmetro obrigatório de `updateCard`: são seis lugares que
+// escrevem card (dois modais, três páginas e duas rotas), e um aviso pendurado
+// em cada um apodrece calado no primeiro caminho novo que alguém abrir. Aqui é
+// impossível gravar sem avisar, porque é a mesma função.
+import { avisarDiscord } from "./discord";
+
 // A regra da lixeira é pura e o SERVIDOR também precisa dela — as rotas que
 // leem `/cards` pelo Admin SDK não conseguem importar este arquivo, que carrega
 // o SDK do cliente junto. Ver o cabeçalho de `lixeira-core`.
@@ -49,41 +56,20 @@ export type { TagRef };
 import type { CardLink } from "./links-core";
 export type { CardLink };
 
-export type Priority = "alta" | "media" | "baixa";
-export const PRIORITY_LABEL: Record<Priority, string> = {
-  alta: "Alta",
-  media: "Média",
-  baixa: "Baixa",
-};
-
-/** Tipo da demanda. */
-export type DemandType =
-  | "implementacao"
-  | "correcao"
-  | "melhoria"
-  | "relatorio"
-  | "manutencao";
-export const DEMAND_TYPES: DemandType[] = [
-  "implementacao",
-  "correcao",
-  "melhoria",
-  "relatorio",
-  "manutencao",
-];
-export const DEMAND_TYPE_LABEL: Record<DemandType, string> = {
-  implementacao: "Nova implementação",
-  correcao: "Correção",
-  melhoria: "Melhoria",
-  relatorio: "Relatório",
-  manutencao: "Manutenção",
-};
-export const DEMAND_TYPE_COLOR: Record<DemandType, string> = {
-  implementacao: "#54b8ff", // info
-  correcao: "#fb7185", // danger
-  melhoria: "#c084fc", // roxo
-  relatorio: "#f5b13d", // âmbar
-  manutencao: "#2dd4bf", // verde-água — é o tipo que a recorrência abre
-};
+// Prioridade e tipo saíram daqui pelo mesmo motivo das colunas e da lixeira: o
+// SERVIDOR precisa deles. A rota do aviso no Discord monta a mensagem lendo
+// `/cards` pelo Admin SDK, e não pode importar este arquivo — ele traz o SDK do
+// cliente junto. Reexportado para que nenhuma tela precise trocar de import.
+import {
+  DEMAND_TYPES,
+  DEMAND_TYPE_COLOR,
+  DEMAND_TYPE_LABEL,
+  PRIORITY_LABEL,
+  type DemandType,
+  type Priority,
+} from "./demanda-rotulos";
+export { DEMAND_TYPES, DEMAND_TYPE_COLOR, DEMAND_TYPE_LABEL, PRIORITY_LABEL };
+export type { DemandType, Priority };
 
 export type ChecklistItem = {
   id?: string;
@@ -334,8 +320,17 @@ export async function createCard(
     createdBy,
     histCount: 1,
   });
-  anexarEvento(batch, ref.id, { autor: createdBy, sector }, "criada", mudancas);
+  const eventoId = anexarEvento(
+    batch,
+    ref.id,
+    { autor: createdBy, sector },
+    "criada",
+    mudancas,
+  );
   await batch.commit();
+  // Depois do commit, sempre. Avisar antes publicaria no canal uma demanda que
+  // ainda pode não existir — e o lote falha inteiro, não pela metade.
+  avisarDiscord(ref.id, eventoId);
   return ref.id;
 }
 
@@ -361,7 +356,7 @@ export async function updateCard(
 ): Promise<void> {
   const ref = doc(db, "cards", id);
   const batch = writeBatch(db);
-  const registrou = anexarEvento(
+  const eventoId = anexarEvento(
     batch,
     id,
     registro.ctx,
@@ -371,8 +366,9 @@ export async function updateCard(
   // O incremento entra no MESMO update do card: duas escritas no mesmo
   // documento dentro de um lote não são combinadas, e a segunda mandaria um
   // patch sem os campos da primeira.
-  batch.update(ref, registrou ? { ...patch, histCount: increment(1) } : patch);
+  batch.update(ref, eventoId ? { ...patch, histCount: increment(1) } : patch);
   await batch.commit();
+  avisarDiscord(id, eventoId);
 }
 
 /**
@@ -523,13 +519,14 @@ export async function moverParaLixeira(
   // Sem `mudancas`: o verbo é o fato inteiro, e "deletedAt: vazio → data" seria
   // a mesma frase escrita duas vezes. Por isso o evento entra mesmo assim — ver
   // `registraSemMudancas` em `historico-core`.
-  anexarEvento(batch, id, registro.ctx, "excluida", []);
+  const eventoId = anexarEvento(batch, id, registro.ctx, "excluida", []);
   batch.update(doc(db, "cards", id), {
     deletedAt: Date.now(),
     deletedBy: registro.ctx.autor,
     histCount: increment(1),
   });
   await batch.commit();
+  avisarDiscord(id, eventoId);
 }
 
 /**
@@ -551,13 +548,14 @@ export async function restaurarDaLixeira(
   registro: { ctx: ContextoHistorico },
 ): Promise<void> {
   const batch = writeBatch(db);
-  anexarEvento(batch, id, registro.ctx, "restaurada", []);
+  const eventoId = anexarEvento(batch, id, registro.ctx, "restaurada", []);
   batch.update(doc(db, "cards", id), {
     deletedAt: null,
     deletedBy: null,
     histCount: increment(1),
   });
   await batch.commit();
+  avisarDiscord(id, eventoId);
 }
 
 /**
@@ -573,7 +571,7 @@ export async function moveCard(
 ): Promise<void> {
   const now = Date.now();
   const batch = writeBatch(db);
-  const registrou = anexarEvento(
+  const eventoId = anexarEvento(
     batch,
     id,
     registro.ctx,
@@ -584,9 +582,10 @@ export async function moveCard(
     columnId,
     order: -now,
     enteredAt: now,
-    ...(registrou ? { histCount: increment(1) } : {}),
+    ...(eventoId ? { histCount: increment(1) } : {}),
   });
   await batch.commit();
+  avisarDiscord(id, eventoId);
 }
 
 // ---------------------------------------------------------------------------
