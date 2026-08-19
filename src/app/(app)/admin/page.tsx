@@ -7,7 +7,6 @@ import {
   saveUser,
   setUserActive,
   deleteUser,
-  DEFAULT_SECTORS,
   ROLE_LABEL,
   type UserProfile,
   type Role,
@@ -23,6 +22,15 @@ import {
   type Solicitante,
   type SolicitanteSetor,
 } from "@/lib/solicitantes";
+import {
+  addSetor,
+  deleteSetor,
+  useCadastroDeSetores,
+  useSetoresDaPessoa,
+  LIMITE_SETOR_CHARS,
+  type Setor,
+} from "@/lib/setores";
+import { setoresOferecidos } from "@/lib/setores-core";
 import {
   salvarPermissoes,
   subscribePermissoes,
@@ -67,13 +75,14 @@ import styles from "./admin.module.css";
 /** Vazias constantes: `?? []` no corpo recria o array e invalida os `useMemo`. */
 const SEM_SETORES: SolicitanteSetor[] = [];
 const SEM_PESSOAS: Solicitante[] = [];
+const SEM_CADASTRO: Setor[] = [];
 
 const SUBTABS = [
   { id: "usuarios", label: "Usuários", enabled: true },
+  { id: "setores", label: "Setores", enabled: true },
   { id: "solicitantes", label: "Solicitantes", enabled: true },
   { id: "permissoes", label: "Permissões", enabled: true },
   { id: "emblemas", label: "Emblemas", enabled: true },
-  { id: "setores", label: "Setores", enabled: false },
   { id: "logs", label: "Logs", enabled: false },
 ];
 
@@ -97,6 +106,11 @@ export default function AdminPage() {
    */
   const [erroUsers, setErroUsers] = useState<Error | null>(null);
   const [tentativaUsers, setTentativaUsers] = useState(0);
+
+  // Esta página só abre para admin (`soAdmin` no catálogo de abas), então aqui
+  // o gancho devolve o cadastro inteiro. Quem precisa dele é a prévia dos
+  // Emblemas, que lê `/cards` de todos os setores.
+  const setoresDoApp = useSetoresDaPessoa(profile);
 
   useEffect(() => {
     const unsub = subscribeUsers(
@@ -199,9 +213,13 @@ export default function AdminPage() {
         </>
       )}
 
+      {tab === "setores" && <SetoresAdmin users={users} />}
+
       {tab === "solicitantes" && <SolicitantesAdmin />}
 
-      {tab === "emblemas" && <EmblemasAdmin actorEmail={profile.email} />}
+      {tab === "emblemas" && (
+        <EmblemasAdmin actorEmail={profile.email} setores={setoresDoApp} />
+      )}
 
       {tab === "permissoes" && (
         <PermissoesAdmin
@@ -257,6 +275,17 @@ function PermissoesAdmin({
   const [salvando, setSalvando] = useState(false);
   const [erroSalvar, setErroSalvar] = useState<string | null>(null);
 
+  // O quadro oferece os setores do CADASTRO, e não mais uma constante de
+  // código. Erro e espera não são tratados aqui de propósito: a lista só
+  // alimenta as caixas de marcar, e `setoresOferecidos` já garante que o que
+  // está gravado na regra continue aparecendo mesmo que a leitura falhe — que
+  // é o único caso em que sumir do quadro faria estrago.
+  const { setores: cadastroBruto } = useCadastroDeSetores();
+  const cadastro = useMemo(
+    () => (cadastroBruto ?? SEM_CADASTRO).map((x) => x.nome),
+    [cadastroBruto],
+  );
+
   useEffect(() => {
     const fechar = subscribePermissoes(
       (p) => {
@@ -311,11 +340,13 @@ function PermissoesAdmin({
   }, [users, atual]);
 
   /** Os setores oferecidos, mais os que já estão gravados e saíram da lista. */
-  const setoresOferecidos = useMemo(() => {
-    const s = new Set<string>(DEFAULT_SECTORS);
-    Object.values(atual.abas).forEach((r) => r.setores.forEach((x) => s.add(x)));
-    return [...s].sort((a, b) => a.localeCompare(b, "pt-BR"));
-  }, [atual]);
+  const oferecidos = useMemo(() => {
+    const gravados: string[] = [];
+    Object.values(atual.abas).forEach((r) =>
+      r.setores.forEach((x) => gravados.push(x)),
+    );
+    return setoresOferecidos(cadastro, gravados);
+  }, [atual, cadastro]);
 
   function mexer(abaId: string, muda: (r: RegraDaAba) => RegraDaAba) {
     setErroSalvar(null);
@@ -427,7 +458,7 @@ function PermissoesAdmin({
                       Setores com acesso
                     </div>
                     <div className={styles.permChips}>
-                      {setoresOferecidos.map((s) => (
+                      {oferecidos.map((s) => (
                         <button
                           key={s}
                           type="button"
@@ -534,6 +565,159 @@ function PermissoesAdmin({
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * O cadastro de setores de EXECUÇÃO — a tela que faltava.
+ *
+ * Antes desta aba, setor de execução era a constante `DEFAULT_SECTORS` em
+ * `users.ts`: pôr alguém num setor novo custava um deploy. A sub-aba já existia
+ * no catálogo como `enabled: false`, de espera; agora ela é o primeiro
+ * consumidor de `lib/setores`, e entra no mesmo PR que ele (AGENTS.md §4).
+ *
+ * A TELA MOSTRA QUANTA GENTE ESTÁ EM CADA SETOR, e é a parte que mais importa
+ * dela. Remover um setor não apaga card, coluna nem o `sectors` de ninguém —
+ * é só o cadastro que sai — mas quem remove precisa saber que há sete pessoas
+ * ali antes de clicar, não depois. Uma lista de nomes soltos transformaria a
+ * remoção num palpite.
+ */
+function SetoresAdmin({ users }: { users: UserProfile[] | null }) {
+  const { setores: doBanco, erro, tentarDeNovo } = useCadastroDeSetores();
+  const setores = doBanco ?? SEM_CADASTRO;
+
+  const [novo, setNovo] = useState("");
+  const [salvando, setSalvando] = useState(false);
+  const [falha, setFalha] = useState<string | null>(null);
+
+  /**
+   * Quantas pessoas estão em cada setor, pela chave em minúsculas.
+   *
+   * Minúsculas porque o `sectors` de um usuário é texto livre gravado ao longo
+   * de meses: "B.I." e "b.i." são a mesma coisa para quem lê a tela, e contar
+   * separado faria o cadastro parecer vazio ao lado de um setor cheio.
+   */
+  const usoPorSetor = useMemo(() => {
+    const m = new Map<string, number>();
+    (users ?? []).forEach((u) => {
+      (u.sectors ?? []).forEach((s) => {
+        const k = s.trim().toLowerCase();
+        if (k) m.set(k, (m.get(k) ?? 0) + 1);
+      });
+    });
+    return m;
+  }, [users]);
+
+  async function adicionar() {
+    const n = novo.trim();
+    if (!n || salvando) return;
+    setSalvando(true);
+    setFalha(null);
+    try {
+      await addSetor(n, setores);
+      setNovo("");
+    } catch (e) {
+      setFalha(fraseDeFalha(codigoDe(e), "cadastrar o setor"));
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  async function remover(s: Setor) {
+    const quantos = usoPorSetor.get(s.nome.trim().toLowerCase()) ?? 0;
+    const aviso = quantos
+      ? `\n\n${quantos} ${quantos === 1 ? "pessoa continua" : "pessoas continuam"} com este setor no cadastro, e ${quantos === 1 ? "ela continua enxergando" : "elas continuam enxergando"} o que é dele. O que muda é que o setor deixa de ser oferecido em novos cadastros.`
+      : "";
+    if (!confirm(`Remover o setor "${s.nome}" do cadastro?${aviso}`)) return;
+    setFalha(null);
+    try {
+      await deleteSetor(s.id);
+    } catch (e) {
+      setFalha(fraseDeFalha(codigoDe(e), "remover o setor"));
+    }
+  }
+
+  return (
+    <div className={styles.permWrap}>
+      <p className={styles.permIntro}>
+        Setor de <strong>execução</strong> é quem <strong>faz</strong> a
+        demanda: é o que aparece no seletor de setores do cadastro de usuários e
+        o que divide os quadros do Kanban. Não confunda com{" "}
+        <strong>setores solicitantes</strong>, na aba ao lado — aqueles são quem{" "}
+        <strong>pede</strong>. Abrir o Kanban de um setor recém-criado já cria as
+        cinco colunas padrão.
+      </p>
+
+      <div className={styles.solCol}>
+        <div className={styles.solHead}>Setores de execução</div>
+        <div className={styles.solAdd}>
+          <input
+            className={styles.input}
+            placeholder="Ex.: Diretoria"
+            maxLength={LIMITE_SETOR_CHARS}
+            value={novo}
+            onChange={(e) => {
+              setNovo(e.target.value);
+              setFalha(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") adicionar();
+            }}
+          />
+          <button
+            className={styles.btnPrimary}
+            onClick={adicionar}
+            disabled={salvando || !novo.trim()}
+          >
+            <Icon name="plus" size={15} />{" "}
+            {salvando ? "Cadastrando…" : "Adicionar"}
+          </button>
+        </div>
+
+        {falha && <div className={styles.err}>{falha}</div>}
+
+        {erro ? (
+          <ErrorState error={erro} size="compact" onRetry={tentarDeNovo} />
+        ) : doBanco === undefined ? (
+          <SkeletonRow rows={4} texto="Carregando os setores…" />
+        ) : setores.length === 0 ? (
+          <EmptyState
+            size="compact"
+            icon="users"
+            title="Nenhum setor cadastrado ainda"
+            description="Enquanto esta lista estiver vazia, o app continua oferecendo só B.I. Cadastre acima os setores que executam demanda."
+          />
+        ) : (
+          <div className={styles.solList}>
+            {setores.map((s) => {
+              const quantos = usoPorSetor.get(s.nome.trim().toLowerCase()) ?? 0;
+              return (
+                <div key={s.id} className={styles.solItem}>
+                  <span>{s.nome}</span>
+                  <span className={styles.setUso}>
+                    {/* `users === null` é "ainda não sei", e dizer "0 pessoas"
+                        aí seria a mesma mentira que os esqueletos deste
+                        projeto existem para tirar da tela. */}
+                    {users === null
+                      ? "—"
+                      : quantos === 0
+                        ? "ninguém"
+                        : `${quantos} ${quantos === 1 ? "pessoa" : "pessoas"}`}
+                    <button
+                      className={styles.iconBtn}
+                      title="Remover do cadastro"
+                      onClick={() => remover(s)}
+                    >
+                      <Icon name="trash" size={14} />
+                    </button>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -835,6 +1019,25 @@ function UserModal({
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  /**
+   * O que o formulário oferece: o cadastro, MAIS o que esta pessoa já tem.
+   *
+   * A segunda metade é a que importa. Sem ela, abrir o cadastro de alguém que
+   * está num setor apagado do cadastro mostraria o vínculo como inexistente, e
+   * o primeiro "Salvar" — mesmo que só corrigisse o cargo — gravaria `sectors`
+   * sem aquele setor. Perder o acesso de alguém por causa de uma edição de
+   * cargo é o tipo de estrago que não deixa rastro nenhum na tela.
+   */
+  const { setores: cadastroBruto } = useCadastroDeSetores();
+  const opcoes = useMemo(
+    () =>
+      setoresOferecidos(
+        (cadastroBruto ?? SEM_CADASTRO).map((x) => x.nome),
+        user?.sectors ?? [],
+      ),
+    [cadastroBruto, user],
+  );
+
   function toggleSector(s: string) {
     setSectors((cur) =>
       cur.includes(s) ? cur.filter((x) => x !== s) : [...cur, s],
@@ -935,7 +1138,7 @@ function UserModal({
           <div className={styles.field}>
             <label className={styles.label}>Setores</label>
             <div className={styles.secGrid}>
-              {DEFAULT_SECTORS.map((s) => (
+              {opcoes.map((s) => (
                 <button
                   key={s}
                   type="button"
@@ -994,7 +1197,14 @@ function UserModal({
  * nomear os que nunca receberam nada é ruído com cara de escolha. Setor que
  * aparecer depois entra sozinho na lista.
  */
-function EmblemasAdmin({ actorEmail }: { actorEmail: string }) {
+function EmblemasAdmin({
+  actorEmail,
+  setores,
+}: {
+  actorEmail: string;
+  /** O cadastro inteiro — a prévia varre os cards de todos os setores. */
+  setores: string[];
+}) {
   const [servidor, setServidor] = useState<ConfigEmblemas | null>(null);
   const [erro, setErro] = useState<Error | null>(null);
   const [tentativa, setTentativa] = useState(0);
@@ -1023,12 +1233,12 @@ function EmblemasAdmin({ actorEmail }: { actorEmail: string }) {
    * `/cards` — e ela paga isso para não pedir ao admin que escolha três números
    * às cegas.
    */
-  const chave = DEFAULT_SECTORS.join("|");
+  const chave = setores.join("|");
   const fCards = useAsyncData<Card>(chave, (onData, onErro) =>
-    subscribeCardsForSectors(DEFAULT_SECTORS, onData, onErro),
+    subscribeCardsForSectors(setores, onData, onErro),
   );
   const fCols = useAsyncData<ColumnDoc>(chave, (onData, onErro) =>
-    subscribeColumnsForSectors(DEFAULT_SECTORS, onData, onErro),
+    subscribeColumnsForSectors(setores, onData, onErro),
   );
 
   /** Pares (pessoa × setor solicitante) com entrega, e os setores que apareceram. */
@@ -1038,7 +1248,7 @@ function EmblemasAdmin({ actorEmail }: { actorEmail: string }) {
     if (!cards || !cols) {
       return { pares: [] as number[], setoresVistos: new Map<string, string>(), prontoParaPrevia: false };
     }
-    const ent = entreguesPorSetor(columnsBySector(cols, DEFAULT_SECTORS));
+    const ent = entreguesPorSetor(columnsBySector(cols, setores));
     const conta = new Map<string, number>();
     const vistos = new Map<string, string>();
     cards.forEach((c) => {
@@ -1058,7 +1268,7 @@ function EmblemasAdmin({ actorEmail }: { actorEmail: string }) {
       setoresVistos: vistos,
       prontoParaPrevia: true,
     };
-  }, [fCards.data, fCols.data]);
+  }, [fCards.data, fCols.data, setores]);
 
   const atual = rascunho ?? CONFIG_PADRAO;
 

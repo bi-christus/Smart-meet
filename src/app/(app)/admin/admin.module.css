@@ -419,6 +419,20 @@
   font-size: 13px;
 }
 
+/* Quantas pessoas estão no setor, à direita do nome, com a lixeira ao lado.
+   O número mora AQUI e não num tooltip porque ele é o que separa remover um
+   setor vazio de remover o setor de sete pessoas — e essa diferença tem de
+   estar na tela antes do clique, não depois. */
+.setUso {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  font-size: 12.5px;
+  color: var(--tx-3);
+  font-variant-numeric: tabular-nums;
+}
+
 /* ---------- quadro de permissões ----------
    Um cartão por aba, empilhados. Nada de tabela: a linha de uma aba restrita
    cresce com o número de setores e pessoas escolhidos, e coluna de largura

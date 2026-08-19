@@ -527,6 +527,36 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
+    // ---- setores de execução (o cadastro que diz quem FAZ) ----
+    // NÃO CONFUNDIR com /solicitanteSetores, logo acima. Aquele é quem PEDE a
+    // demanda e qualquer usuário cria, porque quem descobre que falta um setor
+    // solicitante é quem está preenchendo o formulário. Este é quem EXECUTA, e
+    // é o valor que vai parar no `sectors` de um usuário e no `sector` de todo
+    // card — ou seja, é a chave do escopo por setor que o resto deste arquivo
+    // inteiro usa para decidir quem lê o quê.
+    //
+    // POR ISSO SÓ ADMIN CRIA, e a diferença entre os dois blocos é essa: setor
+    // de execução novo é uma fronteira nova de visibilidade, não uma etiqueta.
+    // Um operador que pudesse criá-lo criaria a caixa onde esconder demanda de
+    // quem responde pelo setor dele.
+    //
+    // O QUE ESTA REGRA NÃO FECHA, honestamente: apagar um setor daqui não apaga
+    // card, coluna nem o `sectors` de ninguém, e não devia — quem já está no
+    // setor continua enxergando o que era dele. O cadastro governa o que se
+    // OFERECE; quem governa o acesso continua sendo o escopo por setor das
+    // regras abaixo. Ver `setoresVisiveis` em `setores-core.ts`, que documenta
+    // o outro lado da mesma decisão.
+    //
+    // O teto de 40 caracteres é o `LIMITE_SETOR_CHARS` do core, e
+    // `scripts/test-setores.mjs` reprova se os dois se afastarem.
+    match /setores/{doc} {
+      allow read: if isAuthorized();
+      allow create: if isAdmin()
+                    && novo('name') != ''
+                    && novo('name').size() <= 40;
+      allow update, delete: if isAdmin();
+    }
+
     // ---- recorrências (manutenção programada por setor) ----
     // A REGRA é do setor: quem enxerga o setor lê; gestor e admin escrevem.
     // Operador não edita o plano de manutenção — ele executa o card que nasce

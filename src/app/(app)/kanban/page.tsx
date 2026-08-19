@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
+import { useSetoresDaPessoa } from "@/lib/setores";
 import {
   subscribeUsers,
-  DEFAULT_SECTORS,
   type UserProfile,
 } from "@/lib/users";
 import {
@@ -132,15 +132,7 @@ export default function KanbanPage() {
   const { profile } = useAuth();
   const canManage = profile?.role === "admin" || profile?.role === "gestor";
 
-  const sectors = useMemo(
-    () =>
-      profile
-        ? profile.role === "admin"
-          ? DEFAULT_SECTORS
-          : (profile.sectors ?? [])
-        : [],
-    [profile],
-  );
+  const sectors = useSetoresDaPessoa(profile);
 
   const [sector, setSector] = useState("");
 

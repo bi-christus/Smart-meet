@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
-import { subscribeUsers, DEFAULT_SECTORS, type UserProfile } from "@/lib/users";
+import { useSetoresDaPessoa } from "@/lib/setores";
+import { subscribeUsers, type UserProfile } from "@/lib/users";
 import {
   subscribeMeetings,
   createMeeting,
@@ -116,15 +117,7 @@ const OUTPUT_ICON: Record<DriveOutputKind, string> = {
 export default function ReunioesPage() {
   const { profile } = useAuth();
 
-  const sectors = useMemo(
-    () =>
-      profile
-        ? profile.role === "admin"
-          ? DEFAULT_SECTORS
-          : (profile.sectors ?? [])
-        : [],
-    [profile],
-  );
+  const sectors = useSetoresDaPessoa(profile);
 
   const [sector, setSector] = useState("");
   const [mode, setMode] = useState<SendMethod>("file");
