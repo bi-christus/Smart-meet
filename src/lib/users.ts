@@ -160,29 +160,25 @@ export async function ensureUserProfile(
 // ---------------------------------------------------------------------------
 
 /**
- * Os setores que EXECUTAM demanda neste app. Hoje, um só.
+ * Setor de execução VIROU CADASTRO, e a constante que morava aqui foi embora.
  *
- * ESTA LISTA JÁ TEVE OITO NOMES, E ENCOLHEU DE PROPÓSITO — se você chegou aqui
- * achando que faltam sete, não faltam. A conferência do banco feita antes da
- * mudança achou os 69 cards, as 17 reuniões e as 0 recorrências **todos** em
- * "B.I.", e todos os usuários cadastrados com `sectors: ["B.I."]` (menos o
- * admin, que tinha os oito por herança desta constante). Os outros sete só
- * existiam como abas que nunca abriam nada e como 35 colunas semeadas sem um
- * único card atrás. Nada ficou inalcançável ao encolher.
+ * Ela era `DEFAULT_SECTORS = ["B.I."]`, e o comentário dela contava a história
+ * de quando a lista tinha oito nomes e encolheu para um porque a conferência do
+ * banco achou todos os cards, reuniões e usuários em "B.I.". Essa parte
+ * continua verdadeira e é por isso que "B.I." é o `SETORES_SEMENTE` do módulo
+ * novo — o piso de quem ainda não leu o cadastro.
  *
- * O engano que os oito nomes carregavam é a confusão entre quem FAZ e quem
- * PEDE. Quem varia é quem pede — e isso já tem campo próprio no card
- * (`requesterSector`), alimentado pelo cadastro `/solicitanteSetores`, que tem
- * treze entradas e é editável na aba Admin. Setor de execução e setor
- * solicitante são coisas diferentes; esta constante é só a primeira.
+ * O QUE MUDOU é que a lista deixou de ser código. Ela morava aqui e era copiada
+ * como regra em nove telas, então pôr alguém num setor novo custava um deploy —
+ * e foi isso que travou a entrada da Direção no app. Agora ela é a coleção
+ * `/setores`, o admin a edita na aba Admin, e a regra de quem enxerga o quê é
+ * `setoresVisiveis` em `setores-core.ts`, testada em `test-setores.mjs`.
  *
- * Ela decide o que o ADMIN enxerga (`role === "admin" ? DEFAULT_SECTORS :
- * profile.sectors`) em seis telas, e é a lista de setores que a aba Admin
- * oferece ao montar um usuário. Antes de "restaurar" os sete, confira no banco
- * se existe card, reunião ou recorrência fora de B.I.: quem manda neste valor é
- * o dado, não a expectativa.
+ * A distinção que aquele comentário defendia continua de pé, e continua sendo a
+ * confusão mais fácil de cometer neste repositório: `/setores` é quem FAZ,
+ * `/solicitanteSetores` é quem PEDE. São cadastros diferentes, com telas
+ * diferentes e regras diferentes.
  */
-export const DEFAULT_SECTORS = ["B.I."];
 
 /**
  * Cor de avatar estável a partir do e-mail.

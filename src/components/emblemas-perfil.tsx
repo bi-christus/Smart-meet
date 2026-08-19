@@ -1,7 +1,8 @@
 "use client";
 
 import { useAuth } from "@/lib/auth-context";
-import { DEFAULT_SECTORS, type UserProfile } from "@/lib/users";
+import { type UserProfile } from "@/lib/users";
+import { useSetoresDaPessoa } from "@/lib/setores";
 import { useEmblemasDaPessoa } from "@/lib/emblemas";
 import {
   TETO_EMBLEMAS,
@@ -43,13 +44,9 @@ import styles from "./emblemas-perfil.module.css";
 export function EmblemasDoPerfil({ pessoa }: { pessoa: UserProfile }) {
   const { profile } = useAuth();
 
-  // Os setores de quem OLHA. Mesma expressão das seis telas que leem o quadro:
-  // admin enxerga o catálogo de execução, o resto enxerga os próprios.
-  const setoresDoVisualizador = profile
-    ? profile.role === "admin"
-      ? DEFAULT_SECTORS
-      : (profile.sectors ?? [])
-    : [];
+  // Os setores de quem OLHA — e não os de quem é olhado; ver `escopoDaContagem`
+  // em `emblemas-core`. A regra em si mora em `setoresVisiveis`, uma vez só.
+  const setoresDoVisualizador = useSetoresDaPessoa(profile);
 
   const {
     emblemas,

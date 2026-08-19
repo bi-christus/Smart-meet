@@ -3,7 +3,8 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
-import { subscribeUsers, DEFAULT_SECTORS, type UserProfile } from "@/lib/users";
+import { useSetoresDaPessoa } from "@/lib/setores";
+import { subscribeUsers, type UserProfile } from "@/lib/users";
 import {
   subscribeCardsForSectors,
   subscribeColumnsForSectors,
@@ -101,15 +102,7 @@ export default function RecorrenciasPage() {
   const { profile } = useAuth();
   const canManage = profile?.role === "admin" || profile?.role === "gestor";
 
-  const sectors = useMemo(
-    () =>
-      profile
-        ? profile.role === "admin"
-          ? DEFAULT_SECTORS
-          : (profile.sectors ?? [])
-        : [],
-    [profile],
-  );
+  const sectors = useSetoresDaPessoa(profile);
 
   const [sectorEscolhido, setSector] = useState("");
 

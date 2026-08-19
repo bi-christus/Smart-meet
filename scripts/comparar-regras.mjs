@@ -454,6 +454,30 @@ for (const quem of Object.keys(PESSOAS)) {
   });
   caso(quem, "criar o quadro de permissoes", "create", CFG, null, QUADRO);
   caso(quem, "apagar o quadro de permissoes", "delete", CFG, QUADRO, null);
+
+  // --- setores de execucao: o cadastro que diz quem FAZ --------------------
+  // Como os casos de /config acima, estes NASCEM mudando de resposta: na `main`
+  // o caminho /setores nao existe e cai na negacao final. O que tem de mudar e
+  // exatamente isto — leitura para todo usuario ativo, escrita so para admin.
+  //
+  // O contraste com /solicitanteSetores e o ponto: la um operador CRIA, aqui
+  // nao. Setor de execucao novo e fronteira de visibilidade, nao etiqueta.
+  const SET = doc("setores/x1");
+  const SETOR = { name: "Diretoria" };
+  caso(quem, "ler o cadastro de setores", "get", SET, SETOR, null);
+  caso(quem, "listar o cadastro de setores", "list", SET, SETOR, null);
+  caso(quem, "criar setor de execucao", "create", SET, null, SETOR);
+  caso(quem, "criar setor sem nome", "create", SET, null, { name: "" });
+  caso(quem, "criar setor com nome longo demais", "create", SET, null, {
+    name: "a".repeat(41),
+  });
+  caso(quem, "criar setor com nome no teto", "create", SET, null, {
+    name: "a".repeat(40),
+  });
+  caso(quem, "renomear setor de execucao", "update", SET, SETOR, {
+    name: "Direcao",
+  });
+  caso(quem, "apagar setor de execucao", "delete", SET, SETOR, null);
 }
 
 // Forjar autoria tem de continuar negado para todos.

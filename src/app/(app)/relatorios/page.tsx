@@ -14,7 +14,7 @@
  */
 import { useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
-import { DEFAULT_SECTORS } from "@/lib/users";
+import { useSetoresDaPessoa } from "@/lib/setores";
 import {
   subscribeMeetings,
   updateMeeting,
@@ -58,15 +58,7 @@ type Filtro = "todas" | "a_validar" | "validada";
 export default function RelatoriosPage() {
   const { profile } = useAuth();
 
-  const sectors = useMemo(
-    () =>
-      profile
-        ? profile.role === "admin"
-          ? DEFAULT_SECTORS
-          : (profile.sectors ?? [])
-        : [],
-    [profile],
-  );
+  const sectors = useSetoresDaPessoa(profile);
 
   /**
    * As duas assinaturas da tela. Antes, as duas jogavam o erro no console — e

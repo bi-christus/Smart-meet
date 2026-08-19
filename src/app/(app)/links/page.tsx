@@ -3,7 +3,8 @@
 import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
-import { subscribeUsers, DEFAULT_SECTORS, type UserProfile } from "@/lib/users";
+import { useSetoresDaPessoa } from "@/lib/setores";
+import { subscribeUsers, type UserProfile } from "@/lib/users";
 import {
   definirIconeDoLink,
   subscribeCardsForSectors,
@@ -113,15 +114,7 @@ type LinkNaTela = { link: CardLink; card: Card };
 export default function LinksPage() {
   const { profile } = useAuth();
 
-  const sectors = useMemo(
-    () =>
-      profile
-        ? profile.role === "admin"
-          ? DEFAULT_SECTORS
-          : (profile.sectors ?? [])
-        : [],
-    [profile],
-  );
+  const sectors = useSetoresDaPessoa(profile);
 
   const chaveSetores = sectors.join("|");
   const fCards = useAsyncData<Card>(chaveSetores, (onData, onErro) =>

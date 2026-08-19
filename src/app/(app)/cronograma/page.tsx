@@ -3,7 +3,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
-import { subscribeUsers, DEFAULT_SECTORS, type UserProfile } from "@/lib/users";
+import { useSetoresDaPessoa } from "@/lib/setores";
+import { subscribeUsers, type UserProfile } from "@/lib/users";
 import {
   subscribeCardsForSectors,
   subscribeColumnsForSectors,
@@ -161,15 +162,7 @@ type Ancora = { left: number; right: number; top: number; bottom: number };
 export default function CronogramaPage() {
   const { profile } = useAuth();
 
-  const sectors = useMemo(
-    () =>
-      profile
-        ? profile.role === "admin"
-          ? DEFAULT_SECTORS
-          : (profile.sectors ?? [])
-        : [],
-    [profile],
-  );
+  const sectors = useSetoresDaPessoa(profile);
 
   /**
    * As quatro assinaturas, cada uma sabendo dizer se já respondeu.
