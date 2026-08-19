@@ -24,8 +24,9 @@
  *    caracteres não é caso de borda: é o tamanho que `updateCard` permite.
  *
  * 3. NADA AQUI VAI À REDE, e nada aqui lê `process.env` sozinho. O ambiente
- *    entra por parâmetro (`webhookDoSetor`), que é o que permite testar o
- *    roteamento por setor sem inventar variável de ambiente no teste.
+ *    entra por parâmetro (`resolverWebhook`), que é o que permite testar o
+ *    roteamento por canal e por setor sem inventar variável de ambiente no
+ *    teste.
  *
  * 4. O AVISO É CLICÁVEL. `/kanban?setor=X&card=<id>` já abre o card direto —
  *    ver `src/app/(app)/kanban/page.tsx:296`. Aviso que obriga a pessoa a
@@ -179,35 +180,105 @@ function dataBR(iso: string): string {
   return m ? `${m[3]}/${m[2]}/${m[1]}` : iso;
 }
 
+// ---------------------------------------------------------------------------
+// O roteamento: qual canal recebe o quê.
+//
+// O servidor do setor não tem UM canal de demandas — tem quatro, cada um com um
+// assunto (`#demandas-novas`, `#demandas-fluxo`, `#alertas-e-recorrencias`,
+// `#resumo-diario`). Publicar tudo num canal só desfaz de propósito a
+// organização que alguém montou: quem quer ver demanda nascendo passa a ler
+// também toda troca de etapa, e o jeito de sobreviver a isso é silenciar o
+// canal inteiro — que apaga junto o aviso que importava.
+// ---------------------------------------------------------------------------
+
+/** Os canais, por assunto. O nome é a CHAVE da configuração, não o do canal. */
+export const CANAIS = ["novas", "fluxo", "alertas", "resumo"] as const;
+export type Canal = (typeof CANAIS)[number];
+
 /**
- * Para onde este setor avisa.
+ * Em que canal este evento se lê.
  *
- * `porSetor` é um JSON opcional (`DISCORD_WEBHOOK_URLS`) e ganha do padrão. Um
- * setor sem entrada própria cai no `padrao` — que é o caso de hoje, com um setor
- * só executando demanda (ver `DEFAULT_SECTORS` em `users.ts`). A porta fica
- * aberta porque o dia em que um segundo setor entrar, ele vai querer o próprio
- * canal, e descobrir isso com o quadro em produção é tarde.
+ * "Nasceu uma demanda" é notícia para quem acompanha entrada de trabalho;
+ * "mudou de etapa", "foi editada", "foi para a lixeira" é acompanhamento de
+ * fluxo, e é o volume. Separar os dois é o que permite alguém seguir só o
+ * primeiro sem perder nada.
  *
- * JSON quebrado NÃO derruba o aviso: cai no padrão e segue. Variável de
- * ambiente mal colada é erro de configuração, e configuração errada não pode
+ * A lixeira fica no fluxo, e não num canal próprio: excluir e restaurar são
+ * raros o bastante para não incomodar, e um canal a mais por causa deles seria
+ * um canal que ninguém abre.
+ */
+export function canalDoEvento(acao: Acao): Canal {
+  return acao === "criada" ? "novas" : "fluxo";
+}
+
+/** Só o que se aceita como URL: string com conteúdo, já sem espaço em volta. */
+function comoUrl(v: unknown): string | null {
+  return typeof v === "string" && v.trim() ? v.trim() : null;
+}
+
+/**
+ * JSON de configuração, ou `null` quando não dá para ler.
+ *
+ * JSON quebrado NÃO derruba o aviso — quem chama cai no próximo degrau. Variável
+ * de ambiente mal colada é erro de configuração, e configuração errada não pode
  * calar a notificação inteira.
  */
-export function webhookDoSetor(
-  sector: string,
-  padrao: string | null | undefined,
-  porSetor?: string | null,
-): string | null {
-  const limpo = (padrao ?? "").trim();
-  if (porSetor) {
-    try {
-      const mapa = JSON.parse(porSetor) as Record<string, unknown>;
-      const achado = mapa?.[sector];
-      if (typeof achado === "string" && achado.trim()) return achado.trim();
-    } catch {
-      // Silêncio proposital — ver o comentário acima.
-    }
+function mapa(bruto?: string | null): Record<string, unknown> | null {
+  if (!bruto) return null;
+  try {
+    const v = JSON.parse(bruto) as unknown;
+    return v && typeof v === "object" && !Array.isArray(v)
+      ? (v as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
   }
-  return limpo || null;
+}
+
+/**
+ * Para onde ESTE aviso vai — o canal do assunto, dentro do setor.
+ *
+ * Quatro degraus, do mais específico ao mais genérico, e o primeiro que
+ * responde ganha:
+ *
+ *   1. `porSetor[setor][canal]` — o setor tem canais próprios.
+ *   2. `porSetor[setor]` como string — o setor tem UM canal para tudo. É a forma
+ *      antiga de `DISCORD_WEBHOOK_URLS`, e continua valendo: quem já a
+ *      configurou não precisa mexer em nada para o app continuar publicando.
+ *   3. `porCanal[canal]` — os canais do servidor, valendo para todos os setores.
+ *      É a configuração de hoje, com um setor só executando demanda.
+ *   4. `padrao` — `DISCORD_WEBHOOK_URL`, o canal único de antes de tudo isto.
+ *
+ * A ordem não é arbitrária: o que alguém escreveu para um setor específico é
+ * uma decisão mais informada do que a regra geral do servidor, e a regra geral
+ * é mais informada do que o padrão herdado. Inverter qualquer par faz uma
+ * configuração nova ser silenciosamente ignorada — o modo de falha em que tudo
+ * parece certo e as mensagens continuam saindo no canal errado.
+ */
+export function resolverWebhook(args: {
+  canal: Canal;
+  setor: string;
+  padrao?: string | null;
+  /** `DISCORD_WEBHOOK_URLS`: `{"B.I.": "url"}` ou `{"B.I.": {"novas": "url"}}`. */
+  porSetor?: string | null;
+  /** `DISCORD_WEBHOOK_CANAIS`: `{"novas": "url", "fluxo": "url", …}`. */
+  porCanal?: string | null;
+}): string | null {
+  const { canal, setor } = args;
+
+  const doSetor = mapa(args.porSetor)?.[setor];
+  if (doSetor && typeof doSetor === "object" && !Array.isArray(doSetor)) {
+    const m = doSetor as Record<string, unknown>;
+    // `padrao` dentro do setor é a saída para quem quer um canal só para os
+    // assuntos que não configurou, sem repetir a mesma URL quatro vezes.
+    const achado = comoUrl(m[canal]) ?? comoUrl(m.padrao);
+    if (achado) return achado;
+  } else {
+    const achado = comoUrl(doSetor);
+    if (achado) return achado;
+  }
+
+  return comoUrl(mapa(args.porCanal)?.[canal]) ?? comoUrl(args.padrao);
 }
 
 // ---------------------------------------------------------------------------
@@ -389,6 +460,336 @@ export function montarAviso(args: {
     ...(content ? { content } : {}),
     embeds: [embed],
     allowed_mentions: alvo ? { parse: [], users: [alvo] } : { parse: [] },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// O aviso direto — a mesma notícia, na caixa de quem ela é.
+//
+// O canal resolve "o setor precisa saber". Ele NÃO resolve "você precisa
+// saber": a menção no canal chega junto com todas as outras, e quem está com o
+// Discord no celular durante uma aula lê a notificação do servidor uma vez por
+// dia. A demanda que mudou de prazo hoje de manhã é a que menos pode esperar
+// por isso.
+//
+// Por isso o direto existe, e por isso ele é ESTREITO de propósito: só o
+// responsável, só o que mexeu na demanda dele, e nunca o que ele mesmo fez.
+// Mensagem direta é o canal mais caro que existe — ela vibra o telefone e não
+// dá para silenciar sem silenciar o bot inteiro. Gastá-la com eco do próprio
+// clique é o jeito de ensinar alguém a ignorar todas.
+// ---------------------------------------------------------------------------
+
+/**
+ * Se este evento merece uma mensagem direta ao responsável.
+ *
+ * Três recusas, e cada uma vale ser lida:
+ *
+ * 1. SEM VÍNCULO não há para onde mandar. É o caso comum enquanto ninguém
+ *    conectou a conta, e o aviso do canal sai igual.
+ *
+ * 2. O AUTOR NÃO SE AVISA. Quem arrastou o próprio card acabou de ver a tela
+ *    responder; a mensagem chegaria antes de ele soltar o mouse. Este é o
+ *    ruído que mais rápido faz alguém desligar o bot.
+ *
+ * 3. EVENTO SEM NOTÍCIA não vira direto, pelo mesmo motivo que não vira aviso
+ *    de canal (`deveAvisar`) — e a régua é a MESMA função, de propósito: duas
+ *    réguas separadas divergiriam no dia em que alguém mexesse numa só, e a
+ *    diferença entre "apareceu no canal" e "chegou na DM" seria impossível de
+ *    explicar para quem usa.
+ *
+ * O que ela NÃO cobre, e a nota fica: quem PERDEU a demanda não é avisado. A
+ * mudança do responsável guarda só o nome de quem saiu (`Mudanca.de`), não o
+ * e-mail, e sem e-mail não há vínculo a procurar. Resolver isso exigiria o
+ * evento carregar identidade além de rótulo — mudança no histórico, não aqui.
+ */
+export function deveMandarDireto(args: {
+  acao: Acao;
+  mudancas: Mudanca[];
+  /** E-mail de quem fez a mudança. */
+  autorEmail: string;
+  /** E-mail do responsável ATUAL do card. */
+  responsavelEmail?: string | null;
+  responsavelDiscordId?: string | null;
+}): boolean {
+  const { acao, mudancas, autorEmail, responsavelEmail, responsavelDiscordId } =
+    args;
+  if (!(responsavelDiscordId ?? "").trim()) return false;
+
+  const resp = (responsavelEmail ?? "").trim().toLowerCase();
+  if (!resp) return false;
+  if (resp === (autorEmail ?? "").trim().toLowerCase()) return false;
+
+  return deveAvisar(acao, mudancas);
+}
+
+/**
+ * A primeira linha da mensagem direta: por que ela chegou.
+ *
+ * Uma DM do nada com um embed dentro é um susto — a pessoa não pediu, e o
+ * embed sozinho não diz se ela precisa fazer alguma coisa. A frase resolve isso
+ * em cinco palavras, e é o que aparece na prévia da notificação do celular,
+ * antes de qualquer toque.
+ *
+ * "passou a ser sua" ganha das outras quando o responsável mudou porque é a
+ * única que muda o que a pessoa tem a fazer hoje.
+ */
+export function linhaDoDireto(acao: Acao, mudancas: Mudanca[]): string {
+  if (mudancas.some((m) => m.campo === "responsavel")) {
+    return "Esta demanda passou a ser sua.";
+  }
+  if (acao === "criada") return "Abriram uma demanda no seu nome.";
+  if (acao === "excluida") return "Uma demanda sua foi para a lixeira.";
+  if (acao === "restaurada") return "Uma demanda sua voltou da lixeira.";
+  if (acao === "movida") return "Uma demanda sua mudou de etapa.";
+  return "Alteraram uma demanda sua.";
+}
+
+/**
+ * A mensagem direta, a partir do MESMO embed do canal.
+ *
+ * Reaproveitar `montarAviso` não é economia de linhas: é a garantia de que a DM
+ * e o canal contam a mesma história. Um segundo montador acabaria mostrando um
+ * campo a mais aqui e um a menos ali, e a pessoa que lesse os dois teria de
+ * decidir em qual acreditar.
+ *
+ * Duas diferenças, e só duas:
+ *
+ * - `content` vira a frase do porquê, e não a menção. Mencionar alguém dentro da
+ *   própria DM dele é ruído: ele já está sendo notificado por estar ali.
+ * - `allowed_mentions` fecha tudo. Não há ninguém a notificar além do
+ *   destinatário, e um `@everyone` digitado no título de uma demanda não pode
+ *   virar nada aqui dentro.
+ */
+export function montarAvisoDireto(args: {
+  card: CardDoAviso;
+  evento: EventoDoAviso;
+  appUrl?: string | null;
+  rotulo?: { prioridade?: (p: string) => string; tipo?: (t: string) => string };
+}): CorpoWebhook {
+  const { evento } = args;
+  return {
+    content: cortar(linhaDoDireto(evento.acao, evento.mudancas), LIMITE_CONTEUDO),
+    embeds: montarAviso(args).embeds,
+    allowed_mentions: { parse: [] },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// O resumo do dia.
+//
+// Os outros avisos contam o que ACABOU de acontecer; nenhum deles conta o que
+// está parado. Uma demanda que venceu na sexta e ninguém tocou não gera evento
+// nenhum — ela some do canal justamente por não estar andando, que é o motivo
+// de alguém precisar saber dela. O resumo é o único aviso que fala do que NÃO
+// aconteceu.
+// ---------------------------------------------------------------------------
+
+/** O recorte do card que o resumo enxerga — tudo já resolvido para texto. */
+export type CardDoResumo = {
+  id: string;
+  title: string;
+  responsavel?: string | null;
+  /** aaaa-mm-dd. */
+  prazo?: string | null;
+  /** Título da coluna, não o `colId`. */
+  etapa?: string | null;
+  /** Se a etapa atual já conta como entrega — ver `colunasEntregues`. */
+  entregue: boolean;
+};
+
+export type Panorama = {
+  /** Quantas demandas vivas e não entregues o setor tem. */
+  abertas: number;
+  /** Prazo já vencido, da mais antiga para a mais nova. */
+  atrasadas: CardDoResumo[];
+  vencemHoje: CardDoResumo[];
+  /** Aberta e sem ninguém — o buraco que ninguém vê passar. */
+  semResponsavel: CardDoResumo[];
+  /** Etapa → quantas, na ordem em que as etapas chegaram. */
+  porEtapa: [string, number][];
+};
+
+/**
+ * O que há para contar sobre o dia.
+ *
+ * ENTREGUE NÃO CONTA COMO ATRASO, e isto é a regra do app inteiro, não uma
+ * escolha deste arquivo: prazo vencido de demanda já entregue não é atraso —
+ * a data passou depois que o trabalho terminou. É o mesmo motivo de
+ * `colunasEntregues` existir em `kanban-columns.ts`. Um resumo que cobra
+ * entrega já feita é um resumo que se aprende a ignorar em duas semanas.
+ *
+ * `hoje` entra por parâmetro (aaaa-mm-dd) e não sai de `new Date()` aqui
+ * dentro: o teste precisa de relógio, e a rota roda em UTC enquanto o setor
+ * trabalha em São Paulo — quem decide qual é "hoje" é quem sabe do fuso.
+ */
+export function panoramaDoDia(args: {
+  cards: CardDoResumo[];
+  hoje: string;
+}): Panorama {
+  const abertas = args.cards.filter((c) => !c.entregue);
+
+  const comPrazo = abertas.filter((c) => !!c.prazo);
+  const atrasadas = comPrazo
+    .filter((c) => (c.prazo as string) < args.hoje)
+    // Da mais antiga para a mais nova: a que está parada há mais tempo é a que
+    // menos pode continuar no fim da lista.
+    .sort((a, b) => (a.prazo as string).localeCompare(b.prazo as string));
+  const vencemHoje = comPrazo.filter((c) => c.prazo === args.hoje);
+
+  const semResponsavel = abertas.filter(
+    (c) => !(c.responsavel ?? "").trim(),
+  );
+
+  const contagem = new Map<string, number>();
+  for (const c of abertas) {
+    const etapa = (c.etapa ?? "").trim() || "Sem etapa";
+    contagem.set(etapa, (contagem.get(etapa) ?? 0) + 1);
+  }
+
+  return {
+    abertas: abertas.length,
+    atrasadas,
+    vencemHoje,
+    semResponsavel,
+    porEtapa: [...contagem.entries()],
+  };
+}
+
+/** Quantas linhas cabem num bloco antes de ele virar parede. */
+const TETO_LINHAS_RESUMO = 8;
+
+/**
+ * Uma lista de demandas que CABE no campo, com o corte anunciado.
+ *
+ * O teto de linhas não basta sozinho, e foi assim que este bloco nasceu errado:
+ * oito títulos longos com link passam dos 1024 caracteres do campo, e o
+ * `cortar` da borda apagava justamente a última linha — a que dizia "…e mais
+ * 32". O resultado era uma lista que parecia completa e não era, que é a única
+ * forma de errar aqui que ninguém percebe.
+ *
+ * Por isso o orçamento é conferido A CADA linha, já descontando o espaço que a
+ * frase do corte vai ocupar. Mesma ideia de `aparar`: um bloco que perde
+ * silenciosamente metade dos itens mente sobre o que aconteceu.
+ */
+function bloco(
+  cards: CardDoResumo[],
+  sector: string,
+  appUrl: string | null | undefined,
+): string {
+  const aviso = (n: number) => `• …e mais ${n}`;
+  const linhas: string[] = [];
+  let usado = 0;
+
+  for (const c of cards) {
+    if (linhas.length >= TETO_LINHAS_RESUMO) break;
+
+    const alvo = linkDoCard(appUrl, sector, c.id);
+    // Colchetes e parênteses quebrariam o link do Markdown ao meio, e o que
+    // sobraria na tela seria a URL crua no meio da frase.
+    const titulo = cortar(c.title || "Demanda sem título", 90).replace(
+      /[[\]()]/g,
+      "",
+    );
+    const nome = alvo ? `[${titulo}](${alvo})` : titulo;
+    const quem = (c.responsavel ?? "").trim();
+    const linha = `• ${nome}${quem ? ` — ${quem}` : " — _sem responsável_"}`;
+
+    const sobrariam = cards.length - linhas.length - 1;
+    const reserva = sobrariam > 0 ? aviso(sobrariam).length + 1 : 0;
+    if (usado + linha.length + 1 + reserva > LIMITE_CAMPO_VALOR) break;
+
+    linhas.push(linha);
+    usado += linha.length + 1;
+  }
+
+  const sobrando = cards.length - linhas.length;
+  if (sobrando > 0) linhas.push(aviso(sobrando));
+  return linhas.join("\n");
+}
+
+/**
+ * O resumo do dia, ou `null` quando o quadro está vazio.
+ *
+ * `null` E NÃO "0 demandas abertas". Um aviso diário que chega dizendo que não
+ * há nada é o aviso que ensina a não abrir o canal — e quando ele finalmente
+ * tiver notícia, já terá virado ruído de fundo. Quadro com demanda aberta e
+ * nada atrasado, esse SIM vira mensagem: "está tudo em dia" é informação, e é
+ * a única forma de alguém confiar no silêncio dos outros dias.
+ *
+ * A COR É O QUE SE LÊ ANTES DO TEXTO numa lista de avisos empilhados, e aqui
+ * ela é o resumo do resumo: vermelho quando há atraso, âmbar quando algo vence
+ * hoje, verde quando não há nem um nem outro. Quem rolar o canal sem ler sabe
+ * o estado do setor pela barra lateral.
+ */
+export function montarResumoDiario(args: {
+  sector: string;
+  cards: CardDoResumo[];
+  /** aaaa-mm-dd, no fuso de quem trabalha. */
+  hoje: string;
+  appUrl?: string | null;
+}): CorpoWebhook | null {
+  const { sector, hoje, appUrl } = args;
+  const p = panoramaDoDia({ cards: args.cards, hoje });
+  if (p.abertas === 0) return null;
+
+  const campos: EmbedCampo[] = [];
+  if (p.atrasadas.length) {
+    campos.push({
+      name: `Atrasadas — ${p.atrasadas.length}`,
+      value: bloco(p.atrasadas, sector, appUrl),
+    });
+  }
+  if (p.vencemHoje.length) {
+    campos.push({
+      name: `Vencem hoje — ${p.vencemHoje.length}`,
+      value: bloco(p.vencemHoje, sector, appUrl),
+    });
+  }
+  if (p.semResponsavel.length) {
+    campos.push({
+      name: `Sem responsável — ${p.semResponsavel.length}`,
+      value: bloco(p.semResponsavel, sector, appUrl),
+    });
+  }
+
+  // O panorama por etapa vem por último e numa linha só: ele é o pano de fundo,
+  // não a notícia. Quem lê o resumo quer saber o que precisa de ação hoje; o
+  // total por coluna é o que ele confere depois, se conferir.
+  const porEtapa = p.porEtapa.map(([etapa, n]) => `${etapa}: **${n}**`).join(" · ");
+  if (porEtapa) {
+    campos.push({ name: "No quadro", value: cortar(porEtapa, LIMITE_CAMPO_VALOR) });
+  }
+
+  const cor = p.atrasadas.length
+    ? 0xd64545
+    : p.vencemHoje.length
+      ? 0xf5b13d
+      : 0x3fa66b;
+
+  const titulo = p.atrasadas.length
+    ? `${p.atrasadas.length} demanda${p.atrasadas.length === 1 ? "" : "s"} atrasada${p.atrasadas.length === 1 ? "" : "s"}`
+    : p.vencemHoje.length
+      ? `${p.vencemHoje.length} demanda${p.vencemHoje.length === 1 ? "" : "s"} vence${p.vencemHoje.length === 1 ? "" : "m"} hoje`
+      : "Nada atrasado por aqui";
+
+  return {
+    embeds: [
+      aparar({
+        author: { name: cortar("Resumo do dia", LIMITE_AUTOR) },
+        title: cortar(titulo, LIMITE_TITULO),
+        description: cortar(
+          `${p.abertas} demanda${p.abertas === 1 ? "" : "s"} em aberto no quadro.`,
+          LIMITE_DESCRICAO,
+        ),
+        color: cor,
+        fields: campos,
+        footer: { text: cortar(`Smart Meet · ${sector}`, LIMITE_RODAPE) },
+      }),
+    ],
+    // Rotina diária não menciona ninguém, pelo mesmo motivo do cron das
+    // recorrências: ser marcado por um relógio é o tipo de notificação que
+    // ensina a ignorar as que vêm de gente.
+    allowed_mentions: { parse: [] },
   };
 }
 

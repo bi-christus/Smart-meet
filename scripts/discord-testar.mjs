@@ -29,7 +29,11 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { montarAviso } from "../src/lib/discord-core.ts";
+import {
+  CANAIS,
+  montarAviso,
+  resolverWebhook,
+} from "../src/lib/discord-core.ts";
 import { enviarAviso, urlDeWebhookValida } from "../src/lib/server/discord.ts";
 
 // Do `import.meta.url`, nunca do CWD — mesma razão de
@@ -68,20 +72,50 @@ if (!existsSync(ENV_LOCAL) && !daLinhaDeComando) {
     `Não achei o arquivo .env.local na raiz do projeto.\n\n` +
       `   Crie um arquivo chamado exatamente ".env.local" em\n` +
       `   ${RAIZ}\n` +
-      `   com uma linha assim dentro:\n\n` +
-      `      DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/000/aaa\n\n` +
+      `   com uma linha assim dentro (JSON numa linha só):\n\n` +
+      `      DISCORD_WEBHOOK_CANAIS={"novas":"https://discord.com/api/webhooks/000/aaa"}\n\n` +
       `   A URL sai do Discord: clique com o botão direito no canal →\n` +
       `   Editar canal → Integrações → Webhooks → Novo webhook →\n` +
       `   Copiar URL do Webhook.`,
   );
 }
 
-const url = (process.env.DISCORD_WEBHOOK_URL ?? "").trim();
+// Qual canal se está provando. `novas` por padrão: é o canal de entrada, o
+// primeiro que alguém configura e o que mais dói se estiver errado.
+//
+//   npm run discord:testar -- fluxo
+const canal = (process.argv[2] ?? "novas").replace(/^-+/, "").trim();
+if (!CANAIS.includes(canal)) {
+  parar(
+    `Não conheço o canal "${canal}".\n\n` +
+      `   Os que existem: ${CANAIS.join(", ")}.\n\n` +
+      `   Use assim:  npm run discord:testar -- fluxo`,
+  );
+}
+
+// O setor entra por variável porque o roteamento pode ter entrada própria por
+// setor, e provar o canal do setor errado é provar outra coisa.
+const setor = (process.env.DISCORD_TESTE_SETOR ?? "B.I.").trim();
+
+// A MESMA resolução da produção (`webhookDe`), e não uma leitura direta de
+// `DISCORD_WEBHOOK_URL`: quem configurou por canal e testasse a variável antiga
+// estaria provando um destino que o app não usa mais.
+const url =
+  resolverWebhook({
+    canal,
+    setor,
+    padrao: process.env.DISCORD_WEBHOOK_URL,
+    porSetor: process.env.DISCORD_WEBHOOK_URLS,
+    porCanal: process.env.DISCORD_WEBHOOK_CANAIS,
+  }) ?? "";
 
 if (!url) {
   parar(
-    `O arquivo .env.local existe, mas não tem DISCORD_WEBHOOK_URL dentro.\n\n` +
-      `   Acrescente uma linha (sem aspas, sem espaço em volta do "="):\n\n` +
+    `Não achei webhook para o canal "${canal}" do setor "${setor}".\n\n` +
+      `   Acrescente ao .env.local UMA das duas formas (sem aspas em volta\n` +
+      `   do "=", e o JSON numa linha só):\n\n` +
+      `      DISCORD_WEBHOOK_CANAIS={"novas":"https://discord.com/api/webhooks/000/aaa"}\n` +
+      `   ou, para um canal único para tudo:\n` +
       `      DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/000/aaa\n\n` +
       `   A URL sai do Discord: clique com o botão direito no canal →\n` +
       `   Editar canal → Integrações → Webhooks → Novo webhook →\n` +
@@ -119,7 +153,9 @@ if (!urlDeWebhookValida(url)) {
 // canal para sempre.
 const partes = new URL(url).pathname.split("/");
 const idWebhook = partes[partes.length - 2];
-console.log(`✅ Forma correta. Webhook nº ${idWebhook} (o token fica oculto).`);
+console.log(
+  `✅ Forma correta. Canal "${canal}", webhook nº ${idWebhook} (o token fica oculto).`,
+);
 
 // ---------------------------------------------------------------------------
 // 3. A mensagem — a MESMA que uma demanda de verdade produz

@@ -114,6 +114,84 @@ O que `deveAvisar` recusa é o verbo que precisa de par e não tem: "editada" se
 
 ---
 
+## Um canal por assunto
+
+O servidor do setor não tem um canal de demandas — tem quatro, e a organização é de quem montou:
+
+| Canal | Chave | O que cai ali |
+|---|---|---|
+| `#demandas-novas` | `novas` | demanda nascendo (`criada`) |
+| `#demandas-fluxo` | `fluxo` | `editada`, `movida`, `excluida`, `restaurada` |
+| `#alertas-e-recorrencias` | `alertas` | o resumo da rodada do cron, e o que for alerta |
+| `#resumo-diario` | `resumo` | o panorama do dia |
+
+**Por que separar entrada de fluxo.** "Nasceu uma demanda" é notícia para quem acompanha entrada de trabalho; "mudou de etapa" é acompanhamento, e é o volume — num quadro ativo, um card criado gera cinco ou seis eventos até ser entregue. Jogar os dois no mesmo canal obriga quem só quer o primeiro a ler todos, e o jeito conhecido de sobreviver a isso é silenciar o canal, que apaga junto o aviso que importava. É a mesma aritmética que fez o cron das recorrências publicar um resumo em vez de vinte mensagens.
+
+**A lixeira fica no fluxo**, e não num canal próprio: excluir e restaurar são raros o bastante para não incomodar ali, e um canal a mais por causa deles seria um canal que ninguém abre.
+
+**O cron das recorrências deixou de cair em `novas`.** O canal de entrada existe para o trabalho que alguém pediu; rotina automática de manutenção não é isso, e quinze linhas de recorrência amanhecendo lá dentro apagariam justamente a demanda nova que alguém precisa ver.
+
+Quem decide é `canalDoEvento` em `discord-core.ts` — módulo puro, com teste. Como `deveAvisar`, é política de ruído: um lugar só para mexer quando um canal encher.
+
+
+## A mensagem direta ao responsável
+
+O canal resolve *"o setor precisa saber"*. Ele não resolve *"você precisa saber"*: a menção chega junto com todas as outras, e quem está com o Discord no celular durante uma aula lê a notificação do servidor uma vez por dia. A demanda que mudou de prazo hoje de manhã é justamente a que menos pode esperar por isso.
+
+Por isso existe o direto, e por isso ele é **estreito de propósito**.
+
+### O que o faz sair, e o que o segura
+
+`deveMandarDireto` recusa três casos, e cada um vale ser lido:
+
+| Recusa | Por quê |
+|---|---|
+| sem vínculo | não há para onde mandar; é o caso comum enquanto ninguém conectou a conta, e o aviso do canal sai igual |
+| **o autor é o próprio responsável** | quem arrastou o próprio card acabou de ver a tela responder — a DM chegaria antes de ele soltar o mouse |
+| evento sem notícia | mesma régua do canal (`deveAvisar`), e é a **mesma função** de propósito |
+
+A segunda é a que importa. Mensagem direta é o canal mais caro que existe: ela vibra o telefone e não dá para silenciar sem silenciar o bot inteiro. Gastá-la com eco do próprio clique é o jeito mais rápido de ensinar alguém a ignorar todas as outras.
+
+Duas réguas separadas para canal e DM divergiriam no dia em que alguém mexesse numa só, e a diferença entre "apareceu no canal" e "chegou na DM" seria impossível de explicar para quem usa. Por isso `deveMandarDireto` termina chamando `deveAvisar`.
+
+**O que ele não cobre, e a nota fica:** quem *perdeu* a demanda não é avisado. A mudança de responsável guarda só o nome de quem saiu (`Mudanca.de`), não o e-mail — e sem e-mail não há vínculo a procurar. Resolver isso exigiria o evento carregar identidade além de rótulo, o que é mudança no histórico, não aqui.
+
+### A primeira linha é o porquê
+
+Uma DM do nada com um embed dentro é um susto: a pessoa não pediu, e o embed sozinho não diz se ela precisa fazer alguma coisa. `linhaDoDireto` resolve em cinco palavras — e é o que aparece na prévia da notificação do celular, antes de qualquer toque.
+
+```
+Esta demanda passou a ser sua.
+┃ Painel de consumo do refeitório
+┃ Responsável: Ítalo → Kauã Silva
+┃ Smart Meet · B.I. · Nova implementação
+```
+
+"passou a ser sua" ganha das outras frases quando o responsável mudou, porque é a única que muda o que a pessoa tem a fazer hoje.
+
+O embed é o **mesmo** do canal, montado por `montarAviso`. Um segundo montador acabaria mostrando um campo a mais aqui e um a menos ali, e quem lesse os dois teria de decidir em qual acreditar.
+
+### Duas chamadas, e nenhum id guardado
+
+O Discord não aceita "mande para o usuário X": ele exige abrir (ou reencontrar) o canal privado e só então publicar. `POST /users/@me/channels` é idempotente — chamá-lo de novo devolve o mesmo canal.
+
+O id desse canal **não é guardado**. Guardá-lo economizaria ~100 ms num caminho que ninguém está esperando, e custaria um campo a mais para manter certo: no dia em que o cadastro trocasse de conta do Discord, o canal guardado apontaria para a caixa da pessoa anterior — e a demanda de alguém chegaria em quem não tem nada com ela.
+
+### O direto vem depois do canal, e falhar nele não desfaz nada
+
+`enviarDireto` **nunca lança**, ao contrário de `enviarAviso`. É diferença de contrato, e é deliberada: quem chama usa a exceção de `enviarAviso` para desfazer o `discordAt`. Se o direto lançasse, uma caixa de mensagens fechada desfaria a marca de um aviso **já publicado** no canal — e o reenvio duplicaria a mensagem de lá para tentar de novo uma coisa que vai falhar igual.
+
+Pelo mesmo motivo o direto não tem marca própria de idempotência: `discordAt` cobre o evento inteiro. Uma segunda marca abriria a possibilidade de as duas discordarem, e o sintoma seria uma DM repetida sem nada repetido no canal.
+
+`403` na abertura do canal significa que a pessoa desligou "mensagens diretas de membros do servidor" na privacidade dela. É escolha dela, não defeito nosso — vira `motivo: "dm-fechada"` no log, e o aviso do canal já saiu de qualquer jeito.
+
+### O token do bot passou a existir em produção
+
+Isto **contradiz o que este documento dizia**, e a nota fica. Enquanto o bot só recebia comandos, produção não precisava do token: interação se autentica por assinatura. Mandar DM é *agir* como o aplicativo, e a API exige `Authorization: Bot <token>`. Não existe caminho sem isso.
+
+Sem `DISCORD_BOT_TOKEN` na Vercel, o app funciona igual — só sem DM (`motivo: "sem-token"`). É o estado de qualquer Preview.
+
+
 ## O resumo das recorrências
 
 O cron das 06:10 é a única exceção ao "um evento, um aviso", e a razão é aritmética: ele pode abrir dezenas de cards de uma vez (ver `LIMITE_POR_EXECUCAO` em `api/recorrencias/gerar`). Vinte mensagens seguidas no canal, todas iguais menos o título, é o jeito de fazer alguém **silenciar o canal** — e canal silenciado apaga também os avisos que importam. Preço alto demais por uma rotina automática que ninguém precisa acompanhar card a card.
@@ -152,11 +230,15 @@ Copiá-los para dentro da rota criaria dois mapas envelhecendo separados: no dia
 
 | Variável | Obrigatória | O que é |
 |---|---|---|
-| `DISCORD_WEBHOOK_URL` | para o aviso sair | webhook do canal padrão |
-| `DISCORD_WEBHOOK_URLS` | não | JSON `{"B.I.":"https://…"}`, um canal por setor |
+| `DISCORD_WEBHOOK_CANAIS` | para o aviso sair | JSON `{"novas":"https://…","fluxo":"https://…","alertas":"https://…"}` — um webhook por assunto |
+| `DISCORD_WEBHOOK_URL` | não | canal único, para quando nenhum dos dois acima responde |
+| `DISCORD_WEBHOOK_URLS` | não | JSON por setor: `{"B.I.":"https://…"}` ou `{"B.I.":{"novas":"https://…","padrao":"https://…"}}` |
+| `DISCORD_BOT_TOKEN` | para a DM sair | token do bot; sem ele só o canal recebe aviso |
 | `APP_URL` | já existia | base do link que abre o card |
 
-`DISCORD_WEBHOOK_URLS` ganha do padrão quando o setor tem entrada própria. Hoje um setor só executa demanda (`DEFAULT_SECTORS`), então o padrão basta — a porta fica aberta porque o dia em que um segundo setor entrar, ele vai querer o próprio canal, e descobrir isso com o quadro em produção é tarde.
+A resolução tem quatro degraus, do mais específico ao mais genérico, e o primeiro que responde ganha: canal do setor → canal único do setor → canal do servidor → `DISCORD_WEBHOOK_URL`. A ordem não é arbitrária — o que alguém escreveu para um setor específico é decisão mais informada do que a regra geral do servidor, e inverter qualquer par faz uma configuração nova ser silenciosamente ignorada, que é o modo de falha em que tudo parece certo e a mensagem continua saindo no canal errado.
+
+`DISCORD_WEBHOOK_URLS` na forma antiga (setor → string) continua valendo sem alteração nenhuma: quem já a configurou não precisa mexer em nada.
 
 JSON quebrado **não cala o aviso**: cai no padrão e segue. Variável mal colada é erro de configuração, e configuração errada não pode calar a notificação inteira.
 
@@ -254,10 +336,10 @@ Por isso `npm run test:regras` não se aplica a esta frente.
 |---|---|---|
 | `DISCORD_PUBLIC_KEY` | **Vercel** | confere a assinatura das interações |
 | `DISCORD_APP_ID` | só local | o script de registro dos comandos |
-| `DISCORD_BOT_TOKEN` | só local | idem |
+| `DISCORD_BOT_TOKEN` | **Vercel** e local | manda a DM em produção; registra os comandos aqui |
 | `DISCORD_GUILD_ID` | só local | idem |
 
-O token do bot **não vai para a Vercel**: nada em produção o usa. As interações são autenticadas por assinatura, não por token nosso. Guardá-lo lá seria expor uma credencial que só o script, rodando na máquina de quem administra, tem motivo para conhecer.
+O token do bot **passou a ir para a Vercel** — ver "O token do bot passou a existir em produção", acima. Enquanto o bot só recebia comandos isto era desnecessário, e este documento dizia o contrário com razão; a mensagem direta inverteu o quadro, porque mandar DM exige que o aplicativo se identifique.
 
 ---
 
@@ -275,3 +357,177 @@ O token do bot **não vai para a Vercel**: nada em produção o usa. As interaç
    `https://<seu-dominio>/api/discord/interactions` → **Save**. O Discord manda um PING assinado na hora; se a chave estiver certa, ele aceita.
 
 A ordem dos passos 5 e 6 não é negociável: salvar a URL antes de a chave estar na Vercel faz o Discord recusar o endpoint, porque a rota responde 401 para tudo enquanto não souber conferir.
+
+---
+
+## O vínculo em um clique
+
+O `/vincular <codigo>` funciona e continua existindo. Mas ele cobra cinco passos de quem só queria ser avisado: abrir o Perfil, gerar, copiar, trocar de janela, digitar — e o código morre em dez minutos no meio disso. Numa equipe de cinco pessoas, "cada um faz quando puder" termina com duas vinculadas e três recebendo aviso de canal que não é para elas. **A integração inteira depende do vínculo, e o vínculo estava dependendo de paciência.**
+
+O botão **Conectar Discord** resolve numa tela: abre a autorização do Discord numa aba nova, a pessoa confirma, e a aba do Perfil vira **Conectado** sozinha — ela já assinava `users/{email}` desde antes do clique.
+
+### O clique prova exatamente o que o código provava
+
+| Ponta | O código provava por | O clique prova por |
+|---|---|---|
+| "este e-mail é meu" | o segredo que só aparece logado | a **sessão do Firebase**, que criou o `state` |
+| "esta conta do Discord é minha" | o `user.id` da interação assinada | o `id` que volta da **troca de token** |
+
+Nenhum dos dois lados vincula sozinho, nos dois caminhos. A diferença é uma janela a menos.
+
+Um `code` roubado sem o `DISCORD_CLIENT_SECRET` não vale nada, e um `state` roubado sem a conta do Discord também não.
+
+### Por que `email` no escopo, se a sessão já diz quem é
+
+Ele não é necessário para o caminho normal — é o que salva o caminho torto. Se o `state` morrer no meio (dez minutos, ou a aba aberta desde ontem), o e-mail **verificado** pelo Discord ainda permite achar o cadastro certo sem mandar a pessoa começar de novo.
+
+`alvoDoVinculo` decide, e a precedência não é negociável:
+
+1. **O `state` ganha sempre que existir.** Ele nasceu dentro de uma sessão autenticada e diz quem apertou o botão.
+2. **O e-mail do Discord é plano B**, e só vale se for `verified` **e** houver cadastro **ativo** com ele.
+3. **Nenhum dos dois? `null`.** Vincular "no melhor palpite" entrega as notificações de alguém para a conta errada — e ninguém descobre pelo lado de quem deixou de receber.
+
+Inverter 1 e 2 faria o cadastro errado ganhar sempre que os dois e-mails diferissem, que é o caso comum: quase ninguém usa o e-mail corporativo no Discord pessoal. E `verified` é trava, não detalhe — o Discord deixa cadastrar e-mail sem confirmar.
+
+### O código não virou legado
+
+Ele é o caminho de quem já está no Discord no celular e não quer abrir o app, e o de quem tem **popup bloqueado**. Por isso aparece como segunda opção visível no Perfil, e não escondido atrás de "problemas?": esconder faria a única saída de um popup bloqueado ser invisível justamente para quem precisa dela.
+
+E a tela abre a aba **antes** do `await`. `window.open` chamado depois da resposta do servidor já não conta como resposta ao clique, e o navegador bloqueia — o sintoma seria um botão que não faz nada.
+
+### A escrita do vínculo mora num lugar só
+
+`server/discord-vinculo.ts` (`ligarConta`) é chamada pelos dois caminhos. Copiar a transação para o segundo criaria duas versões de "o que acontece ao vincular", e o defeito seria silencioso: um dos caminhos deixaria de desligar o vínculo anterior, e duas pessoas passariam a receber a menção uma da outra sem nada ficar vermelho.
+
+O que cada caminho ainda faz sozinho é **provar** quem é quem. Daqui para baixo as duas provas valem o mesmo.
+
+> **O código passou a ser consumido numa transação própria**, antes da escrita. O preço está assumido: cadastro inativo queima o código e a pessoa gera outro. A alternativa — apagar só depois de o vínculo dar certo — deixaria o código vivo durante a escrita, que é exatamente a janela em que "uso único" deixa de ser único.
+
+### A página de retorno responde HTML
+
+É o fim da linha de um fluxo que abriu uma aba nova: não há tela do app atrás dela, e um JSON cru na cara de quem só queria ser avisado das demandas é o pior fim possível. A página é autossuficiente — sem CSS do app, sem fonte remota, sem script —, porque qualquer dependência externa ali viraria tela em branco no exato momento em que a pessoa precisa saber se deu certo.
+
+Cancelar no Discord volta por essa mesma rota e **não é apresentado como erro**: nada aconteceu, e é isso que a frase diz.
+
+### Regras do Firestore: nenhuma muda
+
+`/discordOauth` cai no `match /{document=**} { allow read, write: if false }` do fim do arquivo, como `/discordCodigos`. O cliente nunca a enxerga, que é o certo.
+
+### Variáveis de ambiente
+
+| Variável | Onde | O que é |
+|---|---|---|
+| `DISCORD_CLIENT_ID` | **Vercel** | o Application ID; monta a URL de autorização |
+| `DISCORD_CLIENT_SECRET` | **Vercel** | troca o `code` por token, servidor a servidor |
+| `APP_URL` | já existia | base do `redirect_uri` — tem de bater com o que está cadastrado no portal |
+
+No portal do Discord, **OAuth2 → Redirects** precisa conter exatamente `https://<dominio>/api/discord/oauth/callback`. O Discord compara texto: uma barra a mais recusa no meio do fluxo, e a mensagem que a pessoa vê é do lado deles.
+
+Sem `DISCORD_CLIENT_ID`, o botão explica que a conexão em um clique não está configurada e aponta para o código. O app não quebra.
+
+---
+
+## O resumo do dia
+
+Todos os outros avisos contam o que **acabou de acontecer**. Nenhum deles conta o que está parado — e é justamente o que está parado que dói. Uma demanda que venceu na sexta e ninguém tocou não gera evento nenhum: ela some do canal **por não estar andando**, que é exatamente o motivo de alguém precisar saber dela.
+
+O resumo é o único aviso que fala do que **não** aconteceu. Uma mensagem por setor, uma vez por dia, em `#resumo-diario`.
+
+```
+Resumo do dia
+┃ 2 demandas atrasadas
+┃ 5 demandas em aberto no quadro.
+┃ Atrasadas — 2
+┃ • Painel do refeitório — Kauã
+┃ • Carga do DW — Ítalo
+┃ Vencem hoje — 1
+┃ • Relatório do RH — Kauã
+┃ Sem responsável — 1
+┃ • Conferência de acessos — sem responsável
+┃ No quadro
+┃ A fazer: 2 · Em andamento: 2 · Aguardando: 1
+┃ Smart Meet · B.I.
+```
+
+### As decisões
+
+**Entregue não é atraso.** Prazo vencido de demanda já entregue não é atraso — a data passou depois que o trabalho terminou. É a regra do app inteiro (`colunasEntregues`, em `kanban-columns.ts`), não uma escolha deste arquivo. Um resumo que cobra entrega já feita é um resumo que se aprende a ignorar em duas semanas.
+
+**Quadro vazio não vira mensagem.** `montarResumoDiario` devolve `null`, e a rota não publica. Um aviso diário que chega dizendo que não há nada é o aviso que ensina a não abrir o canal — e quando ele finalmente tiver notícia, já terá virado ruído de fundo.
+
+**Mas "está tudo em dia" *é* notícia**, e sai em verde. É a única forma de alguém confiar no silêncio dos outros dias: sem essa confirmação, "não chegou resumo" e "está tudo certo" ficam indistinguíveis.
+
+**A cor é o resumo do resumo** — vermelho com atraso, âmbar com vencimento hoje, verde sem nenhum dos dois. Quem rola o canal sem ler sabe o estado do setor pela barra lateral.
+
+**O panorama por etapa vem por último.** Quem abre o resumo quer saber o que precisa de ação hoje; o total por coluna é o que ele confere depois, se conferir.
+
+**Ninguém é mencionado**, pelo mesmo motivo do cron das recorrências: ser marcado por um relógio é o tipo de notificação que ensina a ignorar as que vêm de gente.
+
+### O corte que se perdia
+
+O teto de oito linhas não bastava sozinho, e este bloco nasceu errado por causa disso: oito títulos longos com link passam dos 1024 caracteres do campo, e o corte da borda apagava justamente a última linha — a que dizia *"…e mais 32"*. O resultado era uma lista que **parecia completa e não era**, que é a única forma de errar aqui que ninguém percebe.
+
+Agora o orçamento é conferido a cada linha, já descontando o espaço da frase do corte. O teste cobre a aritmética: listadas + anunciadas = total.
+
+### O fuso é o de quem trabalha
+
+A função roda em UTC. Às 03:00 de São Paulo já é o dia seguinte em UTC, e um "hoje" tirado de `new Date()` cru marcaria como **atrasada** a demanda que vence hoje — no dia em que ela ainda pode ser entregue. Erro de fuso em relatório de prazo não parece erro: parece cobrança.
+
+### Uma leitura, não uma por setor
+
+A rota lê `/cards` inteiro e agrupa. Uma consulta por setor exigiria saber a lista de setores **antes** de perguntar — e setor que ainda não personalizou colunas não aparece em `/columns`, então a lista sairia incompleta e o setor ficaria sem resumo sem ninguém perceber. Com o quadro do tamanho de hoje, é uma leitura por dia. Se crescer, o lugar de paginar é ali, e o sintoma será tempo de função, não resumo faltando.
+
+Um setor com webhook errado não cala os outros: cada resumo é publicado dentro do seu próprio `try`.
+
+### Disparo
+
+| | |
+|---|---|
+| Cron | `0 11 * * 1-5` em `vercel.json` — 08:00 em São Paulo, dias úteis |
+| À mão | `POST /api/discord/resumo-diario` com sessão de **gestor ou admin** |
+
+Dias úteis e não todo dia: resumo de sábado é resumo que ninguém lê e que treina o olho a passar por cima da mensagem de segunda.
+
+> **Atenção ao plano da Vercel.** Este é o **terceiro** cron do projeto. O plano Hobby limita a quantidade de cron jobs por projeto e só permite disparo diário — se o deploy recusar o `vercel.json`, a saída é subir o plano ou fundir este disparo dentro de um dos crons existentes.
+
+---
+
+## Os comandos de consulta
+
+O aviso e a DM contam o que **mudou**. Nenhum dos dois responde *"o que eu tenho para hoje?"* — e essa é a pergunta que faz alguém abrir o quadro dez vezes por dia. Quem está no Discord o dia inteiro paga uma troca de janela e um login por uma lista de cinco linhas.
+
+| Comando | O que responde |
+|---|---|
+| `/minhas-demandas` | as suas em aberto, da mais urgente para a menos |
+| `/demanda busca:<texto>` | as do seu setor com aquilo no título, entregues incluídas |
+
+### As decisões
+
+**A resposta é sempre efêmera.** A lista de demandas de uma pessoa é assunto dela: publicada no canal, vira histórico de chat sobre quem está atrasado em quê — e isso muda o jeito como as pessoas usam o quadro.
+
+**É texto, não embed.** Embed dentro de resposta efêmera fica pesado no celular para o que é uma lista curta, e o Markdown do `content` já dá link clicável. O embed existe para o aviso, que chega **sem ser pedido** e precisa se distinguir do resto do canal; aqui a pessoa acabou de digitar o comando e sabe o que está lendo.
+
+**Atrasada primeiro, sem prazo por último.** A ordem que sai de graça da consulta é a de criação, e ela põe a demanda de março na frente da que vence amanhã. Ausência de prazo não é urgência — tratá-la como tal empurraria para cima justamente o que ninguém datou.
+
+**O atraso vem por extenso e em negrito** (`**atrasada desde 10/03**`), não como cor nem emoji: no Discord a linha é texto puro, e um ícone vermelho no meio de dez linhas some. "atrasada" é a palavra que a pessoa procura com o olho.
+
+**A busca ignora acento e caixa, e casa as palavras em qualquer ordem.** Quem digita no celular não acentua; "relatorio" tem de achar "Relatório", senão a busca parece quebrada. E termo vazio casa com **nada** — devolver o quadro inteiro faria alguém achar que digitou certo.
+
+**A busca inclui as entregues**, marcadas com `✓`. "Aquilo ficou pronto?" é metade das perguntas que o comando existe para responder.
+
+**O corte é anunciado, e cabe.** Mesma armadilha do resumo do dia: cortar na borda dos 2000 caracteres apagaria justamente a linha que diz quantas ficaram de fora. Aqui o custo de errar é maior, porque a pessoa **perguntou** — ela vai agir achando que viu tudo. O teste cobre a aritmética.
+
+**A busca respeita o setor de quem pergunta.** Ela não pode virar a porta pela qual alguém lê a demanda de um setor onde não entra.
+
+### Os três segundos, e o risco que fica
+
+É o prazo do Discord para a resposta da interação, e ele manda em tudo: consulta por campo **único** (que o Firestore indexa sozinho), teto baixo de documentos, nenhuma chamada externa.
+
+O risco, dito na cara: **cold start** de função serverless com `firebase-admin` pode passar de um segundo, e em três segundos isso é muito. É o mesmo risco que `/vincular` já corre desde o começo. Se "a aplicação não respondeu" virar rotina, a saída é a resposta adiada (`type: 5`) — que exige uma segunda chamada **depois** de responder, e numa função que morre ao responder isso pede `waitUntil`. É trabalho, e não estava pago; a nota fica para quem for pagar.
+
+### A lista de comandos é conferida por inteiro
+
+O script de registro manda `COMANDOS` com **PUT**, e PUT substitui. Um comando que sumisse da lista sumiria do Discord no registro seguinte, e o sintoma seria "esse comando não existe" para quem já usava. Por isso o teste compara a lista inteira, e não "contém".
+
+> Depois de trazer estas mudanças, **rode `npm run discord:comandos` de novo**. Sem isso, `/minhas-demandas` e `/demanda` não aparecem para ninguém — o código está pronto e o Discord não sabe.
+

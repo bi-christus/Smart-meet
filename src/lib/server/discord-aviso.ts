@@ -19,12 +19,19 @@
 import { FieldValue, type Firestore } from "firebase-admin/firestore";
 
 import { enviarAviso } from "./discord";
+import { enviarDireto, type ResultadoDireto } from "./discord-dm";
 import {
+  canalDoEvento,
   deveAvisar,
+  deveMandarDireto,
   montarAviso,
+  montarAvisoDireto,
   montarResumoDeRecorrencias,
-  webhookDoSetor,
+  montarResumoDiario,
+  resolverWebhook,
+  type Canal,
   type CardDoAviso,
+  type CardDoResumo,
   type EventoDoAviso,
 } from "@/lib/discord-core";
 import { rotuloPrioridade, rotuloTipo } from "@/lib/demanda-rotulos";
@@ -51,7 +58,12 @@ type EventoDoc = {
   discordAt?: unknown;
 };
 
-export type Resultado = { enviado: boolean; motivo?: string };
+export type Resultado = {
+  enviado: boolean;
+  motivo?: string;
+  /** Ausente quando não havia a quem mandar direto — ver `deveMandarDireto`. */
+  direto?: ResultadoDireto;
+};
 
 /** O evento já virou mensagem. Erro de controle, não de falha. */
 class JaAvisado extends Error {}
@@ -81,13 +93,22 @@ async function pessoas(
   return out;
 }
 
-/** Para onde o setor avisa, lendo o ambiente. `null` = ninguém configurou. */
-export function webhookDe(sector: string): string | null {
-  return webhookDoSetor(
-    sector,
-    process.env.DISCORD_WEBHOOK_URL,
-    process.env.DISCORD_WEBHOOK_URLS,
-  );
+/**
+ * Para onde ESTE assunto avisa, lendo o ambiente. `null` = ninguém configurou.
+ *
+ * O canal entra por parâmetro, e não é deduzido aqui, porque quem sabe o
+ * assunto é quem chama: `publicarEvento` traduz a ação em canal, o resumo das
+ * recorrências vai sempre para `alertas`, e o resumo do dia para `resumo`.
+ * Deduzir aqui obrigaria esta função a conhecer os três casos.
+ */
+export function webhookDe(sector: string, canal: Canal): string | null {
+  return resolverWebhook({
+    canal,
+    setor: sector,
+    padrao: process.env.DISCORD_WEBHOOK_URL,
+    porSetor: process.env.DISCORD_WEBHOOK_URLS,
+    porCanal: process.env.DISCORD_WEBHOOK_CANAIS,
+  });
 }
 
 /**
@@ -139,7 +160,7 @@ export async function publicarEvento(
     return { enviado: false, motivo: "sem-noticia" };
   }
 
-  const url = webhookDe(sector);
+  const url = webhookDe(sector, canalDoEvento(acao));
   // Sem webhook configurado o app funciona igual — é o estado de qualquer
   // Preview antes de alguém colar a variável. Não é erro.
   if (!url) return { enviado: false, motivo: "sem-webhook" };
@@ -193,6 +214,8 @@ export async function publicarEvento(
     throw e;
   }
 
+  const rotulo = { prioridade: rotuloPrioridade, tipo: rotuloTipo };
+
   try {
     await enviarAviso(
       url,
@@ -200,7 +223,7 @@ export async function publicarEvento(
         card: cardDoAviso,
         evento: eventoDoAviso,
         appUrl: appUrl(),
-        rotulo: { prioridade: rotuloPrioridade, tipo: rotuloTipo },
+        rotulo,
       }),
     );
   } catch (e) {
@@ -208,7 +231,36 @@ export async function publicarEvento(
     throw e;
   }
 
-  return { enviado: true };
+  // O DIRETO VEM DEPOIS DO CANAL, e o fracasso dele não desfaz nada.
+  //
+  // O aviso do canal é o registro — ele já está publicado quando esta linha
+  // roda. A DM é o toque no ombro de quem precisa agir. Desfazer o `discordAt`
+  // porque uma caixa de mensagens estava fechada mandaria o reenvio duplicar a
+  // mensagem do canal para tentar de novo uma coisa que vai falhar igual.
+  //
+  // E ele NÃO tem marca própria de idempotência: `discordAt` cobre o evento
+  // inteiro. Uma segunda marca só para a DM abriria a possibilidade de as duas
+  // discordarem, e o sintoma seria uma DM repetida sem nada repetido no canal.
+  const alvoDireto = (resp?.discordId ?? "").trim();
+  const direto = deveMandarDireto({
+    acao,
+    mudancas,
+    autorEmail,
+    responsavelEmail: respEmail,
+    responsavelDiscordId: alvoDireto,
+  })
+    ? await enviarDireto(
+        alvoDireto,
+        montarAvisoDireto({
+          card: cardDoAviso,
+          evento: eventoDoAviso,
+          appUrl: appUrl(),
+          rotulo,
+        }),
+      )
+    : undefined;
+
+  return { enviado: true, direto };
 }
 
 /**
@@ -256,7 +308,11 @@ export async function publicarResumoDeRecorrencias(args: {
   const { sector, cards } = args;
   if (cards.length === 0) return { enviado: false, motivo: "nada-a-dizer" };
 
-  const url = webhookDe(sector);
+  // `alertas`, e não `novas`: a rodada do cron não é notícia de demanda
+  // nascendo — é rotina automática, e o canal de entrada existe para o trabalho
+  // que alguém pediu. Misturar as duas faz `#demandas-novas` amanhecer com
+  // quinze linhas de manutenção todo dia.
+  const url = webhookDe(sector, "alertas");
   if (!url) return { enviado: false, motivo: "sem-webhook" };
 
   // A montagem é regra e mora no módulo puro, com teste; o que sobra para cá é
@@ -265,5 +321,38 @@ export async function publicarResumoDeRecorrencias(args: {
     url,
     montarResumoDeRecorrencias({ sector, cards, appUrl: appUrl() }),
   );
+  return { enviado: true };
+}
+
+/**
+ * O panorama do dia, num canal só e uma vez por dia.
+ *
+ * Os outros avisos contam o que ACABOU de acontecer; este é o único que fala do
+ * que NÃO aconteceu. Uma demanda que venceu na sexta e ninguém tocou não gera
+ * evento nenhum — ela some do canal justamente por estar parada, que é o motivo
+ * de alguém precisar saber dela.
+ *
+ * `null` do montador significa quadro vazio, e vira `nada-a-dizer` sem publicar.
+ * Um aviso diário que chega dizendo que não há nada é o aviso que ensina a não
+ * abrir o canal.
+ */
+export async function publicarResumoDiario(args: {
+  sector: string;
+  cards: CardDoResumo[];
+  /** aaaa-mm-dd, no fuso de quem trabalha — quem sabe o fuso é quem chama. */
+  hoje: string;
+}): Promise<Resultado> {
+  const corpo = montarResumoDiario({
+    sector: args.sector,
+    cards: args.cards,
+    hoje: args.hoje,
+    appUrl: appUrl(),
+  });
+  if (!corpo) return { enviado: false, motivo: "nada-a-dizer" };
+
+  const url = webhookDe(args.sector, "resumo");
+  if (!url) return { enviado: false, motivo: "sem-webhook" };
+
+  await enviarAviso(url, corpo);
   return { enviado: true };
 }

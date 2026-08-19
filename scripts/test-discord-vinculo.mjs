@@ -187,9 +187,24 @@ checa(
 );
 
 // --- os comandos registrados ----------------------------------------------
+// A lista é conferida por INTEIRO, e de propósito: o script de registro manda
+// tudo com PUT, e PUT substitui. Um comando que sumisse daqui sumiria do
+// Discord no registro seguinte, e o sintoma seria "esse comando não existe"
+// para quem já usava.
 checa(
-  "a lista tem vincular e desvincular",
-  COMANDOS.map((c) => c.name).join(",") === "vincular,desvincular",
+  "a lista é exatamente a que o Discord deve oferecer",
+  COMANDOS.map((c) => c.name).join(",") ===
+    "vincular,desvincular,minhas-demandas,demanda",
+  COMANDOS.map((c) => c.name).join(","),
+);
+checa(
+  "nome de comando do Discord: minúsculo, sem espaço",
+  COMANDOS.every((c) => /^[a-z][a-z0-9-]{0,31}$/.test(c.name)),
+);
+checa(
+  "a busca é opção obrigatória de /demanda",
+  COMANDOS.find((c) => c.name === "demanda").options[0].name === "busca" &&
+    COMANDOS.find((c) => c.name === "demanda").options[0].required === true,
 );
 checa(
   "todo comando tem descrição (o Discord recusa sem)",
