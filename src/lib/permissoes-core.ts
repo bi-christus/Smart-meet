@@ -60,6 +60,12 @@ export const ABAS: Aba[] = [
   },
   { id: "kanban", label: "Kanban", href: "/kanban", configuravel: true },
   {
+    id: "dimensoes",
+    label: "Dimensões",
+    href: "/dimensoes",
+    configuravel: true,
+  },
+  {
     id: "recorrencias",
     label: "Recorrências",
     href: "/recorrencias",

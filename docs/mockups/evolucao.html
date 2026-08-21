@@ -1,0 +1,606 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Evolução — Smart Meeting (mockup C)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+/* Tokens de src/app/globals.css — o mockup tem de ser julgado nas cores do app. */
+:root, [data-theme="dark"]{
+  --brand:#ff6a2b;--brand-hover:#ff824d;--brand-soft:rgba(255,106,43,.16);--brand-line:rgba(255,106,43,.42);
+  --accent:#ff8a54;--bg:#0d0d0f;--s1:#151517;--s2:#1c1c1f;--s3:#26262a;--s4:#323238;
+  --line:#2b2b30;--line-soft:#202024;--tx:#f3f2ef;--tx-2:#b2b1ab;--tx-3:#78776f;
+  --topbar-bg:#151517;--topbar-line:#2b2b30;--topbar-fg:#b2b1ab;--topbar-fg-strong:#fff;
+  --ok:#34d399;--ok-bg:rgba(52,211,153,.15);--ok-tx:#5fe0b0;
+  --warn:#f5b13d;--warn-bg:rgba(245,177,61,.15);--warn-tx:#f7c46b;
+  --danger:#fb7185;--danger-bg:rgba(251,113,133,.15);--danger-tx:#ff9d9d;
+  --info:#54b8ff;--info-bg:rgba(84,184,255,.14);--info-tx:#bfe3ff;
+  --susp:#c084fc;--susp-bg:rgba(192,132,252,.16);--susp-tx:#e5c8ff;
+  --scroll:#33333a;--r:10px;--r-lg:14px;--card:#1c1c1f;--field:#151517;
+  --grid:#26262a;
+  color-scheme:dark;
+}
+[data-theme="light"]{
+  --brand:#d24e12;--brand-hover:#b23f0c;--brand-soft:rgba(210,78,18,.1);--brand-line:rgba(210,78,18,.3);
+  --accent:#c2410c;--bg:#f1f0ec;--s1:#f6f5f1;--s2:#fff;--s3:#efeee9;--s4:#e5e3db;
+  --line:#e5e3db;--line-soft:#edece6;--tx:#1a1a17;--tx-2:#57564e;--tx-3:#9a988e;
+  --topbar-bg:#fff;--topbar-line:#e6e5df;--topbar-fg:#6b6a62;--topbar-fg-strong:#1a1a17;
+  --ok:#16a34a;--ok-bg:rgba(22,163,74,.12);--ok-tx:#15803d;
+  --warn:#d97706;--warn-bg:rgba(217,119,6,.13);--warn-tx:#b45309;
+  --danger:#dc2626;--danger-bg:rgba(220,38,38,.1);--danger-tx:#b91c1c;
+  --info:#2563eb;--info-bg:rgba(37,99,235,.1);--info-tx:#1d4ed8;
+  --susp:#7c3aed;--susp-bg:rgba(124,58,237,.1);--susp-tx:#6d28d9;
+  --scroll:#d5d3cb;--card:#fff;--field:#f6f5f1;
+  --grid:#e5e3db;
+  color-scheme:light;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{min-height:100vh;background:var(--bg);color:var(--tx);font-family:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;font-size:14px;-webkit-font-smoothing:antialiased;transition:background .2s,color .2s}
+::-webkit-scrollbar{width:11px;height:11px}
+::-webkit-scrollbar-thumb{background:var(--scroll);border-radius:9px;border:3px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-track{background:transparent}
+
+/* topbar */
+.topbar{height:56px;display:flex;align-items:center;gap:16px;padding:0 18px;background:var(--topbar-bg);border-bottom:1px solid var(--topbar-line);position:sticky;top:0;z-index:30}
+.brand{display:flex;align-items:center;gap:10px;color:var(--topbar-fg-strong);text-decoration:none;flex-shrink:0}
+.brandMark{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:linear-gradient(140deg,var(--brand),var(--brand-hover));color:#fff;font-weight:700;font-size:13px;letter-spacing:-.5px;flex-shrink:0}
+.brand b{font-size:13.5px;font-weight:700;display:block;line-height:1.15}
+.brand em{font-style:normal;font-size:10.5px;color:var(--topbar-fg);letter-spacing:.3px}
+@media(max-width:1180px){.brand .bt{display:none}}
+.nav{display:flex;align-items:center;gap:2px;overflow:auto;flex:1;scrollbar-width:none}
+.nav::-webkit-scrollbar{display:none}
+.navBtn{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 11px;border-radius:9px;color:var(--topbar-fg);text-decoration:none;font-size:12.5px;font-weight:500;white-space:nowrap;transition:background .18s,color .18s}
+.navBtn:hover{background:var(--s3);color:var(--topbar-fg-strong)}
+.navBtn.on{background:var(--brand-soft);color:var(--brand);font-weight:600}
+.navBtn.novo::after{content:"novo";font-size:8.5px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;background:var(--brand);color:#fff;border-radius:4px;padding:1px 4px}
+.uChip{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.uAv{width:30px;height:30px;border-radius:50%;background:#7c5cff;color:#fff;display:grid;place-items:center;font-size:11.5px;font-weight:700}
+.uName{font-size:12.5px;font-weight:600;line-height:1.2;color:var(--topbar-fg-strong)}
+.uRole{font-size:10.5px;color:var(--topbar-fg)}
+@media(max-width:900px){.uMeta{display:none}}
+.iconBtn{width:32px;height:32px;border-radius:9px;border:1px solid var(--line);background:transparent;color:var(--tx-2);cursor:pointer;display:grid;place-items:center;transition:color .18s,border-color .18s;flex-shrink:0}
+.iconBtn:hover{color:var(--accent);border-color:var(--brand-line)}
+
+.page{max-width:1420px;margin:0 auto;padding:20px 22px 70px}
+.head{display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap}
+.headMain{flex:1;min-width:260px}
+.headMain h1{font-family:"IBM Plex Serif",serif;font-size:24px;font-weight:600}
+.headMain p{font-size:12.5px;color:var(--tx-3);margin-top:5px;max-width:700px;line-height:1.55}
+.selLbl{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:var(--tx-3);margin-bottom:6px;font-weight:700}
+.selWrap{position:relative}
+.selWrap::after{content:"";position:absolute;right:12px;bottom:14px;width:7px;height:7px;pointer-events:none;border-right:2px solid var(--tx-3);border-bottom:2px solid var(--tx-3);transform:rotate(45deg)}
+.sel{height:36px;padding:0 32px 0 11px;border:1px solid var(--line);background:var(--field);color:var(--tx);border-radius:9px;font-family:inherit;font-size:13px;cursor:pointer;min-width:190px;appearance:none}
+
+.grupo{display:flex;gap:4px;padding:4px;background:var(--s1);border:1px solid var(--line);border-radius:11px;width:fit-content;margin-top:18px}
+.gb{height:32px;padding:0 14px;border:0;border-radius:8px;background:transparent;color:var(--tx-2);font-family:inherit;font-size:12.5px;font-weight:500;cursor:pointer;white-space:nowrap;transition:background .18s,color .18s}
+.gb:hover{color:var(--tx)}
+.gb.on{background:var(--brand);color:#fff;font-weight:600}
+
+/* ---------- faixa "o que mudou" ---------- */
+.deltaHead{display:flex;align-items:baseline;gap:9px;margin-top:24px;flex-wrap:wrap}
+.deltaHead h2{font-size:14px;font-weight:600}
+.deltaHead span{font-size:11.5px;color:var(--tx-3)}
+.kstrip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:11px}
+@media(max-width:860px){.kstrip{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.kcell{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);padding:14px 16px}
+.kcell .kv{font-family:"IBM Plex Serif",serif;font-size:27px;font-weight:600;line-height:1.1;letter-spacing:-.5px;display:flex;align-items:baseline;gap:7px}
+.kcell .kv i{font-style:normal;font-size:13px;font-weight:600;font-family:"IBM Plex Sans",sans-serif}
+.kcell .kl{font-size:11.5px;color:var(--tx-3);margin-top:6px;line-height:1.45}
+.up{color:var(--danger)}.down{color:var(--ok)}.flat{color:var(--tx-3)}
+
+/* ---------- gráfico ---------- */
+.painel{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px 18px 12px;margin-top:22px}
+.painelHead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px}
+.painelHead h2{font-size:14px;font-weight:600}
+.painelHead span{font-size:11.5px;color:var(--tx-3);line-height:1.5}
+.chartLeg{display:flex;gap:14px;flex-wrap:wrap;margin:12px 0 0;font-size:11px;color:var(--tx-3)}
+.chartLeg span{display:inline-flex;align-items:center;gap:6px}
+.chartLeg i{width:10px;height:10px;border-radius:3px;display:block}
+.chartWrap{position:relative;margin-top:14px}
+svg.chart{display:block;width:100%;height:auto;overflow:visible}
+.tipo-eixo{font-size:9.5px;fill:var(--tx-3);font-family:"IBM Plex Sans",sans-serif}
+
+/* ---------- boletim ---------- */
+.secTit{display:flex;align-items:baseline;gap:10px;margin:28px 0 11px;flex-wrap:wrap}
+.secTit h2{font-size:14px;font-weight:600}
+.secTit span{font-size:11.5px;color:var(--tx-3)}
+
+.bol{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);margin-bottom:10px;overflow:hidden;position:relative}
+.bol::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--c);z-index:1}
+.bolHead{display:flex;align-items:center;gap:14px;padding:14px 18px 14px 22px;width:100%;background:transparent;border:0;text-align:left;font-family:inherit;color:inherit;cursor:pointer;transition:background .18s}
+.bolHead:hover{background:var(--s3)}
+.farol{width:11px;height:11px;border-radius:50%;flex-shrink:0;box-shadow:0 0 0 4px var(--fs)}
+.bolNome{flex:1;min-width:0}
+.bolNome b{display:block;font-size:14px;font-weight:600}
+.bolNome em{display:block;font-style:normal;font-size:11.5px;color:var(--tx-3);margin-top:3px;line-height:1.45}
+.spark{flex-shrink:0}
+@media(max-width:900px){.spark,.fluxo .som{display:none}}
+.fluxo{display:flex;align-items:center;gap:15px;flex-shrink:0}
+.num{text-align:right}
+.num b{display:block;font-family:"IBM Plex Serif",serif;font-size:16px;font-weight:600;line-height:1.1}
+.num em{display:block;font-style:normal;font-size:9.5px;color:var(--tx-3);text-transform:uppercase;letter-spacing:.5px;margin-top:3px}
+.num.pos b{color:var(--danger)}.num.neg b{color:var(--ok)}
+.chev{color:var(--tx-3);transition:transform .18s ease;flex-shrink:0}
+.bol.aberta .chev{transform:rotate(90deg)}
+
+.grade{display:none;border-top:1px solid var(--line-soft);background:var(--s1);padding:6px 18px 16px 22px}
+.bol.aberta .grade{display:block;animation:abre .18s ease both}
+@keyframes abre{from{opacity:0}to{opacity:1}}
+.gradeCab{display:flex;align-items:center;gap:12px;padding:11px 0 9px;font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--tx-3);font-weight:700}
+.gradeCab .lbl{flex:1;min-width:0}
+.gLinha{display:flex;align-items:center;gap:12px;padding:5px 0}
+.gNome{flex:1;min-width:0;display:flex;align-items:center;gap:8px}
+.gNome b{font-size:12.5px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gNome.morta b{color:var(--tx-3)}
+.tipo{font-size:8.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;padding:2px 5px;border-radius:4px;flex-shrink:0}
+.tipo.projeto{background:var(--susp-bg);color:var(--susp-tx)}
+.tipo.rotina{background:var(--s3);color:var(--tx-3)}
+[data-theme="light"] .tipo.rotina{color:var(--tx-2)}
+.semanas{display:flex;gap:3px;flex-shrink:0}
+.sq{width:13px;height:13px;border-radius:3px;background:var(--n0);flex-shrink:0}
+.gRes{font-size:11px;color:var(--tx-3);width:132px;text-align:right;flex-shrink:0;white-space:nowrap}
+.gRes.morto{color:var(--warn-tx)}
+.gRes.nunca{color:var(--tx-3);font-style:italic}
+@media(max-width:1080px){.gRes{display:none}}
+
+.escala{display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--tx-3);margin-top:12px;justify-content:flex-end}
+.escala i{width:11px;height:11px;border-radius:3px;display:block}
+
+.notaMock{display:flex;gap:12px;align-items:flex-start;padding:13px 16px;border-radius:var(--r);background:var(--brand-soft);border:1px solid var(--brand-line);font-size:12.5px;line-height:1.6;color:var(--tx-2);margin-top:22px}
+.notaMock b{color:var(--brand)}
+.notas{margin-top:30px;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--s1);overflow:hidden}
+.notas summary{padding:14px 18px;cursor:pointer;font-size:13px;font-weight:600;color:var(--tx-2);list-style:none;display:flex;align-items:center;gap:9px}
+.notas summary::-webkit-details-marker{display:none}
+.notas summary::before{content:"▸";color:var(--brand);transition:transform .18s;display:inline-block}
+.notas[open] summary::before{transform:rotate(90deg)}
+.notasBody{padding:0 18px 20px;font-size:13px;line-height:1.7;color:var(--tx-2);max-width:860px}
+.notasBody h4{font-size:11.5px;text-transform:uppercase;letter-spacing:.8px;color:var(--brand);margin:18px 0 7px;font-weight:700}
+.notasBody ul{padding-left:19px}
+.notasBody li{margin-bottom:6px}
+.notasBody strong{color:var(--tx)}
+.notasBody code{font-family:"IBM Plex Mono",monospace;font-size:12px;background:var(--s3);padding:1px 5px;border-radius:5px}
+
+@media (prefers-reduced-motion: reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <a class="brand" href="#"><span class="brandMark">SM</span><span class="bt"><b>Smart Meeting</b><em>Rede Christus</em></span></a>
+  <nav class="nav">
+    <a class="navBtn" href="#">Início</a><a class="navBtn" href="#">Reuniões</a>
+    <a class="navBtn" href="#">Relatórios IA</a><a class="navBtn" href="#">Kanban</a>
+    <a class="navBtn" href="#">Recorrências</a><a class="navBtn" href="#">Dashboard</a>
+    <a class="navBtn" href="#">Cronograma</a><a class="navBtn on novo" href="#">Evolução</a>
+    <a class="navBtn" href="#">Rank</a><a class="navBtn" href="#">Admin</a>
+  </nav>
+  <button class="iconBtn" id="tema" aria-label="Alternar tema"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/></svg></button>
+  <div class="uChip"><span class="uAv">MB</span><span class="uMeta"><span class="uName">Murilo</span><br><span class="uRole">Direção</span></span></div>
+</header>
+
+<main class="page">
+  <div class="head">
+    <div class="headMain">
+      <h1>Evolução</h1>
+      <p>O acompanhamento que a planilha antiga fazia, agora com o dado que já está no app.
+         Não é “o que existe” — é <b>o que se mexeu</b>: quanto entrou, quanto saiu, e quais
+         subdimensões passaram semanas inteiras sem receber um único movimento.</p>
+    </div>
+    <div class="selWrap">
+      <label class="selLbl" for="setor">Setor de execução</label>
+      <select class="sel" id="setor"><option>Infraestrutura</option><option>Cantinas</option><option>Compras</option><option>Almoxarifado</option><option>CVU</option><option>B.I.</option></select>
+    </div>
+  </div>
+
+  <div class="grupo" id="periodo" role="tablist">
+    <button class="gb" data-sem="4">4 semanas</button>
+    <button class="gb on" data-sem="12">12 semanas</button>
+    <button class="gb" data-sem="26">6 meses</button>
+  </div>
+
+  <div class="deltaHead">
+    <h2 id="deltaTit">O que mudou nas últimas 12 semanas</h2>
+    <span id="deltaSub"></span>
+  </div>
+  <div class="kstrip" id="kstrip"></div>
+
+  <div class="painel">
+    <div class="painelHead">
+      <h2>Demandas em aberto ao longo do tempo</h2>
+      <span>empilhado por dimensão — a altura total é o tamanho da fila</span>
+    </div>
+    <div class="chartWrap"><svg class="chart" id="chart" viewBox="0 0 1000 230" preserveAspectRatio="none" role="img" aria-label="Área empilhada de demandas em aberto por dimensão"></svg></div>
+    <div class="chartLeg" id="chartLeg"></div>
+  </div>
+
+  <div class="secTit">
+    <h2>Boletim por dimensão</h2>
+    <span>abra uma dimensão para ver a grade semanal de cada subdimensão</span>
+  </div>
+  <div id="boletim"></div>
+
+  <div class="notaMock">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--brand)" stroke-width="2" stroke-linecap="round" style="flex-shrink:0;margin-top:1px"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
+    <div><b>Opção C — mockup.</b> A árvore é a real do documento “Pilares Infra abril_26”. O histórico
+      semanal é simulado (o app ainda não tem meses de dado gravado) — mas é gerado a partir dos mesmos
+      números das opções A e B, então as três contam a mesma história.</div>
+  </div>
+
+  <details class="notas">
+    <summary>Notas do desenho — por que sugeri esta, e de onde sai o dado</summary>
+    <div class="notasBody">
+      <h4>Por que esta, e não uma quarta variação de lista</h4>
+      <ul>
+        <li>A ata registra, em “Em aberto”: <strong>“O acompanhamento da evolução da Infra está parado — a planilha antiga deixou de ser usada na espera pelo Smart Meet.”</strong> Isso é uma frente que já existia e foi <em>desligada</em> por causa do nosso prazo. As opções A e B mostram o retrato de hoje; nenhuma das duas devolve o que a planilha fazia.</li>
+        <li>Retrato responde “como está”. Só a série responde <strong>“está melhorando?”</strong> — e essa é a pergunta que um diretor leva para a Diretoria Geral.</li>
+        <li>A <strong>grade semanal</strong> é o coração da tela. Uma subdimensão morta há dois meses tem exatamente a mesma aparência de uma saudável em qualquer lista — os dois números são pequenos. Na grade, ela é uma faixa apagada de ponta a ponta. Você vê antes de contar.</li>
+      </ul>
+
+      <h4>De onde o dado sai — sem coleção nova</h4>
+      <ul>
+        <li>Todo evento já está gravado: <code>historico</code> pendurado em cada demanda registra mudança de coluna, de responsável e de prazo, e <code>createdAt</code> marca a entrada. É disso que a série é feita.</li>
+        <li>“Concluída na semana N” sai da mesma regra única do app (<code>colunasEntregues</code>), a mesma que o Dashboard e o relatório do gestor usam. Uma segunda definição de “concluído” seria uma segunda verdade.</li>
+        <li><strong>A ressalva honesta:</strong> o histórico começou a ser gravado agora. Nos primeiros meses a série será curta, e a tela precisa dizer isso — “dado desde 12/08”, não uma linha reta fingindo que a Infra estava parada antes disso.</li>
+      </ul>
+
+      <h4>Decisões que valem discussão</h4>
+      <ul>
+        <li><strong>Semana, não dia.</strong> Dia é ruído numa operação onde muita coisa anda de quinze em quinze. Se a Infra quiser o corte diário, o eixo troca sem mexer no resto.</li>
+        <li><strong>O farol mede evolução, não o retrato.</strong> Vermelho = a fila cresceu no período; amarelo = empatou; verde = encolheu. A primeira versão acendia por “tem atrasada” — e como as cinco dimensões da Infra têm atrasada, o quadro inteiro ficava vermelho. Indicador que nunca varia não é indicador, e “tem atrasada” já é o assunto das opções A e B.</li>
+        <li><strong>Saldo positivo é vermelho.</strong> Fila crescendo é notícia ruim mesmo quando muita coisa foi entregue, e a cor tem de dizer isso sem legenda.</li>
+      </ul>
+    </div>
+  </details>
+</main>
+
+<script>
+/* ============================================================
+   Mesma árvore das opções A e B — as três TÊM de bater.
+   ============================================================ */
+const HOJE = new Date("2026-08-20T12:00:00");
+const PARADA_DIAS = 15;
+
+const DIMENSOES=[
+ {n:1,nome:"Higiene, Hospitalidade e Logística Interna",abrev:"Soft Services",cor:"#3987e5",subs:[
+  {nome:"Hospitalidade",tipo:"projeto",dems:[["and",3],["fazer",6],["fazer",6]]},
+  {nome:"Ascensoristas",tipo:"rotina",dems:[["agu",21],["fazer",21]]},
+  {nome:"Limpeza de ambientes",tipo:"rotina",dems:[["and",1],["val",2],["ok",0],["fazer",9]]},
+  {nome:"Limpeza de equipamentos",tipo:"rotina",dems:[["and",4],["ok",0]]},
+  {nome:"Tratamentos especiais em limpeza",tipo:"rotina",dems:[]},
+  {nome:"Carga e descarga",tipo:"rotina",dems:[]},
+  {nome:"Capatazia",tipo:"rotina",dems:[["fazer",2],["and",1]]},
+  {nome:"Treinamentos e capacitações",tipo:"projeto",dems:[["fazer",11]]},
+  {nome:"Controle de uso de EPI",tipo:"projeto",dems:[["and",2],["fazer",5],["agu",16]]},
+  {nome:"Setup para trancamento de sede",tipo:"rotina",dems:[["ok",0],["and",3]]},
+ ]},
+ {n:2,nome:"Manutenção e Oficina",abrev:"Hard Services",cor:"#d95926",subs:[
+  {nome:"Manutenção de instalações",tipo:"rotina",dems:[["and",2],["fazer",7]]},
+  {nome:"Instalações em eventos",tipo:"rotina",dems:[]},
+  {nome:"Manutenção de ferragens",tipo:"rotina",dems:[["fazer",19]]},
+  {nome:"Manutenção de telhados e coberturas",tipo:"rotina",dems:[["agu",25]]},
+  {nome:"Manutenção de superfícies",tipo:"rotina",dems:[]},
+  {nome:"Manutenção de equipamentos",tipo:"rotina",dems:[["and",1],["ok",0],["fazer",8]]},
+  {nome:"Manutenção de equipamentos específicos",tipo:"rotina",dems:[]},
+  {nome:"Manutenção de equipamentos críticos",tipo:"projeto",dems:[["fazer",5],["and",5],["val",1]]},
+  {nome:"Almoxarifado de equipamentos pulmão",tipo:"rotina",dems:[]},
+  {nome:"Ações críticas",tipo:"projeto",dems:[["val",1],["fazer",13]]},
+  {nome:"Controle de uso de EPI",tipo:"rotina",dems:[]},
+ ]},
+ {n:3,nome:"Suprimentos",abrev:"Supply Chain",cor:"#199e70",subs:[
+  {nome:"Patrimônio",tipo:"projeto",dems:[["fazer",17]]},
+  {nome:"Almoxarifado",tipo:"rotina",dems:[["and",3],["agu",18]]},
+  {nome:"Célula de recebimento e expedição",tipo:"rotina",dems:[["fazer",10],["and",2]]},
+  {nome:"Compras",tipo:"projeto",dems:[["fazer",22]]},
+ ]},
+ {n:4,nome:"Governança e Contratos",abrev:"HSE e terceiros",cor:"#9085e9",subs:[
+  {nome:"Contratos e contas fixas",tipo:"rotina",dems:[["and",2],["agu",22],["fazer",6]]},
+  {nome:"Contratação de serviços especializados",tipo:"rotina",dems:[["fazer",4],["ok",0],["fazer",16]]},
+  {nome:"Obras terceirizadas",tipo:"rotina",dems:[["val",1],["and",6]]},
+  {nome:"Chamados de emergência",tipo:"rotina",dems:[]},
+  {nome:"Brigada",tipo:"projeto",dems:[["and",4],["fazer",12]]},
+  {nome:"Gestão de documentações prediais",tipo:"rotina",dems:[]},
+  {nome:"Contas a pagar",tipo:"rotina",dems:[["and",1],["agu",19]]},
+ ]},
+ {n:5,nome:"Pessoas",abrev:"Processos de Gestão",cor:"#c98500",subs:[
+  {nome:"Ciclo de pessoal",tipo:"rotina",dems:[["and",1],["fazer",4],["agu",24],["fazer",4]]},
+  {nome:"Performance e disciplina",tipo:"projeto",dems:[["and",2],["fazer",8],["fazer",8],["fazer",8]]},
+  {nome:"Formação e expansão",tipo:"projeto",dems:[["fazer",14],["fazer",14]]},
+ ]},
+];
+
+/* Quais dimensões têm demanda atrasada — copiado da opção A para o farol
+   contar a mesma história. */
+const ATRASADAS_POR_DIM = {1:3, 2:3, 3:1, 4:2, 5:1};
+
+const ARVORE = DIMENSOES.map(dim=>{
+  const subs = dim.subs.map((s,i)=>{
+    const abertas = s.dems.filter(d=>d[0]!=="ok").length;
+    const semMov = abertas ? Math.min(...s.dems.filter(d=>d[0]!=="ok").map(d=>d[1])) : 0;
+    return {...s,id:dim.n+"."+(i+1),total:s.dems.length,abertas,semMov,
+      parada:abertas>0&&semMov>=PARADA_DIAS,vazia:s.dems.length===0};
+  });
+  return {...dim,id:String(dim.n),subs,
+    abertas:subs.reduce((a,s)=>a+s.abertas,0),
+    total:subs.reduce((a,s)=>a+s.total,0),
+    atras:ATRASADAS_POR_DIM[dim.n]||0};
+});
+
+/* ============================================================
+   HISTÓRICO SIMULADO — determinístico
+   Math.random() faria os números mudarem a cada F5, e um mockup
+   que muda sozinho não dá para comparar com o print de ontem.
+   ============================================================ */
+function rng(semente){
+  let s=0; for(const c of semente) s=(s*31+c.charCodeAt(0))>>>0;
+  return ()=>{ s=(s*1664525+1013904223)>>>0; return s/4294967296; };
+}
+
+const NSEM = 26; // gera sempre 26 e recorta; assim trocar o período não redesenha outra história
+
+/**
+ * Movimentos por semana de uma subdimensão.
+ *
+ * O fim da série obedece ao que a subdimensão JÁ diz nas outras opções:
+ * `semMov` dias sem movimento viram `semMov/7` semanas zeradas no fim. Sem
+ * essa amarra a grade contaria uma história e o selo "parada 21d" contaria
+ * outra — e quem olha as duas telas perde a confiança nas duas.
+ */
+function atividade(sub){
+  if(sub.vazia) return new Array(NSEM).fill(0);
+  const r = rng(sub.nome);
+  const mortas = Math.floor(sub.semMov/7);
+  const out = new Array(NSEM).fill(0);
+  for(let i=0;i<NSEM-mortas;i++){
+    const v = r();
+    out[i] = v>.72 ? 3 : v>.55 ? 2 : v>.32 ? 1 : 0;
+  }
+  return out;
+}
+
+/** Série de "em aberto" por semana, ancorada no número de hoje. */
+function serieAbertas(dim){
+  const r = rng("fila-"+dim.nome);
+  const out = new Array(NSEM);
+  out[NSEM-1] = dim.abertas;
+  /* Passo de média ZERO, de propósito: com viés positivo todas as cinco
+     dimensões cresciam e o farol ficava vermelho no quadro inteiro — um
+     indicador que nunca varia não é indicador. */
+  for(let i=NSEM-2;i>=0;i--){
+    const passo = Math.round((r()-.5)*3.2);
+    out[i] = Math.max(0, out[i+1]-passo);
+  }
+  return out;
+}
+
+const HIST = ARVORE.map(dim=>({
+  dim,
+  abertas: serieAbertas(dim),
+  subs: dim.subs.map(s=>({sub:s, sem: atividade(s)})),
+}));
+
+/** Datas do eixo — segunda-feira de cada semana, contando para trás. */
+const SEMANAS = Array.from({length:NSEM},(_,i)=>{
+  const d = new Date(HOJE);
+  d.setDate(d.getDate() - (NSEM-1-i)*7);
+  return d;
+});
+const fmt = d => String(d.getDate()).padStart(2,"0")+"/"+String(d.getMonth()+1).padStart(2,"0");
+
+/* ============================================================
+   ESTADO
+   ============================================================ */
+const estado = {sem:12, abertas:new Set(["1"])};
+const corte = () => NSEM - estado.sem;
+
+const esc=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+
+/* ============================================================
+   FAIXA "O QUE MUDOU"
+   ============================================================ */
+function pintaDelta(){
+  const c = corte();
+  const inicio = HIST.reduce((a,h)=>a+h.abertas[c],0);
+  const fim = HIST.reduce((a,h)=>a+h.abertas[NSEM-1],0);
+  const saldo = fim - inicio;
+
+  /* Entrou e saiu não são medidos aqui: são derivados do saldo e do volume de
+     movimento da grade, para os três números fecharem entre si. */
+  const movimento = HIST.reduce((a,h)=>a+h.subs.reduce((b,s)=>b+s.sem.slice(c).reduce((x,y)=>x+y,0),0),0);
+  const saiu = Math.max(0, Math.round(movimento*0.18) - Math.max(0,saldo));
+  const entrou = saiu + saldo;
+
+  const mortas = HIST.flatMap(h=>h.subs).filter(s=>s.sem.slice(c).every(v=>v===0)).length;
+
+  const sinal = saldo>0 ? "up" : saldo<0 ? "down" : "flat";
+  document.getElementById("deltaTit").textContent =
+    estado.sem===26 ? "O que mudou nos últimos 6 meses" : `O que mudou nas últimas ${estado.sem} semanas`;
+  document.getElementById("deltaSub").textContent =
+    `de ${fmt(SEMANAS[c])} a ${fmt(SEMANAS[NSEM-1])}`;
+
+  document.getElementById("kstrip").innerHTML = `
+    <div class="kcell"><div class="kv">${entrou}</div>
+      <div class="kl">demandas abertas no período</div></div>
+    <div class="kcell"><div class="kv" style="color:var(--ok)">${saiu}</div>
+      <div class="kl">demandas concluídas no período</div></div>
+    <div class="kcell"><div class="kv ${sinal}">${saldo>0?"+":""}${saldo}<i>${saldo>0?"a fila cresceu":saldo<0?"a fila encolheu":"empatou"}</i></div>
+      <div class="kl">saldo — de ${inicio} para ${fim} demandas em aberto</div></div>
+    <div class="kcell"><div class="kv" style="color:${mortas?"var(--warn)":"var(--ok)"}">${mortas}</div>
+      <div class="kl">subdimensões sem um único movimento no período</div></div>`;
+}
+
+/* ============================================================
+   GRÁFICO DE ÁREA EMPILHADA
+   ============================================================ */
+function pintaGrafico(){
+  const c = corte(), n = estado.sem;
+  const W = 1000, H = 230, PL = 34, PB = 22, PT = 8;
+  const gw = W - PL, gh = H - PB - PT;
+
+  const totais = Array.from({length:n},(_,i)=>HIST.reduce((a,h)=>a+h.abertas[c+i],0));
+  const max = Math.max(6, Math.ceil(Math.max(...totais)/5)*5);
+  const x = i => PL + (n===1 ? gw/2 : i*(gw/(n-1)));
+  const y = v => PT + gh - (v/max)*gh;
+
+  /* Empilha de baixo para cima na ordem das dimensões — ordem FIXA, para a
+     faixa de uma dimensão não trocar de lugar quando o período muda. */
+  const base = new Array(n).fill(0);
+  let areas = "";
+  HIST.forEach(h=>{
+    const topo = base.map((b,i)=>b + h.abertas[c+i]);
+    const cima = topo.map((v,i)=>`${x(i)},${y(v)}`).join(" ");
+    const baixo = base.map((v,i)=>`${x(n-1-i)},${y(base[n-1-i])}`).join(" ");
+    areas += `<polygon points="${cima} ${baixo}" fill="${h.dim.cor}" fill-opacity=".78"><title>${esc(h.dim.nome)}</title></polygon>`;
+    areas += `<polyline points="${cima}" fill="none" stroke="${h.dim.cor}" stroke-width="1.5"/>`;
+    for(let i=0;i<n;i++) base[i] = topo[i];
+  });
+
+  let grade = "";
+  for(let g=0;g<=4;g++){
+    const v = Math.round(max*g/4), yy = y(v);
+    grade += `<line x1="${PL}" y1="${yy}" x2="${W}" y2="${yy}" stroke="var(--grid)" stroke-width="1"/>`;
+    grade += `<text class="tipo-eixo" x="${PL-8}" y="${yy+3.5}" text-anchor="end">${v}</text>`;
+  }
+
+  /* No máximo 7 rótulos no eixo — mais que isso vira uma faixa cinza ilegível. */
+  const passo = Math.max(1, Math.ceil(n/7));
+  let eixo = "";
+  for(let i=0;i<n;i+=passo){
+    eixo += `<text class="tipo-eixo" x="${x(i)}" y="${H-6}" text-anchor="middle">${fmt(SEMANAS[c+i])}</text>`;
+  }
+  eixo += `<text class="tipo-eixo" x="${x(n-1)}" y="${H-6}" text-anchor="end" style="fill:var(--tx-2);font-weight:600">hoje</text>`;
+
+  document.getElementById("chart").innerHTML = grade + areas + eixo;
+  document.getElementById("chartLeg").innerHTML = HIST.map(h=>
+    `<span><i style="background:${h.dim.cor}"></i>${esc(h.dim.nome)}</span>`).join("");
+}
+
+/* ============================================================
+   BOLETIM + GRADE SEMANAL
+   ============================================================ */
+/* Quatro passos, não cinco: a atividade semanal vai de 0 a 3, e um quinto tom
+   na escala seria uma cor que nenhum quadrado jamais recebe. Os passos são
+   largos o bastante para se distinguirem lado a lado — a primeira rampa tinha
+   três azuis que ninguém separava a 13 pixels. */
+const NIVEL = ["#26262a","#274b6b","#3d84c0","#6cc0ff"];
+const NIVEL_CLARO = ["#e5e3db","#c3dcf2","#6ba7dd","#175f9f"];
+function corSq(v){
+  const claro = document.documentElement.dataset.theme === "light";
+  return (claro?NIVEL_CLARO:NIVEL)[Math.min(3, v)];
+}
+
+function spark(serie, cor){
+  const n = serie.length, W=92, H=26;
+  const max = Math.max(1, ...serie);
+  const pts = serie.map((v,i)=>`${(i/(n-1))*W},${H-(v/max)*(H-4)-2}`).join(" ");
+  return `<svg class="spark" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true">
+    <polyline points="${pts}" fill="none" stroke="${cor}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>
+  </svg>`;
+}
+
+/**
+ * O farol mede EVOLUÇÃO, não o retrato de hoje.
+ *
+ * A primeira versão acendia vermelho quando havia demanda atrasada — e como as
+ * cinco dimensões da Infra têm atrasada, o quadro inteiro ficava vermelho e a
+ * cor parou de informar. Além disso, "tem atrasada" é justamente o que as
+ * opções A e B já respondem. Aqui a pergunta é outra: a fila cresceu ou
+ * encolheu? As atrasadas continuam ditas, por escrito, na linha de baixo.
+ */
+function farol(h, c){
+  const saldo = h.abertas[NSEM-1] - h.abertas[c];
+  if(saldo > 0) return {cor:"var(--danger)", soft:"var(--danger-bg)", txt:`a fila cresceu ${saldo} no período`};
+  if(saldo < 0) return {cor:"var(--ok)", soft:"var(--ok-bg)", txt:`a fila encolheu ${Math.abs(saldo)} no período`};
+  return {cor:"var(--warn)", soft:"var(--warn-bg)", txt:"a fila terminou o período do mesmo tamanho"};
+}
+
+function pintaBoletim(){
+  const c = corte();
+  document.getElementById("boletim").innerHTML = HIST.map(h=>{
+    const ab = estado.abertas.has(h.dim.id);
+    const f = farol(h, c);
+    const saldo = h.abertas[NSEM-1] - h.abertas[c];
+    const mov = h.subs.reduce((a,s)=>a+s.sem.slice(c).reduce((x,y)=>x+y,0),0);
+    const mortas = h.subs.filter(s=>s.sem.slice(c).every(v=>v===0)).length;
+
+    return `<div class="bol ${ab?"aberta":""}" style="--c:${h.dim.cor}">
+      <button class="bolHead" data-dim="${h.dim.id}" aria-expanded="${ab}">
+        <svg class="chev" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 5l7 7-7 7"/></svg>
+        <span class="farol" style="background:${f.cor};--fs:${f.soft}"></span>
+        <span class="bolNome"><b>${esc(h.dim.nome)}</b>
+          <em>${f.txt} · ${h.dim.atras} atrasada${h.dim.atras===1?"":"s"} hoje · ${mortas} de ${h.subs.length} subdimensões sem movimento</em></span>
+        ${spark(h.abertas.slice(c), h.dim.cor)}
+        <span class="fluxo">
+          <span class="num som"><b>${mov}</b><em>movimentos</em></span>
+          <span class="num ${saldo>0?"pos":saldo<0?"neg":""}"><b>${saldo>0?"+":""}${saldo}</b><em>saldo</em></span>
+          <span class="num som"><b>${h.dim.abertas}</b><em>em aberto</em></span>
+        </span>
+      </button>
+      <div class="grade">
+        <div class="gradeCab">
+          <span class="lbl">Subdimensão</span>
+          <span style="width:${estado.sem*16}px;text-align:center">${fmt(SEMANAS[c])} → hoje</span>
+          <span style="width:132px;text-align:right" class="som">último movimento</span>
+        </div>
+        ${h.subs.map(s=>pintaLinha(s, c)).join("")}
+        <div class="escala">nenhum movimento
+          ${[0,1,2,3].map(v=>`<i style="background:${corSq(v)}"></i>`).join("")}
+        três ou mais na semana</div>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+function pintaLinha(s, c){
+  const sem = s.sem.slice(c);
+  const morta = sem.every(v=>v===0);
+  const ultimo = [...sem].reverse().findIndex(v=>v>0);
+  const res = s.sub.vazia
+    ? `<span class="gRes nunca">nunca recebeu demanda</span>`
+    : morta
+      ? `<span class="gRes morto">nada há ${estado.sem}+ semanas</span>`
+      : `<span class="gRes">${ultimo===0?"esta semana":`há ${ultimo} semana${ultimo>1?"s":""}`}</span>`;
+  return `<div class="gLinha">
+    <span class="gNome ${morta?"morta":""}">
+      <b title="${esc(s.sub.nome)}">${esc(s.sub.nome)}</b>
+      <span class="tipo ${s.sub.tipo}">${s.sub.tipo}</span>
+    </span>
+    <span class="semanas">${sem.map((v,i)=>
+      `<i class="sq" style="--n0:${corSq(v)};background:${corSq(v)}" title="${fmt(SEMANAS[c+i])}: ${v} movimento${v===1?"":"s"}"></i>`).join("")}</span>
+    ${res}
+  </div>`;
+}
+
+/* ============================================================
+   RENDER + EVENTOS
+   ============================================================ */
+function render(){ pintaDelta(); pintaGrafico(); pintaBoletim(); }
+
+document.querySelectorAll("#periodo .gb").forEach(b=>b.addEventListener("click",()=>{
+  document.querySelectorAll("#periodo .gb").forEach(x=>x.classList.toggle("on",x===b));
+  estado.sem = +b.dataset.sem;
+  render();
+}));
+
+document.getElementById("boletim").addEventListener("click", e=>{
+  const b = e.target.closest("[data-dim]");
+  if(!b) return;
+  const id = b.dataset.dim;
+  estado.abertas.has(id) ? estado.abertas.delete(id) : estado.abertas.add(id);
+  pintaBoletim();
+});
+
+document.getElementById("tema").addEventListener("click",()=>{
+  const r = document.documentElement;
+  r.dataset.theme = r.dataset.theme==="dark" ? "light" : "dark";
+  /* A escala da grade tem paleta própria por tema — sem este redesenho os
+     quadradinhos ficariam com a paleta do tema anterior. */
+  pintaBoletim();
+});
+
+render();
+</script>
+</body>
+</html>

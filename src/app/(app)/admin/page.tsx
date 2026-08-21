@@ -32,6 +32,20 @@ import {
 } from "@/lib/setores";
 import { setoresOferecidos } from "@/lib/setores-core";
 import {
+  addDimensao,
+  addSubdimensao,
+  deleteDimensao,
+  editarSubdimensao,
+  removerSubdimensao,
+  renomearDimensao,
+  subscribeDimensoes,
+  LIMITE_NOME_CHARS,
+  TIPO_LABEL,
+  corDaDimensao,
+  type Dimensao,
+  type TipoDeSub,
+} from "@/lib/dimensoes";
+import {
   salvarPermissoes,
   subscribePermissoes,
 } from "@/lib/permissoes";
@@ -66,6 +80,7 @@ import { Icon } from "@/components/icons";
 import { Avatar } from "@/components/avatar";
 import { OverlayPortal } from "@/components/overlay-portal";
 import { EmptyState } from "@/components/empty-state";
+import { Select } from "@/components/select";
 import { ErrorState } from "@/components/error-state";
 import { SkeletonRow } from "@/components/skeleton";
 import { useAsyncData } from "@/lib/use-async-data";
@@ -76,10 +91,12 @@ import styles from "./admin.module.css";
 const SEM_SETORES: SolicitanteSetor[] = [];
 const SEM_PESSOAS: Solicitante[] = [];
 const SEM_CADASTRO: Setor[] = [];
+const SEM_DIMENSOES: Dimensao[] = [];
 
 const SUBTABS = [
   { id: "usuarios", label: "Usuários", enabled: true },
   { id: "setores", label: "Setores", enabled: true },
+  { id: "dimensoes", label: "Dimensões", enabled: true },
   { id: "solicitantes", label: "Solicitantes", enabled: true },
   { id: "permissoes", label: "Permissões", enabled: true },
   { id: "emblemas", label: "Emblemas", enabled: true },
@@ -214,6 +231,8 @@ export default function AdminPage() {
       )}
 
       {tab === "setores" && <SetoresAdmin users={users} />}
+
+      {tab === "dimensoes" && <DimensoesAdmin setores={setoresDoApp} />}
 
       {tab === "solicitantes" && <SolicitantesAdmin />}
 
@@ -718,6 +737,335 @@ function SetoresAdmin({ users }: { users: UserProfile[] | null }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * O cadastro da ÁRVORE de um setor — dimensões e, dentro delas, subdimensões.
+ *
+ * POR QUE ELE É CADASTRO, e não uma constante em código: a árvore da Infra tem
+ * cinco dimensões e trinta e quatro subdimensões que mudam sozinhas, sem passar
+ * por ninguém que saiba abrir um PR. O AGENTS.md §4 já registrou essa lição a
+ * respeito de `DEFAULT_SECTORS` — "cadastro que só o build muda não é cadastro,
+ * é código com nome de dado".
+ *
+ * ELE MORA NO ADMIN, MAS A REGRA DO FIRESTORE É DE GESTOR DO SETOR. A diferença
+ * é de propósito e está escrita em `firestore.rules`: dimensão não é fronteira
+ * de visibilidade como setor de execução é, então quem responde pelo setor pode
+ * organizá-lo. A aba Admin é só onde a tela ficou; no dia em que um gestor
+ * precisar dela, ela se move sem tocar na regra.
+ */
+function DimensoesAdmin({ setores }: { setores: string[] }) {
+  /**
+   * O setor em uso é DERIVADO da escolha da pessoa mais a lista, e não
+   * sincronizado por efeito: `useSetoresDaPessoa` começa no piso e vira o
+   * cadastro quando ele responde, e um `setSetor` dentro de efeito custaria um
+   * render a mais a cada resposta.
+   */
+  const [escolhido, setEscolhido] = useState("");
+  const setor =
+    escolhido && setores.includes(escolhido) ? escolhido : (setores[0] ?? "");
+
+  const [novo, setNovo] = useState("");
+  const [salvando, setSalvando] = useState(false);
+  const [falha, setFalha] = useState<string | null>(null);
+  const [aberta, setAberta] = useState<string | null>(null);
+
+  /**
+   * `useAsyncData` e não um `useState` + efeito: ele já distingue os três
+   * estados que esta tela precisa separar — "ainda não respondeu" (esqueleto),
+   * "respondeu e está vazio" (o setor não tem árvore) e "falhou" (com o botão
+   * de tentar de novo). A chave é o setor, então trocar de setor volta ao
+   * esqueleto sem nenhum `setState` dentro de efeito para zerar a lista.
+   */
+  const fDims = useAsyncData<Dimensao>(setor, (onData, onErro) => {
+    if (!setor) {
+      onData([]);
+      return () => {};
+    }
+    return subscribeDimensoes(setor, onData, onErro);
+  });
+  const dims = fDims.data;
+  const erro = fDims.erro;
+  const lista = dims ?? SEM_DIMENSOES;
+
+  async function tentar(oQue: string, acao: () => Promise<unknown>) {
+    setFalha(null);
+    try {
+      await acao();
+    } catch (e) {
+      setFalha(fraseDeFalha(codigoDe(e), oQue));
+    }
+  }
+
+  async function adicionar() {
+    const n = novo.trim();
+    if (!n || salvando || !setor) return;
+    setSalvando(true);
+    await tentar("cadastrar a dimensão", async () => {
+      await addDimensao(setor, n, lista);
+      setNovo("");
+    });
+    setSalvando(false);
+  }
+
+  return (
+    <div className={styles.permWrap}>
+      <p className={styles.permIntro}>
+        <strong>Dimensão</strong> é o antigo &ldquo;pilar&rdquo;: a divisão do
+        trabalho de um setor. Dentro dela vêm as <strong>subdimensões</strong>,
+        que podem ser um <strong>projeto</strong> (tem fim, e por isso tem
+        porcentagem de conclusão) ou uma <strong>rotina</strong> (não termina — é
+        uma caixa que abriga trabalhos ao longo do tempo). É esta árvore que a aba{" "}
+        <strong>Dimensões</strong> desenha.
+      </p>
+      <p className={styles.permIntro}>
+        Remover daqui <strong>não apaga demanda nenhuma</strong>: as que
+        apontavam para a gaveta removida voltam a aparecer na árvore, em
+        &ldquo;Sem classificação&rdquo;.
+      </p>
+
+      <div className={styles.dimSetor}>
+        <label className={styles.dimSetorLbl}>Setor de execução</label>
+        <Select
+          value={setor}
+          options={setores.map((s) => ({ value: s, label: s }))}
+          onChange={setEscolhido}
+          ariaLabel="Setor de execução"
+        />
+      </div>
+
+      <div className={styles.solCol}>
+        <div className={styles.solHead}>Dimensões de {setor || "—"}</div>
+        <div className={styles.solAdd}>
+          <input
+            className={styles.input}
+            placeholder="Ex.: Manutenção e Oficina"
+            maxLength={LIMITE_NOME_CHARS}
+            value={novo}
+            onChange={(e) => {
+              setNovo(e.target.value);
+              setFalha(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") adicionar();
+            }}
+          />
+          <button
+            className={styles.btnPrimary}
+            onClick={adicionar}
+            disabled={salvando || !novo.trim() || !setor}
+          >
+            <Icon name="plus" size={15} />{" "}
+            {salvando ? "Cadastrando…" : "Adicionar"}
+          </button>
+        </div>
+
+        {falha && <div className={styles.err}>{falha}</div>}
+
+        {erro ? (
+          <ErrorState
+            error={erro}
+            size="compact"
+            onRetry={fDims.tentarDeNovo}
+          />
+        ) : dims === undefined ? (
+          <SkeletonRow rows={4} texto="Carregando a árvore…" />
+        ) : lista.length === 0 ? (
+          <EmptyState
+            size="compact"
+            icon="pasta"
+            title="Este setor ainda não tem árvore"
+            description="Cadastre acima a primeira dimensão. Enquanto não houver nenhuma, a aba Dimensões mostra todas as demandas do setor em “Sem classificação”, e o formulário da demanda não pergunta nada."
+          />
+        ) : (
+          <div className={styles.dimLista}>
+            {lista.map((d, i) => (
+              <DimensaoItem
+                key={d.id}
+                dim={d}
+                cor={corDaDimensao(d.ordem || i)}
+                aberta={aberta === d.id}
+                onAbrir={() => setAberta(aberta === d.id ? null : d.id)}
+                onErro={setFalha}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DimensaoItem({
+  dim,
+  cor,
+  aberta,
+  onAbrir,
+  onErro,
+}: {
+  dim: Dimensao;
+  cor: string;
+  aberta: boolean;
+  onAbrir: () => void;
+  onErro: (f: string | null) => void;
+}) {
+  const [nova, setNova] = useState("");
+  const [tipo, setTipo] = useState<TipoDeSub>("rotina");
+  const [salvando, setSalvando] = useState(false);
+
+  async function tentar(oQue: string, acao: () => Promise<unknown>) {
+    onErro(null);
+    try {
+      await acao();
+    } catch (e) {
+      onErro(fraseDeFalha(codigoDe(e), oQue));
+    }
+  }
+
+  async function addSub() {
+    const n = nova.trim();
+    if (!n || salvando) return;
+    setSalvando(true);
+    await tentar("cadastrar a subdimensão", async () => {
+      await addSubdimensao(dim, n, tipo);
+      setNova("");
+    });
+    setSalvando(false);
+  }
+
+  return (
+    <div className={styles.dimItem} style={{ borderLeftColor: cor }}>
+      <div className={styles.dimHead}>
+        <button
+          className={`${styles.dimNome} ${aberta ? styles.dimAberta : ""}`}
+          onClick={onAbrir}
+          aria-expanded={aberta}
+        >
+          <Icon name="chevronRight" size={13} />
+          <strong>{dim.nome}</strong>
+          <span className={styles.dimQtd}>
+            {dim.subs.length === 0
+              ? "sem subdimensões"
+              : `${dim.subs.length} ${dim.subs.length === 1 ? "subdimensão" : "subdimensões"}`}
+          </span>
+        </button>
+        <button
+          className={styles.iconBtn}
+          title="Renomear a dimensão"
+          onClick={() => {
+            // `prompt`, como o `confirm` das outras remoções desta tela: é ação
+            // rara, de administrador, e um formulário embutido em cada linha
+            // encheria a tela de campos que quase nunca são usados.
+            const n = prompt("Novo nome da dimensão:", dim.nome);
+            if (n && n.trim() && n.trim() !== dim.nome) {
+              tentar("renomear a dimensão", () => renomearDimensao(dim.id, n));
+            }
+          }}
+        >
+          <Icon name="edit" size={14} />
+        </button>
+        <button
+          className={styles.iconBtn}
+          title="Remover do cadastro"
+          onClick={() => {
+            const quantas = dim.subs.length;
+            const comSubs = quantas
+              ? ` e as ${quantas} subdimensões dela`
+              : "";
+            if (
+              !confirm(
+                `Remover a dimensão "${dim.nome}"${comSubs}?\n\nNenhuma demanda é apagada: as que estavam aqui voltam a aparecer em "Sem classificação", na aba Dimensões.`,
+              )
+            ) {
+              return;
+            }
+            tentar("remover a dimensão", () => deleteDimensao(dim.id));
+          }}
+        >
+          <Icon name="trash" size={14} />
+        </button>
+      </div>
+
+      {aberta && (
+        <div className={styles.subWrap}>
+          {dim.subs.map((sub) => (
+            <div key={sub.id} className={styles.subItem}>
+              <span className={styles.subNome}>{sub.nome}</span>
+              {/* O tipo troca no clique, sem menu: são dois valores, e um
+                  seletor de duas opções por linha custaria mais tela do que o
+                  próprio nome da subdimensão. */}
+              <button
+                className={`${styles.subTipo} ${sub.tipo === "projeto" ? styles.subProjeto : ""}`}
+                title="Alternar entre projeto e rotina"
+                onClick={() =>
+                  tentar("mudar o tipo da subdimensão", () =>
+                    editarSubdimensao(dim, sub.id, {
+                      tipo: sub.tipo === "projeto" ? "rotina" : "projeto",
+                    }),
+                  )
+                }
+              >
+                {TIPO_LABEL[sub.tipo]}
+              </button>
+              <button
+                className={styles.iconBtn}
+                title="Renomear a subdimensão"
+                onClick={() => {
+                  const n = prompt("Novo nome da subdimensão:", sub.nome);
+                  if (n && n.trim() && n.trim() !== sub.nome) {
+                    tentar("renomear a subdimensão", () =>
+                      editarSubdimensao(dim, sub.id, { nome: n }),
+                    );
+                  }
+                }}
+              >
+                <Icon name="edit" size={13} />
+              </button>
+              <button
+                className={styles.iconBtn}
+                title="Remover a subdimensão"
+                onClick={() => {
+                  if (!confirm(`Remover a subdimensão "${sub.nome}"?`)) return;
+                  tentar("remover a subdimensão", () =>
+                    removerSubdimensao(dim, sub.id),
+                  );
+                }}
+              >
+                <Icon name="trash" size={13} />
+              </button>
+            </div>
+          ))}
+
+          <div className={styles.subAdd}>
+            <input
+              className={styles.input}
+              placeholder="Nova subdimensão"
+              maxLength={LIMITE_NOME_CHARS}
+              value={nova}
+              onChange={(e) => setNova(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") addSub();
+              }}
+            />
+            <button
+              className={`${styles.subTipo} ${tipo === "projeto" ? styles.subProjeto : ""}`}
+              title="A nova subdimensão entra como projeto ou como rotina"
+              onClick={() => setTipo(tipo === "projeto" ? "rotina" : "projeto")}
+            >
+              {TIPO_LABEL[tipo]}
+            </button>
+            <button
+              className={styles.btnPrimary}
+              onClick={addSub}
+              disabled={salvando || !nova.trim()}
+            >
+              <Icon name="plus" size={14} /> Incluir
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

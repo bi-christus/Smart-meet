@@ -1,0 +1,1037 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dimensões — Smart Meeting (mockup)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   Tokens copiados de src/app/globals.css — o mockup precisa ser
+   avaliado nas MESMAS cores do app, senão a avaliação é de outra
+   tela. Só o que esta aba usa foi trazido.
+   ============================================================ */
+:root, [data-theme="dark"] {
+  --brand:#ff6a2b; --brand-hover:#ff824d; --brand-soft:rgba(255,106,43,.16); --brand-line:rgba(255,106,43,.42);
+  --accent:#ff8a54; --accent-2:#ffb089;
+  --bg:#0d0d0f; --s1:#151517; --s2:#1c1c1f; --s3:#26262a; --s4:#323238;
+  --line:#2b2b30; --line-soft:#202024;
+  --tx:#f3f2ef; --tx-2:#b2b1ab; --tx-3:#78776f;
+  --topbar-bg:#151517; --topbar-line:#2b2b30; --topbar-fg:#b2b1ab; --topbar-fg-strong:#fff;
+  --ok:#34d399; --ok-bg:rgba(52,211,153,.15); --ok-tx:#5fe0b0;
+  --warn:#f5b13d; --warn-bg:rgba(245,177,61,.15); --warn-tx:#f7c46b;
+  --danger:#fb7185; --danger-bg:rgba(251,113,133,.15); --danger-tx:#ff9d9d;
+  --info:#54b8ff; --info-bg:rgba(84,184,255,.14); --info-tx:#bfe3ff;
+  --susp:#c084fc; --susp-bg:rgba(192,132,252,.16); --susp-tx:#e5c8ff;
+  --scroll:#33333a; --r:10px; --r-lg:14px; --r-sm:7px;
+  --shadow:0 12px 34px rgba(0,0,0,.55);
+  --card:#1c1c1f; --field:#151517;
+  color-scheme:dark;
+}
+[data-theme="light"] {
+  --brand:#d24e12; --brand-hover:#b23f0c; --brand-soft:rgba(210,78,18,.1); --brand-line:rgba(210,78,18,.3);
+  --accent:#c2410c; --accent-2:#9a3412;
+  --bg:#f1f0ec; --s1:#f6f5f1; --s2:#fff; --s3:#efeee9; --s4:#e5e3db;
+  --line:#e5e3db; --line-soft:#edece6;
+  --tx:#1a1a17; --tx-2:#57564e; --tx-3:#9a988e;
+  --topbar-bg:#fff; --topbar-line:#e6e5df; --topbar-fg:#6b6a62; --topbar-fg-strong:#1a1a17;
+  --ok:#16a34a; --ok-bg:rgba(22,163,74,.12); --ok-tx:#15803d;
+  --warn:#d97706; --warn-bg:rgba(217,119,6,.13); --warn-tx:#b45309;
+  --danger:#dc2626; --danger-bg:rgba(220,38,38,.1); --danger-tx:#b91c1c;
+  --info:#2563eb; --info-bg:rgba(37,99,235,.1); --info-tx:#1d4ed8;
+  --susp:#7c3aed; --susp-bg:rgba(124,58,237,.1); --susp-tx:#6d28d9;
+  --scroll:#d5d3cb; --shadow:0 10px 30px rgba(26,26,23,.12);
+  --card:#fff; --field:#f6f5f1;
+  color-scheme:light;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  min-height:100vh;background:var(--bg);color:var(--tx);
+  font-family:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;font-size:14px;
+  -webkit-font-smoothing:antialiased;transition:background .2s,color .2s;
+}
+::-webkit-scrollbar{width:11px;height:11px}
+::-webkit-scrollbar-thumb{background:var(--scroll);border-radius:9px;border:3px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-track{background:transparent}
+
+/* ---------- topbar (réplica do app-shell) ---------- */
+.topbar{
+  height:56px;display:flex;align-items:center;gap:16px;padding:0 18px;
+  background:var(--topbar-bg);border-bottom:1px solid var(--topbar-line);
+  position:sticky;top:0;z-index:20;
+}
+.brand{display:flex;align-items:center;gap:10px;color:var(--topbar-fg-strong);text-decoration:none;flex-shrink:0}
+.brandMark{
+  width:30px;height:30px;border-radius:9px;display:grid;place-items:center;flex-shrink:0;
+  background:linear-gradient(140deg,var(--brand),var(--brand-hover));color:#fff;
+  font-weight:700;font-size:13px;letter-spacing:-.5px;
+}
+.brand b{font-size:13.5px;font-weight:700;display:block;line-height:1.15}
+.brand em{font-style:normal;font-size:10.5px;color:var(--topbar-fg);letter-spacing:.3px}
+@media(max-width:1180px){.brand .bt{display:none}}
+.nav{display:flex;align-items:center;gap:2px;overflow:auto;flex:1;scrollbar-width:none}
+.nav::-webkit-scrollbar{display:none}
+.navBtn{
+  display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 11px;border-radius:9px;
+  color:var(--topbar-fg);text-decoration:none;font-size:12.5px;font-weight:500;white-space:nowrap;
+  transition:background .18s,color .18s;
+}
+.navBtn:hover{background:var(--s3);color:var(--topbar-fg-strong)}
+.navBtn.on{background:var(--brand-soft);color:var(--brand);font-weight:600}
+.navBtn.novo::after{
+  content:"novo";font-size:8.5px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;
+  background:var(--brand);color:#fff;border-radius:4px;padding:1px 4px;margin-left:1px;
+}
+.uChip{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.uAv{width:30px;height:30px;border-radius:50%;background:#7c5cff;color:#fff;display:grid;place-items:center;font-size:11.5px;font-weight:700}
+.uName{font-size:12.5px;font-weight:600;line-height:1.2;color:var(--topbar-fg-strong)}
+.uRole{font-size:10.5px;color:var(--topbar-fg)}
+@media(max-width:900px){.uMeta{display:none}}
+.iconBtn{
+  width:32px;height:32px;border-radius:9px;border:1px solid var(--line);background:transparent;
+  color:var(--tx-2);cursor:pointer;display:grid;place-items:center;transition:color .18s,border-color .18s;flex-shrink:0;
+}
+.iconBtn:hover{color:var(--accent);border-color:var(--brand-line)}
+
+/* ---------- página ---------- */
+.page{max-width:1420px;margin:0 auto;padding:20px 22px 70px}
+.head{display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap}
+.headMain{flex:1;min-width:260px}
+.headMain h1{font-family:"IBM Plex Serif",serif;font-size:24px;font-weight:600;letter-spacing:.1px}
+.headMain p{font-size:12.5px;color:var(--tx-3);margin-top:5px;max-width:680px;line-height:1.55}
+.sel{
+  height:36px;padding:0 32px 0 11px;border:1px solid var(--line);background:var(--field);color:var(--tx);
+  border-radius:9px;font-family:inherit;font-size:13px;cursor:pointer;min-width:200px;appearance:none;
+}
+.selWrap{position:relative}
+.selWrap::after{
+  content:"";position:absolute;right:12px;bottom:14px;width:7px;height:7px;pointer-events:none;
+  border-right:2px solid var(--tx-3);border-bottom:2px solid var(--tx-3);transform:rotate(45deg);
+}
+.selLbl{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:var(--tx-3);margin-bottom:6px;font-weight:700}
+
+/* ---------- lentes ---------- */
+.lentes{display:flex;gap:5px;margin-top:20px;padding:4px;background:var(--s1);border:1px solid var(--line);border-radius:12px;width:fit-content;max-width:100%;overflow:auto}
+.lente{
+  display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 15px;border:0;border-radius:9px;
+  background:transparent;color:var(--tx-2);font-family:inherit;font-size:13px;font-weight:500;cursor:pointer;
+  white-space:nowrap;transition:background .18s,color .18s;
+}
+.lente:hover{color:var(--tx)}
+.lente.on{background:var(--brand);color:#fff;font-weight:600}
+.lenteHint{font-size:12.5px;color:var(--tx-3);margin-top:10px;line-height:1.55;max-width:760px}
+.lenteHint b{color:var(--tx-2);font-weight:600}
+
+/* ---------- filtros ---------- */
+.filtros{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:16px}
+.busca{position:relative;flex:1;min-width:240px;max-width:430px}
+.busca > svg{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--tx-3);pointer-events:none}
+.busca input{
+  width:100%;height:36px;padding:0 34px;border:1px solid var(--line);background:var(--field);
+  color:var(--tx);border-radius:9px;font-family:inherit;font-size:13px;transition:border-color .18s;
+}
+.busca input:focus{outline:none;border-color:var(--brand-line)}
+.busca input::placeholder{color:var(--tx-3)}
+/* O "x" nativo do type=search vinha junto do nosso e a busca ficava com dois. */
+.busca input::-webkit-search-cancel-button{-webkit-appearance:none;appearance:none}
+.buscaX{position:absolute;right:6px;top:50%;transform:translateY(-50%);border:0;background:transparent;color:var(--tx-3);cursor:pointer;width:24px;height:24px;border-radius:6px;display:none;place-items:center}
+.buscaX.on{display:grid}
+.chip{
+  display:inline-flex;align-items:center;gap:6px;height:33px;padding:0 12px;border:1px solid var(--line);
+  background:var(--s1);border-radius:9px;color:var(--tx-2);font-family:inherit;font-size:12.5px;cursor:pointer;
+  transition:color .18s,border-color .18s,background .18s;
+}
+.chip:hover{color:var(--accent);border-color:var(--brand-line)}
+.chip.on{background:var(--brand-soft);border-color:var(--brand-line);color:var(--brand);font-weight:600}
+.contagem{margin-left:auto;font-size:11.5px;color:var(--tx-3)}
+
+/* ---------- faixa de indicadores ---------- */
+.kstrip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:16px}
+@media(max-width:820px){.kstrip{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.kcell{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);padding:14px 16px}
+.kcell .kv{font-family:"IBM Plex Serif",serif;font-size:27px;font-weight:600;line-height:1.1;letter-spacing:-.5px}
+.kcell .kl{font-size:11.5px;color:var(--tx-3);margin-top:5px;line-height:1.45}
+.kcell.alerta .kv{color:var(--danger)}
+.kcell.aviso .kv{color:var(--warn)}
+.kcell.bom .kv{color:var(--ok)}
+
+/* ---------- vistas ---------- */
+.vista{margin-top:22px;animation:fade .18s ease both}
+@keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+[hidden]{display:none !important}
+
+/* ---------- árvore ---------- */
+.dim{
+  background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);
+  margin-bottom:12px;overflow:hidden;position:relative;
+}
+.dim::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--c);z-index:1}
+.dimHead{
+  display:flex;align-items:center;gap:13px;padding:15px 18px 15px 22px;cursor:pointer;
+  background:transparent;border:0;width:100%;text-align:left;font-family:inherit;color:inherit;
+  transition:background .18s;
+}
+.dimHead:hover{background:var(--s3)}
+.dimNum{
+  width:31px;height:31px;border-radius:9px;flex-shrink:0;display:grid;place-items:center;
+  background:var(--cSoft);color:var(--c);font-weight:700;font-size:13px;
+}
+.dimNome{flex:1;min-width:0}
+.dimNome b{display:block;font-size:15px;font-weight:600;letter-spacing:.1px}
+.dimNome em{display:block;font-style:normal;font-size:11.5px;color:var(--tx-3);margin-top:3px}
+.dimMeta{display:flex;align-items:center;gap:18px;flex-shrink:0}
+@media(max-width:820px){.dimMeta .som{display:none}}
+.mini{text-align:right}
+.mini b{display:block;font-size:16px;font-weight:600;font-family:"IBM Plex Serif",serif;line-height:1.1}
+.mini em{display:block;font-style:normal;font-size:9.5px;color:var(--tx-3);text-transform:uppercase;letter-spacing:.5px;margin-top:3px}
+.mini.d b{color:var(--danger)}
+.mini.w b{color:var(--warn)}
+.chev{color:var(--tx-3);transition:transform .18s ease;flex-shrink:0}
+.dim.aberta > .dimHead .chev{transform:rotate(90deg)}
+
+.barra{display:flex;height:6px;border-radius:99px;overflow:hidden;background:var(--s4);width:132px;flex-shrink:0}
+.barra i{display:block;height:100%}
+@media(max-width:1000px){.barra{width:84px}}
+
+.subs{display:none;border-top:1px solid var(--line-soft);background:var(--s1)}
+.dim.aberta > .subs{display:block;animation:abre .18s ease both}
+@keyframes abre{from{opacity:0}to{opacity:1}}
+
+.sub{border-bottom:1px solid var(--line-soft)}
+.sub:last-child{border-bottom:0}
+.subHead{
+  display:flex;align-items:center;gap:12px;padding:11px 18px 11px 48px;cursor:pointer;width:100%;
+  background:transparent;border:0;text-align:left;font-family:inherit;color:inherit;transition:background .18s;
+}
+.subHead:hover{background:var(--s3)}
+.subNome{flex:1;min-width:0;display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.subNome b{font-size:13.5px;font-weight:500}
+.subNome mark{background:var(--brand-soft);color:var(--brand);border-radius:3px;padding:0 2px}
+.tipo{font-size:9px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;padding:3px 6px;border-radius:5px}
+.tipo.projeto{background:var(--susp-bg);color:var(--susp-tx)}
+.tipo.rotina{background:var(--s3);color:var(--tx-3)}
+[data-theme="light"] .tipo.rotina{color:var(--tx-2)}
+.selo{font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:99px;display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.selo.atras{background:var(--danger-bg);color:var(--danger-tx)}
+.selo.parada{background:var(--warn-bg);color:var(--warn-tx)}
+.selo.vazia{background:transparent;color:var(--tx-3);border:1px dashed var(--line)}
+.selo.ok{background:var(--ok-bg);color:var(--ok-tx)}
+.pct{font-size:11.5px;color:var(--tx-3);width:36px;text-align:right;flex-shrink:0;font-variant-numeric:tabular-nums}
+
+.dems{display:none;padding:2px 18px 13px 48px}
+.sub.aberta .dems{display:block;animation:abre .18s ease both}
+.dem{
+  display:flex;align-items:center;gap:11px;padding:9px 12px;border-radius:var(--r);
+  border:1px solid var(--line-soft);background:var(--card);margin-top:7px;transition:border-color .18s;cursor:pointer;
+}
+.dem:hover{border-color:var(--brand-line)}
+.prio{width:3px;height:17px;border-radius:99px;flex-shrink:0}
+.demT{flex:1;min-width:0;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.demT mark{background:var(--brand-soft);color:var(--brand);border-radius:3px;padding:0 2px}
+.demMeta{display:flex;align-items:center;gap:10px;flex-shrink:0}
+@media(max-width:820px){.demMeta .som{display:none}}
+.st{font-size:10.5px;font-weight:600;padding:2px 9px;border-radius:99px;white-space:nowrap}
+.av{width:23px;height:23px;border-radius:50%;display:grid;place-items:center;font-size:9.5px;font-weight:700;color:#fff;flex-shrink:0}
+.av.vago{background:transparent;border:1px dashed var(--line);color:var(--tx-3);font-weight:400}
+.prazo{font-size:11.5px;color:var(--tx-3);white-space:nowrap;font-variant-numeric:tabular-nums;width:86px;text-align:right}
+.prazo.late{color:var(--danger-tx);font-weight:600}
+
+.vazio{
+  margin-top:9px;padding:15px 16px;border:1px dashed var(--line);border-radius:var(--r);
+  display:flex;align-items:center;gap:13px;color:var(--tx-3);font-size:12.5px;line-height:1.5;
+}
+.vazio b{color:var(--tx-2);font-weight:600;display:block;font-size:13px;margin-bottom:2px}
+.btnMini{
+  height:31px;padding:0 13px;border-radius:8px;border:1px solid var(--brand-line);background:var(--brand-soft);
+  color:var(--brand);font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;margin-left:auto;
+  transition:background .18s,color .18s;
+}
+.btnMini:hover{background:var(--brand);color:#fff}
+
+/* ---------- cobertura (mosaico) ---------- */
+.legenda{display:flex;gap:18px;flex-wrap:wrap;margin-bottom:20px;font-size:11.5px;color:var(--tx-3)}
+.legenda span{display:inline-flex;align-items:center;gap:7px}
+.legenda i{width:10px;height:10px;border-radius:3px;display:block}
+.cobGrupo{margin-bottom:22px}
+.cobTit{display:flex;align-items:center;gap:9px;margin-bottom:11px}
+.cobTit i{width:9px;height:9px;border-radius:3px;background:var(--c);display:block;flex-shrink:0}
+.cobTit b{font-size:13.5px;font-weight:600}
+.cobTit em{font-style:normal;font-size:11.5px;color:var(--tx-3)}
+.cobGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(186px,1fr));gap:9px}
+.tile{
+  border-radius:var(--r);padding:12px 13px 14px;border:1px solid var(--line);background:var(--card);
+  cursor:pointer;transition:transform .18s ease,border-color .18s;position:relative;overflow:hidden;
+}
+.tile:hover{transform:translateY(-2px);border-color:var(--brand-line)}
+.tile::after{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;background:var(--e)}
+.tile b{display:block;font-size:12.5px;font-weight:600;line-height:1.35;margin-bottom:8px}
+.tile .tl{font-size:11px;color:var(--tx-3);line-height:1.5}
+.tile .tl strong{color:var(--e);font-weight:600}
+.tile.v{border-style:dashed;background:transparent}
+.tile.v b{color:var(--tx-3);font-weight:500}
+.tile.v::after{display:none}
+
+/* ---------- atenção ---------- */
+.grupoAt{margin-bottom:24px}
+.grupoAtH{display:flex;align-items:center;gap:9px;margin-bottom:11px;flex-wrap:wrap}
+.grupoAtH b{font-size:13.5px;font-weight:600}
+.grupoAtH .cnt{font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;background:var(--s3);color:var(--tx-2)}
+.grupoAtH em{font-style:normal;font-size:11.5px;color:var(--tx-3);margin-left:auto}
+.linha{
+  display:flex;align-items:center;gap:13px;padding:12px 15px;background:var(--card);border:1px solid var(--line);
+  border-radius:var(--r);margin-bottom:7px;cursor:pointer;transition:border-color .18s;
+}
+.linha:hover{border-color:var(--brand-line)}
+.linhaMain{flex:1;min-width:0}
+.trilha{font-size:10.5px;color:var(--tx-3);letter-spacing:.2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.trilha b{color:var(--tx-2);font-weight:600}
+.tt{font-size:13.5px;font-weight:500;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gasto{font-family:"IBM Plex Serif",serif;font-size:20px;font-weight:600;line-height:1;flex-shrink:0;text-align:right}
+.gasto em{display:block;font-style:normal;font-family:"IBM Plex Sans",sans-serif;font-size:9.5px;font-weight:400;color:var(--tx-3);text-transform:uppercase;letter-spacing:.5px;margin-top:4px}
+
+/* ---------- notas ---------- */
+.notaMock{
+  display:flex;gap:12px;align-items:flex-start;padding:13px 16px;border-radius:var(--r);
+  background:var(--brand-soft);border:1px solid var(--brand-line);font-size:12.5px;line-height:1.6;color:var(--tx-2);margin-top:18px;
+}
+.notaMock b{color:var(--brand)}
+.notas{margin-top:34px;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--s1);overflow:hidden}
+.notas summary{padding:14px 18px;cursor:pointer;font-size:13px;font-weight:600;color:var(--tx-2);list-style:none;display:flex;align-items:center;gap:9px}
+.notas summary::-webkit-details-marker{display:none}
+.notas summary::before{content:"▸";color:var(--brand);transition:transform .18s;display:inline-block}
+.notas[open] summary::before{transform:rotate(90deg)}
+.notasBody{padding:0 18px 20px;font-size:13px;line-height:1.7;color:var(--tx-2);max-width:860px}
+.notasBody h4{font-size:11.5px;text-transform:uppercase;letter-spacing:.8px;color:var(--brand);margin:18px 0 7px;font-weight:700}
+.notasBody ul{padding-left:19px}
+.notasBody li{margin-bottom:6px}
+.notasBody code{font-family:"IBM Plex Mono",monospace;font-size:12px;background:var(--s3);padding:1px 5px;border-radius:5px}
+.notasBody strong{color:var(--tx)}
+
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important}
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <a class="brand" href="#">
+    <span class="brandMark">SM</span>
+    <span class="bt"><b>Smart Meeting</b><em>Rede Christus</em></span>
+  </a>
+  <nav class="nav">
+    <a class="navBtn" href="#">Início</a>
+    <a class="navBtn" href="#">Reuniões</a>
+    <a class="navBtn" href="#">Relatórios IA</a>
+    <a class="navBtn" href="#">Kanban</a>
+    <a class="navBtn" href="#">Recorrências</a>
+    <a class="navBtn" href="#">Dashboard</a>
+    <a class="navBtn" href="#">Cronograma</a>
+    <a class="navBtn on novo" href="#">Dimensões</a>
+    <a class="navBtn" href="#">Rank</a>
+    <a class="navBtn" href="#">Admin</a>
+  </nav>
+  <button class="iconBtn" id="tema" title="Alternar tema" aria-label="Alternar tema claro e escuro">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/></svg>
+  </button>
+  <div class="uChip">
+    <span class="uAv">MB</span>
+    <span class="uMeta">
+      <span class="uName">Murilo</span><br>
+      <span class="uRole">Direção</span>
+    </span>
+  </div>
+</header>
+
+<main class="page">
+
+  <div class="head">
+    <div class="headMain">
+      <h1>Dimensões</h1>
+      <p>A operação vista pela estrutura, e não pelo quadro. Cada dimensão abre nas suas
+         subdimensões, e cada subdimensão mostra o que está andando dentro dela — inclusive
+         quando não há nada andando.</p>
+    </div>
+    <div class="selWrap">
+      <label class="selLbl" for="setor">Setor de execução</label>
+      <select class="sel" id="setor">
+        <option>Infraestrutura</option>
+        <option>Cantinas</option>
+        <option>Compras</option>
+        <option>Almoxarifado</option>
+        <option>CVU</option>
+        <option>B.I.</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="lentes" role="tablist">
+    <button class="lente on" data-vista="arvore" role="tab">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M8 12h12M12 18h8"/></svg>
+      Árvore
+    </button>
+    <button class="lente" data-vista="cobertura" role="tab">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+      Cobertura
+    </button>
+    <button class="lente" data-vista="atencao" role="tab">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 9v4M12 17h.01M10.3 3.9L2.4 17.5A1.9 1.9 0 004 20.4h16a1.9 1.9 0 001.6-2.9L13.7 3.9a1.9 1.9 0 00-3.4 0z"/></svg>
+      Atenção
+    </button>
+  </div>
+  <p class="lenteHint" id="hint"></p>
+
+  <div class="filtros">
+    <div class="busca">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.2-3.2"/></svg>
+      <input id="q" type="search" placeholder="Procurar dimensão, subdimensão ou demanda… (tente: EPI)" autocomplete="off">
+      <button class="buscaX" id="qx" aria-label="Limpar busca">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <button class="chip" data-filtro="atrasadas">Só com atrasada</button>
+    <button class="chip" data-filtro="paradas">Só paradas (15d+)</button>
+    <button class="chip" data-filtro="vazias">Só sem demanda</button>
+    <button class="chip" data-filtro="projetos">Só projetos</button>
+    <span class="contagem" id="contagem"></span>
+  </div>
+
+  <div class="kstrip" id="kstrip"></div>
+
+  <section class="vista" id="v-arvore"></section>
+  <section class="vista" id="v-cobertura" hidden></section>
+  <section class="vista" id="v-atencao" hidden></section>
+
+  <div class="notaMock">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="flex-shrink:0;margin-top:1px;color:var(--brand)"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
+    <div><b>Isto é um mockup.</b> Os dados são a árvore real do documento “Pilares Infra abril_26”,
+      com demandas de exemplo por cima. Nada aqui grava no banco — os cliques só navegam.</div>
+  </div>
+
+  <details class="notas">
+    <summary>Notas do desenho — o que decidi e o que ainda é pergunta</summary>
+    <div class="notasBody">
+      <h4>O que a ata pediu, e onde está aqui</h4>
+      <ul>
+        <li><strong>“Duas categorias acima do setor”</strong> — dimensão e subdimensão. São os dois níveis da árvore.</li>
+        <li><strong>“Pode virar projeto ou ficar estático, como uma caixa”</strong> — o selo <span class="tipo projeto">Projeto</span> / <span class="tipo rotina">Rotina</span> na subdimensão. Projeto tem % de conclusão; rotina mede fluxo, não fim.</li>
+        <li><strong>“Cadê o uso de EPI?”</strong> — a busca. Digite <code>EPI</code> e a árvore se recolhe até o que casa, em qualquer nível. É o único caminho do app que responde essa pergunta em um passo.</li>
+        <li><strong>“Entregar pouco agora vale mais”</strong> — as três lentes leem a mesma árvore. Enquanto o cadastro de dimensões não existir, a árvore vem de tags pré-carregadas (<code>dim:</code> / <code>sub:</code>), como foi decidido na reunião. A tela não muda quando o cadastro chegar.</li>
+      </ul>
+
+      <h4>Por que três lentes, e não uma tela só</h4>
+      <ul>
+        <li><strong>Árvore</strong> — a pergunta “como está X?”. É o formato de quem já sabe o que procura.</li>
+        <li><strong>Cobertura</strong> — a pergunta que o gestor não sabe fazer: <em>o que eu não estou olhando?</em> Subdimensão sem nenhuma demanda aparece tracejada, e não some. Ponto cego que não aparece na tela é ponto cego duas vezes.</li>
+        <li><strong>Atenção</strong> — a fila do dia, já ordenada por quanto dói. Substitui a varredura manual do Kanban.</li>
+      </ul>
+
+      <h4>Decisões que valem discussão</h4>
+      <ul>
+        <li><strong>“Parada” é 15 dias sem movimento.</strong> Número escolhido, não medido. Se for baixo demais para a Infra, vira ruído; se alto, esconde.</li>
+        <li><strong>Uma subdimensão pode repetir em duas dimensões</strong> — “Controle de uso de EPI” está em Soft Services e em Manutenção, como no documento. A busca por EPI mostra as duas. Se isso for erro do documento, é aqui que ele fica visível.</li>
+        <li><strong>Rotina não tem porcentagem.</strong> Rotina não “termina”; medir 40% de uma rotina é inventar um fim que não existe. Ela mostra fluxo: quantas abertas, quantas atrasadas, há quanto tempo sem movimento.</li>
+        <li><strong>A aba é só leitura, com um atalho de criação.</strong> O botão “Criar demanda aqui” abre o modal do Kanban já com dimensão e subdimensão preenchidas. Editar demanda continua no Kanban — dois lugares que editam a mesma coisa viram duas verdades.</li>
+      </ul>
+
+      <h4>O que ainda precisa de você</h4>
+      <ul>
+        <li>O nome da aba: <strong>Dimensões</strong> (vocabulário da reunião) ou <strong>Panorama</strong>?</li>
+        <li>A árvore da Infra tem 5 dimensões e 34 subdimensões neste mockup. Confirmar com o Murilo se é essa mesma, e se os outros setores (Cantinas, Compras, CVU…) terão árvore própria ou compartilham esta.</li>
+        <li>Quem enxerga a aba: direção e gestores, ou todo mundo? Ela já entra no quadro de Permissões de qualquer jeito.</li>
+      </ul>
+    </div>
+  </details>
+
+</main>
+
+<script>
+/* ============================================================
+   DADOS — a árvore real do documento "Pilares Infra abril_26"
+   (o mapa mental, que é a versão mais completa: inclui Pessoas).
+   Demandas são exemplos plausíveis, para a tela poder ser julgada
+   cheia. Formato compacto: [titulo, status, responsavel, prazo,
+   prioridade, diasSemMovimento].
+   ============================================================ */
+const HOJE = new Date("2026-08-20T12:00:00");
+
+const ST = {
+  fazer: { nome:"A fazer",      cor:"#78776f", bg:"var(--s3)",       tx:"var(--tx-2)" },
+  and:   { nome:"Em andamento", cor:"#54b8ff", bg:"var(--info-bg)",  tx:"var(--info-tx)" },
+  agu:   { nome:"Aguardando",   cor:"#f5b13d", bg:"var(--warn-bg)",  tx:"var(--warn-tx)" },
+  val:   { nome:"Validação",    cor:"#c084fc", bg:"var(--susp-bg)",  tx:"var(--susp-tx)" },
+  ok:    { nome:"Concluído",    cor:"#34d399", bg:"var(--ok-bg)",    tx:"var(--ok-tx)" },
+};
+const PRIO = { alta:"#fb7185", media:"#f5b13d", baixa:"#78776f" };
+
+const PESSOAS = {
+  "Murilo Brasil":"#7c5cff", "Ítalo Araújo":"#ff6a2b", "Carlos Menezes":"#3987e5",
+  "Rita Sousa":"#d55181", "Jonas Lima":"#199e70", "Paula Freire":"#c98500",
+  "Diego Rocha":"#e66767", "Sandra Alves":"#9085e9",
+};
+
+const DIMENSOES = [
+  { n:1, nome:"Higiene, Hospitalidade e Logística Interna", abrev:"Soft Services · limpeza, hospitalidade e capatazia", cor:"#3987e5", subs:[
+    { nome:"Hospitalidade", tipo:"projeto", dems:[
+      ["Escrever o POP-1.00 — Código de Conduta, Postura e Hospitalidade","and","Murilo Brasil","2026-08-29","alta",3],
+      ["Manual de apresentação pessoal e postura","fazer","Rita Sousa","2026-09-12","media",6],
+      ["Manual de comunicação e atendimento às famílias","fazer",null,null,"media",6],
+    ]},
+    { nome:"Ascensoristas", tipo:"rotina", dems:[
+      ["Definir escalonamento da equipe de elevadores","agu","Jonas Lima","2026-08-14","alta",21],
+      ["Protocolo de resgate em elevador","fazer",null,"2026-09-30","alta",21],
+    ]},
+    { nome:"Limpeza de ambientes", tipo:"rotina", dems:[
+      ["Itinerário de limpeza por prédio","and","Carlos Menezes","2026-08-25","alta",1],
+      ["Checklist de limpeza de laboratório","val","Paula Freire","2026-08-18","media",2],
+      ["Sanitização de areia de parquinho — POP-1.05","ok","Carlos Menezes","2026-08-08","media",0],
+      ["Continência em momentos de chuva","fazer","Carlos Menezes",null,"media",9],
+    ]},
+    { nome:"Limpeza de equipamentos", tipo:"rotina", dems:[
+      ["Rotina de limpeza de filtro de ar-condicionado","and","Diego Rocha","2026-09-05","media",4],
+      ["Limpeza de bebedouros — periodicidade","ok","Diego Rocha","2026-08-06","media",0],
+    ]},
+    { nome:"Tratamentos especiais em limpeza", tipo:"rotina", dems:[] },
+    { nome:"Carga e descarga", tipo:"rotina", dems:[] },
+    { nome:"Capatazia", tipo:"rotina", dems:[
+      ["Montagem de estruturas — evento Festa da Família","fazer","Jonas Lima","2026-09-19","alta",2],
+      ["Transporte interno de carteiras entre blocos","and","Carlos Menezes","2026-08-24","media",1],
+    ]},
+    { nome:"Treinamentos e capacitações", tipo:"projeto", dems:[
+      ["Trilha de onboarding nos 34 POPs","fazer",null,null,"alta",11],
+    ]},
+    { nome:"Controle de uso de EPI", tipo:"projeto", dems:[
+      ["Conferência trimestral dos EPIs entregues","and","Sandra Alves","2026-08-31","alta",2],
+      ["Avaliar o processo de entrega de EPI","fazer","Sandra Alves","2026-09-30","media",5],
+      ["Termo de responsabilidade digital — POP-3.04","agu","Ítalo Araújo","2026-08-12","alta",16],
+    ]},
+    { nome:"Setup para trancamento de sede", tipo:"rotina", dems:[
+      ["Setup de trancamento com feriado (sirene desligada)","ok","Jonas Lima","2026-08-05","media",0],
+      ["Setup de trancamento de fim de semana","and","Jonas Lima","2026-08-28","baixa",3],
+    ]},
+  ]},
+
+  { n:2, nome:"Manutenção e Oficina", abrev:"Hard Services · continuidade técnica e vida útil", cor:"#d95926", subs:[
+    { nome:"Manutenção de instalações", tipo:"rotina", dems:[
+      ["Ronda elétrica preventiva de quadros e disjuntores","and","Diego Rocha","2026-08-28","alta",2],
+      ["Contenção de vazamentos — protocolo de acionamento","fazer","Diego Rocha","2026-09-08","media",7],
+    ]},
+    { nome:"Instalações em eventos", tipo:"rotina", dems:[] },
+    { nome:"Manutenção de ferragens", tipo:"rotina", dems:[
+      ["Mapear portas e fechaduras com falha","fazer","Carlos Menezes",null,"baixa",19],
+    ]},
+    { nome:"Manutenção de telhados e coberturas", tipo:"rotina", dems:[
+      ["Limpeza de calhas antes do período chuvoso","agu","Jonas Lima","2026-08-10","alta",25],
+    ]},
+    { nome:"Manutenção de superfícies", tipo:"rotina", dems:[] },
+    { nome:"Manutenção de equipamentos", tipo:"rotina", dems:[
+      ["Oficina de carteiras — meta de 40 recuperadas por mês","and","Carlos Menezes","2026-09-30","media",1],
+      ["Troca de filtro de bebedouro — calendário anual","ok","Diego Rocha","2026-08-01","media",0],
+      ["Manutenção de lousas do bloco B","fazer","Carlos Menezes","2026-09-05","baixa",8],
+    ]},
+    { nome:"Manutenção de equipamentos específicos", tipo:"rotina", dems:[] },
+    { nome:"Manutenção de equipamentos críticos", tipo:"projeto", dems:[
+      ["Plano de manutenção de gerador e bombas","fazer","Diego Rocha","2026-09-15","alta",5],
+      ["Dosadoras de cloro — rotina de verificação","and","Sandra Alves","2026-08-26","alta",5],
+      ["Vistoria da régua da caixa d'água","val","Sandra Alves","2026-08-19","alta",1],
+    ]},
+    { nome:"Almoxarifado de equipamentos pulmão", tipo:"rotina", dems:[] },
+    { nome:"Ações críticas", tipo:"projeto", dems:[
+      ["Escala de plantão noturno","val","Murilo Brasil","2026-08-19","alta",1],
+      ["Rotinas de verificação em ação corretiva crítica","fazer",null,"2026-10-15","media",13],
+    ]},
+    { nome:"Controle de uso de EPI", tipo:"rotina", dems:[] },
+  ]},
+
+  { n:3, nome:"Suprimentos", abrev:"Supply Chain · estoque, patrimônio e custos", cor:"#199e70", subs:[
+    { nome:"Patrimônio", tipo:"projeto", dems:[
+      ["Auditoria de patrimônio da sede","fazer",null,"2026-10-31","media",17],
+    ]},
+    { nome:"Almoxarifado", tipo:"rotina", dems:[
+      ["Definir estoque mínimo por item","and","Paula Freire","2026-09-02","alta",3],
+      ["Controle de verbas por centro de custo","agu","Ítalo Araújo","2026-08-15","alta",18],
+    ]},
+    { nome:"Célula de recebimento e expedição", tipo:"rotina", dems:[
+      ["Conferência cega no recebimento — POP-3.01","fazer","Paula Freire",null,"media",10],
+      ["Cautela de ativos enviados para assistência externa","and","Paula Freire","2026-08-27","media",2],
+    ]},
+    { nome:"Compras", tipo:"projeto", dems:[
+      ["Metas e KPI de cotação","fazer",null,null,"media",22],
+    ]},
+  ]},
+
+  { n:4, nome:"Governança e Contratos", abrev:"HSE · terceiros, auditoria e proteção jurídica", cor:"#9085e9", subs:[
+    { nome:"Contratos e contas fixas", tipo:"rotina", dems:[
+      ["Auditoria das faturas de energia (Enel / Mercado Livre)","and","Ítalo Araújo","2026-08-30","alta",2],
+      ["Reajuste do contrato de elevadores (TKE)","agu","Murilo Brasil","2026-08-11","alta",22],
+      ["Auditoria das faturas de água (Cagece)","fazer","Ítalo Araújo","2026-09-10","media",6],
+    ]},
+    { nome:"Contratação de serviços especializados", tipo:"rotina", dems:[
+      ["Calendário de dedetização 2026/2027","fazer","Sandra Alves","2026-09-20","media",4],
+      ["Exame de qualidade da água — pH e cloro","ok","Sandra Alves","2026-08-07","alta",0],
+      ["Contrato de poda de árvores do campus","fazer",null,"2026-09-25","baixa",16],
+    ]},
+    { nome:"Obras terceirizadas", tipo:"rotina", dems:[
+      ["Medição da obra de forro do bloco C","val","Ítalo Araújo","2026-08-22","media",1],
+      ["Serviços de rede de proteção nas quadras","and","Diego Rocha","2026-09-08","media",6],
+    ]},
+    { nome:"Chamados de emergência", tipo:"rotina", dems:[] },
+    { nome:"Brigada", tipo:"projeto", dems:[
+      ["Inspeção mensal de extintores e mangueiras","and","Jonas Lima","2026-08-27","alta",4],
+      ["Reciclagem da brigada de incêndio","fazer",null,"2026-11-30","media",12],
+    ]},
+    { nome:"Gestão de documentações prediais", tipo:"rotina", dems:[] },
+    { nome:"Contas a pagar", tipo:"rotina", dems:[
+      ["Programação de DAFs dos contratos fixos","and","Paula Freire","2026-08-25","media",1],
+      ["Emissão de MTR — logística ambiental de resíduos","agu","Sandra Alves","2026-08-13","alta",19],
+    ]},
+  ]},
+
+  { n:5, nome:"Pessoas", abrev:"Processos de Gestão · ciclo, disciplina e formação", cor:"#c98500", subs:[
+    { nome:"Ciclo de pessoal", tipo:"rotina", dems:[
+      ["Controle de ponto — gatilho das 07h15","and","Rita Sousa","2026-08-21","alta",1],
+      ["Fluxo de atestados com prazo fatal de 48h","fazer","Rita Sousa","2026-09-01","alta",4],
+      ["Mapa anual de férias","agu","Murilo Brasil","2026-08-09","media",24],
+      ["Gestão do banco de horas","fazer","Rita Sousa","2026-09-15","media",4],
+    ]},
+    { nome:"Performance e disciplina", tipo:"projeto", dems:[
+      ["Matriz disciplinar e rito de aplicação de penalidades","and","Murilo Brasil","2026-09-10","alta",2],
+      ["Semáforo disciplinar — treinar os supervisores","fazer","Murilo Brasil",null,"alta",8],
+      ["Avaliação trimestral (PPS Infra)","fazer","Rita Sousa","2026-09-30","media",8],
+      ["Protocolo de mediação de conflitos","fazer",null,null,"baixa",8],
+    ]},
+    { nome:"Formação e expansão", tipo:"projeto", dems:[
+      ["Kit de Sobrevivência de Gestão para supervisores","fazer",null,null,"alta",14],
+      ["Ciclo de formação de cultura","fazer",null,null,"baixa",14],
+    ]},
+  ]},
+];
+
+/* ============================================================
+   REGRA — tudo derivado, nada digitado duas vezes
+   ============================================================ */
+const PARADA_DIAS = 15;
+
+function atrasada(d){
+  return d.prazo && d.status !== "ok" && new Date(d.prazo + "T12:00:00") < HOJE;
+}
+function diasAtraso(d){
+  return Math.round((HOJE - new Date(d.prazo + "T12:00:00")) / 86400000);
+}
+function fmtData(iso){
+  if(!iso) return "sem prazo";
+  const [a,m,d] = iso.split("-");
+  return d + "/" + m;
+}
+function iniciais(nome){
+  const p = nome.split(" ");
+  return (p[0][0] + (p[1] ? p[1][0] : "")).toUpperCase();
+}
+
+/* Normaliza a árvore uma vez: cada demanda vira objeto, cada sub e cada
+   dimensão ganham os números que a tela lê. Calcular no render faria a
+   mesma conta cinco vezes por lente. */
+const ARVORE = DIMENSOES.map(dim => {
+  const subs = dim.subs.map((sub, i) => {
+    const dems = sub.dems.map((d, j) => ({
+      id: dim.n + "." + (i+1) + "." + (j+1),
+      titulo: d[0], status: d[1], resp: d[2], prazo: d[3], prio: d[4], parada: d[5],
+      dim: dim.nome, dimN: dim.n, dimCor: dim.cor, sub: sub.nome,
+    }));
+    dems.forEach(d => { d.atrasada = atrasada(d); d.diasAtraso = d.atrasada ? diasAtraso(d) : 0; });
+    const abertas = dems.filter(d => d.status !== "ok");
+    const feitas  = dems.filter(d => d.status === "ok").length;
+    const atras   = dems.filter(d => d.atrasada).length;
+    const semMov  = abertas.length ? Math.min(...abertas.map(d => d.parada)) : 0;
+    return {
+      ...sub, id: dim.n + "." + (i+1), dems,
+      total: dems.length, feitas, abertas: abertas.length, atras,
+      semMov, parada: abertas.length > 0 && semMov >= PARADA_DIAS,
+      vazia: dems.length === 0,
+      pct: dems.length ? Math.round(feitas / dems.length * 100) : 0,
+      semResp: dems.filter(d => d.status !== "ok" && !d.resp).length,
+    };
+  });
+  const dems = subs.flatMap(s => s.dems);
+  return {
+    ...dim, subs, dems,
+    total: dems.length,
+    feitas: dems.filter(d => d.status === "ok").length,
+    atras: dems.filter(d => d.atrasada).length,
+    vazias: subs.filter(s => s.vazia).length,
+    paradas: subs.filter(s => s.parada).length,
+    pct: dems.length ? Math.round(dems.filter(d => d.status === "ok").length / dems.length * 100) : 0,
+  };
+});
+
+const TODAS_SUBS = ARVORE.flatMap(d => d.subs.map(s => ({...s, dim:d})));
+const TODAS_DEMS = ARVORE.flatMap(d => d.dems);
+
+/* ============================================================
+   ESTADO DA TELA
+   ============================================================ */
+const estado = { vista:"arvore", q:"", filtros:new Set(), abertas:new Set(["1"]), subsAbertas:new Set() };
+
+const HINTS = {
+  arvore:    "<b>Árvore</b> — a estrutura inteira, do pilar até a demanda. É a lente de quem já sabe o que procura: abra a dimensão, abra a subdimensão, veja o que está andando lá dentro.",
+  cobertura: "<b>Cobertura</b> — a operação toda numa tela, cada subdimensão como um bloco pintado pelo seu estado. Serve para a pergunta que ninguém faz: <em>o que eu não estou olhando?</em>",
+  atencao:   "<b>Atenção</b> — só o que cobra resposta, já ordenado por quanto dói. Atrasadas primeiro, depois o que parou, depois o que não tem dono.",
+};
+
+function casa(texto){
+  if(!estado.q) return true;
+  return texto.toLowerCase().includes(estado.q.toLowerCase());
+}
+function marcar(texto){
+  if(!estado.q) return esc(texto);
+  const i = texto.toLowerCase().indexOf(estado.q.toLowerCase());
+  if(i < 0) return esc(texto);
+  return esc(texto.slice(0,i)) + "<mark>" + esc(texto.slice(i, i+estado.q.length)) + "</mark>" + esc(texto.slice(i+estado.q.length));
+}
+function esc(s){
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+/* Uma subdimensão entra na tela? Busca casa em qualquer nível: no nome da
+   dimensão, no da subdimensão ou no título de uma demanda. É isso que faz
+   "EPI" achar as duas subdimensões com esse nome E as demandas que falam
+   de EPI dentro de outras. */
+function subVisivel(sub, dim){
+  const f = estado.filtros;
+  if(f.has("atrasadas") && sub.atras === 0) return false;
+  if(f.has("paradas")   && !sub.parada)     return false;
+  if(f.has("vazias")    && !sub.vazia)      return false;
+  if(f.has("projetos")  && sub.tipo !== "projeto") return false;
+  if(!estado.q) return true;
+  return casa(dim.nome) || casa(sub.nome) || sub.dems.some(d => casa(d.titulo));
+}
+
+function demVisivel(d, sub, dim){
+  if(!estado.q) return true;
+  if(casa(dim.nome) || casa(sub.nome)) return true;
+  return casa(d.titulo);
+}
+
+/* ============================================================
+   INDICADORES
+   ============================================================ */
+function pintaKpis(){
+  const subs = TODAS_SUBS.filter(s => subVisivel(s, s.dim));
+  const dems = subs.flatMap(s => s.dems.filter(d => demVisivel(d, s, s.dim)));
+  const atras = dems.filter(d => d.atrasada).length;
+  const paradas = subs.filter(s => s.parada).length;
+  const vazias = subs.filter(s => s.vazia).length;
+  const cobertas = subs.length - vazias;
+  const pctCob = subs.length ? Math.round(cobertas / subs.length * 100) : 0;
+
+  document.getElementById("kstrip").innerHTML = `
+    <div class="kcell"><div class="kv">${subs.length}</div>
+      <div class="kl">subdimensões em ${ARVORE.filter(d=>d.subs.some(s=>subVisivel(s,d))).length} dimensões</div></div>
+    <div class="kcell ${pctCob>=70?"bom":pctCob>=40?"aviso":"alerta"}"><div class="kv">${pctCob}%</div>
+      <div class="kl">de cobertura — ${vazias} nunca receberam demanda</div></div>
+    <div class="kcell ${atras?"alerta":"bom"}"><div class="kv">${atras}</div>
+      <div class="kl">demandas atrasadas, de ${dems.length} no total</div></div>
+    <div class="kcell ${paradas?"aviso":"bom"}"><div class="kv">${paradas}</div>
+      <div class="kl">subdimensões sem movimento há ${PARADA_DIAS} dias ou mais</div></div>`;
+
+  document.getElementById("contagem").textContent =
+    estado.q || estado.filtros.size
+      ? `${subs.length} subdimensões · ${dems.length} demandas encontradas`
+      : `${TODAS_SUBS.length} subdimensões · ${TODAS_DEMS.length} demandas`;
+}
+
+/* ============================================================
+   LENTE 1 — ÁRVORE
+   ============================================================ */
+function barra(sub){
+  if(sub.vazia) return `<div class="barra" title="sem demanda"></div>`;
+  const c = {}; sub.dems.forEach(d => c[d.status] = (c[d.status]||0)+1);
+  const partes = ["ok","val","and","agu","fazer"].filter(k => c[k])
+    .map(k => `<i style="width:${c[k]/sub.total*100}%;background:${ST[k].cor}" title="${ST[k].nome}: ${c[k]}"></i>`).join("");
+  return `<div class="barra">${partes}</div>`;
+}
+function barraDim(dim, subs){
+  const dems = subs.flatMap(s => s.dems);
+  if(!dems.length) return `<div class="barra"></div>`;
+  const c = {}; dems.forEach(d => c[d.status] = (c[d.status]||0)+1);
+  const partes = ["ok","val","and","agu","fazer"].filter(k => c[k])
+    .map(k => `<i style="width:${c[k]/dems.length*100}%;background:${ST[k].cor}" title="${ST[k].nome}: ${c[k]}"></i>`).join("");
+  return `<div class="barra">${partes}</div>`;
+}
+
+function avatar(nome){
+  if(!nome) return `<span class="av vago" title="sem responsável">?</span>`;
+  return `<span class="av" style="background:${PESSOAS[nome]||"#78776f"}" title="${esc(nome)}">${iniciais(nome)}</span>`;
+}
+
+function pintaArvore(){
+  const alvo = document.getElementById("v-arvore");
+  const html = ARVORE.map(dim => {
+    const subs = dim.subs.filter(s => subVisivel(s, dim));
+    if(!subs.length) return "";
+    /* Busca ativa abre tudo que sobrou: fazer a pessoa clicar cinco vezes
+       para ver o resultado do que ela acabou de digitar é fazer a busca
+       pela metade. */
+    const aberta = estado.q ? true : estado.abertas.has(String(dim.n));
+    const atras = subs.reduce((a,s)=>a+s.atras,0);
+    const paradas = subs.filter(s=>s.parada).length;
+    const vazias = subs.filter(s=>s.vazia).length;
+    const dems = subs.flatMap(s=>s.dems);
+    const pct = dems.length ? Math.round(dems.filter(d=>d.status==="ok").length/dems.length*100) : 0;
+
+    return `
+    <div class="dim ${aberta?"aberta":""}" style="--c:${dim.cor};--cSoft:${dim.cor}2e">
+      <button class="dimHead" data-dim="${dim.n}" aria-expanded="${aberta}">
+        <svg class="chev" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 5l7 7-7 7"/></svg>
+        <span class="dimNum">${dim.n}</span>
+        <span class="dimNome"><b>${marcar(dim.nome)}</b><em>${esc(dim.abrev)}</em></span>
+        <span class="dimMeta">
+          <span class="mini som"><b>${subs.length}</b><em>subdim.</em></span>
+          <span class="mini som"><b>${dems.length}</b><em>demandas</em></span>
+          ${atras?`<span class="mini d"><b>${atras}</b><em>atrasadas</em></span>`:""}
+          ${!atras&&paradas?`<span class="mini w som"><b>${paradas}</b><em>paradas</em></span>`:""}
+          ${vazias?`<span class="mini som"><b style="color:var(--tx-3)">${vazias}</b><em>sem dem.</em></span>`:""}
+          ${barraDim(dim, subs)}
+          <span class="pct">${pct}%</span>
+        </span>
+      </button>
+      <div class="subs">${subs.map(s => pintaSub(s, dim)).join("")}</div>
+    </div>`;
+  }).join("");
+
+  alvo.innerHTML = html || vazioGeral();
+}
+
+function pintaSub(sub, dim){
+  const aberta = estado.q ? true : estado.subsAbertas.has(sub.id);
+  const dems = sub.dems.filter(d => demVisivel(d, sub, dim));
+  return `
+  <div class="sub ${aberta?"aberta":""}">
+    <button class="subHead" data-sub="${sub.id}" aria-expanded="${aberta}">
+      <svg class="chev" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" style="${aberta?"transform:rotate(90deg)":""}"><path d="M9 5l7 7-7 7"/></svg>
+      <span class="subNome">
+        <b>${marcar(sub.nome)}</b>
+        <span class="tipo ${sub.tipo}">${sub.tipo}</span>
+        ${sub.atras?`<span class="selo atras">${sub.atras} atrasada${sub.atras>1?"s":""}</span>`:""}
+        ${!sub.atras&&sub.parada?`<span class="selo parada">sem movimento há ${sub.semMov} dias</span>`:""}
+        ${sub.vazia?`<span class="selo vazia">nenhuma demanda</span>`:""}
+        ${!sub.vazia&&sub.abertas===0?`<span class="selo ok">tudo concluído</span>`:""}
+      </span>
+      <span class="dimMeta">
+        <span class="mini som"><b>${sub.abertas}</b><em>abertas</em></span>
+        ${barra(sub)}
+        <span class="pct">${sub.tipo==="projeto"?sub.pct+"%":"—"}</span>
+      </span>
+    </button>
+    <div class="dems">
+      ${dems.length ? dems.map(pintaDem).join("") : pintaVazio(sub)}
+    </div>
+  </div>`;
+}
+
+function pintaDem(d){
+  const s = ST[d.status];
+  return `
+  <div class="dem" title="Abrir no Kanban (mockup)">
+    <span class="prio" style="background:${PRIO[d.prio]}" title="prioridade ${d.prio}"></span>
+    <span class="demT">${marcar(d.titulo)}</span>
+    <span class="demMeta">
+      ${d.status!=="ok"&&d.parada>=PARADA_DIAS?`<span class="selo parada som">parada ${d.parada}d</span>`:""}
+      <span class="st" style="background:${s.bg};color:${s.tx}">${s.nome}</span>
+      ${avatar(d.resp)}
+      <span class="prazo ${d.atrasada?"late":""} som">${d.atrasada?"−"+d.diasAtraso+"d · ":""}${fmtData(d.prazo)}</span>
+    </span>
+  </div>`;
+}
+
+/* Vazio que DIFERENCIA: "esta subdimensão nunca recebeu demanda" não é a
+   mesma coisa que "a busca não achou nada aqui dentro" (AGENTS.md §3). */
+function pintaVazio(sub){
+  if(sub.vazia) return `
+    <div class="vazio">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" style="flex-shrink:0"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M8 10h8M8 14h5"/></svg>
+      <div><b>Nada foi aberto aqui ainda</b>Esta subdimensão existe na estrutura, mas nenhuma demanda apontou para ela.</div>
+      <button class="btnMini">Criar demanda aqui</button>
+    </div>`;
+  return `
+    <div class="vazio">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" style="flex-shrink:0"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.2-3.2"/></svg>
+      <div><b>Nenhuma demanda casa com a busca</b>As ${sub.total} demandas desta subdimensão continuam aqui — limpe a busca para vê-las.</div>
+    </div>`;
+}
+
+function vazioGeral(){
+  return `
+  <div class="vazio" style="padding:34px;justify-content:center;text-align:center;flex-direction:column;gap:8px">
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.2-3.2"/></svg>
+    <div><b>Nada casa com esses filtros</b>Nem uma subdimensão sobrou. Limpe a busca ou desligue algum filtro.</div>
+  </div>`;
+}
+
+/* ============================================================
+   LENTE 2 — COBERTURA
+   ============================================================ */
+function estadoSub(s){
+  if(s.vazia)              return { cor:"var(--tx-3)",  nome:"sem demanda" };
+  if(s.atras)              return { cor:"var(--danger)", nome:"tem atrasada" };
+  if(s.parada)             return { cor:"var(--warn)",   nome:"parada" };
+  if(s.abertas === 0)      return { cor:"var(--ok)",     nome:"tudo concluído" };
+  return { cor:"var(--info)", nome:"em andamento" };
+}
+
+function pintaCobertura(){
+  const alvo = document.getElementById("v-cobertura");
+  const grupos = ARVORE.map(dim => {
+    const subs = dim.subs.filter(s => subVisivel(s, dim));
+    if(!subs.length) return "";
+    return `
+    <div class="cobGrupo" style="--c:${dim.cor}">
+      <div class="cobTit"><i></i><b>${marcar(dim.nome)}</b><em>${subs.length} subdimensões · ${subs.filter(s=>s.vazia).length} sem demanda</em></div>
+      <div class="cobGrid">
+        ${subs.map(s => {
+          const e = estadoSub(s);
+          return `<div class="tile ${s.vazia?"v":""}" style="--e:${e.cor}" title="${e.nome}">
+            <b>${marcar(s.nome)}</b>
+            <div class="tl">
+              ${s.vazia
+                ? "nenhuma demanda aberta"
+                : `<strong>${e.nome}</strong> · ${s.abertas} aberta${s.abertas!==1?"s":""} de ${s.total}
+                   ${s.atras?`<br>${s.atras} atrasada${s.atras>1?"s":""}`:s.parada?`<br>${s.semMov} dias sem movimento`:""}`}
+            </div>
+          </div>`;
+        }).join("")}
+      </div>
+    </div>`;
+  }).join("");
+
+  alvo.innerHTML = `
+    <div class="legenda">
+      <span><i style="background:var(--ok)"></i>tudo concluído</span>
+      <span><i style="background:var(--info)"></i>em andamento</span>
+      <span><i style="background:var(--warn)"></i>parada há ${PARADA_DIAS} dias ou mais</span>
+      <span><i style="background:var(--danger)"></i>tem demanda atrasada</span>
+      <span><i style="border:1px dashed var(--line);background:transparent"></i>nunca recebeu demanda</span>
+    </div>
+    ${grupos || vazioGeral()}`;
+}
+
+/* ============================================================
+   LENTE 3 — ATENÇÃO
+   ============================================================ */
+function pintaAtencao(){
+  const subs = TODAS_SUBS.filter(s => subVisivel(s, s.dim));
+  const dems = subs.flatMap(s => s.dems.filter(d => demVisivel(d, s, s.dim)));
+
+  const atrasadas = dems.filter(d => d.atrasada).sort((a,b)=>b.diasAtraso-a.diasAtraso);
+  const paradas   = subs.filter(s => s.parada && !s.atras).sort((a,b)=>b.semMov-a.semMov);
+  const semDono   = dems.filter(d => d.status!=="ok" && !d.resp && !d.atrasada);
+  const cegas     = subs.filter(s => s.vazia);
+
+  const linha = (trilha, titulo, valor, unidade, cor) => `
+    <div class="linha">
+      <div class="linhaMain">
+        <div class="trilha">${trilha}</div>
+        <div class="tt">${marcar(titulo)}</div>
+      </div>
+      <div class="gasto" style="color:${cor}">${valor}<em>${unidade}</em></div>
+    </div>`;
+
+  const grupo = (titulo, n, nota, corpo) => n ? `
+    <div class="grupoAt">
+      <div class="grupoAtH"><b>${titulo}</b><span class="cnt">${n}</span><em>${nota}</em></div>
+      ${corpo}
+    </div>` : "";
+
+  const alvo = document.getElementById("v-atencao");
+  const html =
+    grupo("Atrasadas", atrasadas.length, "o prazo passou e a demanda não está concluída",
+      atrasadas.map(d => linha(
+        `<b>${esc(d.dim)}</b> › ${esc(d.sub)}`, d.titulo, d.diasAtraso, "dias de atraso", "var(--danger)")).join("")) +
+
+    grupo("Paradas", paradas.length, `nenhum movimento há ${PARADA_DIAS} dias ou mais`,
+      paradas.map(s => linha(
+        `<b>${esc(s.dim.nome)}</b> › subdimensão`, s.nome, s.semMov, "dias sem mexer", "var(--warn)")).join("")) +
+
+    grupo("Sem responsável", semDono.length, "ninguém foi apontado — a demanda existe e não tem dono",
+      semDono.map(d => linha(
+        `<b>${esc(d.dim)}</b> › ${esc(d.sub)}`, d.titulo, "?", "sem dono", "var(--tx-3)")).join("")) +
+
+    grupo("Pontos cegos", cegas.length, "a estrutura prevê, e nunca ninguém abriu nada",
+      cegas.map(s => linha(
+        `<b>${esc(s.dim.nome)}</b> › subdimensão ${esc(s.tipo)}`, s.nome, "0", "demandas", "var(--tx-3)")).join(""));
+
+  alvo.innerHTML = html || `
+    <div class="vazio" style="padding:34px;justify-content:center;flex-direction:column;text-align:center;gap:8px">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="1.8" stroke-linecap="round"><path d="M20 6L9 17l-5-5"/></svg>
+      <div><b>Nada cobrando resposta</b>Nenhuma atrasada, nenhuma parada, nenhuma sem dono. É raro — aproveite.</div>
+    </div>`;
+}
+
+/* ============================================================
+   RENDER + EVENTOS
+   ============================================================ */
+function render(){
+  document.getElementById("hint").innerHTML = HINTS[estado.vista];
+  pintaKpis();
+  ["arvore","cobertura","atencao"].forEach(v => {
+    document.getElementById("v-"+v).hidden = v !== estado.vista;
+  });
+  if(estado.vista === "arvore")    pintaArvore();
+  if(estado.vista === "cobertura") pintaCobertura();
+  if(estado.vista === "atencao")   pintaAtencao();
+}
+
+document.querySelectorAll(".lente").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll(".lente").forEach(x => x.classList.toggle("on", x === b));
+  estado.vista = b.dataset.vista;
+  render();
+}));
+
+document.querySelectorAll(".chip").forEach(b => b.addEventListener("click", () => {
+  const f = b.dataset.filtro;
+  estado.filtros.has(f) ? estado.filtros.delete(f) : estado.filtros.add(f);
+  b.classList.toggle("on", estado.filtros.has(f));
+  render();
+}));
+
+const q = document.getElementById("q");
+const qx = document.getElementById("qx");
+q.addEventListener("input", () => {
+  estado.q = q.value.trim();
+  qx.classList.toggle("on", !!estado.q);
+  render();
+});
+qx.addEventListener("click", () => { q.value = ""; estado.q = ""; qx.classList.remove("on"); q.focus(); render(); });
+
+/* Delegação: a árvore é redesenhada inteira a cada filtro, então listener
+   preso em nó individual morreria no primeiro render. */
+document.getElementById("v-arvore").addEventListener("click", e => {
+  const dimBtn = e.target.closest("[data-dim]");
+  if(dimBtn){
+    const k = dimBtn.dataset.dim;
+    estado.abertas.has(k) ? estado.abertas.delete(k) : estado.abertas.add(k);
+    if(estado.q){ q.value=""; estado.q=""; qx.classList.remove("on"); }
+    render();
+    return;
+  }
+  const subBtn = e.target.closest("[data-sub]");
+  if(subBtn){
+    const k = subBtn.dataset.sub;
+    estado.subsAbertas.has(k) ? estado.subsAbertas.delete(k) : estado.subsAbertas.add(k);
+    if(estado.q){ q.value=""; estado.q=""; qx.classList.remove("on"); }
+    render();
+  }
+});
+
+document.getElementById("tema").addEventListener("click", () => {
+  const r = document.documentElement;
+  r.dataset.theme = r.dataset.theme === "dark" ? "light" : "dark";
+});
+
+render();
+</script>
+</body>
+</html>

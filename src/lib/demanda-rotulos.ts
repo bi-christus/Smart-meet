@@ -32,6 +32,17 @@ export const PRIORITY_LABEL: Record<Priority, string> = {
 };
 
 /** Tipo da demanda. */
+/**
+ * As prioridades que o app sabe desenhar, na ordem em que ele as oferece.
+ *
+ * Mora ao lado de `PRIORITY_LABEL` porque é a mesma verdade vista de outro
+ * ângulo: uma diz como se escreve cada prioridade, a outra diz quais existem.
+ * Estava em `kanban/comum.ts`, e de lá o card extraído não conseguia lê-la sem
+ * inverter a direção da dependência — componente de `src/components` importando
+ * a pasta de uma página.
+ */
+export const KNOWN_PRIORITIES: Priority[] = ["alta", "media", "baixa"];
+
 export type DemandType =
   | "implementacao"
   | "correcao"

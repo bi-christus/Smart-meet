@@ -69,11 +69,18 @@ import {
   DEMAND_TYPES,
   DEMAND_TYPE_COLOR,
   DEMAND_TYPE_LABEL,
+  KNOWN_PRIORITIES,
   PRIORITY_LABEL,
   type DemandType,
   type Priority,
 } from "./demanda-rotulos";
-export { DEMAND_TYPES, DEMAND_TYPE_COLOR, DEMAND_TYPE_LABEL, PRIORITY_LABEL };
+export {
+  DEMAND_TYPES,
+  DEMAND_TYPE_COLOR,
+  DEMAND_TYPE_LABEL,
+  KNOWN_PRIORITIES,
+  PRIORITY_LABEL,
+};
 export type { DemandType, Priority };
 
 export type ChecklistItem = {
@@ -118,6 +125,25 @@ export type Card = {
   assignee?: string | null; // responsável (e-mail do usuário do sistema)
   requester?: string | null; // solicitante (nome cadastrado)
   requesterSector?: string | null; // setor solicitante (cadastrado)
+  /**
+   * Onde esta demanda mora na árvore do setor — ver `dimensoes-core.ts`.
+   *
+   * Guarda o ID, e não o nome, pelo motivo que `tags-ref.ts` documenta: nome é
+   * cópia, e cópia não sobrevive ao rename do cadastro. Quem traduz para texto é
+   * quem tem o cadastro em mãos.
+   *
+   * Os DOIS campos existem porque os dois casos existem. A ata prevê a demanda
+   * que mora numa subdimensão e a que fica direto na dimensão ("uma caixa que
+   * abriga vários trabalhos"), e o formulário não obriga a descer o segundo
+   * nível. `subdimensaoId` sem `dimensaoId` não é estado válido, e a árvore
+   * trata como não classificada.
+   *
+   * Ausente em toda demanda anterior a esta frente — que é a maioria delas. A
+   * árvore junta essas no nó "Sem classificação"; ela nunca esconde demanda por
+   * falta de campo.
+   */
+  dimensaoId?: string | null;
+  subdimensaoId?: string | null;
   startDate?: string | null; // data de início (yyyy-mm-dd)
   due?: string | null; // prazo de entrega (yyyy-mm-dd)
   priority?: Priority;
@@ -185,6 +211,8 @@ export type CardInput = {
   assignee: string | null;
   requester: string | null;
   requesterSector: string | null;
+  dimensaoId: string | null;
+  subdimensaoId: string | null;
   startDate: string | null;
   due: string | null;
   priority: Priority;
@@ -311,6 +339,8 @@ export async function createCard(
     assignee: input.assignee || null,
     requester: input.requester || null,
     requesterSector: input.requesterSector || null,
+    dimensaoId: input.dimensaoId || null,
+    subdimensaoId: input.subdimensaoId || null,
     startDate: input.startDate || null,
     due: input.due || null,
     priority: input.priority,

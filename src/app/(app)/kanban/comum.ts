@@ -17,6 +17,13 @@ import {
   type DemandType,
   type Priority,
 } from "@/lib/kanban";
+// Prioridades conhecidas, prazo e formato de data saíram daqui nesta frente: o
+// card virou componente em `src/components`, e de lá não se importa a pasta de
+// uma página. A regra mora em `demanda-rotulos` e em `prazo-core`, com teste; o
+// reexport abaixo é só para nenhum import deste diretório precisar mudar.
+export { KNOWN_PRIORITIES } from "@/lib/kanban";
+export { fmtShort, parseDue } from "@/lib/prazo-core.ts";
+import { fmtShort } from "@/lib/prazo-core.ts";
 import type { Rotulos } from "@/lib/historico-core";
 import type { PessoaDaMoldura, PessoaDoAvatar } from "@/components/avatar";
 import { pickColor, type UserProfile } from "@/lib/users";
@@ -26,16 +33,6 @@ export const PRIORITY_COLOR: Record<Priority, string> = {
   media: "#f5b13d",
   baixa: "#78776f",
 };
-export const KNOWN_PRIORITIES: Priority[] = ["alta", "media", "baixa"];
-
-export function parseDue(due: string): Date {
-  const [y, m, dd] = due.split("-").map(Number);
-  return new Date(y, m - 1, dd);
-}
-export function fmtShort(d: Date): string {
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${p(d.getDate())}/${p(d.getMonth() + 1)}`;
-}
 
 export function relTime(ts: number): string {
   const m = Math.floor((Date.now() - ts) / 60000);
