@@ -1,0 +1,647 @@
+/**
+ * A aba Dimensões — árvore à esquerda, painel à direita.
+ *
+ * A DECISÃO DE LAYOUT QUE GOVERNA ESTA FOLHA: a árvore cresce para BAIXO, nunca
+ * para os lados. O mockup avaliado era um organograma de cima para baixo, e
+ * nele a árvore da Infra passava de doze mil pixels de largura — bonita na
+ * projeção, inútil no dia a dia. Aqui a PROFUNDIDADE vira indentação (três
+ * níveis, `--recuo` fixo) e a RAMIFICAÇÃO vira altura, que é a direção em que a
+ * página já rola. A largura da tela deixa de ser o recurso escasso.
+ *
+ * Por isso não existe `overflow-x` nenhum na árvore: se algum dia aparecer uma
+ * barra de rolagem horizontal aqui, é defeito, não recurso.
+ */
+
+.page {
+  height: calc(100vh - 56px);
+  overflow: auto;
+  padding: 0 0 40px;
+}
+
+/* ---------- cabeçalho ---------- */
+.head {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 16px 22px 0;
+}
+.headMain {
+  flex: 1;
+  min-width: 260px;
+}
+.headMain h1 {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  color: var(--tx);
+}
+.headMain p {
+  font-size: 12px;
+  color: var(--tx-3);
+  margin-top: 3px;
+  max-width: 640px;
+  line-height: 1.5;
+}
+
+.filtros {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  padding: 14px 22px 0;
+}
+.sectors {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.sectorBtn {
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  background: var(--s1);
+  border-radius: 9px;
+  color: var(--tx-2);
+  font-family: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: color 0.18s, border-color 0.18s, background 0.18s;
+}
+.sectorBtn:hover {
+  color: var(--accent);
+  border-color: var(--brand-line);
+}
+.sectorBtn.on {
+  background: var(--brand-soft);
+  border-color: var(--brand-line);
+  color: var(--brand);
+  font-weight: 600;
+}
+
+.busca {
+  position: relative;
+  flex: 1;
+  min-width: 210px;
+  max-width: 340px;
+}
+.busca > svg {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--tx-3);
+  pointer-events: none;
+}
+.buscaInp {
+  width: 100%;
+  height: 32px;
+  padding: 0 30px 0 32px;
+  border: 1px solid var(--line);
+  background: var(--field);
+  color: var(--tx);
+  border-radius: 9px;
+  font-family: inherit;
+  font-size: 12.5px;
+  transition: border-color 0.18s;
+}
+.buscaInp:focus {
+  outline: none;
+  border-color: var(--brand-line);
+}
+.buscaInp::placeholder {
+  color: var(--tx-3);
+}
+.buscaX {
+  position: absolute;
+  right: 5px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--tx-3);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+.buscaX:hover {
+  color: var(--tx);
+}
+
+.acao {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  background: var(--s1);
+  border-radius: 9px;
+  color: var(--tx-2);
+  font-family: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: color 0.18s, border-color 0.18s;
+}
+.acao:hover {
+  color: var(--accent);
+  border-color: var(--brand-line);
+}
+.contagem {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--tx-3);
+}
+
+/* ---------- a divisão: árvore | painel ---------- */
+.corpo {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 336px;
+  gap: 16px;
+  padding: 16px 22px 0;
+  align-items: start;
+}
+/* Abaixo de 1080px o painel deixa de caber ao lado sem espremer a árvore, e vai
+   para baixo dela. Não some: as datas e as atrasadas que ele mostra são o
+   motivo de a aba existir, e escondê-las no celular deixaria só a árvore. */
+@media (max-width: 1080px) {
+  .corpo {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .painel {
+    position: static;
+    max-height: none;
+  }
+}
+
+/* ---------- a árvore ---------- */
+.arvore {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* O recuo de UM nível. Três níveis no total, então o pior caso são 56px de
+   indentação — cabe em qualquer tela, e é o que substitui os 12.000px do
+   organograma de cima para baixo. */
+.ramo {
+  --recuo: 28px;
+  min-width: 0;
+}
+
+.ramoTopo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--card);
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.18s, background 0.18s;
+}
+.ramoTopo:hover {
+  border-color: var(--brand-line);
+}
+.ramoTopo.sel {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-soft);
+}
+/* Nível 2 é mais discreto que a dimensão: ele é o galho, não o tronco. */
+.n2 .ramoTopo {
+  padding: 9px 12px;
+  background: var(--s1);
+  border-radius: 10px;
+}
+
+.faixa {
+  width: 4px;
+  align-self: stretch;
+  min-height: 22px;
+  border-radius: 99px;
+  flex: none;
+}
+.chev {
+  color: var(--tx-3);
+  flex: none;
+  transition: transform 0.18s ease;
+}
+.chevAberto {
+  transform: rotate(90deg);
+}
+/* Nó sem nada dentro não ganha seta: uma seta que não abre nada é uma promessa
+   que a tela não cumpre. O espaço fica para os nomes continuarem alinhados. */
+.chevVazio {
+  width: 13px;
+  flex: none;
+}
+
+.nome {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.nomeTx {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--tx);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.n2 .nomeTx {
+  font-size: 13px;
+  font-weight: 500;
+}
+.nomeTx mark {
+  background: var(--brand-soft);
+  color: var(--brand);
+  border-radius: 3px;
+  padding: 0 2px;
+}
+
+.tipo {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: var(--s3);
+  color: var(--tx-3);
+  flex: none;
+}
+.tipoProjeto {
+  background: var(--susp-bg);
+  color: var(--susp-tx);
+}
+
+.selo {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 99px;
+  white-space: nowrap;
+  flex: none;
+}
+.seloAtraso {
+  background: var(--danger-bg);
+  color: var(--danger-tx);
+}
+.seloParado {
+  background: var(--warn-bg);
+  color: var(--warn-tx);
+}
+.seloOk {
+  background: var(--ok-bg);
+  color: var(--ok-tx);
+}
+/* Tracejado e apagado: subdimensão sem demanda não é erro nem urgência — é o
+   ponto cego que esta aba existe para mostrar. */
+.seloVazio {
+  background: transparent;
+  color: var(--tx-3);
+  border: 1px dashed var(--line);
+}
+
+.metricas {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+}
+@media (max-width: 780px) {
+  .metricas .some {
+    display: none;
+  }
+}
+.barra {
+  display: flex;
+  height: 6px;
+  width: 96px;
+  border-radius: 99px;
+  overflow: hidden;
+  background: var(--s4);
+  flex: none;
+}
+.barra i {
+  display: block;
+  height: 100%;
+}
+.qtd {
+  font-size: 11.5px;
+  color: var(--tx-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* O corpo do galho: os filhos e as demandas.
+   A guia vertical à esquerda é o que sobrou dos conectores do organograma —
+   uma linha só, que diz "isto está dentro daquilo" sem custar largura. */
+.filhos {
+  margin-left: var(--recuo);
+  padding-left: 14px;
+  border-left: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding-top: 7px;
+  animation: abre 0.18s ease both;
+}
+@keyframes abre {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* As demandas em GRADE que embrulha, e não em linha.
+   É a outra metade da decisão de layout: um card ao lado do outro cresceria
+   para a direita de novo, e a árvore da Infra tem subdimensão com dez demandas. */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(258px, 1fr));
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.vazioRamo {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 12px 14px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  color: var(--tx-3);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.vazioRamo strong {
+  display: block;
+  color: var(--tx-2);
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.vazioRamo svg {
+  flex: none;
+}
+.criarAqui {
+  margin-left: auto;
+  height: 29px;
+  padding: 0 12px;
+  border: 1px solid var(--brand-line);
+  border-radius: 8px;
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.18s, color 0.18s;
+}
+.criarAqui:hover {
+  background: var(--brand);
+  color: #fff;
+}
+
+/* ---------- o painel lateral ---------- */
+.painel {
+  position: sticky;
+  top: 0;
+  max-height: calc(100vh - 76px);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.bloco {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  padding: 14px 15px;
+}
+.blocoTit {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: var(--tx-3);
+  margin-bottom: 10px;
+}
+.blocoTit svg {
+  flex: none;
+}
+
+.pTrilha {
+  font-size: 11px;
+  color: var(--tx-3);
+  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pNome {
+  font-family: var(--font-serif), serif;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--tx);
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+.pNome i {
+  width: 4px;
+  align-self: stretch;
+  min-height: 20px;
+  border-radius: 99px;
+  flex: none;
+  margin-top: 2px;
+}
+.pEstado {
+  font-size: 12px;
+  color: var(--tx-2);
+  margin-top: 8px;
+  line-height: 1.5;
+}
+
+.grade {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 12px;
+}
+.cel {
+  border: 1px solid var(--line-soft);
+  border-radius: 9px;
+  background: var(--s1);
+  padding: 9px 10px;
+}
+.celV {
+  font-family: var(--font-serif), serif;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--tx);
+}
+.celL {
+  font-size: 10.5px;
+  color: var(--tx-3);
+  margin-top: 3px;
+  line-height: 1.35;
+}
+.celRuim .celV {
+  color: var(--danger);
+}
+.celBom .celV {
+  color: var(--ok);
+}
+
+/* Distribuição por etapa: a "evolução" das demandas pelo fluxo do quadro. */
+.fluxo {
+  display: flex;
+  height: 8px;
+  border-radius: 99px;
+  overflow: hidden;
+  background: var(--s4);
+  margin-bottom: 11px;
+}
+.fluxo i {
+  display: block;
+  height: 100%;
+}
+.legenda {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.legItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--tx-2);
+}
+.legItem i {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  flex: none;
+}
+.legItem span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.legItem b {
+  font-weight: 600;
+  color: var(--tx);
+  font-variant-numeric: tabular-nums;
+}
+
+.linhaDem {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 0;
+  border-top: 1px solid var(--line-soft);
+  width: 100%;
+  border-left: 0;
+  border-right: 0;
+  border-bottom: 0;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.linhaDem:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+.linhaDem:hover .linhaTit {
+  color: var(--accent);
+}
+.linhaTit {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--tx-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color 0.18s;
+}
+.linhaData {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--tx-3);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+.linhaLate {
+  color: var(--danger-tx);
+}
+.linhaSoon {
+  color: var(--warn-tx);
+}
+.pVazio {
+  font-size: 12px;
+  color: var(--tx-3);
+  line-height: 1.5;
+}
+
+.aviso {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin: 14px 22px 0;
+  padding: 11px 14px;
+  border-radius: 10px;
+  background: var(--warn-bg);
+  border: 1px solid transparent;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--tx-2);
+}
+.aviso svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--warn);
+}
+.aviso a {
+  font-weight: 600;
+}
+
+.centro {
+  padding: 40px 22px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .filhos {
+    animation: none !important;
+  }
+}

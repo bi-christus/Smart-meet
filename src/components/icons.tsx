@@ -308,6 +308,14 @@ const PATHS: Record<string, ReactNode> = {
       <path d="M8.5 13.2L7 22l5-2.8 5 2.8-1.5-8.8" />
     </>
   ),
+  dimensoes: (
+    <>
+      <rect x="9" y="2.5" width="6" height="4.5" rx="1.2" />
+      <rect x="2.5" y="16" width="6" height="4.5" rx="1.2" />
+      <rect x="15.5" y="16" width="6" height="4.5" rx="1.2" />
+      <path d="M12 7v4.5M5.5 16v-4.5h13V16" />
+    </>
+  ),
   chevronLeft: <path d="M15 6l-6 6 6 6" />,
   chevronRight: <path d="M9 6l6 6-6 6" />,
 };
@@ -325,6 +333,34 @@ export function Icon({ name, size = 24 }: { name: string; size?: number }) {
       strokeLinejoin="round"
     >
       {PATHS[name] ?? null}
+    </svg>
+  );
+}
+
+/**
+ * O punho de seis pontos que marca "isto se arrasta".
+ *
+ * Fora do mapa `PATHS` de propósito: ele é preenchido (`fill`), e não traçado
+ * como todos os outros — passá-lo pelo `<Icon>`, que chumba `fill="none"`, o
+ * deixaria invisível. Dois lugares o desenham (o card da demanda e o cabeçalho
+ * da coluna do quadro), e depois que o card virou componente próprio um deles
+ * teria de manter uma cópia.
+ */
+export function GripDots() {
+  return (
+    <svg
+      width="10"
+      height="14"
+      viewBox="0 0 10 14"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <circle cx="2" cy="2" r="1.3" />
+      <circle cx="8" cy="2" r="1.3" />
+      <circle cx="2" cy="7" r="1.3" />
+      <circle cx="8" cy="7" r="1.3" />
+      <circle cx="2" cy="12" r="1.3" />
+      <circle cx="8" cy="12" r="1.3" />
     </svg>
   );
 }

@@ -791,3 +791,147 @@
     width: auto;
   }
 }
+
+/* ---------- cadastro da árvore de dimensões ---------- */
+
+.dimSetor {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  max-width: 380px;
+}
+.dimSetorLbl {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--tx-3);
+  white-space: nowrap;
+}
+
+.dimLista {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 0 2px;
+}
+
+/* A faixa colorida na borda esquerda é a MESMA cor que a dimensão terá na
+   árvore (`corDaDimensao`). Quem cadastra aqui reconhece o galho lá sem
+   precisar ler o nome duas vezes. A cor vem por `style`, do TSX. */
+.dimItem {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line);
+  border-radius: 10px;
+  background: var(--s1);
+  overflow: hidden;
+}
+.dimHead {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px 4px 4px;
+}
+.dimNome {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: 13.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.18s;
+}
+.dimNome:hover {
+  background: var(--s3);
+}
+.dimNome strong {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 180ms, o alvo do AGENTS.md §3. Só a seta gira: o corpo da dimensão aparece
+   sem transição de altura, que é o que mede errado quando a lista é longa. */
+.dimNome svg {
+  color: var(--tx-3);
+  flex: none;
+  transition: transform 0.18s ease;
+}
+.dimAberta svg {
+  transform: rotate(90deg);
+}
+.dimQtd {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--tx-3);
+  white-space: nowrap;
+}
+
+.subWrap {
+  border-top: 1px solid var(--line-soft);
+  padding: 8px 10px 10px 34px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.subItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: var(--s2);
+}
+.subNome {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Projeto e rotina no mesmo botão: o rótulo diz o estado atual e o clique
+   troca. Rotina é o padrão e por isso é o discreto — a maioria das
+   subdimensões de um setor de operação não termina nunca. */
+.subTipo {
+  border: 1px solid var(--line);
+  background: var(--s3);
+  color: var(--tx-3);
+  border-radius: 6px;
+  padding: 3px 9px;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.18s, color 0.18s, border-color 0.18s;
+}
+.subTipo:hover {
+  border-color: var(--brand-line);
+  color: var(--tx-2);
+}
+.subProjeto {
+  background: var(--susp-bg);
+  border-color: transparent;
+  color: var(--susp-tx);
+}
+
+.subAdd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 3px;
+}
+.subAdd .input {
+  flex: 1;
+  min-width: 0;
+}

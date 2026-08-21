@@ -557,6 +557,51 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
+    // ---- dimensões e subdimensões (a árvore do setor) ----
+    // A estrutura que a aba Dimensões desenha: `setor → dimensão →
+    // subdimensão → demanda`. As subdimensões moram num ARRAY dentro do
+    // documento da dimensão — por isso não há um segundo bloco aqui embaixo, e
+    // por isso este bloco governa os dois níveis de uma vez. O porquê do array
+    // está no cabeçalho de `dimensoes-core.ts`.
+    //
+    // A REGRA É A DE `/columns`, e não a de `/setores`, e a diferença é
+    // deliberada. Setor de execução é fronteira de VISIBILIDADE — criar um é
+    // criar a caixa onde esconder demanda de quem responde pelo setor, e por
+    // isso só admin cria. Dimensão não é fronteira nenhuma: é a organização
+    // interna do trabalho de um setor que já existe, do mesmo naipe das colunas
+    // do quadro. Quem responde pelo setor organiza o setor.
+    //
+    // O QUE ESTA REGRA NÃO FECHA, honestamente: apagar uma dimensão daqui não
+    // limpa o `dimensaoId` dos cards que apontavam para ela, e não devia — a
+    // demanda continua existindo e continua visível. Ela reaparece no nó "Sem
+    // classificação" da árvore, que existe exatamente para isso e tem teste
+    // próprio em `scripts/test-dimensoes.mjs`. O cadastro governa as gavetas;
+    // ele nunca governa o trabalho que estava dentro.
+    //
+    // O teto de 70 caracteres é o `LIMITE_NOME_CHARS` do core, e
+    // `scripts/test-dimensoes.mjs` reprova se os dois se afastarem. Ele vale só
+    // para o nome da DIMENSÃO: o nome de cada subdimensão viaja dentro de
+    // `subs`, e regra do Firestore não itera lista. Quem confere aquele lado é
+    // o mesmo `conferirNome` do core, no formulário — e é uma folga assumida,
+    // não um esquecimento: o pior caso é um gestor do próprio setor gravar um
+    // nome comprido na árvore do próprio setor.
+    match /dimensoes/{doc} {
+      allow read: if podeNoSetor(cur('setor'));
+      allow create: if gestorNoSetor(novo('setor'))
+                    && novo('nome') != ''
+                    && novo('nome').size() <= 70
+                    && novo('setor') != '';
+      // `setor` imutável, mesmo motivo do card: trocá-lo por update seria a
+      // porta dos fundos para escrever na árvore de outro setor. A comparação
+      // vem ANTES de `gestorNoSetor` de propósito — um update recusado por
+      // mexer no setor é recusado sem ler nada do banco.
+      allow update: if novo('setor') == cur('setor')
+                    && novo('nome') != ''
+                    && novo('nome').size() <= 70
+                    && gestorNoSetor(cur('setor'));
+      allow delete: if gestorNoSetor(cur('setor'));
+    }
+
     // ---- recorrências (manutenção programada por setor) ----
     // A REGRA é do setor: quem enxerga o setor lê; gestor e admin escrevem.
     // Operador não edita o plano de manutenção — ele executa o card que nasce

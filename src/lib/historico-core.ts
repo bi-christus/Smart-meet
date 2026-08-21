@@ -46,7 +46,9 @@ export type CampoRastreado =
   | "tipo"
   | "tags"
   | "links"
-  | "checklist";
+  | "checklist"
+  | "dimensao"
+  | "subdimensao";
 
 export const CAMPO_ROTULO: Record<CampoRastreado, string> = {
   titulo: "Título",
@@ -62,6 +64,8 @@ export const CAMPO_ROTULO: Record<CampoRastreado, string> = {
   tags: "Tags",
   links: "Links",
   checklist: "Checklist",
+  dimensao: "Dimensão",
+  subdimensao: "Subdimensão",
 };
 
 /** Ordem de leitura da timeline — o que muda o dono e a etapa vem primeiro. */
@@ -73,6 +77,8 @@ const ORDEM: CampoRastreado[] = [
   "prioridade",
   "titulo",
   "tipo",
+  "dimensao",
+  "subdimensao",
   "solicitante",
   "setorSolicitante",
   "tags",
@@ -145,6 +151,26 @@ export type EstadoCard = {
   startDate?: string | null;
   priority?: string;
   type?: string;
+  /**
+   * O NOME da dimensão, não o id — e é o ponto inteiro destes dois campos.
+   *
+   * O histórico guarda texto congelado: o que se lê na timeline é o nome de
+   * quando aconteceu, não um id resolvido na hora de exibir (o cabeçalho deste
+   * arquivo explica por quê). Guardar o id aqui faria a timeline escrever
+   * "Dimensão: de abc123 para xyz789" no dia em que o cadastro fosse renomeado
+   * ou apagado.
+   *
+   * Quem traduz id → nome é o MODAL, que já tem o cadastro carregado para
+   * desenhar o seletor. É por isso que `Rotulos` não ganhou um resolvedor novo:
+   * ele obrigaria as três telas que montam rótulos — inclusive o Cronograma,
+   * que atravessa vários setores — a assinar o cadastro de dimensões de todos
+   * eles para registrar um campo que nenhuma delas edita.
+   *
+   * Ausente nos dois lados = nada mudou, que é a resposta certa para quem editou
+   * a demanda por uma tela que não mexe em dimensão.
+   */
+  dimensaoNome?: string | null;
+  subdimensaoNome?: string | null;
   tags?: string[];
   /** Só a URL: é por ela que o diff compara, e o resto do link não é notícia. */
   links?: { url: string }[];
@@ -251,6 +277,8 @@ export function diffCard(
     rotular(depois.priority, r.prioridade),
   );
   par("tipo", rotular(antes.type, r.tipo), rotular(depois.type, r.tipo));
+  par("dimensao", ou0(antes.dimensaoNome), ou0(depois.dimensaoNome));
+  par("subdimensao", ou0(antes.subdimensaoNome), ou0(depois.subdimensaoNome));
 
   // Descrição: só o fato. Ver o cabeçalho do arquivo.
   if (ou0(antes.description) !== ou0(depois.description)) {

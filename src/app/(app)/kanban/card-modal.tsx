@@ -6,7 +6,7 @@
  * Saiu de `page.tsx` quando o arquivo passou de 3300 linhas. Nada além do
  * endereço mudou: as mesmas props, os mesmos hooks na mesma ordem.
  */
-import { Fragment, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   garantirSetorSolicitante,
   garantirSolicitante,
@@ -53,6 +53,7 @@ import {
 } from "@/lib/datas";
 import { codigoDe, fraseDeFalha } from "@/lib/erro-ui-core";
 import { diffCard, mudancasIniciais, type Rotulos } from "@/lib/historico-core";
+import { subscribeDimensoes, type Dimensao } from "@/lib/dimensoes";
 import { type UserProfile } from "@/lib/users";
 import { Icon } from "@/components/icons";
 import { IconePicker } from "@/components/icone-picker";
@@ -219,7 +220,21 @@ function mesmoValor(a: unknown, b: unknown): boolean {
 }
 
 export type EditState =
-  | { mode: "new"; columnId: string }
+  /**
+   * `dimensaoId` e `subdimensaoId` chegam preenchidos quando a demanda nasce de
+   * um lugar da árvore — o botão "Criar demanda aqui" da aba Dimensões. É o que
+   * evita a pergunta idiota: quem clicou DENTRO da subdimensão já disse onde a
+   * demanda entra, e o formulário abrindo vazio faria ele dizer de novo.
+   *
+   * Opcionais porque o Kanban não sabe nada de árvore: lá o campo abre no
+   * padrão, como qualquer outro.
+   */
+  | {
+      mode: "new";
+      columnId: string;
+      dimensaoId?: string | null;
+      subdimensaoId?: string | null;
+    }
   | { mode: "edit"; card: Card }
   | null;
 
@@ -275,6 +290,55 @@ export function CardModal({
   const [requesterSector, setRequesterSector] = useState(
     card?.requesterSector ?? "",
   );
+  const [dimensaoId, setDimensaoId] = useState(
+    card?.dimensaoId ?? (state.mode === "new" ? (state.dimensaoId ?? "") : ""),
+  );
+  const [subdimensaoId, setSubdimensaoId] = useState(
+    card?.subdimensaoId ??
+      (state.mode === "new" ? (state.subdimensaoId ?? "") : ""),
+  );
+
+  /**
+   * A árvore do setor, assinada AQUI e não recebida por prop.
+   *
+   * Dois lugares abrem este modal — o quadro e a aba Dimensões —, e nenhum dos
+   * dois precisa do cadastro para desenhar a si mesmo do jeito que precisaria
+   * para alimentar esta prop. Passá-lo obrigaria as duas telas a assinar a
+   * coleção o tempo todo por causa de um seletor que só existe enquanto o modal
+   * está aberto; aqui, o listener nasce e morre com ele.
+   *
+   * `[]` inicial e não `undefined`: enquanto a resposta não chega, o seletor
+   * mostra "— Sem dimensão —" e nada mais, que é o estado honesto. O caso do
+   * falso vazio que este projeto caça é a tela dizer "não há nenhuma"; um
+   * seletor ainda sem opções não afirma isso.
+   */
+  const [dims, setDims] = useState<Dimensao[]>([]);
+  useEffect(
+    () => subscribeDimensoes(sector, setDims, (e) => console.error("[dimensoes]", e)),
+    [sector],
+  );
+
+  const dimAtual = dims.find((d) => d.id === dimensaoId);
+  /**
+   * Trocar de dimensão zera a subdimensão, e é obrigatório que zere: o id da
+   * subdimensão só é único DENTRO da dimensão, então mantê-lo apontaria para
+   * uma gaveta de outra árvore — ou, pior, para uma que existe com o mesmo id e
+   * outro significado.
+   */
+  function trocarDimensao(novo: string) {
+    setDimensaoId(novo);
+    setSubdimensaoId("");
+  }
+
+  /** id → nome, para o histórico gravar texto e não identificador. */
+  function nomesDaArvore(dId?: string | null, sId?: string | null) {
+    const d = dId ? dims.find((x) => x.id === dId) : undefined;
+    const sub = d && sId ? d.subs.find((x) => x.id === sId) : undefined;
+    return {
+      dimensaoNome: d?.nome ?? null,
+      subdimensaoNome: sub?.nome ?? null,
+    };
+  }
   /**
    * Início e prazo já nascem em dia útil.
    *
@@ -912,6 +976,11 @@ export function CardModal({
         assignee: assignee || null,
         requester: requester || null,
         requesterSector: requesterSector || null,
+        dimensaoId: dimensaoId || null,
+        // Subdimensão sem dimensão não é estado válido — ver o campo em
+        // `kanban.ts`. O seletor já impede, e a guarda aqui é o cinto: o estado
+        // pode ter sobrado de uma dimensão apagada com o modal aberto.
+        subdimensaoId: (dimensaoId && subdimensaoId) || null,
         startDate: startDate || null,
         due: semPrazo ? null : due || null,
         priority,
@@ -928,7 +997,12 @@ export function CardModal({
         // O estado inicial vira a primeira linha da timeline: sem ela, a
         // demanda que já nasce com dono e prazo apareceria como se tivesse
         // nascido vazia e ganhado tudo depois, sem que ninguém tivesse mexido.
-        await createCard(sector, input, actorEmail, mudancasIniciais(base, rotulos));
+        await createCard(
+          sector,
+          input,
+          actorEmail,
+          mudancasIniciais(base, rotulos),
+        );
       } else if (card) {
         // Só os campos que REALMENTE mudaram. Enviar o formulário inteiro fazia
         // o último a salvar apagar, em silêncio, a edição de quem salvou antes
@@ -952,7 +1026,17 @@ export function CardModal({
           await updateCard(card.id, patch as Partial<Omit<Card, "id">>, {
             ctx,
             acao: "editada",
-            mudancas: diffCard(card, base, rotulos),
+            /**
+             * O `antes` leva os NOMES da dimensão e da subdimensão resolvidos
+             * agora, porque o card guarda id e o histórico guarda texto
+             * congelado (ver `EstadoCard`). Sem isto, os dois lados do diff
+             * ficariam `undefined` e uma troca de dimensão não deixaria rastro.
+             */
+            mudancas: diffCard(
+              { ...card, ...nomesDaArvore(card.dimensaoId, card.subdimensaoId) },
+              { ...base, ...nomesDaArvore(dimensaoId, subdimensaoId) },
+              rotulos,
+            ),
           });
         }
       }
@@ -1158,6 +1242,57 @@ export function CardModal({
           ariaLabel="Responsável"
         />
       </div>
+
+      {/**
+        * ONDE ESTA DEMANDA MORA NA ÁRVORE DO SETOR.
+        *
+        * Aparece SÓ quando o setor tem árvore cadastrada. Um par de seletores
+        * vazios em todo formulário do app seria a pergunta "em qual dimensão?"
+        * feita a quem ainda não tem dimensão nenhuma — e o Kanban dos setores
+        * que nunca vão usar a aba não devia ficar mais comprido por causa dela.
+        *
+        * A subdimensão é OPCIONAL de propósito: a ata prevê a demanda que fica
+        * direto na dimensão, "uma caixa que abriga vários trabalhos". Obrigar o
+        * segundo nível faria quem não soubesse escolher chutar, e chute vira
+        * dado errado que ninguém revisa.
+        */}
+      {dims.length > 0 && (
+        <div className={styles.row2}>
+          <div className={styles.field}>
+            <label className={styles.label}>Dimensão</label>
+            <Select
+              value={dimensaoId}
+              options={[
+                { value: "", label: "— Sem dimensão —" },
+                ...dims.map((d) => ({ value: d.id, label: d.nome })),
+              ]}
+              onChange={trocarDimensao}
+              placeholder="— Sem dimensão —"
+              ariaLabel="Dimensão"
+            />
+          </div>
+          <div className={styles.field}>
+            <label className={styles.label}>Subdimensão</label>
+            <Select
+              value={subdimensaoId}
+              options={[
+                { value: "", label: "— Direto na dimensão —" },
+                ...(dimAtual?.subs ?? []).map((sub) => ({
+                  value: sub.id,
+                  label: sub.nome,
+                })),
+              ]}
+              onChange={setSubdimensaoId}
+              // Sem dimensão escolhida a lista tem só a opção neutra, e o
+              // texto diz o motivo em vez de deixar um seletor mudo na tela.
+              placeholder={
+                dimAtual ? "— Direto na dimensão —" : "Escolha a dimensão primeiro"
+              }
+              ariaLabel="Subdimensão"
+            />
+          </div>
+        </div>
+      )}
 
       <div className={styles.row2}>
         <div className={styles.field}>
