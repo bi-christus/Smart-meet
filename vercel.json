@@ -11,6 +11,10 @@
     {
       "path": "/api/discord/resumo-diario",
       "schedule": "0 11 * * 1-5"
+    },
+    {
+      "path": "/api/temporadas/fechar",
+      "schedule": "20 6 1 * *"
     }
   ]
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useSetoresDaPessoa } from "@/lib/setores";
 import { subscribeUsers, type UserProfile } from "@/lib/users";
@@ -23,22 +23,37 @@ import {
 // cópias divergiriam no primeiro ajuste — e o sintoma seria o pódio e o emblema
 // discordando sobre a mesma demanda, cada um com o próprio jeito de comparar
 // e-mail.
-import { entregasPorPessoa } from "@/lib/entregas-core";
+import { entregasDoMes, mesAtual, rotuloMes } from "@/lib/temporadas-core";
+import {
+  listarTemporadasFechadas,
+  subscribeTemporadaFechada,
+  type TemporadaFechada,
+} from "@/lib/temporadas";
 import { juntarFontes } from "@/lib/async-data-core";
 import { useAsyncData } from "@/lib/use-async-data";
 import { Avatar } from "@/components/avatar";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
 import { SkeletonAvatar } from "@/components/skeleton";
+import { Select, type SelectOption } from "@/components/select";
+import { Icon } from "@/components/icons";
 import styles from "./rank.module.css";
 
 /**
- * Rank — quem entregou, e quanto.
+ * Rank — quem entregou, e quanto, TEMPORADA a temporada.
  *
  * É a única tela do app que fala de PESSOA e não de sistema, e ela existe
  * justamente porque o Dashboard não faz isso: "Consumo por responsável" mede
  * carga em aberto, que é o oposto — mede o que ainda não saiu. Nenhum painel de
  * lá responde "quem entregou mais", e essa é a pergunta que o pódio responde.
+ *
+ * CADA MÊS É UMA TEMPORADA (ver `temporadas-core.ts`). O padrão da tela é o mês
+ * corrente, calculado ao vivo a partir das mesmas assinaturas de sempre —
+ * `cards`/`columns` do setor — e recortado por `Card.enteredAt`. Uma temporada
+ * PASSADA lê um documento CONGELADO em `temporadas/{mes}` (gravado pelo cron de
+ * fechamento, `api/temporadas/fechar`): o pódio de um mês que já terminou não
+ * recalcula depois, porque o vencedor daquele mês já foi anunciado — é fato
+ * registrado, não um número que pode mudar se alguém editar uma demanda velha.
  *
  * O QUE CONTA COMO ENTREGA não é decidido aqui. É `colunasEntregues`
  * (`lib/kanban-columns`), a mesma regra do Dashboard, do Cronograma e do
@@ -61,6 +76,7 @@ import styles from "./rank.module.css";
 const SEM_CARDS: Card[] = [];
 const SEM_COLS: ColumnDoc[] = [];
 const SEM_USERS: UserProfile[] = [];
+const SEM_TEMPORADAS: TemporadaFechada[] = [];
 
 export default function RankPage() {
   const { profile } = useAuth();
@@ -78,9 +94,34 @@ export default function RankPage() {
     subscribeUsers(onData, onErro),
   );
 
+  // O mês corrente é o padrão da tela — sempre que a página monta de novo.
+  const [mesCorrente] = useState(() => mesAtual());
+  const [mesEscolhido, setMesEscolhido] = useState(mesCorrente);
+  const vendoAtual = mesEscolhido === mesCorrente;
+
+  const fTemporadasFechadas = useAsyncData<TemporadaFechada>(
+    "temporadas-fechadas",
+    listarTemporadasFechadas,
+  );
+  // Doc único, embrulhado em array de 0 ou 1: é o que permite `useAsyncData`
+  // distinguir "ainda carregando" (`undefined`) de "este mês nunca fechou"
+  // (`[]`) sem inventar um terceiro tipo de estado.
+  const fTemporadaFechada = useAsyncData<TemporadaFechada>(
+    vendoAtual ? "__atual__" : mesEscolhido,
+    (onData, onErro) => {
+      if (vendoAtual) return () => {};
+      return subscribeTemporadaFechada(
+        mesEscolhido,
+        (t) => onData(t ? [t] : []),
+        onErro,
+      );
+    },
+  );
+
   const cards = fCards.data ?? SEM_CARDS;
   const cols = fCols.data ?? SEM_COLS;
   const users = fUsers.data ?? SEM_USERS;
+  const temporadasFechadas = fTemporadasFechadas.data ?? SEM_TEMPORADAS;
 
   const usersMap = useMemo(() => {
     const m: Record<string, UserProfile> = {};
@@ -93,25 +134,37 @@ export default function RankPage() {
     [cols, sectors],
   );
 
-  /** Entregas por pessoa, e o total do recorte — inclusive o que não tem dono. */
-  const { colocacoes, totalEntregas } = useMemo(() => {
-    const { por, total } = entregasPorPessoa(cards, entreguesPorSetor);
-    return {
-      colocacoes: montarRank(
+  /** A temporada em exibição: ao vivo (mês corrente) ou congelada (mês passado). */
+  const { colocacoes, totalEntregas, vencedores, semFechamento } = useMemo(() => {
+    if (vendoAtual) {
+      const { por, total } = entregasDoMes(cards, entreguesPorSetor, mesEscolhido);
+      const ranking = montarRank(
         [...por.entries()].map(([email, entregues]) => ({
           chave: email,
-          // O rótulo desempata a ORDEM de quem já empatou em número, então ele
-          // tem de ser o que se lê na tela. Ordenar por e-mail deixaria dois
-          // empatados em ordem que a tela não explica.
           rotulo: usersMap[email]?.name || email,
           entregues,
         })),
-      ),
-      totalEntregas: total,
+      );
+      // Mês em andamento não tem campeão OFICIAL ainda — só o cron do dia 1
+      // registra um vencedor, e é isso que separa "quem está na frente agora"
+      // de "quem venceu a temporada".
+      return { colocacoes: ranking, totalEntregas: total, vencedores: [] as string[], semFechamento: false };
+    }
+    const fechada = fTemporadaFechada.data?.[0];
+    if (!fechada) {
+      return { colocacoes: [] as Colocacao[], totalEntregas: 0, vencedores: [] as string[], semFechamento: true };
+    }
+    return {
+      colocacoes: fechada.ranking,
+      totalEntregas: fechada.entregas,
+      vencedores: fechada.vencedores,
+      semFechamento: false,
     };
-  }, [cards, entreguesPorSetor, usersMap]);
+  }, [vendoAtual, cards, entreguesPorSetor, mesEscolhido, usersMap, fTemporadaFechada.data]);
 
-  const fontes = juntarFontes([fCards, fCols, fUsers]);
+  const fontes = vendoAtual
+    ? juntarFontes([fCards, fCols, fUsers])
+    : juntarFontes([fTemporadaFechada, fUsers]);
 
   if (!profile) return null;
 
@@ -127,6 +180,11 @@ export default function RankPage() {
     );
   }
 
+  const seletorOpcoes: SelectOption[] = [
+    { value: mesCorrente, label: "Temporada atual" },
+    ...temporadasFechadas.map((t) => ({ value: t.mes, label: rotuloMes(t.mes) })),
+  ];
+
   const podio = colocacoes.filter((c) => c.posicao <= POSICOES_DO_PODIO);
   const honra = colocacoes.filter((c) => c.posicao > POSICOES_DO_PODIO);
   const maior = maiorEntrega(colocacoes);
@@ -137,9 +195,29 @@ export default function RankPage() {
         sub={
           fontes.carregando || fontes.erro
             ? ""
-            : `${totalEntregas} ${totalEntregas === 1 ? "demanda entregue" : "demandas entregues"} em ${sectors.join(", ")}`
+            : vendoAtual
+              ? `${totalEntregas} ${totalEntregas === 1 ? "demanda entregue" : "demandas entregues"} em ${sectors.join(", ")} · ${rotuloMes(mesEscolhido)}`
+              : rotuloMes(mesEscolhido)
+        }
+        seletor={
+          <Select
+            value={mesEscolhido}
+            options={seletorOpcoes}
+            onChange={setMesEscolhido}
+            ariaLabel="Temporada"
+          />
         }
       />
+
+      {!vendoAtual && vencedores.length > 0 && (
+        <p className={styles.campea}>
+          <Icon name="trofeu" size={14} />
+          {vencedores.length === 1 ? " Campeã(o) da temporada: " : " Campeãs(ões) da temporada: "}
+          {vencedores
+            .map((chave) => colocacoes.find((c) => c.chave === chave)?.rotulo ?? chave)
+            .join(", ")}
+        </p>
+      )}
 
       {fontes.erro ? (
         <ErrorState
@@ -148,6 +226,7 @@ export default function RankPage() {
             fCards.tentarDeNovo();
             fCols.tentarDeNovo();
             fUsers.tentarDeNovo();
+            fTemporadaFechada.tentarDeNovo();
           }}
         />
       ) : fontes.carregando ? (
@@ -162,6 +241,12 @@ export default function RankPage() {
             texto="Montando o pódio…"
           />
         </div>
+      ) : semFechamento ? (
+        <EmptyState
+          icon="rank"
+          title="Esta temporada ainda não fechou"
+          description="O fechamento acontece automaticamente no início do mês seguinte. Volte depois que a temporada terminar."
+        />
       ) : colocacoes.length === 0 ? (
         <EmptyState
           icon="rank"
@@ -183,7 +268,7 @@ export default function RankPage() {
         />
       ) : (
         <>
-          <Podio colocacoes={podio} maior={maior} usersMap={usersMap} />
+          <Podio colocacoes={podio} maior={maior} usersMap={usersMap} campea={!vendoAtual} />
           {honra.length > 0 && (
             <FilaDeHonra colocacoes={honra} usersMap={usersMap} />
           )}
@@ -193,10 +278,13 @@ export default function RankPage() {
   );
 }
 
-function Cabecalho({ sub }: { sub: string }) {
+function Cabecalho({ sub, seletor }: { sub: string; seletor?: React.ReactNode }) {
   return (
     <div className={styles.head}>
-      <h1>Rank</h1>
+      <div className={styles.headTopo}>
+        <h1>Rank</h1>
+        {seletor}
+      </div>
       {/* A linha some enquanto não se sabe, em vez de dizer "0 demandas
           entregues" com a autoridade de um número pronto — mesma regra dos
           chips do Dashboard. */}
@@ -210,10 +298,8 @@ function Cabecalho({ sub }: { sub: string }) {
  *
  * O pedido era foto grande o bastante para reconhecer o rosto, e é isso que
  * decide a escala inteira desta tela: 112px no primeiro lugar contra os 30px da
- * topbar e os 22px do card do Kanban. Ouro, prata e bronze ficaram de fora de
- * propósito — são três plásticos que brigam com o laranja da marca e não dizem
- * nada que a altura do degrau já não diga. O primeiro lugar ganha a cor da
- * marca; o resto fica em superfície neutra, e a diferença entre eles é a altura.
+ * topbar e os 22px do card do Kanban. O primeiro lugar ganha a cor da marca; o
+ * resto fica em superfície neutra, e a diferença entre eles é a altura.
  */
 const TAM_AVATAR: Record<number, number> = { 1: 112, 2: 88, 3: 88 };
 
@@ -235,10 +321,13 @@ function Podio({
   colocacoes,
   maior,
   usersMap,
+  campea,
 }: {
   colocacoes: Colocacao[];
   maior: number;
   usersMap: Record<string, UserProfile>;
+  /** Temporada FECHADA sendo exibida — é o que acende o acento de campeão. */
+  campea: boolean;
 }) {
   const naOrdemDoPodio = useMemo(() => {
     const por = (p: number) => colocacoes.filter((c) => c.posicao === p);
@@ -248,18 +337,21 @@ function Podio({
   }, [colocacoes]);
 
   return (
-    <div className={styles.podio}>
-      {naOrdemDoPodio.map((c, i) => (
-        <Degrau
-          key={c.chave}
-          colocacao={c}
-          perfil={usersMap[c.chave]}
-          maior={maior}
-          /* A entrada é escalonada pela posição na TELA, da borda para o meio:
-             o primeiro lugar assenta por último, que é onde o olho para. */
-          atraso={i * 70}
-        />
-      ))}
+    <div className={styles.arena}>
+      <div className={styles.podio}>
+        {naOrdemDoPodio.map((c, i) => (
+          <Degrau
+            key={c.chave}
+            colocacao={c}
+            perfil={usersMap[c.chave]}
+            maior={maior}
+            campea={campea}
+            /* A entrada é escalonada pela posição na TELA, da borda para o meio:
+               o primeiro lugar assenta por último, que é onde o olho para. */
+            atraso={i * 70}
+          />
+        ))}
+      </div>
     </div>
   );
 }
@@ -269,11 +361,13 @@ function Degrau({
   perfil,
   maior,
   atraso,
+  campea,
 }: {
   colocacao: Colocacao;
   perfil?: UserProfile;
   maior: number;
   atraso: number;
+  campea: boolean;
 }) {
   const { posicao, entregues, rotulo } = colocacao;
   // 96px no topo, 46 de piso. A proporção é sobre o maior do pódio, não sobre o
@@ -286,6 +380,14 @@ function Degrau({
       style={{ ["--atraso" as string]: `${atraso}ms` }}
     >
       <div className={styles.rosto}>
+        {/* O troféu só aparece no 1º lugar de uma temporada JÁ FECHADA — é o
+            único momento em que "campeão" é um fato registrado, e não só a
+            liderança do momento (que pode trocar até o mês acabar). */}
+        {campea && posicao === 1 && (
+          <span className={styles.trofeu} aria-hidden="true">
+            <Icon name="trofeu" size={20} />
+          </span>
+        )}
         {/* alt vazio: o nome está escrito logo abaixo, dentro do mesmo bloco.
 
             `semMoldura` porque o degrau JÁ é uma moldura: `.rosto` desenha um

@@ -8,6 +8,15 @@
         { "fieldPath": "sector", "order": "ASCENDING" },
         { "fieldPath": "em", "order": "DESCENDING" }
       ]
+    },
+    {
+      "//": "Temporadas vencidas por uma pessoa, mais recente primeiro — o rótulo de campeã(o) no perfil.",
+      "collectionGroup": "temporadas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "vencedores", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "mes", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []
