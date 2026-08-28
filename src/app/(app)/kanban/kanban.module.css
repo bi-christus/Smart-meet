@@ -1110,8 +1110,17 @@
   gap: 11px;
   margin-bottom: 12px;
 }
+/* `align-items` NÃO É ENFEITE AQUI, e a falta dele deformava o avatar.
+   Sem a declaração o padrão é `stretch`, e aí todo filho sem altura própria
+   é esticado até a altura da linha. O círculo do avatar escapava porque leva
+   `width`/`height` inline — mas o ANEL da moldura (`.moldura`, que se mede
+   pelo conteúdo) era esticado junto, e um `border-radius: 50%` numa caixa de
+   30x79 desenha uma elipse. Num comentário de três linhas virava uma pílula.
+   `flex-start` porque o rosto pertence à primeira linha, ao lado do nome —
+   `center` o faria descer para o meio do texto em comentário longo. */
 .comment {
   display: flex;
+  align-items: flex-start;
   gap: 9px;
   animation: fadeUp 0.25s both cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -1430,8 +1439,12 @@
   overflow-y: auto;
   padding-right: 4px;
 }
+/* Mesmo motivo de `.comment`, e o mesmo defeito: sem `align-items` o anel da
+   moldura era esticado até a altura do evento. Os dois blocos são a mesma
+   linha "rosto + texto" e têm de se alinhar igual. */
 .histItem {
   display: flex;
+  align-items: flex-start;
   gap: 9px;
 }
 .histAcao {
