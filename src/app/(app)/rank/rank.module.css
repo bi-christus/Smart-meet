@@ -6,11 +6,18 @@
  * fila de honra — contra os 30px da topbar e os 22px do card do Kanban. Todo o
  * resto (altura de bloco, tipo, respiro) é dimensionado em volta disso.
  *
- * O QUE FICOU DE FORA, e por quê: ouro, prata e bronze. São três plásticos que
- * brigam com o laranja da marca e não dizem nada que a altura do degrau já não
- * diga — e a altura diz melhor, porque é proporcional à contagem em vez de ser
- * uma faixa de três. O primeiro lugar ganha a cor da marca; os outros ficam em
- * superfície neutra. Nenhum troféu, nenhuma coroa, nenhum confete.
+ * OURO, PRATA E BRONZE continuam de fora — três plásticos que brigam com o
+ * laranja da marca e não dizem nada que a altura do degrau já não diga.
+ *
+ * O TROFÉU VOLTOU, e é uma decisão consciente sobre a que este comentário
+ * dizia o contrário. A diferença é o que ele agora REPRESENTA: com temporadas
+ * mensais (`temporadas-core.ts`), o pódio deixou de ser só "quem está na
+ * frente agora" — uma temporada FECHADA tem um vencedor REGISTRADO, um fato
+ * que não muda mais. É esse fato que o troféu marca, e só ele: aparece uma vez,
+ * no 1º lugar, só ao ver uma temporada já fechada (`Podio.campea`) — nunca no
+ * mês em andamento, onde a liderança ainda pode trocar. Continua sendo UM
+ * acento em vez de três medalhas, pela mesma razão de sempre: a hierarquia é o
+ * tamanho, e o troféu não compete com isso, só anuncia o que já fechou.
  */
 
 .page {
@@ -21,6 +28,13 @@
 
 .head {
   padding: 16px 22px 0;
+}
+.headTopo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 .head h1 {
   /* A serifa entra AQUI e em nenhum outro lugar da tela. Ela é a voz de
@@ -36,6 +50,19 @@
   font-size: 12.5px;
   color: var(--tx-3);
   margin-top: 4px;
+}
+
+/* O aviso de quem venceu a temporada fechada — texto, não outro pódio em
+   miniatura. O nome já está no degrau logo abaixo; isto só nomeia o QUE está
+   registrado, para quem chegou direto pelo seletor sem ver o mês fechar. */
+.campea {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 12px 22px 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--brand);
 }
 
 .vazioTela {
@@ -57,6 +84,31 @@
   padding: 40px 22px 0;
 }
 
+/* ---------- a arena: fundo da temporada ---------- */
+
+/* Um brilho ESTÁTICO, sem loop nem pulso — a skill de motion do projeto proíbe
+   glow chamando atenção sozinho, e um pódio que pisca por cima do laranja da
+   marca seria exatamente isso. É só um degradê parado, no espírito de "arena
+   escura premiada": luz vindo de cima, sombra assentando embaixo.
+
+   PRONTO PARA A IMAGEM que o Ítalo vai gerar e enviar depois. Quando ela
+   chegar, o encaixe é uma linha a mais em `background`, por cima deste
+   degradê (que continua servindo de fallback caso a imagem demore a
+   carregar): `background: url(/rank-fundo.jpg) center/cover, <o que já está
+   aqui>;`. Não precisa de mais nenhuma mudança de estrutura. */
+.arena {
+  margin: 20px 22px 0;
+  /* SÓ os cantos de cima. Embaixo o pódio precisa continuar encostando na
+     fila de honra sem quina — ver o comentário de `.honra` sobre por que os
+     dois pedaços compartilham o mesmo chão. Arredondar ali quebraria essa
+     continuidade só porque a arena agora existe. */
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse 60% 70% at 50% 0%, var(--brand-soft), transparent 65%),
+    radial-gradient(ellipse 90% 40% at 50% 100%, rgba(0, 0, 0, 0.22), transparent 70%);
+}
+
 /* ---------- os três degraus ---------- */
 
 /* `flex-end` é a regra que faz isto ser um pódio: os blocos têm alturas
@@ -67,7 +119,9 @@
   align-items: flex-end;
   justify-content: center;
   gap: 14px;
-  margin: 0 22px;
+  /* Sem respiro horizontal aqui: quem já afasta das bordas da tela é a
+     `.arena`, por fora. Repetir o respiro nos dois empurraria o pódio 44px
+     para dentro em vez de 22px. */
   padding: 44px 0 0;
   flex-wrap: wrap;
   /* A LINHA DE BASE do pódio mora aqui, e não no topo da fila de honra. Com
@@ -99,6 +153,7 @@
 }
 
 .rosto {
+  position: relative;
   padding: 4px;
   border-radius: 50%;
   border: 2px solid var(--line);
@@ -109,6 +164,26 @@
 .primeiro .rosto {
   border-color: var(--brand);
   box-shadow: 0 0 0 5px var(--brand-soft);
+}
+
+/* O troféu: um selo estático sobre o rosto, nunca um badge que pulsa (a
+   skill de motion proíbe atenção em loop). `position: absolute` sobre
+   `.rosto`, que por isso ganhou `position: relative` — o mesmo truque de
+   ancoragem que o resto do app já usa para selo sobre avatar. */
+.trofeu {
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--brand);
+  color: var(--bg);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
 }
 .nome {
   margin-top: 12px;

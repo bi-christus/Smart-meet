@@ -31,6 +31,7 @@ import {
   MOLDURAS,
   normalizarMoldura,
 } from "@/lib/molduras-core";
+import { TemporadasDoPerfil } from "./temporadas-perfil";
 import styles from "./perfil-modal.module.css";
 
 /**
@@ -656,6 +657,11 @@ export function PerfilModal(props: PerfilModalProps) {
             inteiro, e é isso que transforma "quem é essa pessoa" numa pergunta
             com resposta. */}
         <EmblemasDoPerfil pessoa={pessoa} />
+        {/* As temporadas vencidas entram logo depois, na mesma seção "o que a
+            pessoa fez" — mas por fora do quadro (é dado da organização
+            inteira), então não competem pelo mesmo card dos emblemas, que é
+            escopado por setor solicitante. */}
+        <TemporadasDoPerfil pessoa={pessoa} />
 
         {meu ? (
           <section className={styles.secao} aria-labelledby="perfil-aparencia">

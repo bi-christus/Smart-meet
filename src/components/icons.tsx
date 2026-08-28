@@ -316,6 +316,19 @@ const PATHS: Record<string, ReactNode> = {
       <path d="M12 7v4.5M5.5 16v-4.5h13V16" />
     </>
   ),
+  /* taça + duas alças + haste + base — o ÚNICO acento de campeão do Rank
+     (`rank.module.css` explica por que ele existe agora, e por que continua
+     sendo um só em vez de três medalhas por degrau). */
+  trofeu: (
+    <>
+      <path d="M7 4h10v4a5 5 0 0 1-5 5 5 5 0 0 1-5-5V4z" />
+      <path d="M7 5H4.5a2.5 2.5 0 0 0 2.5 4.5" />
+      <path d="M17 5h2.5a2.5 2.5 0 0 1-2.5 4.5" />
+      <path d="M12 13v3" />
+      <path d="M8.5 20.5h7" />
+      <path d="M9.5 20.5v-1.2a2.5 2.5 0 0 1 5 0v1.2" />
+    </>
+  ),
   chevronLeft: <path d="M15 6l-6 6 6 6" />,
   chevronRight: <path d="M9 6l6 6-6 6" />,
 };

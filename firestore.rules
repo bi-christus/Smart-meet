@@ -509,6 +509,23 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // ---- temporadas do Rank ----
+    // Um doc por mês fechado (`temporadas/2026-08`), com o pódio congelado no
+    // instante do fechamento e a lista de quem venceu. LEITURA para qualquer
+    // usuário autorizado — é o mesmo dado público que o pódio ao vivo já
+    // mostra, só que de um mês que já passou.
+    //
+    // ESCRITA NUNCA, nem para admin. Quem fecha uma temporada é só
+    // `api/temporadas/fechar`, pelo Admin SDK — que ignora esta regra por
+    // definição. Abrir uma porta de escrita aqui (mesmo restrita a admin)
+    // criaria um segundo caminho para o mesmo resultado que o cron já
+    // garante ser único e idempotente, e um admin apressado poderia
+    // sobrescrever o pódio congelado de um mês que já fechou.
+    match /temporadas/{mes} {
+      allow read: if isAuthorized();
+      allow write: if false;
+    }
+
     // ---- solicitantes e setores solicitantes ----
     // Qualquer usuário autorizado CRIA (no meio do preenchimento de uma
     // demanda: quem descobre que falta um solicitante é quem está cadastrando,

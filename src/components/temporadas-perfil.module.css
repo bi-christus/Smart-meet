@@ -1,0 +1,41 @@
+/* O bloco de temporadas vencidas, no card do perfil — mesmo molde de
+   `emblemas-perfil.module.css` (bloco/cabeça/faixa/chip), com uma diferença
+   de propósito: aqui não há nível a distinguir, só um fato binário (venceu
+   ou não), então o chip usa a cor da marca em vez das três superfícies
+   neutras dos emblemas. */
+
+.bloco {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.cabeca {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--tx-3);
+  margin-bottom: 10px;
+}
+
+.faixa {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 11.5px;
+  font-weight: 600;
+  background: var(--brand-soft);
+  border: 1px solid var(--brand-line);
+  color: var(--tx);
+}
