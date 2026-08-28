@@ -89,13 +89,21 @@
 /* A foto (`public/rank-fundo.webp`) é gerada por IA, pedida no estilo "arena
    escura premiada" — 1672×941 original, convertida com `sharp` para WebP
    qualidade 82 (1.46 MB → 60 KB; um fundo decorativo não paga o preço de PNG
-   sem perdas). Os dois degradês por cima NÃO são fallback: ficam sempre,
-   porque é isso que aproxima a foto (gerada sem conhecer a marca) do laranja
-   do resto do app, e escurece a base para os degraus — desenhados por CIMA
-   deste fundo, no DOM — continuarem legíveis contra qualquer parte clara da
-   foto. Tudo ESTÁTICO, sem loop nem pulso: a skill de motion do projeto
-   proíbe glow chamando atenção sozinho, e um pódio que pisca por cima do
-   laranja da marca seria exatamente isso. */
+   sem perdas).
+
+   O SCRIM POR CIMA NÃO É ENFEITE, é o que faz o pódio continuar legível. A
+   foto tem holofotes que convergem justo no centro do topo — exatamente
+   atrás do 1º lugar —, e ali ela estoura em laranja claro. Sem escurecer, o
+   degrau mais importante da tela é o que menos se lê. Mais forte em cima (o
+   estouro) e embaixo (onde ficam os blocos), mais leve no meio, onde a foto
+   pode aparecer.
+
+   Um degradê de MARCA por cima da foto foi tentado e removido: a foto já é
+   mais laranja que `--brand`, e somar mais laranja só empurrava a região
+   crítica para ainda mais claro.
+
+   Tudo ESTÁTICO, sem loop nem pulso: a skill de motion do projeto proíbe
+   glow chamando atenção sozinho. */
 .arena {
   margin: 20px 22px 0;
   /* SÓ os cantos de cima. Embaixo o pódio precisa continuar encostando na
@@ -105,9 +113,18 @@
   border-radius: var(--r-lg) var(--r-lg) 0 0;
   overflow: hidden;
   background:
-    radial-gradient(ellipse 60% 70% at 50% 0%, var(--brand-soft), transparent 65%),
-    radial-gradient(ellipse 90% 40% at 50% 100%, rgba(0, 0, 0, 0.22), transparent 70%),
+    linear-gradient(
+      180deg,
+      rgba(8, 5, 3, 0.72) 0%,
+      rgba(8, 5, 3, 0.48) 42%,
+      rgba(8, 5, 3, 0.78) 100%
+    ),
     url(/rank-fundo.webp) center/cover no-repeat;
+  /* A FOTO É ESCURA NOS SEIS TEMAS, e o que fica direto sobre ela não pode
+     seguir o tema: no claro, `--tx` é quase preto e o nome sumia contra a
+     foto. Quem está dentro de um bloco opaco continua no tema normal — só o
+     que encosta na foto usa isto. */
+  --sobre-foto: #f7f6f2;
 }
 
 /* ---------- os três degraus ---------- */
@@ -164,7 +181,12 @@
 }
 .primeiro .rosto {
   border-color: var(--brand);
-  box-shadow: 0 0 0 5px var(--brand-soft);
+  /* O halo translúcido sozinho não separa mais nada: ele é laranja sobre uma
+     foto laranja. A sombra escura por fora é o que descola o 1º lugar do
+     fundo — sem ela o rosto encosta na luz da foto e some. */
+  box-shadow:
+    0 0 0 5px var(--brand-soft),
+    0 8px 24px rgba(0, 0, 0, 0.55);
 }
 
 /* O troféu: um selo estático sobre o rosto, nunca um badge que pulsa (a
@@ -191,7 +213,11 @@
   max-width: 100%;
   font-size: 14px;
   font-weight: 600;
-  color: var(--tx);
+  /* Sobre a foto, não sobre a superfície do tema — ver `--sobre-foto` na
+     `.arena`. A sombra é o que segura o nome contra as faíscas claras da
+     foto, que passam bem na altura desta linha. */
+  color: var(--sobre-foto, var(--tx));
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75);
   text-align: center;
   /* Duas linhas, e não elipse numa: nome completo é o que a pessoa reconhece,
      e "Maria Fernanda de Albu…" num pódio é pior do que uma segunda linha. */
@@ -220,8 +246,16 @@
   border-radius: 10px 10px 0 0;
   border-bottom: none;
 }
+/* O bloco do 1º lugar precisa ser OPACO, e é aqui que a arena mudou a regra.
+   `--brand-soft` é translúcido (16% de laranja): sobre a superfície neutra de
+   antes ele desenhava um bloco laranja pálido, mas sobre a foto — que é
+   laranja forte justo atrás dele — a contagem simplesmente sumia. A camada
+   dupla é o mesmo laranja de sempre, agora assentado num fundo opaco em vez
+   de no que estiver por trás. */
 .primeiro .bloco {
-  background: var(--brand-soft);
+  background:
+    linear-gradient(var(--brand-soft), var(--brand-soft)),
+    var(--s2);
   border-color: var(--brand-line);
 }
 
