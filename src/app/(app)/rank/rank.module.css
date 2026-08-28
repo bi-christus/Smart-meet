@@ -86,16 +86,16 @@
 
 /* ---------- a arena: fundo da temporada ---------- */
 
-/* Um brilho ESTÁTICO, sem loop nem pulso — a skill de motion do projeto proíbe
-   glow chamando atenção sozinho, e um pódio que pisca por cima do laranja da
-   marca seria exatamente isso. É só um degradê parado, no espírito de "arena
-   escura premiada": luz vindo de cima, sombra assentando embaixo.
-
-   PRONTO PARA A IMAGEM que o Ítalo vai gerar e enviar depois. Quando ela
-   chegar, o encaixe é uma linha a mais em `background`, por cima deste
-   degradê (que continua servindo de fallback caso a imagem demore a
-   carregar): `background: url(/rank-fundo.jpg) center/cover, <o que já está
-   aqui>;`. Não precisa de mais nenhuma mudança de estrutura. */
+/* A foto (`public/rank-fundo.webp`) é gerada por IA, pedida no estilo "arena
+   escura premiada" — 1672×941 original, convertida com `sharp` para WebP
+   qualidade 82 (1.46 MB → 60 KB; um fundo decorativo não paga o preço de PNG
+   sem perdas). Os dois degradês por cima NÃO são fallback: ficam sempre,
+   porque é isso que aproxima a foto (gerada sem conhecer a marca) do laranja
+   do resto do app, e escurece a base para os degraus — desenhados por CIMA
+   deste fundo, no DOM — continuarem legíveis contra qualquer parte clara da
+   foto. Tudo ESTÁTICO, sem loop nem pulso: a skill de motion do projeto
+   proíbe glow chamando atenção sozinho, e um pódio que pisca por cima do
+   laranja da marca seria exatamente isso. */
 .arena {
   margin: 20px 22px 0;
   /* SÓ os cantos de cima. Embaixo o pódio precisa continuar encostando na
@@ -106,7 +106,8 @@
   overflow: hidden;
   background:
     radial-gradient(ellipse 60% 70% at 50% 0%, var(--brand-soft), transparent 65%),
-    radial-gradient(ellipse 90% 40% at 50% 100%, rgba(0, 0, 0, 0.22), transparent 70%);
+    radial-gradient(ellipse 90% 40% at 50% 100%, rgba(0, 0, 0, 0.22), transparent 70%),
+    url(/rank-fundo.webp) center/cover no-repeat;
 }
 
 /* ---------- os três degraus ---------- */
