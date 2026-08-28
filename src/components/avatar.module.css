@@ -104,6 +104,19 @@
 .moldura {
   display: inline-flex;
   flex: none;
+  /* `flex: none` sozinho NÃO basta, e essa lacuna já produziu defeito em
+     produção: ele trava o eixo PRINCIPAL, e quem deformava o anel era o
+     CRUZADO. Num container `display: flex` sem `align-items` (o padrão é
+     `stretch`), este `<span>` — que não tem altura própria, ele se mede pelo
+     conteúdo — era esticado até a altura da linha inteira, e o
+     `border-radius: 50%` virava elipse. O círculo de dentro escapava porque
+     `<Avatar>` escreve `width`/`height` inline nele; o anel não tinha essa
+     proteção. Aconteceu na lista de comentários e na timeline do card.
+     `fit-content` resolve na RAIZ, sem mexer no alinhamento: altura definida
+     não é esticada, e continua respeitando o `align-items` de quem chama —
+     um `align-self` aqui, além de consertar, jogaria para o topo os avatares
+     que hoje ficam centrados (o responsável no card, o mini do perfil). */
+  height: fit-content;
   border-radius: 50%;
   padding: var(--m-anel);
   margin: calc(-1 * var(--m-anel));
