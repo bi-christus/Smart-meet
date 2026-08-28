@@ -1355,6 +1355,7 @@
   height: 13px;
   accent-color: var(--brand);
   cursor: pointer;
+  flex: none;
 }
 /* Mesma altura do input de data que ele substitui: sem isso o formulário
    inteiro pula 40px para cima ao marcar a opção. */
