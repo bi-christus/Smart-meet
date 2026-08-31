@@ -1616,6 +1616,48 @@
 .lixeiraBtn:hover svg {
   color: var(--brand);
 }
+/**
+ * O botão como ALVO DE SOLTURA — dois estados, e eles respondem a perguntas
+ * diferentes.
+ *
+ * `armada` aparece assim que um card sai do lugar, em qualquer parte do quadro:
+ * ela não é retorno de mira, é DESCOBERTA. Arrastar até a lixeira não é um
+ * gesto que alguém tente por conta própria — o alvo tem de se oferecer enquanto
+ * a mão ainda está no ar, senão o recurso existe e ninguém usa.
+ *
+ * `sobre` é a mira confirmada, e por isso é a única das duas que muda a cor de
+ * fundo: "pode soltar AQUI". Um estado só, servindo para as duas coisas, faria
+ * o botão parecer ativo o arrasto inteiro — e aí ele deixa de responder no
+ * momento em que a resposta importa.
+ *
+ * Nada de animação em nenhum dos dois. Arrastar card é interação de alta
+ * frequência (AGENTS.md §3) e o ponteiro atravessa o cabeçalho a caminho de
+ * outras colunas: um alvo que pulsa a cada passagem é o `AI-slop motion` que a
+ * skill descreve. Só cor e borda, com a transição curta que o resto do
+ * cabeçalho já usa.
+ */
+.lixeiraArmada {
+  border-color: var(--danger);
+  color: var(--danger-tx);
+}
+.lixeiraArmada svg {
+  color: var(--danger-tx);
+}
+.lixeiraSobre {
+  background: var(--danger-bg);
+  border-color: var(--danger);
+  color: var(--danger-tx);
+}
+.lixeiraSobre svg {
+  color: var(--danger-tx);
+}
+/* O filho tem de ignorar o ponteiro, senão `dragleave` dispara toda vez que o
+   cursor passa do botão para o número dentro dele — e o alvo apaga no meio da
+   mira, que é quando a pessoa está prestes a soltar. */
+.lixeiraArmada *,
+.lixeiraSobre * {
+  pointer-events: none;
+}
 /* A contagem só existe quando há algo dentro — e o CSS não é quem decide isso.
    Ver o `naLixeira &&` na página: um "0" antes da resposta seria a mesma
    mentira que o resto do quadro passou meses corrigindo. */
