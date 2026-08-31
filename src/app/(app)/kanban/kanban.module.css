@@ -1788,6 +1788,53 @@
   padding: 0 14px;
   font-size: 12.5px;
 }
+/**
+ * DESCARTAR é o único botão de perigo do app que não é sólido — e a exceção tem
+ * motivo, não é descuido.
+ *
+ * Toda outra confirmação do projeto tem um só desfecho perigoso, e ele fica
+ * sólido em `--danger` (ver `.btnConfirmaPerigo`, logo acima). A pergunta da
+ * saída é a primeira com DOIS desfechos definitivos lado a lado: descartar e
+ * salvar. Sólidos os dois, no tema claro eles viram vizinhos quase da mesma cor
+ * — `--danger` é #dc2626 e `--brand` é #d24e12 —, e a diferença entre jogar fora
+ * dez minutos de digitação e gravá-los passaria a ser um matiz.
+ *
+ * Então só o SALVAR fica sólido, e o descartar vira contorno com texto de
+ * perigo: um sólido só na linha, e ele é o que preserva o trabalho. A cor de
+ * perigo continua no texto, que é o que separa este do "Continuar editando" —
+ * os dois têm a mesma moldura porque nenhum dos dois é a ação em destaque.
+ */
+.btnConfirmaDescarta {
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  background: none;
+  color: var(--danger-tx);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.18s;
+}
+.btnConfirmaDescarta:hover {
+  background: var(--danger-bg);
+}
+.btnConfirmaDescarta:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+/* E o mesmo encolhimento para o botão de salvar, pela mesma razão que já valia
+   para o ghost: dentro do bloco de confirmação todos os botões são da mesma
+   pergunta, e um 8px mais alto que os vizinhos lê como se fosse de outra coisa —
+   medido, eram 34, 34 e 42. O rodapé do modal continua com os 42px, que é a
+   escala das ações do formulário inteiro. */
+.confirmaAcoes .btnSave {
+  height: 34px;
+  padding: 0 14px;
+  font-size: 12.5px;
+}
 
 /* O selo do link virou BOTÃO — ele abre o seletor de ícone.
 

@@ -43,3 +43,64 @@
   animation: overlaySai 120ms linear forwards;
   pointer-events: none;
 }
+
+/**
+ * O tremor da recusa.
+ *
+ * Feedback de sistema, nao enfeite: o clique fora foi recusado, e sem retorno
+ * nenhum o dialogo parece travado. Passa na Frequency Gate do AGENTS.md §3
+ * porque nao e interacao de alta frequencia — acontece uma vez, quando alguem
+ * tenta sair de um formulario com alteracoes por salvar.
+ *
+ * 220ms para quatro idas e voltas, amplitude de 6px. Pequena de proposito: o
+ * alvo e o canto do olho, para trazer a atencao de volta ao dialogo. Quem
+ * EXPLICA a recusa e a frase que aparece dentro dele; o tremor so diz "olhe".
+ *
+ * A classe vem DOBRADA pelo mesmo motivo de `.saindo`: a animacao de entrada
+ * mora na folha de quem chama (`kanban.module.css` e companhia), e com a mesma
+ * especificidade quem venceria seria a ordem no bundle.
+ */
+@keyframes modalTreme {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  15% {
+    transform: translateX(-6px);
+  }
+  35% {
+    transform: translateX(5px);
+  }
+  55% {
+    transform: translateX(-3px);
+  }
+  75% {
+    transform: translateX(2px);
+  }
+}
+
+.tremendo.tremendo {
+  animation: modalTreme 220ms ease-in-out;
+}
+
+/**
+ * Movimento reduzido: um ANEL, e nada de animacao.
+ *
+ * A tentacao era escrever aqui um `@keyframes` alternativo, so com cor. Nao
+ * funcionaria, e a prova esta em duas folhas: `globals.css:265` zera
+ * `animation-duration` de TUDO com `!important`, e `kanban.module.css:1285`
+ * ainda por cima manda `animation: none !important` no proprio `.modal`. Um
+ * fallback animado aqui seria uma promessa que duas regras acima ja quebraram —
+ * e a proxima pessoa procuraria por que ele "nao funciona".
+ *
+ * `box-shadow` estatico nao e animacao nem transicao, entao passa por baixo dos
+ * dois bloqueios. Quem aparece e some com ele e a CLASSE, cujo tempo e contado
+ * em JavaScript (`TREMOR_MS`) — o mesmo relogio nos dois casos. Cortar a recusa
+ * sem substituir deixaria sem resposta nenhuma justamente quem mais depende de
+ * retorno explicito.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .tremendo.tremendo {
+    box-shadow: 0 0 0 2px var(--danger), var(--shadow);
+  }
+}

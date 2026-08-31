@@ -8,6 +8,12 @@
  */
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
+  camposMudados,
+  mesmoValor,
+  resumoDosCampos,
+  type Rascunho,
+} from "@/lib/rascunho-core";
+import {
   garantirSetorSolicitante,
   garantirSolicitante,
   type Solicitante,
@@ -210,15 +216,6 @@ function NovoCadastro({
  * vazia. Arrays e objetos (tags, checklist) comparam por conteúdo, e a ordem
  * conta — reordenar a checklist É uma mudança.
  */
-function mesmoValor(a: unknown, b: unknown): boolean {
-  const vazio = (v: unknown) => v === undefined || v === null || v === "";
-  if (vazio(a) && vazio(b)) return true;
-  if (typeof a === "object" || typeof b === "object") {
-    return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
-  }
-  return a === b;
-}
-
 export type EditState =
   /**
    * `dimensaoId` e `subdimensaoId` chegam preenchidos quando a demanda nasce de
@@ -417,6 +414,8 @@ export function CardModal({
   const [saving, setSaving] = useState(false);
   /** A exclusão pedida, esperando o segundo clique. */
   const [confirmandoExclusao, setConfirmandoExclusao] = useState(false);
+  /** A saída pedida com alterações por salvar, esperando a decisão. */
+  const [confirmandoSaida, setConfirmandoSaida] = useState(false);
   const [excluindo, setExcluindo] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   /**
@@ -885,6 +884,66 @@ export function CardModal({
   }
 
   /**
+   * O formulário reduzido ao que VAI PARA O BANCO — a única fonte dos dois.
+   *
+   * Isto estava escrito dentro do `submit`, e por isso "o que se grava" e "o que
+   * conta como alteração não salva" eram duas listas de campos mantidas por
+   * ninguém. Agora são a mesma: o guarda de saída compara instantâneos desta
+   * função, e o `submit` monta o patch a partir dela. Um campo novo entra aqui
+   * uma vez e as duas perguntas passam a conhecê-lo — que é o contrário do bug
+   * silencioso em que o campo é salvo mas não é vigiado (ou vigiado e não salvo).
+   *
+   * As normalizações fazem parte do contrato e por isso moram aqui: `trim()` no
+   * texto e `"" → null` nos opcionais. Sem elas, um espaço a mais digitado e
+   * apagado contaria como alteração pendente.
+   */
+  function montarBase() {
+    return {
+      title: title.trim(),
+      description: description.trim(),
+      columnId,
+      type,
+      assignee: assignee || null,
+      requester: requester || null,
+      requesterSector: requesterSector || null,
+      dimensaoId: dimensaoId || null,
+      // Subdimensão sem dimensão não é estado válido — ver o campo em
+      // `kanban.ts`. O seletor já impede, e a guarda aqui é o cinto: o estado
+      // pode ter sobrado de uma dimensão apagada com o modal aberto.
+      subdimensaoId: (dimensaoId && subdimensaoId) || null,
+      startDate: startDate || null,
+      due: semPrazo ? null : due || null,
+      priority,
+      tags,
+      // Só as referências das tags que sobraram: remover a tag e deixar a
+      // referência gravada devolveria o vínculo na próxima edição.
+      tagRefs: tagRefs.filter((r) => tags.includes(r.texto)),
+      checklist,
+      links,
+    };
+  }
+
+  /**
+   * O formulário como ele estava quando o modal abriu.
+   *
+   * Congelado, e comparado contra `montarBase()` de agora. Duas alternativas
+   * foram descartadas:
+   *
+   * Comparar contra o CARD cru (como o `submit` faz para montar o patch) daria
+   * falso positivo no primeiro card antigo que aparecesse: um card gravado antes
+   * de as tags existirem não tem a chave, o formulário abre com `[]`, e `[]`
+   * contra `undefined` dá diferente. A tela perguntaria "descartar alterações?"
+   * para quem só abriu e fechou. Passando os DOIS lados pela mesma construção,
+   * o campo que ninguém tocou sai idêntico dos dois.
+   *
+   * E congelar, em vez de reler `card`, porque o card chega de uma assinatura e
+   * pode ser reescrito por outra pessoa com o modal aberto. O que define "você
+   * alterou" é o que ESTA pessoa encontrou ao abrir — senão a edição de um
+   * colega apareceria como alteração dela, para ela decidir se descarta.
+   */
+  const [baseAoAbrir] = useState<Rascunho>(() => montarBase());
+
+  /**
    * Fecha o card gravando o comentário escrito.
    *
    * Vale também no "Cancelar" e no Escape: comentário nunca fez parte do
@@ -895,6 +954,36 @@ export function CardModal({
   async function fechar() {
     if (!(await gravarComentarios())) return;
     onClose();
+  }
+
+  /** Campos que diferem do que havia na abertura, na ordem do formulário. */
+  const mudados = camposMudados(baseAoAbrir, montarBase());
+  const temMudanca = mudados.length > 0;
+
+  /**
+   * O veto do `<Modal>`: com alteração por salvar, o clique fora e o Escape
+   * NÃO fecham.
+   *
+   * Devolve `false` uma vez só por gesto e, na mesma passada, abre a pergunta.
+   * Enquanto ela está na tela, o veto sai do caminho (`confirmandoSaida` já é
+   * true) — quem já viu a pergunta e clica fora de novo está dizendo "some", e
+   * insistir a partir daí seria a tela prendendo a pessoa dentro de um diálogo
+   * que ela só quer abandonar. Sair por ali descarta, que é o que os botões
+   * também oferecem, e o segundo clique é deliberado.
+   */
+  function podeFechar(): boolean {
+    if (saving || excluindo) return false;
+    if (!temMudanca || confirmandoSaida) return true;
+    setErr(null);
+    setConfirmandoExclusao(false);
+    setConfirmandoSaida(true);
+    return false;
+  }
+
+  /** Sai jogando fora o que foi digitado — o comentário escrito ainda grava. */
+  async function descartarEFechar() {
+    setConfirmandoSaida(false);
+    await fechar();
   }
 
   /** Leva o campo que travou o salvamento até os olhos de quem clicou. */
@@ -968,29 +1057,7 @@ export function CardModal({
     setCampoErro(null);
     setSaving(true);
     try {
-      const base = {
-        title: title.trim(),
-        description: description.trim(),
-        columnId,
-        type,
-        assignee: assignee || null,
-        requester: requester || null,
-        requesterSector: requesterSector || null,
-        dimensaoId: dimensaoId || null,
-        // Subdimensão sem dimensão não é estado válido — ver o campo em
-        // `kanban.ts`. O seletor já impede, e a guarda aqui é o cinto: o estado
-        // pode ter sobrado de uma dimensão apagada com o modal aberto.
-        subdimensaoId: (dimensaoId && subdimensaoId) || null,
-        startDate: startDate || null,
-        due: semPrazo ? null : due || null,
-        priority,
-        tags,
-        // Só as referências das tags que sobraram: remover a tag e deixar a
-        // referência gravada devolveria o vínculo na próxima edição.
-        tagRefs: tagRefs.filter((r) => tags.includes(r.texto)),
-        checklist,
-        links,
-      };
+      const base = montarBase();
       const ctx = { autor: actorEmail, sector };
       if (isNew) {
         const input: CardInput = base;
@@ -1093,6 +1160,7 @@ export function CardModal({
   return (
     <Modal
       onClose={() => void fechar()}
+      podeFechar={podeFechar}
       ariaLabel={isNew ? "Nova demanda" : "Editar demanda"}
       overlayClassName={styles.overlay}
       className={styles.modal}
@@ -1831,6 +1899,68 @@ export function CardModal({
 
       {err && <div className={styles.err}>{err}</div>}
 
+      {/**
+       * A pergunta da saída — mesmo `.confirmaBloco` da exclusão, de propósito.
+       *
+       * É a segunda pergunta perigosa deste modal, e as duas aparecem no mesmo
+       * lugar, com a mesma moldura e a mesma ordem de botões (a saída segura à
+       * esquerda, a consequência à direita). Inventar um segundo formato para a
+       * segunda pergunta obrigaria a ler de novo uma coisa já aprendida.
+       *
+       * `aria-live` e foco: o tremor do `<Modal>` é visual e não chega a quem
+       * usa leitor de tela, e o bloco nasce no fim de um formulário longo —
+       * quem apertou Escape pode estar a três telas de rolagem daqui.
+       */}
+      {confirmandoSaida && (
+        <div
+          className={styles.confirmaBloco}
+          role="alertdialog"
+          aria-live="assertive"
+          ref={(el) => el?.scrollIntoView({ block: "nearest" })}
+        >
+          <div className={styles.confirmaTexto}>
+            <strong>Fechar sem salvar?</strong> Você alterou{" "}
+            {resumoDosCampos(mudados)} nesta demanda.{" "}
+            {mudados.length === 1
+              ? "Fechando agora, essa alteração é perdida"
+              : "Fechando agora, essas alterações são perdidas"}{" "}
+            — o que já estava salvo continua no quadro.
+          </div>
+          <div className={styles.confirmaAcoes}>
+            <button
+              type="button"
+              className={styles.btnGhost}
+              onClick={() => setConfirmandoSaida(false)}
+              disabled={saving}
+              autoFocus
+            >
+              Continuar editando
+            </button>
+            <button
+              type="button"
+              className={styles.btnConfirmaDescarta}
+              onClick={() => void descartarEFechar()}
+              disabled={saving}
+            >
+              Descartar e fechar
+            </button>
+            {/* Salvar daqui é o MESMO `submit` do rodapé: ele valida, e se o
+                título estiver vazio ou o prazo cair num sábado, o modal fica
+                aberto com o campo cobrado. Um atalho que gravasse sem validar
+                publicaria no quadro de todo mundo o rascunho que a validação
+                existe para barrar. */}
+            <button
+              type="button"
+              className={styles.btnSave}
+              onClick={submit}
+              disabled={saving}
+            >
+              {saving ? "Salvando…" : "Salvar e fechar"}
+            </button>
+          </div>
+        </div>
+      )}
+
       {confirmandoExclusao && (
         <div className={styles.confirmaBloco}>
           <div className={styles.confirmaTexto}>
@@ -1876,9 +2006,14 @@ export function CardModal({
           </button>
         )}
         <div className={styles.spacer} />
+        {/* Cancelar passa pelo MESMO guarda do clique fora: ele é o gesto mais
+            deliberado dos três, mas perde exatamente a mesma coisa. Deixá-lo de
+            fora daria uma porta sem tranca ao lado de duas trancadas. */}
         <button
           className={styles.btnGhost}
-          onClick={() => void fechar()}
+          onClick={() => {
+            if (podeFechar()) void fechar();
+          }}
           disabled={saving || posting || excluindo}
         >
           Cancelar
