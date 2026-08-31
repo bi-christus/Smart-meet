@@ -16,11 +16,15 @@
  * Roda com o strip de tipos nativo do Node sobre o .ts real — sem cópia.
  */
 import {
+  MAX_PLINTOS,
   POSICOES_DO_PODIO,
   TETO_RANK,
   alturaDoDegrau,
+  escalaDaFileira,
   maiorEntrega,
   montarRank,
+  ordemNaFileira,
+  partirCena,
 } from "../src/lib/rank-core.ts";
 
 let falhas = 0;
@@ -206,6 +210,134 @@ checa(
   "altura não depende de `maior` inconsistente — nada estoura o teto",
   alturaDoDegrau(1, 99, 1) === alturaDoDegrau(1, 1, 1) &&
     alturaDoDegrau(3, 0, 0) < alturaDoDegrau(2, 0, 0),
+);
+
+// --- a cena: quem sobe em plinto, quem fica de pe ------------------------
+// O corte de `montarRank` e de POSICAO, nao de pessoa. No dia 2 de qualquer
+// temporada todo mundo tem uma entrega, todo mundo esta em primeiro, e um
+// filtro `posicao <= 3` devolve a lista INTEIRA. Nada fica vermelho: o sintoma
+// e uma fileira de trinta plintos identicos com "1o" escrito trinta vezes.
+const cena = (...pares) => partirCena(montarRank(pessoas(...pares)));
+const forma = (c) => `${c.degraus.length}+${c.plateia.length}`;
+
+checa(
+  "tres niveis viram tres plintos, e o resto fica de pe",
+  forma(cena(["A", 9], ["B", 6], ["C", 4], ["D", 2], ["E", 1])) === "3+2",
+);
+
+checa(
+  "empate no 2o lugar ainda e podio — quatro plintos cabem",
+  forma(cena(["A", 9], ["B", 6], ["C", 6])) === "3+0",
+  JSON.stringify(cena(["A", 9], ["B", 6], ["C", 6]).degraus.map((d) => d.posicao)),
+);
+
+checa(
+  "empate no 1o com um terceiro atras continua sendo podio",
+  forma(cena(["A", 9], ["B", 9], ["C", 4])) === "3+0",
+);
+
+checa(
+  "TODO MUNDO EMPATADO NAO E PODIO: um nivel so nao tem em relacao a que subir",
+  forma(cena(["A", 1], ["B", 1], ["C", 1])) === "0+3",
+);
+
+checa(
+  "uma pessoa sozinha nao e podio — bloco unico no centro e retrato",
+  forma(cena(["A", 7])) === "0+1",
+);
+
+checa(
+  "o dia 2 da temporada: trinta pessoas com uma entrega cada",
+  (() => {
+    const trinta = Array.from({ length: 30 }, (_, i) => [`P${i}`, 1]);
+    const c = cena(...trinta);
+    // `montarRank` devolve as trinta, todas em 1o — e e por isso que a cena
+    // inteira tem de virar fileira em vez de trinta plintos.
+    return c.degraus.length === 0 && c.plateia.length === 30;
+  })(),
+);
+
+checa(
+  "mais plintos que o teto derruba o podio, mesmo com niveis diferentes",
+  (() => {
+    // Um primeiro e TRES segundos: quatro pecas no topo, dois niveis — cabe,
+    // e e exatamente o limite.
+    const noLimite = cena(["A", 9], ["B", 5], ["C", 5], ["D", 5]);
+    // Um primeiro e QUATRO segundos: cinco pecas. Passa do limite, e a cena
+    // inteira vira fileira — plataforma de cinco plintos e grafico de barras.
+    const passou = cena(["A", 9], ["B", 5], ["C", 5], ["D", 5], ["E", 5]);
+    return (
+      noLimite.degraus.length === MAX_PLINTOS &&
+      passou.degraus.length === 0 &&
+      passou.plateia.length === 5
+    );
+  })(),
+);
+
+checa(
+  "partirCena nao reordena nem duplica ninguem",
+  (() => {
+    const r = montarRank(pessoas(["A", 9], ["B", 6], ["C", 4], ["D", 2]));
+    const c = partirCena(r);
+    const juntos = [...c.degraus, ...c.plateia].map((x) => x.rotulo).sort();
+    return juntos.join(",") === "A,B,C,D";
+  })(),
+);
+
+// --- a piramide: o 1o no meio, os outros descendo para as bordas ---------
+// A ordem visual sai do INDICE, e nao da colocacao. Com a colocacao, um empate
+// manda os dois empatados para o mesmo lado (as duas posicoes sao pares, ou as
+// duas impares) e o podio inteiro desliza para fora do centro da tela.
+const visual = (n) =>
+  Array.from({ length: n }, (_, i) => i)
+    .sort((a, b) => ordemNaFileira(a) - ordemNaFileira(b));
+
+checa(
+  "a ordem visual poe o indice 0 no centro e alterna para as bordas",
+  visual(9).join(",") === "7,5,3,1,0,2,4,6,8",
+  visual(9).join(","),
+);
+
+checa(
+  "quem vem antes no ranking fica mais perto do centro",
+  Array.from({ length: 9 }, (_, i) => i).every(
+    (i) => i === 0 || Math.abs(ordemNaFileira(i)) >= Math.abs(ordemNaFileira(i - 1)),
+  ),
+);
+
+checa(
+  "os dois bracos nunca diferem em mais de uma pessoa — o campeao fica no meio",
+  [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 30].every((n) => {
+    const ordens = Array.from({ length: n }, (_, i) => ordemNaFileira(i));
+    const esq = ordens.filter((o) => o < 0).length;
+    const dir = ordens.filter((o) => o > 0).length;
+    return Math.abs(esq - dir) <= 1;
+  }),
+);
+
+checa(
+  "empate CERCA o primeiro em vez de se amontoar de um lado so",
+  // Colocacoes 1,2,2 -> indices 0,1,2 -> um de cada lado do centro.
+  ordemNaFileira(1) < 0 && ordemNaFileira(2) > 0,
+);
+
+// --- o rosto de quem esta de pe ------------------------------------------
+checa(
+  "sem podio a fileira cresce o rosto, e encolhe conforme enche",
+  escalaDaFileira(3) === 88 &&
+    escalaDaFileira(6) === 88 &&
+    escalaDaFileira(7) === 68 &&
+    escalaDaFileira(30) === 52,
+  `${escalaDaFileira(3)}/${escalaDaFileira(7)}/${escalaDaFileira(30)}`,
+);
+
+checa(
+  "entrada degenerada nunca devolve undefined nem NaN",
+  // `size={undefined}` no <Avatar> vira `width="NaN"` no DOM, sem erro nenhum.
+  [0, -1, 1.5, NaN, undefined].every((n) => {
+    const t = escalaDaFileira(n);
+    return Number.isFinite(t) && t >= 52;
+  }),
 );
 
 // --- as constantes que a tela usa para partir o desenho -------------------

@@ -138,3 +138,102 @@ export function alturaDoDegrau(
   const fracao = Math.min(1, Math.max(0, entregues) / Math.max(1, maior));
   return piso + Math.round(fracao * ACRESCIMO_POR_CONTAGEM);
 }
+
+/**
+ * Onde cada colocação fica na fileira — e quando NÃO existe pódio.
+ *
+ * A tela virou uma fileira só: ninguém mais fica abaixo de ninguém. Os três
+ * primeiros continuam sobre plintos; do quarto em diante as pessoas ficam DE PÉ
+ * no mesmo chão, ao lado. As três funções abaixo são a parte disso que erra
+ * calada, e por isso moram num módulo puro com teste.
+ */
+
+/** Quantos plintos o palco comporta antes de virar outra coisa. */
+export const MAX_PLINTOS = 4;
+
+export type Cena = {
+  /** Quem sobe em plinto — vazio quando não há pódio a montar. */
+  degraus: Colocacao[];
+  /** Quem fica de pé no chão, ao lado. */
+  plateia: Colocacao[];
+};
+
+/**
+ * Divide a temporada entre plintos e chão.
+ *
+ * O MÊS EM QUE NÃO HÁ PÓDIO É REAL, e é o estado da tela nos primeiros dias de
+ * toda temporada. `montarRank` corta por POSIÇÃO, não por pessoa (é a decisão
+ * documentada lá em cima, e ela não envelheceu): no dia 2, trinta pessoas com
+ * uma entrega cada devolvem trinta colocações — **todas em primeiro**. Filtrar
+ * `posicao <= 3` ali entrega trinta plintos da mesma altura, que é uma fileira
+ * de blocos idênticos com "1º" escrito trinta vezes. Não quebra nada: nem lint,
+ * nem tsc, nem prebuild. Só a tela do dia 2.
+ *
+ * Um pódio precisa de DEGRAU, e degrau precisa de duas coisas: níveis
+ * diferentes (senão não há em relação a que subir) e poucas peças (uma
+ * plataforma de dez plintos é um gráfico de barras). Faltando qualquer uma
+ * delas, a cena inteira vira fileira — todo mundo de pé, lado a lado, ninguém
+ * escondido atrás de um "+N". Quem está em primeiro continua com o anel da
+ * marca e o troféu: o que se perde é o plinto, não a colocação.
+ */
+export function partirCena(colocacoes: Colocacao[]): Cena {
+  const topo = colocacoes.filter((c) => c.posicao <= POSICOES_DO_PODIO);
+  const niveis = new Set(topo.map((c) => c.posicao)).size;
+  const temPodio = topo.length > 0 && topo.length <= MAX_PLINTOS && niveis >= 2;
+  if (!temPodio) return { degraus: [], plateia: colocacoes };
+  return {
+    degraus: topo,
+    plateia: colocacoes.filter((c) => c.posicao > POSICOES_DO_PODIO),
+  };
+}
+
+/**
+ * O lugar de cada um na fileira — o 1º no meio, os outros descendo para as duas
+ * bordas: … 6º 4º 2º **1º** 3º 5º 7º …
+ *
+ * Devolve o valor de `order` do CSS, e não um índice de array, e essa troca é
+ * uma REVERSÃO consciente da regra que este projeto seguia (ver o comentário de
+ * `Cena` em `page.tsx`): até aqui a reordenação acontecia no array, para que o
+ * DOM saísse na mesma ordem em que o pódio é lido. Com TRÊS degraus as duas
+ * ordens eram igualmente defensáveis — "2º, 1º, 3º" é uma sequência que faz
+ * sentido lida em voz alta. Com OITO, não são: quem usa leitor de tela ouviria
+ * "8º, 6º, 4º, 2º, 1º, 3º, 5º, 7º", e um rank tem exatamente uma sequência
+ * significativa, que é 1, 2, 3… Por isso o DOM agora sai em ordem de
+ * colocação — dentro de um `<ol>`, que é o que a tela sempre afirmou e nunca
+ * teve — e o desenho da pirâmide fica com o `order`. Ninguém perde: não há nada
+ * focável na fileira, então não existe ordem de tabulação a embaralhar.
+ *
+ * O ARGUMENTO É O ÍNDICE, E NÃO A COLOCAÇÃO, e isso é o que mantém o campeão no
+ * meio da TELA. Alternando por colocação, um empate manda os dois empatados
+ * para o mesmo lado (as duas são pares, ou as duas ímpares) — com nove pessoas
+ * e um empate na oitava, a fileira fica com quatro à esquerda e duas à direita,
+ * e o pódio inteiro desliza 83px para fora do centro. Medido. Alternando por
+ * índice, os lados nunca diferem em mais de uma pessoa, e como as larguras
+ * caem junto com a colocação, os dois braços saem do mesmo tamanho.
+ *
+ * De brinde, o empate fica mais bonito do que era: dois segundos lugares
+ * passam a CERCAR o primeiro, um de cada lado, em vez de se amontoarem à
+ * esquerda dele.
+ */
+export function ordemNaFileira(indice: number): number {
+  return indice % 2 === 0 ? indice / 2 : -((indice + 1) / 2);
+}
+
+/** Diâmetro do rosto de quem está de pé no chão, quando existe pódio. */
+export const TAM_PLATEIA = 52;
+
+/**
+ * O rosto de quem está de pé — maior quando o pódio não existe.
+ *
+ * Sem plintos, a fileira é tudo o que a tela tem, e 52px seria pedir para uma
+ * cena inteira ser lida em miniatura. Mas ela também pode ter trinta pessoas
+ * (ver `partirCena`), e trinta rostos de 88px não cabem em tela nenhuma. O
+ * diâmetro cai por faixa de tamanho da fileira, e nunca abaixo dos 52px que o
+ * pódio já usa — abaixo disso o rosto deixa de ser reconhecível, que é a única
+ * régua desta tela.
+ */
+export function escalaDaFileira(quantos: number): number {
+  if (!Number.isFinite(quantos) || quantos <= 6) return 88;
+  if (quantos <= 12) return 68;
+  return TAM_PLATEIA;
+}
