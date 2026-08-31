@@ -17,6 +17,7 @@ import {
   subscribeCards,
   subscribeLixeira,
   restaurarDaLixeira,
+  moverParaLixeira,
   moveCard,
   subscribeColumns,
   seedDefaultColumns,
@@ -188,6 +189,10 @@ export default function KanbanPage() {
   const [relatorio, setRelatorio] = useState(false);
   const [lixeiraAberta, setLixeiraAberta] = useState(false);
   const [dragCardId, setDragCardId] = useState<string | null>(null);
+  /** O card solto na lixeira, esperando a confirmação. */
+  const [descartando, setDescartando] = useState<Card | null>(null);
+  /** O ponteiro está sobre o alvo da lixeira, com um card na mão. */
+  const [sobreLixeira, setSobreLixeira] = useState(false);
   const [dragColId, setDragColId] = useState<string | null>(null);
   const [overCol, setOverCol] = useState<string | null>(null);
   const seededRef = useRef<Set<string>>(new Set());
@@ -565,10 +570,45 @@ export default function KanbanPage() {
             da lixeira aos demais, e um botão que só produz erro é pior do que
             botão nenhum. */}
         {canManage && (
+          /**
+           * O botão da lixeira também é ALVO DE SOLTURA.
+           *
+           * `dragCardId` na condição, e não "está arrastando alguma coisa":
+           * coluna arrastada tem de ser recusada aqui. O alvo que aceita a
+           * soltura e depois não faz nada é pior do que o alvo que nunca se
+           * acendeu — quem soltou fica esperando um efeito que não vem, e da
+           * segunda vez desconfia do arrasto inteiro, inclusive do que funciona.
+           *
+           * Sem `onDragOver` com `preventDefault()` o `drop` nunca dispara: o
+           * padrão do HTML é recusar, e a recusa é silenciosa.
+           */
           <button
-            className={`${styles.filterBtn} ${styles.lixeiraBtn}`}
+            className={`${styles.filterBtn} ${styles.lixeiraBtn} ${
+              dragCardId ? styles.lixeiraArmada : ""
+            } ${sobreLixeira ? styles.lixeiraSobre : ""}`}
             onClick={() => setLixeiraAberta(true)}
-            title="Ver e restaurar as demandas excluídas deste setor"
+            onDragOver={(e) => {
+              if (!dragCardId) return;
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "move";
+              if (!sobreLixeira) setSobreLixeira(true);
+            }}
+            onDragLeave={() => setSobreLixeira(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setSobreLixeira(false);
+              // O id é lido AGORA: `onDragEnd` corre junto da soltura e zera
+              // `dragCardId`, então guardar a pergunta para depois acharia null.
+              const alvo = cards.find((c) => c.id === dragCardId);
+              setDragCardId(null);
+              setOverCol(null);
+              if (alvo) setDescartando(alvo);
+            }}
+            title={
+              dragCardId
+                ? "Solte aqui para mover esta demanda para a lixeira"
+                : "Ver e restaurar as demandas excluídas deste setor"
+            }
           >
             <Icon name="trash" size={14} />
             Lixeira
@@ -806,6 +846,32 @@ export default function KanbanPage() {
         <RelatorioModal sector={sector} onClose={() => setRelatorio(false)} />
       )}
 
+      {/**
+       * A confirmação da soltura.
+       *
+       * O Ítalo pediu para perguntar sempre, e a frase é A MESMA do botão
+       * Excluir dentro do card (`card-modal.tsx`): o destino é o mesmo, e duas
+       * redações para o mesmo destino fazem parecer que são duas coisas — a
+       * pergunta passa a ser "qual dos dois apaga de verdade?".
+       *
+       * Diálogo próprio, e não o bloco embutido que o card usa: lá o bloco cabe
+       * porque já existe um modal em volta; aqui a pergunta nasce de um gesto no
+       * quadro, e não há onde encostá-la sem tapar a coluna de onde o card saiu.
+       */}
+      {descartando && (
+        <ConfirmaLixeira
+          card={descartando}
+          sector={descartando.sector}
+          onCancelar={() => setDescartando(null)}
+          onConfirmar={async () => {
+            await moverParaLixeira(descartando.id, {
+              ctx: { autor: autorAtual, sector: descartando.sector },
+            });
+            setDescartando(null);
+          }}
+        />
+      )}
+
       {lixeiraAberta && (
         <LixeiraModal
           sector={sector}
@@ -1021,6 +1087,99 @@ async function expurgar(sector: string, id?: string): Promise<Expurgo> {
  * essas sim ganham movimento — já são do `<Modal>`, que também já responde a
  * `prefers-reduced-motion`.
  */
+/**
+ * A pergunta que segue o card solto na lixeira.
+ *
+ * Ela existe porque arrastar é rápido demais para ser definitivo: entre pegar o
+ * card e soltá-lo passam uns 400ms, e o quadro tem sete colunas e um botão de
+ * lixeira competindo pelo mesmo gesto. Soltar no alvo errado tem de custar um
+ * Escape, não uma ida à lixeira para restaurar.
+ *
+ * O TEXTO É O MESMO do botão Excluir de dentro do card, palavra por palavra. O
+ * destino é o mesmo — `moverParaLixeira`, o mesmo lote, o mesmo evento de
+ * histórico —, e duas redações para o mesmo destino fazem parecer que são duas
+ * coisas diferentes; a pessoa passa a perguntar qual dos dois apaga de verdade.
+ *
+ * O foco nasce em CANCELAR, e não no botão de confirmar. O diálogo aparece por
+ * causa de um gesto que pode ter sido um engano, e o Enter reflexo de quem já
+ * estava com a mão no teclado não pode ser o que conclui a exclusão.
+ */
+function ConfirmaLixeira({
+  card,
+  sector,
+  onCancelar,
+  onConfirmar,
+}: {
+  card: Card;
+  sector: string;
+  onCancelar: () => void;
+  onConfirmar: () => Promise<void>;
+}) {
+  const [indo, setIndo] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  async function confirmar() {
+    setErro(null);
+    setIndo(true);
+    try {
+      await onConfirmar();
+    } catch (e) {
+      console.error("[arrastar para a lixeira]", e);
+      setErro(
+        "Não foi possível mover a demanda para a lixeira. Ela continua no quadro.",
+      );
+      setIndo(false);
+    }
+  }
+
+  return (
+    <Modal
+      onClose={onCancelar}
+      /* Fechar no meio da escrita deixaria a tela sem dizer como terminou. */
+      podeFechar={() => !indo}
+      ariaLabel="Mover demanda para a lixeira"
+      overlayClassName={styles.overlay}
+      className={styles.modal}
+      width={430}
+    >
+      <div className={styles.mhead}>
+        <span className={styles.mchip}>
+          <Icon name="trash" size={12} /> Lixeira
+        </span>
+        <span className={styles.mchip}>{sector}</span>
+      </div>
+      <div className={styles.histTitulo}>{card.title}</div>
+      <div className={styles.confirmaBloco}>
+        <div className={styles.confirmaTexto}>
+          <strong>Mover esta demanda para a lixeira?</strong> Ela sai do quadro
+          de {sector} e fica guardada na lixeira do setor, de onde dá para
+          trazer de volta. Nada é apagado agora.
+        </div>
+        <div className={styles.confirmaAcoes}>
+          <button
+            type="button"
+            className={styles.btnGhost}
+            onClick={onCancelar}
+            disabled={indo}
+            autoFocus
+          >
+            Manter no quadro
+          </button>
+          <button
+            type="button"
+            className={styles.btnConfirmaPerigo}
+            onClick={() => void confirmar()}
+            disabled={indo}
+          >
+            {indo ? "Movendo…" : "Mover para a lixeira"}
+          </button>
+        </div>
+      </div>
+      {erro && <div className={styles.err}>{erro}</div>}
+    </Modal>
+  );
+}
+
 function LixeiraModal({
   sector,
   itens,
