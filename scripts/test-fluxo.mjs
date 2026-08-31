@@ -19,6 +19,7 @@ import {
   janelaDeSemanas,
   parseData,
   percentil,
+  rotuloEixo,
   rotuloSemana,
 } from "../src/lib/fluxo-core.ts";
 
@@ -183,6 +184,79 @@ checa(
     "14 jul 2025 a 20 jul 2025",
   rotuloSemana(new Date(2025, 6, 14), new Date(2025, 6, 20), 2026),
 );
+
+console.log("\n— o rótulo do EIXO é o período, não o dia —");
+
+// O eixo é onde o erro tinha efeito prático: a legenda embaixo dele dizia
+// "cada coluna é uma semana", mas o número em cima da coluna dizia "13/07". No
+// empate entre uma frase e um número, ganha o número.
+checa(
+  "mesmo mês: o mês sai uma vez, no fim",
+  rotuloEixo(new Date(2026, 6, 13), new Date(2026, 6, 19)) === "13–19/07",
+  rotuloEixo(new Date(2026, 6, 13), new Date(2026, 6, 19)),
+);
+checa(
+  "meses diferentes: cada ponta leva o seu",
+  rotuloEixo(new Date(2026, 8, 28), new Date(2026, 9, 4)) === "28/09–04/10",
+  rotuloEixo(new Date(2026, 8, 28), new Date(2026, 9, 4)),
+);
+checa(
+  "dia de um dígito vem com zero à esquerda — o eixo alinha por largura",
+  rotuloEixo(new Date(2026, 7, 3), new Date(2026, 7, 9)) === "03–09/08",
+  rotuloEixo(new Date(2026, 7, 3), new Date(2026, 7, 9)),
+);
+checa(
+  "a janela devolve o PERÍODO em `rotulo`, não a segunda-feira sozinha",
+  j12[11].rotulo === "13–19/07",
+  j12[11].rotulo,
+);
+
+console.log("\n— a chave da semana é única por construção; o rótulo, por sorte —");
+
+// Cinco anos cabem na janela por datas, e "13–19/07" existe em todo ano que
+// começa igual. Chave repetida faria o React reaproveitar a coluna errada —
+// defeito que não aparece em 12 semanas e aparece sozinho quando alguém pede
+// dois anos no seletor de datas.
+const doisAnos = janelaDeSemanas(HOJE, {
+  modo: "intervalo",
+  de: "2024-07-15",
+  ate: "2026-07-19",
+});
+checa(
+  "nenhuma chave se repete em 2 anos de janela",
+  new Set(doisAnos.map((x) => x.chave)).size === doisAnos.length,
+  `${new Set(doisAnos.map((x) => x.chave)).size} de ${doisAnos.length}`,
+);
+/**
+ * E o rótulo? Hoje ele TAMBÉM não repete — mas por acidente, e é essa a razão
+ * de a chave existir.
+ *
+ * "13–19/07" volta a acontecer quando o calendário se repete, o que leva 5, 6
+ * ou 11 anos. O teto de 260 semanas são 1820 dias, sempre um pouco menos que os
+ * ~1826 de cinco anos, então a janela nunca chega a alcançar a repetição. A
+ * unicidade do rótulo é consequência do TETO, não uma propriedade dele: quem
+ * subir `MAX_SEMANAS` um dia ganha chaves duplicadas em silêncio, e o React
+ * reaproveitando a coluna errada não parece bug, parece número errado.
+ *
+ * Este teste falha de propósito no dia em que o teto passar de 260 — é o
+ * lembrete de que a chave já estava certa e não precisa mudar junto.
+ */
+const noTeto = janelaDeSemanas(HOJE, {
+  modo: "intervalo",
+  de: "2000-01-03",
+  ate: "2026-07-19",
+});
+checa(
+  "o rótulo só não colide porque o teto é menor que a volta do calendário",
+  MAX_SEMANAS * 7 < 5 * 365.25,
+  `${MAX_SEMANAS * 7} dias de teto`,
+);
+checa(
+  "no teto, chave e rótulo ainda empatam em quantidade",
+  new Set(noTeto.map((x) => x.chave)).size === noTeto.length &&
+    new Set(noTeto.map((x) => x.rotulo)).size === noTeto.length,
+);
+checa("a chave é o ISO da segunda-feira", j12[11].chave === "2026-07-13", j12[11].chave);
 
 console.log("\n— parseData recusa o que não é data —");
 

@@ -70,6 +70,17 @@ import styles from "./dashboard.module.css";
 const MIN_AMOSTRA = 5;
 
 /**
+ * A janela dos KPIs do topo — fixa, e independente do seletor do painel.
+ *
+ * Doze semanas é o mesmo padrão que o painel de fluxo abre, então os números
+ * batem na primeira olhada; o que muda é que estes não seguem quem mexer no
+ * seletor lá embaixo. Está escrito no rodapé de cada KPI, porque indicador com
+ * janela implícita é o tipo de número que alguém leva para uma reunião achando
+ * que fala de outro período.
+ */
+const SEMANAS_KPI = 12;
+
+/**
  * Listas vazias constantes, para os cálculos rodarem antes de os dados chegarem.
  *
  * Elas moram fora do componente porque `?? []` escrito no corpo cria um array
@@ -246,6 +257,29 @@ export default function DashboardPage() {
     [doRecorte, concluido, hoje, janela],
   );
 
+  /**
+   * A faixa de indicadores tem janela PRÓPRIA, e ela não se mexe.
+   *
+   * O seletor de período desceu para dentro do painel de fluxo, onde ele diz a
+   * que se refere. Se os KPIs continuassem lendo dele, mexer num controle no
+   * meio da página mudaria dois números lá em cima, fora do campo de visão —
+   * que é indistinguível de um bug, e some da tela justo enquanto se olha para
+   * o controle.
+   *
+   * E tem um erro que isto conserta de vez: `entregas4` é `entregas.slice(-4)`,
+   * as quatro últimas semanas DA JANELA. Com um intervalo terminando em junho, o
+   * KPI mostraria as quatro últimas semanas de junho embaixo do rótulo "nas
+   * últimas 4 semanas". Ancorado em hoje, ele volta a dizer a verdade.
+   */
+  const fluxoKpi = useMemo(
+    () =>
+      calcularFluxo(doRecorte, concluido, hoje, {
+        modo: "recentes",
+        semanas: SEMANAS_KPI,
+      }),
+    [doRecorte, concluido, hoje],
+  );
+
   const recsNoRecorte = useMemo(
     () => recs.filter((r) => noRecorte.includes(r.sector)),
     [recs, noRecorte],
@@ -326,7 +360,7 @@ export default function DashboardPage() {
   const kpis = juntarFontes([fCards, fCols]);
   const kpiSemResposta = kpis.carregando || !!kpis.erro;
   const p85Txt =
-    kpiSemResposta || fluxo.amostra < MIN_AMOSTRA ? "—" : String(fluxo.p85);
+    kpiSemResposta || fluxoKpi.amostra < MIN_AMOSTRA ? "—" : String(fluxoKpi.p85);
   const kpi = (n: number) => (kpiSemResposta ? "—" : n);
 
   return (
@@ -334,64 +368,6 @@ export default function DashboardPage() {
       <div className={styles.head}>
         <div className={styles.headMain}>
           <h1>Dashboard — {fSetor || "todos os setores"}</h1>
-        </div>
-        {/**
-         * O seletor de janela, e o par de datas que ele revela.
-         *
-         * As datas aparecem SÓ no modo personalizado. Deixá-las sempre na tela,
-         * apagadas, seria um recorte que não recorta ocupando o mesmo espaço do
-         * que recorta — e, num cabeçalho que já carrega título e quatro filtros,
-         * é ruído que empurra o resto para uma segunda linha sem pagar por ela.
-         */}
-        <div className={styles.janela}>
-          <div className={styles.periodo}>
-            <Select
-              value={modoJanela === "intervalo" ? "custom" : String(periodo)}
-              options={[
-                ...PERIODOS.map((p) => ({
-                  value: String(p),
-                  label: PERIODO_LABEL[p],
-                })),
-                { value: "custom", label: "Escolher datas…" },
-              ]}
-              onChange={escolherJanela}
-              ariaLabel="Período das séries"
-            />
-          </div>
-          {modoJanela === "intervalo" && (
-            <div className={styles.intervalo}>
-              <label className={styles.campoData}>
-                <span>De</span>
-                <input
-                  type="date"
-                  className={styles.dataInput}
-                  value={de}
-                  max={hojeISO}
-                  onChange={(e) => setDe(e.target.value)}
-                />
-              </label>
-              <label className={styles.campoData}>
-                <span>Até</span>
-                <input
-                  type="date"
-                  className={styles.dataInput}
-                  value={ate}
-                  max={hojeISO}
-                  onChange={(e) => setAte(e.target.value)}
-                />
-              </label>
-              <button
-                className={styles.limpar}
-                onClick={() => {
-                  setModoJanela("recentes");
-                  setDe("");
-                  setAte("");
-                }}
-              >
-                <Icon name="x" size={13} /> Período fixo
-              </button>
-            </div>
-          )}
         </div>
       </div>
 
@@ -478,15 +454,15 @@ export default function DashboardPage() {
           rodape={
             kpiSemResposta
               ? "aguardando o quadro"
-              : fluxo.amostra >= MIN_AMOSTRA
-                ? "85% saem nesse prazo ou menos"
-                : `${fluxo.amostra} conclusão(ões) no período — amostra pequena demais`
+              : fluxoKpi.amostra >= MIN_AMOSTRA
+                ? `85% saem nesse prazo ou menos · ${SEMANAS_KPI} semanas`
+                : `${fluxoKpi.amostra} conclusão(ões) em ${SEMANAS_KPI} semanas — amostra pequena demais`
           }
         />
         <Kpi
           icone="check"
           rotulo="Entregas"
-          valor={kpi(fluxo.entregas4)}
+          valor={kpi(fluxoKpi.entregas4)}
           unidade="/4 sem"
           rodape="concluídas nas últimas 4 semanas"
         />
@@ -589,6 +565,75 @@ export default function DashboardPage() {
               : undefined
           }
           chip={`fila ${fluxo.fila[fluxo.fila.length - 1] ?? 0}`}
+          /**
+           * O recorte de tempo mora AQUI, encostado no gráfico que ele recorta.
+           *
+           * Ele já esteve no cabeçalho da página, ao lado do título, e de lá
+           * parecia valer para a tela inteira — mas nunca valeu: só três dos
+           * cinco painéis leem período, e os outros dois (carga, prazos) falam
+           * do estado de hoje, que não tem janela. Controle que aparenta um
+           * alcance maior do que tem é pior do que controle escondido; a pessoa
+           * mexe nele esperando que a tela toda responda e conclui que metade
+           * dela está quebrada.
+           */
+          acoes={
+            <>
+              <span className={styles.acaoRot}>
+                <Icon name="calendar" size={14} /> Período
+              </span>
+              <div className={styles.periodo}>
+                <Select
+                  value={modoJanela === "intervalo" ? "custom" : String(periodo)}
+                  options={[
+                    ...PERIODOS.map((p) => ({
+                      value: String(p),
+                      label: PERIODO_LABEL[p],
+                    })),
+                    { value: "custom", label: "Escolher datas…" },
+                  ]}
+                  onChange={escolherJanela}
+                  ariaLabel="Período das séries semanais"
+                />
+              </div>
+              {/* As datas aparecem SÓ no modo personalizado: dois campos
+                  apagados ocupando a linha seriam um recorte que não recorta no
+                  mesmo espaço do que recorta. */}
+              {modoJanela === "intervalo" && (
+                <>
+                  <label className={styles.campoData}>
+                    <span>De</span>
+                    <input
+                      type="date"
+                      className={styles.dataInput}
+                      value={de}
+                      max={hojeISO}
+                      onChange={(e) => setDe(e.target.value)}
+                    />
+                  </label>
+                  <label className={styles.campoData}>
+                    <span>Até</span>
+                    <input
+                      type="date"
+                      className={styles.dataInput}
+                      value={ate}
+                      max={hojeISO}
+                      onChange={(e) => setAte(e.target.value)}
+                    />
+                  </label>
+                  <button
+                    className={styles.limpar}
+                    onClick={() => {
+                      setModoJanela("recentes");
+                      setDe("");
+                      setAte("");
+                    }}
+                  >
+                    <Icon name="x" size={13} /> Período fixo
+                  </button>
+                </>
+              )}
+            </>
+          }
           fontes={[fCards, fCols]}
           esqueleto={<SkeletonChart bars={10} texto="Carregando as séries semanais…" />}
         >
@@ -705,6 +750,7 @@ function Painel({
   sub,
   chip,
   chipTom,
+  acoes,
   fontes,
   esqueleto,
   children,
@@ -713,6 +759,8 @@ function Painel({
   sub?: string;
   chip?: string;
   chipTom?: "danger";
+  /** Controles do próprio painel, entre o cabeçalho e o conteúdo. */
+  acoes?: ReactNode;
   fontes: Assinatura[];
   esqueleto: ReactNode;
   children: ReactNode;
@@ -731,6 +779,18 @@ function Painel({
         chip={erro || carregando ? undefined : chip}
         chipTom={chipTom}
       />
+      {/**
+       * As ações ficam FORA do portão de carregamento, ao contrário do chip e do
+       * subtítulo.
+       *
+       * Aqueles descrevem o desenho e caem junto com ele; o controle é o que
+       * PRODUZ o desenho. Escondê-lo durante a espera faria o seletor de período
+       * sumir e voltar a cada troca de recorte — e some justo no instante em que
+       * a pessoa acabou de mexer nele, que é quando ela ainda está olhando para
+       * lá. Ele fica de pé inclusive sobre o estado de erro: trocar a janela é
+       * uma das saídas para uma consulta que falhou.
+       */}
+      {acoes && <div className={styles.painelAcoes}>{acoes}</div>}
       {erro ? (
         <ErrorState
           error={erro}
@@ -1088,9 +1148,19 @@ function FluxoSemanal({ fluxo }: { fluxo: Fluxo }) {
   // direita: linha solta é taxa, linha com corpo embaixo é estoque.
   const areaFila = `${linhaFila} L ${X(n - 1).toFixed(1)} ${base} L ${X(0).toFixed(1)} ${base} Z`;
 
-  // Uma data a cada tantas colunas: em 52 semanas todas as datas viram um borrão
-  // cinza, e em 12 esconder cinco de cada seis obriga a contar barras com o dedo.
-  const passoRotulo = Math.max(1, Math.ceil(n / 13));
+  /**
+   * De quantas em quantas colunas o eixo escreve um rótulo.
+   *
+   * O rótulo virou o PERÍODO ("13–19/07", ou "28/09–04/10" quando a semana
+   * atravessa o mês), que ocupa mais que o dobro do "13/07" de antes. Um passo
+   * fixo não serve mais: o que cabe é decidido pela largura do rótulo contra a
+   * largura da área de plotagem, e é isso que a conta abaixo faz. Antes de
+   * imprimir de duas em duas, o eixo primeiro gasta todo o espaço que tem —
+   * em 12 semanas ele nomeia as doze.
+   */
+  const LARG_ROTULO = 64;
+  const maxRotulos = Math.max(2, Math.floor((W - pl - pr) / LARG_ROTULO));
+  const passoRotulo = Math.max(1, Math.ceil(n / maxRotulos));
   const saldoPeriodo = fluxo.totalEntradas - fluxo.totalEntregas;
   const filaFinal = fila[n - 1] ?? 0;
 
@@ -1185,7 +1255,7 @@ function FluxoSemanal({ fluxo }: { fluxo: Fluxo }) {
           )}
 
           {semanas.map((sem, i) => (
-            <g key={sem.rotulo}>
+            <g key={sem.chave}>
               <rect
                 x={X(i) - bw - vao / 2}
                 y={Y(entradas[i])}
@@ -1306,7 +1376,7 @@ function FluxoSemanal({ fluxo }: { fluxo: Fluxo }) {
               é justo a semana sobre a qual mais se pergunta "o que houve aqui?". */}
           {semanas.map((sem, i) => (
             <rect
-              key={`alvo-${sem.rotulo}`}
+              key={`alvo-${sem.chave}`}
               x={pl + i * passo}
               y={pt}
               width={passo}
@@ -1439,7 +1509,7 @@ function FluxoSemanal({ fluxo }: { fluxo: Fluxo }) {
             </thead>
             <tbody>
               {semanas.map((sem, i) => (
-                <tr key={sem.rotulo}>
+                <tr key={sem.chave}>
                   <td>
                     {sem.rotuloLongo}
                     {sem.parcial && (

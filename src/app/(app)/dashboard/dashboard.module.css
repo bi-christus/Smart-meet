@@ -66,24 +66,8 @@
   max-width: 620px;
   line-height: 1.5;
 }
-/* O seletor de janela e, quando ele pede, o par de datas.
-   `flex-wrap` porque as duas datas mais o botão passam dos 400px: num monitor
-   estreito eles caem para a linha de baixo em vez de espremer o seletor. */
-.janela {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
 .periodo {
   min-width: 178px;
-}
-.intervalo {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
 }
 /* O rótulo fica DENTRO do campo, à esquerda: "De" e "Até" em cima de dois
    `input[type=date]` empurrariam o cabeçalho uns 18px para baixo, e a linha do
@@ -267,6 +251,37 @@
   color: var(--tx-3);
   margin-top: 3px;
   line-height: 1.45;
+}
+
+/**
+ * A linha de controles do próprio painel, entre o cabeçalho e o conteúdo.
+ *
+ * Ela tem régua embaixo, e não em volta: a régua é o que diz "o que vem depois
+ * daqui responde a estes controles". Uma caixa fechada leria como um segundo
+ * painel dentro do painel.
+ *
+ * `flex-wrap` porque o seletor mais as duas datas mais o botão passam dos 500px:
+ * num monitor estreito eles caem para a linha seguinte em vez de espremer o
+ * seletor até o rótulo do período não caber.
+ */
+.painelAcoes {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+  padding-bottom: 13px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.acaoRot {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--tx-3);
 }
 
 .chip {

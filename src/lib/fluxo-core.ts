@@ -32,9 +32,18 @@ export type Semana = {
   inicio: Date;
   /** Domingo da mesma semana, à meia-noite local. */
   fim: Date;
-  /** "13/07" — o que cabe embaixo de uma coluna de gráfico. */
+  /**
+   * `aaaa-mm-dd` da segunda-feira — identidade da semana, nunca texto de tela.
+   *
+   * É ela que vai na `key` do React. Os dois rótulos REPETEM de um ano para o
+   * outro ("13–19/07" existe em 2025 e em 2026), e a janela por datas alcança
+   * cinco anos: com o rótulo na chave, duas semanas distintas passariam a
+   * disputar o mesmo nó, e o React reaproveitaria a coluna errada.
+   */
+  chave: string;
+  /** "13–19/07" — o PERÍODO da semana, que é o que vai embaixo da coluna. */
   rotulo: string;
-  /** "13 a 19 jul" — a semana INTEIRA, para o tooltip e para o leitor de tela. */
+  /** "13 a 19 jul" — a semana por extenso, para o tooltip e o leitor de tela. */
   rotuloLongo: string;
   /** A semana que ainda está correndo: os números dela estão pela metade. */
   parcial: boolean;
@@ -111,12 +120,35 @@ export function rotuloSemana(inicio: Date, fim: Date, anoRef: number): string {
   return `${parte(inicio)} a ${parte(fim)}`;
 }
 
+/**
+ * "13–19/07" · "29/09–05/10" — o rótulo do eixo x.
+ *
+ * Era só a segunda-feira ("13/07"), e o eixo inteiro lia como uma fileira de
+ * DIAS: quem batia o olho entendia "3 demandas no dia 13", não "3 na semana de
+ * 13 a 19". A frase embaixo do eixo dizia que a coluna era uma semana, mas o
+ * número em cima dela continuava dizendo o contrário — e, entre uma legenda e
+ * um número, ganha o número.
+ *
+ * Dentro do mesmo mês o mês sai uma vez só, no fim ("13–19/07"), porque
+ * repeti-lo custaria três caracteres em cada rótulo — e é a largura do rótulo
+ * que decide quantas semanas o eixo consegue nomear antes de ter de pular de
+ * duas em duas. Travessão, e não hífen: é intervalo, não composição.
+ */
+export function rotuloEixo(inicio: Date, fim: Date): string {
+  const dd = (d: Date) => String(d.getDate()).padStart(2, "0");
+  const mm = (d: Date) => String(d.getMonth() + 1).padStart(2, "0");
+  return inicio.getMonth() === fim.getMonth()
+    ? `${dd(inicio)}–${dd(fim)}/${mm(fim)}`
+    : `${dd(inicio)}/${mm(inicio)}–${dd(fim)}/${mm(fim)}`;
+}
+
 function montarSemana(inicio: Date, hoje: Date, anoRef: number): Semana {
   const fim = addDays(inicio, 6);
   return {
     inicio,
     fim,
-    rotulo: `${inicio.getDate()}/${String(inicio.getMonth() + 1).padStart(2, "0")}`,
+    chave: isoDe(inicio),
+    rotulo: rotuloEixo(inicio, fim),
     rotuloLongo: rotuloSemana(inicio, fim, anoRef),
     // Parcial é a semana que CONTÉM hoje e ainda não fechou no domingo. Janela
     // que termina no passado não tem semana parcial nenhuma: já aconteceu toda.
