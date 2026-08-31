@@ -66,8 +66,62 @@
   max-width: 620px;
   line-height: 1.5;
 }
+/* O seletor de janela e, quando ele pede, o par de datas.
+   `flex-wrap` porque as duas datas mais o botão passam dos 400px: num monitor
+   estreito eles caem para a linha de baixo em vez de espremer o seletor. */
+.janela {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
 .periodo {
-  min-width: 150px;
+  min-width: 178px;
+}
+.intervalo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+/* O rótulo fica DENTRO do campo, à esquerda: "De" e "Até" em cima de dois
+   `input[type=date]` empurrariam o cabeçalho uns 18px para baixo, e a linha do
+   título é a régua de altura do topo desta tela. */
+.campoData {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 10px 0 11px;
+  border: 1px solid var(--line);
+  background: var(--s1);
+  border-radius: 9px;
+  transition: border-color 0.18s;
+}
+.campoData:focus-within {
+  border-color: var(--brand-line);
+}
+.campoData > span {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--tx-3);
+}
+/* Sem borda nem fundo próprios: quem desenha o campo é o `label` em volta. Dois
+   retângulos aninhados dariam a moldura dupla que o resto do app não tem. */
+.dataInput {
+  border: 0;
+  background: none;
+  color: var(--tx);
+  font-family: inherit;
+  font-size: 12.5px;
+  padding: 0;
+  min-width: 108px;
+}
+.dataInput:focus {
+  outline: none;
 }
 
 .filtros {
@@ -204,6 +258,15 @@
   font-size: 13.5px;
   font-weight: 700;
   color: var(--tx);
+}
+/* Uma linha, e ela pode ser longa (o intervalo do fluxo escreve as duas pontas
+   por extenso). Quebrar é melhor que cortar: metade de uma data é uma data
+   errada, e o chip à direita já disputa a largura. */
+.painelSub {
+  font-size: 11px;
+  color: var(--tx-3);
+  margin-top: 3px;
+  line-height: 1.45;
 }
 
 .chip {
@@ -475,6 +538,18 @@
   border-radius: 2px;
   background: var(--serie-7);
 }
+/* A amostra da semana em curso repete a HACHURA, não a cor: as barras parciais
+   aparecem nas duas cores (entrada e entrega), então uma amostra colorida diria
+   "esta é a série laranja" quando o que ela explica é a textura. O cinza vem de
+   `--tx-3`, que não é cor de série nenhuma — e é isso que a deixa neutra. */
+.swParcial {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--tx-3) 0 2px,
+    transparent 2px 4px
+  );
+  opacity: 0.85;
+}
 
 /* ---------- rosca ---------- */
 /* Na largura inteira a rosca ancora à ESQUERDA e a lista ocupa o resto. Centrada,
@@ -543,6 +618,12 @@
 }
 
 /* ---------- gráficos ---------- */
+/* O tooltip é HTML posicionado por cima do SVG, e é este `relative` que dá a
+   ele o sistema de coordenadas. Dentro do SVG ele não caberia: texto em
+   `<foreignObject>` herda a escala do viewBox e sairia com o dobro do corpo. */
+.chartWrap {
+  position: relative;
+}
 .chart {
   width: 100%;
   height: auto;
@@ -552,7 +633,32 @@
 .grade {
   stroke: var(--line-soft);
 }
+/* A linha do zero é a régua de toda barra: mais forte que a grade, para o olho
+   não ancorar altura na primeira linha cinza que encontrar. */
+.eixoBase {
+  stroke: var(--line);
+  stroke-width: 1.4;
+}
 .eixo {
+  font-size: 9.5px;
+  fill: var(--tx-3);
+}
+.eixoTitulo {
+  font-size: 9px;
+  fill: var(--tx-3);
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+.eixoTituloFila {
+  font-size: 9px;
+  fill: var(--serie-7);
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+/* A frase que faz a coluna deixar de ler como um dia. Ela é da mesma família
+   dos rótulos de eixo (mesma cor, mesmo corpo), e não um aviso destacado: é
+   descrição do eixo, não alerta. */
+.eixoLegenda {
   font-size: 9.5px;
   fill: var(--tx-3);
 }
@@ -569,9 +675,36 @@
   fill-opacity: 0.88;
   transition: fill-opacity 0.15s;
 }
-.barEntrada:hover,
-.barEntrega:hover {
-  fill-opacity: 1;
+/**
+ * A semana em curso, mais apagada e hachurada.
+ *
+ * Os dois sinais juntos, e não um só, por motivos diferentes: a opacidade
+ * separa a coluna do resto na visão periférica (é o que se vê antes de ler
+ * qualquer coisa), e a hachura sobrevive à impressão em preto e branco e a quem
+ * não distingue as duas saturações. Uma barra só apagada seria lida como "série
+ * secundária"; hachurada, ela é lida como "ainda não fechou".
+ */
+.barParcial {
+  fill-opacity: 0.5;
+}
+.hachura {
+  fill: url(#fluxoParcial);
+  pointer-events: none;
+}
+.hachuraFundo {
+  fill: transparent;
+}
+.hachuraRisco {
+  stroke: var(--s1);
+  stroke-width: 2.6;
+  opacity: 0.75;
+}
+/* A faixa da semana mirada. Discreta de propósito: ela existe para dizer QUAL
+   coluna o tooltip está descrevendo, não para virar o assunto do gráfico. */
+.faixaAtiva {
+  fill: var(--tx-3);
+  fill-opacity: 0.08;
+  pointer-events: none;
 }
 /**
  * A fila usa `--serie-7` (índigo), não `--warn`.
@@ -586,6 +719,26 @@
 .eixoFila {
   font-size: 9.5px;
   fill: var(--serie-7);
+}
+/* A área embaixo da linha diz "acumulado" antes de alguém ler o eixo da direita.
+   Fraca o bastante para as barras continuarem legíveis por baixo dela — é véu,
+   não preenchimento. */
+.filaArea {
+  fill: url(#fluxoAreaFila);
+  pointer-events: none;
+}
+.filaTopo {
+  stop-color: var(--serie-7);
+  stop-opacity: 0.22;
+}
+/* No claro o índigo é escuro (#4a3aa7) e o mesmo 0,22 vira um véu que suja as
+   barras por baixo. A área tem de sugerir volume, não pintar por cima. */
+:global([data-theme="light"]) .filaTopo {
+  stop-opacity: 0.13;
+}
+.filaBase {
+  stop-color: var(--serie-7);
+  stop-opacity: 0;
 }
 /* Traço da cor do painel por baixo da linha: ela cruza as colunas, e sem essa
    folga se confunde com a barra por onde passa justo nas semanas cheias. */
@@ -609,16 +762,226 @@
   stroke: var(--s1);
   stroke-width: 1.2;
 }
-/* Alvo de hover maior que o traço — a linha sozinha é fina demais para mirar. */
+/* Faixa de captura: a coluna inteira. Transparente e sem hover próprio — quem
+   responde ao ponteiro é a guia e o tooltip, não ela. */
 .alvo {
   fill: transparent;
-  transition: fill 0.15s, fill-opacity 0.15s;
 }
-.alvo:hover {
+.guia {
+  pointer-events: none;
+}
+.guiaLinha {
+  stroke: var(--serie-7);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  opacity: 0.55;
+}
+.guiaPonto {
   fill: var(--serie-7);
-  fill-opacity: 0.25;
+  stroke: var(--s1);
+  stroke-width: 1.6;
 }
 
+/**
+ * O cartão da semana.
+ *
+ * Ele mora num CANTO do gráfico, e o canto é o oposto da coluna mirada (quem
+ * escolhe é o JSX, com `tipEsq`/`tipDir`). Ancorado na coluna, como já esteve,
+ * ele cobria as barras que estava explicando; e seguindo o ponteiro coluna a
+ * coluna, virava um cartão correndo pela tela a cada pixel de mouse — motion em
+ * interação de alta frequência, que o AGENTS.md §3 chama pelo nome. Parado num
+ * canto, ele só se mexe uma vez, ao cruzar o meio.
+ *
+ * `pointer-events: none` é o que impede o ciclo em que o cartão cobre a faixa
+ * de captura, o ponteiro "sai" da semana, o cartão some, a faixa volta e ele
+ * reaparece — a piscada que faz o painel parecer quebrado.
+ */
+.tip {
+  position: absolute;
+  top: 4px;
+  pointer-events: none;
+  z-index: 2;
+  min-width: 176px;
+  padding: 9px 11px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--s2);
+  box-shadow: var(--shadow);
+  animation: tipEntra 0.12s ease-out;
+}
+/* Em porcentagem, e não em pixel: são as MESMAS frações que `pl` e `pr` valem
+   dentro do viewBox, então o cartão encosta na borda da área de plotagem e para
+   ali, sem cobrir os números do eixo nem o rótulo dele — em qualquer largura de
+   tela, que é o que um valor fixo em pixel não daria (o SVG escala, o cartão
+   não). */
+.tipEsq {
+  left: 5%;
+}
+.tipDir {
+  right: 6%;
+}
+@keyframes tipEntra {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.tipTitulo {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--tx);
+  margin-bottom: 7px;
+}
+.tipTag {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--s4);
+  color: var(--tx-2);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+.tipLinha {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+  color: var(--tx-2);
+  padding: 2px 0;
+}
+.tipLinha span {
+  flex: 1;
+}
+.tipLinha b {
+  color: var(--tx);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+.tipLinha i {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  display: block;
+  flex: none;
+}
+/* A conta, separada das três medidas por uma linha. E recuada para a esquerda
+   pelo mesmo tanto do quadradinho de cor que ela não tem — sem isso, o rótulo
+   dela desalinharia dos de cima. */
+.tipSaldo {
+  margin-top: 5px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line-soft);
+}
+.melhor {
+  color: var(--ok-tx);
+}
+.pior {
+  color: var(--danger-tx);
+}
+
+/**
+ * A faixa de totais do período.
+ *
+ * `auto-fit` com mínimo de 140px: no painel largo os cinco números ficam lado a
+ * lado; num celular eles viram duas colunas em vez de uma tira ilegível de
+ * cinco. `auto-fit` e não `auto-fill` aqui (ao contrário da legenda da rosca)
+ * porque são sempre cinco itens fixos — não há caso de "sobrou coluna vazia".
+ */
+.resumo {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px 18px;
+  margin-top: 14px;
+  padding-top: 13px;
+  border-top: 1px solid var(--line-soft);
+}
+.resumoItem {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.resumoItem span {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--tx-3);
+}
+.resumoItem b {
+  font-size: 19px;
+  font-weight: 800;
+  color: var(--tx);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.resumoItem b em {
+  font-size: 10.5px;
+  font-weight: 600;
+  font-style: normal;
+  color: var(--tx-3);
+  margin-left: 3px;
+}
+
+/* A tabela vem FECHADA: ela é o número exato para quem foi buscá-lo, não a
+   leitura padrão do painel. Aberta, empurraria os outros painéis uma tela
+   inteira para baixo em toda visita. */
+.tabelaFluxo {
+  margin-top: 12px;
+}
+.tabelaFluxo summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--tx-3);
+  cursor: pointer;
+  padding: 4px 0;
+  transition: color 0.18s;
+}
+.tabelaFluxo summary:hover {
+  color: var(--accent);
+}
+/* Teto de altura porque a janela por datas chega a 260 semanas: sem ele, abrir
+   a tabela dá cinco telas de rolagem entre este painel e o próximo. */
+.tabelaFluxoWrap {
+  max-width: 680px;
+  max-height: 320px;
+  overflow: auto;
+  margin-top: 6px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+}
+/* Cabeçalho grudado no topo da caixa rolável: 260 linhas abaixo, "qual coluna é
+   a fila?" não pode depender de rolar de volta. */
+.tabelaFluxoWrap thead th {
+  position: sticky;
+  top: 0;
+  background: var(--s1);
+  z-index: 1;
+}
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* O gráfico inteiro em movimento é enfeite; o cartão que aparece é resposta a
+   um gesto. Sob `prefers-reduced-motion` a resposta continua, sem o fade. */
+@media (prefers-reduced-motion: reduce) {
+  .tip {
+    animation: none;
+  }
+}
 /* ---------- tabela de prazos ---------- */
 .tabelaWrap {
   overflow-x: auto;
