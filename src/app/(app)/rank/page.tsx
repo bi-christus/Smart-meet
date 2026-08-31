@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useSetoresDaPessoa } from "@/lib/setores";
 import { subscribeUsers, type UserProfile } from "@/lib/users";
+import { PerfilModal } from "@/components/perfil-modal";
 import {
   subscribeCardsForSectors,
   subscribeColumnsForSectors,
@@ -101,6 +102,8 @@ export default function RankPage() {
   // O mês corrente é o padrão da tela — sempre que a página monta de novo.
   const [mesCorrente] = useState(() => mesAtual());
   const [mesEscolhido, setMesEscolhido] = useState(mesCorrente);
+  /** A pessoa cujo rosto foi clicado — `null` enquanto ninguém clicou. */
+  const [perfilDe, setPerfilDe] = useState<UserProfile | null>(null);
   const vendoAtual = mesEscolhido === mesCorrente;
 
   const fTemporadasFechadas = useAsyncData<TemporadaFechada>(
@@ -292,6 +295,24 @@ export default function RankPage() {
           colocacoes={colocacoes}
           usersMap={usersMap}
           campea={!vendoAtual}
+          onPerfil={setPerfilDe}
+        />
+      )}
+
+      {/**
+       * O mesmo perfil que o Kanban abre, e de propósito o MESMO componente.
+       *
+       * Lá o rosto no card responde "de quem é esta demanda"; aqui ele responde
+       * "quem é esse que entregou 14" — a pergunta que o Rank provoca e que, até
+       * agora, morria no clique. Duas telas com o mesmo elemento e
+       * comportamentos diferentes ensinam que o rosto às vezes é botão, e aí
+       * ninguém tenta em lugar nenhum.
+       */}
+      {perfilDe && (
+        <PerfilModal
+          modo="outra-pessoa"
+          pessoa={perfilDe}
+          onClose={() => setPerfilDe(null)}
         />
       )}
     </div>
@@ -349,11 +370,13 @@ function Cena({
   colocacoes,
   usersMap,
   campea,
+  onPerfil,
 }: {
   colocacoes: Colocacao[];
   usersMap: Record<string, UserProfile>;
   /** Temporada FECHADA sendo exibida — é o que acende o acento de campeão. */
   campea: boolean;
+  onPerfil: (p: UserProfile) => void;
 }) {
   const { degraus, plateia } = useMemo(() => partirCena(colocacoes), [colocacoes]);
   const maior = maiorEntrega(colocacoes);
@@ -380,9 +403,16 @@ function Cena({
     <div
       className={styles.trilho}
       ref={enquadra}
-      /* Região rolável precisa ser alcançável por teclado (WCAG 2.1.1), e não
-         há UM elemento focável aqui dentro: o `<Avatar>` só vira botão quando
-         recebe `aoAbrirPerfil`, que esta tela não passa. */
+      /* Região rolável precisa ser alcançável por teclado (WCAG 2.1.1). Os
+         rostos AGORA são focáveis — cada um virou botão que abre o perfil —, e
+         normalmente isso já bastaria: tabular por eles rola o trilho sozinho.
+
+         O `tabIndex` fica assim mesmo, e por um caso que existe: só vira botão
+         quem está em `/users`. Um ranking cujas pessoas saíram do cadastro (ou
+         uma temporada antiga de quem já não está na Rede) desenha uma fileira
+         inteira de rostos não focáveis — e aí o trilho volta a ser uma região
+         rolável sem nada dentro para alcançar. Uma parada a mais de Tab custa
+         pouco; a região inalcançável custa a quem depende do teclado. */
       tabIndex={0}
       role="group"
       aria-label="Colocações da temporada"
@@ -400,6 +430,7 @@ function Cena({
             key={c.chave}
             colocacao={c}
             perfil={usersMap[c.chave]}
+            onPerfil={onPerfil}
             maior={maior}
             campea={campea}
             indice={i}
@@ -411,6 +442,7 @@ function Cena({
             key={c.chave}
             colocacao={c}
             perfil={usersMap[c.chave]}
+            onPerfil={onPerfil}
             rosto={rosto}
             campea={campea}
             indice={degraus.length + i}
@@ -519,6 +551,7 @@ function semMovimento(): boolean {
 function Degrau({
   colocacao,
   perfil,
+  onPerfil,
   maior,
   atraso,
   campea,
@@ -526,6 +559,7 @@ function Degrau({
 }: {
   colocacao: Colocacao;
   perfil?: UserProfile;
+  onPerfil: (p: UserProfile) => void;
   maior: number;
   atraso: number;
   campea: boolean;
@@ -566,10 +600,25 @@ function Degrau({
             no pódio exibindo o vocabulário visual reservado a quem está em
             primeiro. Tirar o anel do degrau não resolveria: "Cor da casa"
             continuaria imitando o campeão. */}
+        {/**
+         * `aoAbrirPerfil` SÓ quando a pessoa existe em `/users`.
+         *
+         * Sem cadastro não há perfil para abrir (ver `perfil-modal.tsx`), e um
+         * rosto que vira botão para depois não abrir nada é a promessa que o
+         * projeto inteiro evita. O fallback `{ name, email }` continua servindo
+         * para DESENHAR o rosto — só não o torna clicável.
+         *
+         * E o `alt` deixa de ser vazio quando ele vira botão: em modo alvo o
+         * `alt` é o rótulo do botão (`avatar.tsx`), e "Ana Souza" leria como se
+         * o clique fizesse alguma coisa com a Ana. O nome continua escrito
+         * embaixo, então repeti-lo aqui só ocuparia o rótulo que precisa dizer
+         * o que acontece.
+         */}
         <Avatar
           pessoa={perfil ?? { name: rotulo, email: colocacao.chave }}
           size={TAM_AVATAR[posicao] ?? 88}
-          alt=""
+          alt={perfil ? `Ver o perfil de ${rotulo}` : ""}
+          aoAbrirPerfil={perfil ? () => onPerfil(perfil) : undefined}
           semMoldura
         />
       </div>
@@ -620,6 +669,7 @@ function Degrau({
 function NoChao({
   colocacao,
   perfil,
+  onPerfil,
   rosto,
   atraso,
   campea,
@@ -627,6 +677,7 @@ function NoChao({
 }: {
   colocacao: Colocacao;
   perfil?: UserProfile;
+  onPerfil: (p: UserProfile) => void;
   /** Diâmetro do rosto — cresce quando não há pódio (ver `escalaDaFileira`). */
   rosto: number;
   atraso: number;
@@ -656,7 +707,8 @@ function NoChao({
         <Avatar
           pessoa={perfil ?? { name: rotulo, email: colocacao.chave }}
           size={rosto}
-          alt=""
+          alt={perfil ? `Ver o perfil de ${rotulo}` : ""}
+          aoAbrirPerfil={perfil ? () => onPerfil(perfil) : undefined}
           semMoldura
         />
       </div>
