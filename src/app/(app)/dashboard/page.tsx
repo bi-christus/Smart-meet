@@ -20,14 +20,17 @@ import {
 } from "@/lib/kanban";
 import { subscribeRecorrencias } from "@/lib/recorrencias";
 import { recLoadHours, type Recorrencia } from "@/lib/recorrencias-core";
+import { daysBetween, fmtDayMonth, hh, startOfDay } from "@/lib/datas";
 import {
-  addDays,
-  daysBetween,
-  fmtDayMonth,
-  hh,
-  startOfDay,
-  startOfWeek,
-} from "@/lib/datas";
+  PERIODOS,
+  PERIODO_LABEL,
+  calcularFluxo,
+  isoDe,
+  janelaDeSemanas,
+  type Fluxo,
+  type Janela,
+  type Periodo,
+} from "@/lib/fluxo-core";
 import { juntarFontes, type Fonte } from "@/lib/async-data-core";
 import { useAsyncData } from "@/lib/use-async-data";
 import { Icon } from "@/components/icons";
@@ -62,14 +65,6 @@ import styles from "./dashboard.module.css";
  * tendência), mas muda o número exato — e prometer prazo com número exato que
  * não existe seria pior do que não medir.
  */
-
-type Periodo = 12 | 26 | 52;
-
-const PERIODO_LABEL: Record<Periodo, string> = {
-  12: "12 semanas",
-  26: "6 meses",
-  52: "12 meses",
-};
 
 /** Mínimo de conclusões para publicar percentil. Abaixo disso é chute. */
 const MIN_AMOSTRA = 5;
@@ -125,7 +120,22 @@ export default function DashboardPage() {
   const [fSetor, setFSetor] = useState("");
   const [fPessoa, setFPessoa] = useState("");
   const [fResp, setFResp] = useState("");
+
+  /**
+   * A janela das séries: uma das opções ancoradas em hoje, ou datas escolhidas.
+   *
+   * São três estados e não um só porque o intervalo tem de SOBREVIVER à ida e
+   * volta ao "Últimas 12 semanas". Guardar só a janela ativa apagaria as datas
+   * digitadas a cada espiada no período padrão, e quem estava comparando dois
+   * recortes teria de digitá-las de novo — o mesmo motivo pelo qual `periodo`
+   * também fica guardado enquanto o modo é "intervalo".
+   */
+  const [modoJanela, setModoJanela] = useState<"recentes" | "intervalo">(
+    "recentes",
+  );
   const [periodo, setPeriodo] = useState<Periodo>(12);
+  const [de, setDe] = useState("");
+  const [ate, setAte] = useState("");
 
   const usersMap = useMemo(() => {
     const m: Record<string, UserProfile> = {};
@@ -215,9 +225,25 @@ export default function DashboardPage() {
   );
 
   // ---- séries semanais de fluxo -------------------------------------------
+  /**
+   * O intervalo só entra em vigor com as DUAS pontas preenchidas.
+   *
+   * Enquanto só uma existe, a janela continua sendo a de período — e não uma
+   * janela vazia. Trocar para "Personalizado" apaga o gráfico até a segunda data
+   * ser digitada, e painel que some no meio de um gesto lê como quebrado, não
+   * como espera.
+   */
+  const intervaloPronto = modoJanela === "intervalo" && !!de && !!ate;
+  const janela = useMemo<Janela>(
+    () =>
+      intervaloPronto
+        ? { modo: "intervalo", de, ate }
+        : { modo: "recentes", semanas: periodo },
+    [intervaloPronto, de, ate, periodo],
+  );
   const fluxo = useMemo(
-    () => calcularFluxo(doRecorte, concluido, hoje, periodo),
-    [doRecorte, concluido, hoje, periodo],
+    () => calcularFluxo(doRecorte, concluido, hoje, janela),
+    [doRecorte, concluido, hoje, janela],
   );
 
   const recsNoRecorte = useMemo(
@@ -254,6 +280,32 @@ export default function DashboardPage() {
     );
   }
 
+  const hojeISO = isoDe(hoje);
+
+  /**
+   * Trocar de janela — e, ao entrar no modo personalizado, JÁ CHEGAR PREENCHIDO.
+   *
+   * As duas datas nascem com a janela que estava na tela um instante antes. Sem
+   * isso, escolher "Escolher datas…" apagaria o gráfico e devolveria dois campos
+   * vazios: o painel some no exato gesto em que a pessoa foi mexer nele, e ela
+   * ainda precisa adivinhar em que formato digitar para trazê-lo de volta.
+   * Vindo preenchido, o gráfico não pisca e as datas viram ponto de partida —
+   * mexer numa ponta é ajuste, não preenchimento de formulário.
+   */
+  function escolherJanela(v: string) {
+    if (v !== "custom") {
+      setModoJanela("recentes");
+      setPeriodo(Number(v) as Periodo);
+      return;
+    }
+    if (!de || !ate) {
+      const s = janelaDeSemanas(hoje, { modo: "recentes", semanas: periodo });
+      setDe(isoDe(s[0].inicio));
+      setAte(hojeISO);
+    }
+    setModoJanela("intervalo");
+  }
+
   const nomeDe = (email: string) => usersMap[email]?.name ?? email;
   const opcoesPessoa = (vazio: string): SelectOption[] => [
     { value: "", label: vazio },
@@ -283,15 +335,63 @@ export default function DashboardPage() {
         <div className={styles.headMain}>
           <h1>Dashboard — {fSetor || "todos os setores"}</h1>
         </div>
-        <div className={styles.periodo}>
-          <Select
-            value={String(periodo)}
-            options={(Object.keys(PERIODO_LABEL) as unknown as string[]).map(
-              (k) => ({ value: k, label: PERIODO_LABEL[Number(k) as Periodo] }),
-            )}
-            onChange={(v) => setPeriodo(Number(v) as Periodo)}
-            ariaLabel="Período das séries"
-          />
+        {/**
+         * O seletor de janela, e o par de datas que ele revela.
+         *
+         * As datas aparecem SÓ no modo personalizado. Deixá-las sempre na tela,
+         * apagadas, seria um recorte que não recorta ocupando o mesmo espaço do
+         * que recorta — e, num cabeçalho que já carrega título e quatro filtros,
+         * é ruído que empurra o resto para uma segunda linha sem pagar por ela.
+         */}
+        <div className={styles.janela}>
+          <div className={styles.periodo}>
+            <Select
+              value={modoJanela === "intervalo" ? "custom" : String(periodo)}
+              options={[
+                ...PERIODOS.map((p) => ({
+                  value: String(p),
+                  label: PERIODO_LABEL[p],
+                })),
+                { value: "custom", label: "Escolher datas…" },
+              ]}
+              onChange={escolherJanela}
+              ariaLabel="Período das séries"
+            />
+          </div>
+          {modoJanela === "intervalo" && (
+            <div className={styles.intervalo}>
+              <label className={styles.campoData}>
+                <span>De</span>
+                <input
+                  type="date"
+                  className={styles.dataInput}
+                  value={de}
+                  max={hojeISO}
+                  onChange={(e) => setDe(e.target.value)}
+                />
+              </label>
+              <label className={styles.campoData}>
+                <span>Até</span>
+                <input
+                  type="date"
+                  className={styles.dataInput}
+                  value={ate}
+                  max={hojeISO}
+                  onChange={(e) => setAte(e.target.value)}
+                />
+              </label>
+              <button
+                className={styles.limpar}
+                onClick={() => {
+                  setModoJanela("recentes");
+                  setDe("");
+                  setAte("");
+                }}
+              >
+                <Icon name="x" size={13} /> Período fixo
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -472,8 +572,22 @@ export default function DashboardPage() {
           <OrigemPorEtapa cards={doRecorte} colsPorSetor={colsPorSetor} />
         </Painel>
 
+        {/**
+         * O subtítulo declara a janela DESENHADA, não a pedida.
+         *
+         * As duas divergem sempre que o intervalo é escolhido à mão: quem digita
+         * 15/07 a 20/07 recebe 13/07 a 26/07, porque a coluna é a semana inteira
+         * (ver `janelaDeSemanas`). Sem esta linha, o painel responderia por um
+         * recorte diferente do que foi pedido sem nunca dizer isso — e o eixo x,
+         * que só imprime uma data a cada tantas colunas, não denuncia.
+         */}
         <Painel
           titulo="Demanda que entra × demanda que sai"
+          sub={
+            fluxo.semanas.length
+              ? `${fluxo.semanas.length} ${fluxo.semanas.length === 1 ? "semana" : "semanas"} · ${fluxo.semanas[0].rotuloLongo} a ${fluxo.semanas[fluxo.semanas.length - 1].rotuloLongo}`
+              : undefined
+          }
           chip={`fila ${fluxo.fila[fluxo.fila.length - 1] ?? 0}`}
           fontes={[fCards, fCols]}
           esqueleto={<SkeletonChart bars={10} texto="Carregando as séries semanais…" />}
@@ -502,118 +616,17 @@ export default function DashboardPage() {
 }
 
 // ---------------------------------------------------------------------------
-// Cálculo do fluxo
-// ---------------------------------------------------------------------------
-
-/**
- * As séries do período, e o que dá para prometer de prazo a partir delas.
- *
- * `pontos` (uma entrada por conclusão, com dias e tipo) e `p50` moravam aqui e
- * saíram junto com o painel de cycle time por tipo, que era o único a lê-los —
- * ver `OrigemPorEtapa`, que tomou o lugar dele. O p85 fica, porque o KPI do topo
- * continua publicando; a lista de durações que o gera não precisa mais escapar
- * de `calcularFluxo`, e guardá-la era peso num `useMemo` que percorre o quadro
- * inteiro a cada troca de filtro.
- */
-type Fluxo = {
-  semanas: { inicio: Date; rotulo: string }[];
-  entradas: number[];
-  entregas: number[];
-  fila: number[];
-  p85: number;
-  amostra: number;
-  entregas4: number;
-};
-
-function criadoEm(c: Card): number | null {
-  if (c.createdAt?.seconds) return c.createdAt.seconds * 1000;
-  return c.enteredAt ?? null;
-}
-
-function percentil(ordenado: number[], p: number): number {
-  if (!ordenado.length) return 0;
-  const i = Math.min(ordenado.length - 1, Math.floor(p * ordenado.length));
-  return ordenado[i];
-}
-
-function calcularFluxo(
-  cards: Card[],
-  concluido: (c: Card) => boolean,
-  hoje: Date,
-  semanasN: number,
-): Fluxo {
-  const primeira = addDays(startOfWeek(hoje), -(semanasN - 1) * 7);
-  const semanas = Array.from({ length: semanasN }, (_, i) => {
-    const inicio = addDays(primeira, i * 7);
-    return { inicio, rotulo: `${inicio.getDate()}/${String(inicio.getMonth() + 1).padStart(2, "0")}` };
-  });
-  const indiceDa = (ms: number) => {
-    const i = Math.floor((ms - primeira.getTime()) / (86400000 * 7));
-    return i >= 0 && i < semanasN ? i : -1;
-  };
-
-  const entradas = new Array(semanasN).fill(0);
-  const entregas = new Array(semanasN).fill(0);
-  /** Dias entre criação e conclusão, uma entrada por card entregue no período. */
-  const duracoes: number[] = [];
-  let filaInicial = 0;
-
-  cards.forEach((c) => {
-    const nasceu = criadoEm(c);
-    const entregue = concluido(c) ? (c.enteredAt ?? null) : null;
-
-    if (nasceu !== null) {
-      const i = indiceDa(nasceu);
-      if (i >= 0) entradas[i]++;
-      // Fila que já existia quando a janela começou.
-      else if (
-        nasceu < primeira.getTime() &&
-        (entregue === null || entregue >= primeira.getTime())
-      )
-        filaInicial++;
-    }
-
-    if (entregue !== null) {
-      const i = indiceDa(entregue);
-      if (i >= 0) {
-        entregas[i]++;
-        if (nasceu !== null && entregue >= nasceu)
-          duracoes.push(Math.max(0, Math.round((entregue - nasceu) / 86400000)));
-      }
-    }
-  });
-
-  const fila: number[] = [];
-  let acc = filaInicial;
-  for (let i = 0; i < semanasN; i++) {
-    acc = Math.max(0, acc + entradas[i] - entregas[i]);
-    fila.push(acc);
-  }
-
-  return {
-    semanas,
-    entradas,
-    entregas,
-    fila,
-    p85: percentil(
-      [...duracoes].sort((a, b) => a - b),
-      0.85,
-    ),
-    amostra: duracoes.length,
-    entregas4: entregas.slice(-4).reduce((a, b) => a + b, 0),
-  };
-}
-
-// ---------------------------------------------------------------------------
 // Peças
 // ---------------------------------------------------------------------------
 
 function PainelHead({
   titulo,
+  sub,
   chip,
   chipTom,
 }: {
   titulo: string;
+  sub?: string;
   chip?: string;
   chipTom?: "danger";
 }) {
@@ -621,6 +634,7 @@ function PainelHead({
     <div className={styles.painelHead}>
       <div>
         <h3>{titulo}</h3>
+        {sub && <p className={styles.painelSub}>{sub}</p>}
       </div>
       {chip && (
         <span
@@ -688,6 +702,7 @@ type Assinatura = Fonte & { tentarDeNovo: () => void };
  */
 function Painel({
   titulo,
+  sub,
   chip,
   chipTom,
   fontes,
@@ -695,6 +710,7 @@ function Painel({
   children,
 }: {
   titulo: string;
+  sub?: string;
   chip?: string;
   chipTom?: "danger";
   fontes: Assinatura[];
@@ -707,8 +723,11 @@ function Painel({
       className={styles.painel}
       aria-busy={carregando || undefined}
     >
+      {/* O subtítulo cai junto com o chip enquanto não há resposta: ele fala do
+          recorte DESENHADO, e não há desenho nenhum até os dados chegarem. */}
       <PainelHead
         titulo={titulo}
+        sub={erro || carregando ? undefined : sub}
         chip={erro || carregando ? undefined : chip}
         chipTom={chipTom}
       />
@@ -987,16 +1006,47 @@ function Rosca({ cards }: { cards: Card[] }) {
  * ordem de grandeza acima do movimento semanal — na escala das colunas, viraria
  * uma linha colada no topo, sem informação. Dois eixos exigem estar declarados,
  * e é por isso que o da direita carrega números e a legenda diz de quem ele é.
+ *
+ * TRÊS COISAS QUE ESTE PAINEL PRECISOU APRENDER A DIZER (Issue #137):
+ *
+ * 1. QUE A COLUNA É UMA SEMANA. O eixo x imprime "13/07" e isso lê como um dia:
+ *    quem batia o olho via "3 demandas no dia 13", não "3 na semana que começa
+ *    em 13". A legenda do eixo agora afirma o passo, e todo texto que fala de
+ *    uma coluna — tooltip, tabela, rótulo acessível — usa a semana inteira
+ *    ("13 a 19 jul"), nunca a data de abertura sozinha.
+ *
+ * 2. QUE A ÚLTIMA COLUNA AINDA NÃO ACABOU. Ela é a semana em curso, sempre
+ *    contada pela metade, e sempre parecia um tombo de entrada e de entrega —
+ *    uma queda que o gráfico inventava toda segunda-feira e desmentia toda
+ *    sexta. Agora ela sai hachurada e o tooltip diz "em curso".
+ *
+ * 3. UM TOOLTIP POR SEMANA, e não um por forma. Os `<title>` nativos abriam só
+ *    com o ponteiro parado em cima da barra (uns 20px de alvo, meio segundo de
+ *    espera) e mostravam uma série de cada vez. A faixa de captura cobre a
+ *    altura toda da coluna: mirar a semana basta, e a resposta vem com as três
+ *    séries e o saldo juntos, que é como a pergunta é feita.
+ *
+ * A tabela dentro do `<details>` não é enfeite de acessibilidade: é o caminho
+ * de TECLADO deste gráfico. A alternativa seria pôr `tabIndex` nas faixas de
+ * captura, e numa janela de 260 semanas isso são 260 paradas de Tab entre o
+ * seletor de período e o próximo painel — acessibilidade que atrapalha quem ela
+ * deveria servir. É também onde o número exato mora para quem precisa copiar.
  */
 function FluxoSemanal({ fluxo }: { fluxo: Fluxo }) {
-  const { semanas, entradas, entregas, fila } = fluxo;
-  if (!entradas.some(Boolean) && !entregas.some(Boolean))
+  const { semanas, entradas, entregas, fila, saldo } = fluxo;
+  /**
+   * A semana sob o ponteiro. `null` é "nenhuma", e não a semana 0 — daí o tipo
+   * nulável em vez de um -1 que a aritmética de índice trataria como número.
+   */
+  const [ativo, setAtivo] = useState<number | null>(null);
+
+  if (!semanas.length || (!entradas.some(Boolean) && !entregas.some(Boolean)))
     return (
       <EmptyState
         size="compact"
         icon="trend"
         title="Sem movimento no período"
-        description="As séries aparecem quando houver demanda criada ou concluída. Amplie o período no topo da tela para alcançar semanas anteriores."
+        description="As séries aparecem quando houver demanda criada ou concluída neste recorte. Troque o período no topo da tela, ou escolha outras datas, para alcançar semanas com movimento."
       />
     );
 
@@ -1004,19 +1054,29 @@ function FluxoSemanal({ fluxo }: { fluxo: Fluxo }) {
   // rótulo de eixo de 9,5px chega na tela com 30. Larguras em unidades de
   // viewBox só significam alguma coisa em relação a W.
   const W = 1120;
-  const H = 190;
-  const pl = 34;
-  const pr = 42;
-  const pt = 12;
-  const pb = 24;
+  const H = 268;
+  const pl = 46;
+  const pr = 56;
+  const pt = 18;
+  // Fundo alto porque embaixo do eixo moram duas linhas: as datas e a legenda
+  // que declara o passo. Era ela que faltava para a coluna deixar de ler como
+  // um dia — e legenda de eixo espremida contra a borda do painel não se lê.
+  const pb = 52;
   const n = semanas.length;
   const base = H - pb;
   const max = Math.max(1, ...entradas, ...entregas);
   const maxFila = Math.max(1, ...fila);
   const passo = (W - pl - pr) / n;
-  // Espessura proporcional ao passo, e não um teto fixo: com 12 semanas num
-  // gráfico largo, barra travada em 10 vira um risco perdido em 140px de vão.
-  const bw = Math.max(3, Math.min(passo * 0.32, (passo - 6) / 2));
+  /**
+   * Espessura proporcional ao passo, e nunca menor que 1.
+   *
+   * A conta antiga (`(passo - 6) / 2`) reservava 6 unidades de respiro fixas e
+   * virava NEGATIVA a partir de umas 120 semanas — o `Math.max(3, …)` salvava a
+   * barra de sumir, mas as duas do par passavam a se sobrepor. Com a janela por
+   * datas dá para pedir cinco anos, então o respiro também encolhe com o passo.
+   */
+  const vao = Math.min(2, passo * 0.06);
+  const bw = Math.max(1, Math.min(passo * 0.34, (passo - vao) / 2));
   const Y = (v: number) => pt + (1 - v / max) * (base - pt);
   const Yf = (v: number) => pt + (1 - v / maxFila) * (base - pt);
   const X = (i: number) => pl + i * passo + passo / 2;
@@ -1024,95 +1084,286 @@ function FluxoSemanal({ fluxo }: { fluxo: Fluxo }) {
   const linhaFila = fila
     .map((v, i) => `${i ? "L" : "M"} ${X(i).toFixed(1)} ${Yf(v).toFixed(1)}`)
     .join(" ");
+  // A área existe para a linha dizer "acumulado" antes de alguém ler o eixo da
+  // direita: linha solta é taxa, linha com corpo embaixo é estoque.
+  const areaFila = `${linhaFila} L ${X(n - 1).toFixed(1)} ${base} L ${X(0).toFixed(1)} ${base} Z`;
+
+  // Uma data a cada tantas colunas: em 52 semanas todas as datas viram um borrão
+  // cinza, e em 12 esconder cinco de cada seis obriga a contar barras com o dedo.
+  const passoRotulo = Math.max(1, Math.ceil(n / 13));
+  const saldoPeriodo = fluxo.totalEntradas - fluxo.totalEntregas;
+  const filaFinal = fila[n - 1] ?? 0;
+
+  const resumoAcessivel =
+    `Colunas de entrada e entrega por semana, com a fila acumulada em linha. ` +
+    `${n} ${n === 1 ? "semana" : "semanas"}, de ${semanas[0].rotuloLongo} a ${semanas[n - 1].rotuloLongo}. ` +
+    `${fluxo.totalEntradas} entrada(s), ${fluxo.totalEntregas} entrega(s), fila final de ${filaFinal}. ` +
+    `Os números de cada semana estão na tabela abaixo do gráfico.`;
+
+  const s = ativo === null ? null : semanas[ativo];
 
   return (
     <>
-      <svg
-        viewBox={`0 0 ${W} ${H}`}
-        className={styles.chart}
-        role="img"
-        aria-label="Entradas, entregas e fila acumulada por semana"
+      <div
+        className={styles.chartWrap}
+        onPointerLeave={() => setAtivo(null)}
       >
-        {[0, 1, 2, 3].map((g) => {
-          const v = (max * g) / 3;
-          return (
-            <g key={g}>
-              <line
-                x1={pl}
-                y1={Y(v)}
-                x2={W - pr}
-                y2={Y(v)}
-                className={styles.grade}
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          className={styles.chart}
+          role="img"
+          aria-label={resumoAcessivel}
+        >
+          <defs>
+            <linearGradient id="fluxoAreaFila" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" className={styles.filaTopo} />
+              <stop offset="100%" className={styles.filaBase} />
+            </linearGradient>
+            {/* Hachura da semana em curso. O traço é da cor da SUPERFÍCIE do
+                painel, não branco nem preto: assim ela abre sulcos na barra em
+                qualquer tema, em vez de virar um segundo tom que compete com a
+                cor da série. */}
+            <pattern
+              id="fluxoParcial"
+              width="6"
+              height="6"
+              patternUnits="userSpaceOnUse"
+              patternTransform="rotate(45)"
+            >
+              <rect width="6" height="6" className={styles.hachuraFundo} />
+              <line x1="0" y1="0" x2="0" y2="6" className={styles.hachuraRisco} />
+            </pattern>
+          </defs>
+
+          {[0, 1, 2, 3].map((g) => {
+            const v = (max * g) / 3;
+            return (
+              <g key={g}>
+                <line
+                  x1={pl}
+                  y1={Y(v)}
+                  x2={W - pr}
+                  y2={Y(v)}
+                  className={styles.grade}
+                />
+                <text
+                  x={pl - 8}
+                  y={Y(v) + 3.5}
+                  textAnchor="end"
+                  className={styles.eixo}
+                >
+                  {Math.round(v)}
+                </text>
+                <text x={W - pr + 8} y={Y(v) + 3.5} className={styles.eixoFila}>
+                  {Math.round((maxFila * g) / 3)}
+                </text>
+              </g>
+            );
+          })}
+
+          {/* O zero fica mais forte que as outras linhas de grade: é dele que a
+              altura de toda barra é medida, e grade toda igual deixa o olho
+              ancorar em qualquer uma. */}
+          <line
+            x1={pl}
+            y1={base}
+            x2={W - pr}
+            y2={base}
+            className={styles.eixoBase}
+          />
+
+          {/* A faixa da semana mirada, atrás de tudo: destaque desenhado por
+              cima apagaria justamente a barra que a pessoa está tentando ler. */}
+          {ativo !== null && (
+            <rect
+              x={pl + ativo * passo}
+              y={pt}
+              width={passo}
+              height={base - pt}
+              className={styles.faixaAtiva}
+            />
+          )}
+
+          {semanas.map((sem, i) => (
+            <g key={sem.rotulo}>
+              <rect
+                x={X(i) - bw - vao / 2}
+                y={Y(entradas[i])}
+                width={bw}
+                height={base - Y(entradas[i])}
+                rx={Math.min(3, bw / 2)}
+                className={`${styles.barEntrada} ${sem.parcial ? styles.barParcial : ""}`}
               />
-              <text
-                x={pl - 6}
-                y={Y(v) + 3.5}
-                textAnchor="end"
-                className={styles.eixo}
-              >
-                {Math.round(v)}
-              </text>
-              <text x={W - pr + 6} y={Y(v) + 3.5} className={styles.eixoFila}>
-                {Math.round((maxFila * g) / 3)}
-              </text>
+              <rect
+                x={X(i) + vao / 2}
+                y={Y(entregas[i])}
+                width={bw}
+                height={base - Y(entregas[i])}
+                rx={Math.min(3, bw / 2)}
+                className={`${styles.barEntrega} ${sem.parcial ? styles.barParcial : ""}`}
+              />
+              {sem.parcial && (
+                <>
+                  <rect
+                    x={X(i) - bw - vao / 2}
+                    y={Y(entradas[i])}
+                    width={bw}
+                    height={base - Y(entradas[i])}
+                    rx={Math.min(3, bw / 2)}
+                    className={styles.hachura}
+                  />
+                  <rect
+                    x={X(i) + vao / 2}
+                    y={Y(entregas[i])}
+                    width={bw}
+                    height={base - Y(entregas[i])}
+                    rx={Math.min(3, bw / 2)}
+                    className={styles.hachura}
+                  />
+                </>
+              )}
+              {i % passoRotulo === 0 && (
+                <text
+                  x={X(i)}
+                  y={base + 16}
+                  textAnchor="middle"
+                  className={styles.eixo}
+                >
+                  {sem.rotulo}
+                </text>
+              )}
             </g>
-          );
-        })}
+          ))}
 
-        {semanas.map((s, i) => (
-          <g key={s.rotulo}>
-            <rect
-              x={X(i) - bw - 1}
-              y={Y(entradas[i])}
-              width={bw}
-              height={base - Y(entradas[i])}
-              rx={3}
-              className={styles.barEntrada}
-            >
-              <title>{`${s.rotulo} · ${entradas[i]} entrada(s)`}</title>
-            </rect>
-            <rect
-              x={X(i) + 1}
-              y={Y(entregas[i])}
-              width={bw}
-              height={base - Y(entregas[i])}
-              rx={3}
-              className={styles.barEntrega}
-            >
-              <title>{`${s.rotulo} · ${entregas[i]} entrega(s)`}</title>
-            </rect>
-            {/* Mais rótulos do que cabiam na metade da tela: a série é
-                semanal, e ler a data de 1 em cada 6 obriga a contar barras. */}
-            {i % Math.ceil(n / 12) === 0 && (
-              <text
-                x={X(i)}
-                y={H - 7}
-                textAnchor="middle"
-                className={styles.eixo}
-              >
-                {s.rotulo}
-              </text>
-            )}
-          </g>
-        ))}
+          {/* A linha vem depois das colunas: desenhada antes, sumiria atrás delas
+              exatamente nas semanas de mais movimento — as que interessam. */}
+          <path d={areaFila} className={styles.filaArea} />
+          <path d={linhaFila} className={styles.filaHalo} />
+          <path d={linhaFila} className={styles.filaLinha} />
+          {/* Ponto por semana só enquanto eles não se encostam. Passada essa
+              densidade, uma fileira de bolinhas coladas engrossa a linha e some
+              com a forma dela, que é a única coisa que a linha tem para dizer. */}
+          {passo >= 14 &&
+            fila.map((v, i) => (
+              <circle
+                key={i}
+                cx={X(i)}
+                cy={Yf(v)}
+                r={2.6}
+                className={styles.filaPonto}
+              />
+            ))}
 
-        {/* A linha vem depois das colunas: desenhada antes, sumiria atrás delas
-            exatamente nas semanas de mais movimento — as que interessam. */}
-        <path d={linhaFila} className={styles.filaHalo} />
-        <path d={linhaFila} className={styles.filaLinha} />
-        {fila.map((v, i) => (
-          <g key={i}>
-            <circle cx={X(i)} cy={Yf(v)} r={2.6} className={styles.filaPonto} />
-            {/* Alvo de hover maior que o traço, e o resumo da semana INTEIRA
-                nele: sobrepondo as colunas, ele roubaria o hover delas. */}
-            <circle cx={X(i)} cy={Yf(v)} r={7} className={styles.alvo}>
-              <title>
-                {`${semanas[i].rotulo} · ${entradas[i]} entrada(s) · ${entregas[i]} entrega(s) · fila de ${v}`}
-              </title>
-            </circle>
-          </g>
-        ))}
-      </svg>
+          {ativo !== null && (
+            <g className={styles.guia}>
+              <line
+                x1={X(ativo)}
+                y1={pt}
+                x2={X(ativo)}
+                y2={base}
+                className={styles.guiaLinha}
+              />
+              <circle
+                cx={X(ativo)}
+                cy={Yf(fila[ativo])}
+                r={4.2}
+                className={styles.guiaPonto}
+              />
+            </g>
+          )}
+
+          {/* Título de cada eixo, junto do eixo. Dois eixos com escalas
+              diferentes só se leem se cada um disser do que está falando — e a
+              legenda embaixo, que já diz de quem é o da direita, fica longe
+              demais do número para servir de resposta no meio da leitura. */}
+          <text
+            transform={`translate(11 ${(pt + base) / 2}) rotate(-90)`}
+            textAnchor="middle"
+            className={styles.eixoTitulo}
+          >
+            demandas na semana
+          </text>
+          <text
+            transform={`translate(${W - 9} ${(pt + base) / 2}) rotate(-90)`}
+            textAnchor="middle"
+            className={styles.eixoTituloFila}
+          >
+            fila acumulada
+          </text>
+          <text
+            x={pl + (W - pl - pr) / 2}
+            y={H - 8}
+            textAnchor="middle"
+            className={styles.eixoLegenda}
+          >
+            cada coluna é uma semana inteira, de segunda a domingo · a data é a
+            segunda-feira em que ela começa
+          </text>
+
+          {/* Faixa de captura: a coluna inteira, da grade ao chão. É ela que faz
+              o alvo do ponteiro ser A SEMANA, e não um retângulo de 20px por
+              série — mirar a barra baixa de uma semana fraca era o pior caso, e
+              é justo a semana sobre a qual mais se pergunta "o que houve aqui?". */}
+          {semanas.map((sem, i) => (
+            <rect
+              key={`alvo-${sem.rotulo}`}
+              x={pl + i * passo}
+              y={pt}
+              width={passo}
+              height={base - pt}
+              className={styles.alvo}
+              onPointerEnter={() => setAtivo(i)}
+            />
+          ))}
+        </svg>
+
+        {/**
+         * O cartão FOGE da coluna: mirou na metade esquerda, ele encosta na
+         * direita, e vice-versa.
+         *
+         * Ancorado na coluna, ele tapava as barras que estava explicando — foi
+         * exatamente o defeito que este painel já teve uma vez, e que só
+         * apareceu quando alguém renderizou a tela em vez de ler o código. Quem
+         * amarra o cartão à semana é a guia tracejada, não a proximidade; e como
+         * o canto só troca ao cruzar o meio do gráfico, ele fica parado enquanto
+         * o ponteiro anda pelas colunas vizinhas, em vez de correr atrás dele.
+         */}
+        {s && (
+          <div
+            className={`${styles.tip} ${ativo! < n / 2 ? styles.tipDir : styles.tipEsq}`}
+            aria-hidden="true"
+          >
+            <div className={styles.tipTitulo}>
+              Semana de {s.rotuloLongo}
+              {s.parcial && <span className={styles.tipTag}>em curso</span>}
+            </div>
+            <div className={styles.tipLinha}>
+              <i className={styles.swEntrada} />
+              <span>Entradas</span>
+              <b>{entradas[ativo!]}</b>
+            </div>
+            <div className={styles.tipLinha}>
+              <i className={styles.swEntrega} />
+              <span>Entregas</span>
+              <b>{entregas[ativo!]}</b>
+            </div>
+            <div className={styles.tipLinha}>
+              <i className={styles.swFila} />
+              <span>Fila ao fim</span>
+              <b>{fila[ativo!]}</b>
+            </div>
+            {/* O saldo é a única linha derivada, e vai separada por isso: as três
+                de cima são medidas, esta é a conta entre duas delas. */}
+            <div className={`${styles.tipLinha} ${styles.tipSaldo}`}>
+              <span>Saldo da semana</span>
+              <b className={saldo[ativo!] > 0 ? styles.pior : styles.melhor}>
+                {saldo[ativo!] > 0 ? "+" : ""}
+                {saldo[ativo!]}
+              </b>
+            </div>
+          </div>
+        )}
+      </div>
 
       <div className={styles.legenda}>
         <span>
@@ -1127,7 +1378,87 @@ function FluxoSemanal({ fluxo }: { fluxo: Fluxo }) {
           <i className={styles.swFila} />
           Fila acumulada (eixo à direita)
         </span>
+        {semanas.some((sem) => sem.parcial) && (
+          <span>
+            <i className={styles.swParcial} />
+            Semana em curso — ainda vai somar
+          </span>
+        )}
       </div>
+
+      {/**
+       * O que o gráfico deixa estimar no olho, escrito.
+       *
+       * Nenhum destes números custa consulta: os quatro saem das séries que já
+       * estavam desenhadas. "Quantas entraram no trimestre?" era uma pergunta
+       * que só se respondia somando barra por barra — e a vazão média é a que
+       * transforma o painel em previsão: com a fila em N e a vazão em V, quem
+       * lê sabe em quantas semanas ela zera se nada mais entrar.
+       */}
+      <div className={styles.resumo}>
+        <div className={styles.resumoItem}>
+          <span>Entradas no período</span>
+          <b>{fluxo.totalEntradas}</b>
+        </div>
+        <div className={styles.resumoItem}>
+          <span>Entregas no período</span>
+          <b>{fluxo.totalEntregas}</b>
+        </div>
+        <div className={styles.resumoItem}>
+          <span>Saldo do período</span>
+          <b className={saldoPeriodo > 0 ? styles.pior : styles.melhor}>
+            {saldoPeriodo > 0 ? "+" : ""}
+            {saldoPeriodo}
+          </b>
+        </div>
+        <div className={styles.resumoItem}>
+          <span>Vazão média</span>
+          <b>
+            {hh(fluxo.vazaoMedia)}
+            <em>/semana</em>
+          </b>
+        </div>
+        <div className={styles.resumoItem}>
+          <span>Fila ao fim</span>
+          <b>{filaFinal}</b>
+        </div>
+      </div>
+
+      <details className={styles.tabelaFluxo}>
+        <summary>Ver os números semana a semana</summary>
+        <div className={styles.tabelaFluxoWrap}>
+          <table className={styles.tabela}>
+            <thead>
+              <tr>
+                <th>Semana</th>
+                <th className={styles.num}>Entradas</th>
+                <th className={styles.num}>Entregas</th>
+                <th className={styles.num}>Saldo</th>
+                <th className={styles.num}>Fila</th>
+              </tr>
+            </thead>
+            <tbody>
+              {semanas.map((sem, i) => (
+                <tr key={sem.rotulo}>
+                  <td>
+                    {sem.rotuloLongo}
+                    {sem.parcial && (
+                      <span className={styles.tipTag}>em curso</span>
+                    )}
+                  </td>
+                  <td className={styles.num}>{entradas[i]}</td>
+                  <td className={styles.num}>{entregas[i]}</td>
+                  <td className={styles.num}>
+                    {saldo[i] > 0 ? "+" : ""}
+                    {saldo[i]}
+                  </td>
+                  <td className={styles.num}>{fila[i]}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </details>
     </>
   );
 }
