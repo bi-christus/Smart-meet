@@ -1072,3 +1072,120 @@
     margin-left: 0;
   }
 }
+
+/* ---------- escolha do quadro, e os controles que ganharam o topo ---------- */
+/**
+ * As MESMAS abas do Kanban, com o mesmo desenho.
+ *
+ * Copiar `.sectors`/`.sectorBtn` em vez de compartilhar um componente é
+ * deliberado: são dois módulos CSS independentes e nenhum deles importa o
+ * outro. O que precisa continuar igual é o que a pessoa vê — se um dia o
+ * desenho mudar de um lado, este comentário é o aviso de que ele muda dos dois.
+ */
+.quadros {
+  display: inline-flex;
+  margin: 14px 22px 0;
+  background: var(--s1);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 3px;
+  gap: 2px;
+  overflow-x: auto;
+  max-width: calc(100% - 44px);
+  scrollbar-width: none;
+}
+.quadros::-webkit-scrollbar {
+  display: none;
+}
+.quadroBtn {
+  padding: 5px 12px;
+  border: none;
+  background: none;
+  border-radius: 6px;
+  color: var(--tx-2);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.16s cubic-bezier(0.4, 0, 0.2, 1), color 0.16s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .quadroBtn {
+    transition: none;
+  }
+}
+.quadroBtn:hover {
+  color: var(--tx);
+}
+.quadroOn,
+.quadroOn:hover {
+  background: var(--brand);
+  color: #fff;
+}
+
+/* O período e os filtros dividem a mesma barra, e são perguntas diferentes:
+   um recorta QUANDO, os outros recortam QUEM. O traço vertical é o que impede
+   que se leiam como uma lista só de cinco campos. */
+.separador {
+  width: 1px;
+  align-self: stretch;
+  min-height: 22px;
+  background: var(--line);
+  margin: 0 3px;
+}
+
+/* Alternador de duas opções — a espessura da coluna do gráfico de fluxo. */
+.grupoBotoes {
+  display: inline-flex;
+  background: var(--s2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+}
+.granBtn {
+  padding: 4px 11px;
+  border: none;
+  background: none;
+  border-radius: 6px;
+  color: var(--tx-2);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.granBtn:hover {
+  color: var(--tx);
+}
+.granOn,
+.granOn:hover {
+  background: var(--brand);
+  color: #fff;
+}
+
+/**
+ * O painel compacto para de esticar até a borda.
+ *
+ * `max-width` e não `width`: numa tela estreita ele continua encolhendo junto
+ * com os outros, em vez de furar a coluna. 460px é o que a rosca mais a legenda
+ * de seis tipos ocupam sem apertar — medido, não arredondado para um número
+ * bonito.
+ */
+.painelCompacto {
+  max-width: 460px;
+}
+/* Dentro do painel compacto a legenda vira uma coluna só: as duas que
+   `auto-fill` daria em 460px sairiam com 14 caracteres de largura cada, e
+   "Levantamento" quebraria no meio. */
+.painelCompacto .roscaLista {
+  grid-template-columns: 1fr;
+}
+.painelCompacto .rosca {
+  gap: 18px;
+}
+.painelCompacto .roscaSvg {
+  width: 112px;
+  height: 112px;
+}

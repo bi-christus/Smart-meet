@@ -22,12 +22,19 @@ import { subscribeRecorrencias } from "@/lib/recorrencias";
 import { recLoadHours, type Recorrencia } from "@/lib/recorrencias-core";
 import { daysBetween, fmtDayMonth, hh, startOfDay } from "@/lib/datas";
 import {
+  PASSO_LABEL,
+  PASSO_PLURAL,
+  PASSO_UM,
   PERIODOS,
   PERIODO_LABEL,
+  ativaNaJanela,
   calcularFluxo,
   isoDe,
+  janelaDePassos,
   janelaDeSemanas,
+  limitesDaJanela,
   type Fluxo,
+  type Granularidade,
   type Janela,
   type Periodo,
 } from "@/lib/fluxo-core";
@@ -41,7 +48,24 @@ import { SkeletonChart, SkeletonRow } from "@/components/skeleton";
 import styles from "./dashboard.module.css";
 
 /**
- * Dashboard — como o setor está entregando, não quem trabalha mais.
+ * Dashboard — como UM QUADRO está entregando, não quem trabalha mais.
+ *
+ * UM QUADRO POR VEZ, e não a soma de todos. A tela nasceu somando os setores
+ * visíveis e oferecendo um filtro para separá-los, e o número de cima era
+ * sempre a mistura: quem participa de três setores abria o Dashboard e lia uma
+ * fila que não é de ninguém — nem de quem toca o B.I., nem de quem toca a
+ * Infra. Cada quadro tem colunas próprias, ritmo próprio e prazo próprio; a
+ * média deles não descreve nenhum. Agora o quadro é escolhido na primeira
+ * linha da tela, como no Kanban, e todo painel abaixo fala dele.
+ *
+ * E UM RECORTE DE TEMPO SÓ, no topo, valendo para a tela inteira. O seletor
+ * vivia dentro do painel de fluxo porque só ele lia período; os outros quatro
+ * falavam do estado de hoje. Isso deixava a tela respondendo a dois recortes ao
+ * mesmo tempo, sem dizer — e a pessoa que restringia o gráfico a julho lia, dez
+ * centímetros abaixo, uma tabela de prazos do ano inteiro. Quem decide quais
+ * demandas o recorte alcança é `ativaNaJanela`, e o critério está escrito lá:
+ * demanda velha e ainda aberta CONTINUA no recorte, porque é justamente ela que
+ * se procura numa tela de prazos.
  *
  * Toda métrica aqui é do SISTEMA: fila que cresce, prazo que estoura, demanda
  * que fica parada. Nenhuma é ranking de pessoa — "consumo por responsável"
@@ -70,15 +94,14 @@ import styles from "./dashboard.module.css";
 const MIN_AMOSTRA = 5;
 
 /**
- * A janela dos KPIs do topo — fixa, e independente do seletor do painel.
+ * A janela com que a tela abre. Doze semanas — um trimestre.
  *
- * Doze semanas é o mesmo padrão que o painel de fluxo abre, então os números
- * batem na primeira olhada; o que muda é que estes não seguem quem mexer no
- * seletor lá embaixo. Está escrito no rodapé de cada KPI, porque indicador com
- * janela implícita é o tipo de número que alguém leva para uma reunião achando
- * que fala de outro período.
+ * Ela deixou de ser exclusiva do painel de fluxo: agora é o recorte da tela
+ * inteira, e por isso o rodapé de cada KPI escreve qual janela está valendo.
+ * Indicador com janela implícita é o tipo de número que alguém leva para uma
+ * reunião achando que fala de outro período.
  */
-const SEMANAS_KPI = 12;
+const PERIODO_PADRAO: Periodo = 12;
 
 /**
  * Listas vazias constantes, para os cálculos rodarem antes de os dados chegarem.
@@ -128,9 +151,19 @@ export default function DashboardPage() {
   const recs = fRecs.data ?? SEM_RECS;
   const users = fUsers.data ?? SEM_USERS;
 
-  const [fSetor, setFSetor] = useState("");
+  /**
+   * O quadro escolhido. Vazio = "ainda não escolhi", e vira o primeiro setor.
+   *
+   * Guardado como NOME e derivado na leitura, do mesmo jeito que `fPessoaAtivo`
+   * logo abaixo: a lista de setores chega depois do primeiro render (o admin
+   * assina o cadastro), e um `useEffect` que corrigisse o estado depois faria a
+   * tela desenhar um quadro por um quadro antes de trocar.
+   */
+  const [quadroSel, setQuadroSel] = useState("");
   const [fPessoa, setFPessoa] = useState("");
   const [fResp, setFResp] = useState("");
+  /** Cada coluna do gráfico de acúmulo é um dia ou uma semana. */
+  const [gran, setGran] = useState<Granularidade>("semana");
 
   /**
    * A janela das séries: uma das opções ancoradas em hoje, ou datas escolhidas.
@@ -144,7 +177,7 @@ export default function DashboardPage() {
   const [modoJanela, setModoJanela] = useState<"recentes" | "intervalo">(
     "recentes",
   );
-  const [periodo, setPeriodo] = useState<Periodo>(12);
+  const [periodo, setPeriodo] = useState<Periodo>(PERIODO_PADRAO);
   const [de, setDe] = useState("");
   const [ate, setAte] = useState("");
 
@@ -160,11 +193,15 @@ export default function DashboardPage() {
     [cols, sectors],
   );
 
-  /** Setores do recorte: um, ou todos os visíveis. */
-  const noRecorte = useMemo(
-    () => (fSetor ? [fSetor] : sectors),
-    [fSetor, sectors],
-  );
+  /**
+   * O quadro que está na tela — um só, sempre.
+   *
+   * Setor guardado que sumiu da lista (o admin tirou a pessoa dele, ou apagou o
+   * cadastro) volta para o primeiro, em vez de deixar a tela em branco
+   * afirmando que não há demanda nenhuma.
+   */
+  const quadro = sectors.includes(quadroSel) ? quadroSel : (sectors[0] ?? "");
+  const noRecorte = useMemo(() => (quadro ? [quadro] : []), [quadro]);
 
   /** Cor estável por setor, na ordem fixa da paleta categórica. */
   const corDoSetor = useMemo(() => {
@@ -215,8 +252,16 @@ export default function DashboardPage() {
   const fPessoaAtivo = fPessoa && pessoas.includes(fPessoa) ? fPessoa : "";
   const fRespAtivo = fResp && pessoas.includes(fResp) ? fResp : "";
 
-  /** Cards do recorte (setor + pessoa + responsável), concluídos inclusive. */
-  const doRecorte = useMemo(
+  /**
+   * Cards do quadro (mais pessoa e responsável), SEM recorte de tempo.
+   *
+   * É este conjunto — e não o recortado — que alimenta as séries. `calcularFluxo`
+   * precisa enxergar o que nasceu ANTES da janela para saber o tamanho da fila
+   * que já existia quando ela abriu (`filaInicial`); entregar-lhe a lista já
+   * recortada faria toda janela começar com fila zero, e a linha de acúmulo
+   * passaria a subir do chão em qualquer período escolhido.
+   */
+  const doQuadro = useMemo(
     () =>
       cards
         .filter((c) => noRecorte.includes(c.sector))
@@ -230,12 +275,7 @@ export default function DashboardPage() {
     [cards, noRecorte, fPessoaAtivo, fRespAtivo],
   );
 
-  const abertos = useMemo(
-    () => doRecorte.filter((c) => !concluido(c)),
-    [doRecorte, concluido],
-  );
-
-  // ---- séries semanais de fluxo -------------------------------------------
+  // ---- séries de fluxo, e o recorte de tempo que sai delas ------------------
   /**
    * O intervalo só entra em vigor com as DUAS pontas preenchidas.
    *
@@ -253,31 +293,44 @@ export default function DashboardPage() {
     [intervaloPronto, de, ate, periodo],
   );
   const fluxo = useMemo(
-    () => calcularFluxo(doRecorte, concluido, hoje, janela),
-    [doRecorte, concluido, hoje, janela],
+    () => calcularFluxo(doQuadro, concluido, hoje, janela, gran),
+    [doQuadro, concluido, hoje, janela, gran],
   );
 
   /**
-   * A faixa de indicadores tem janela PRÓPRIA, e ela não se mexe.
+   * O MESMO recorte de tempo, agora em forma de lista de demandas.
    *
-   * O seletor de período desceu para dentro do painel de fluxo, onde ele diz a
-   * que se refere. Se os KPIs continuassem lendo dele, mexer num controle no
-   * meio da página mudaria dois números lá em cima, fora do campo de visão —
-   * que é indistinguível de um bug, e some da tela justo enquanto se olha para
-   * o controle.
+   * Sai dos passos que o gráfico desenhou, e não de uma segunda conta de datas:
+   * duas contas para a mesma janela divergem no primeiro ajuste que alguém
+   * fizer em uma delas, e a divergência apareceria como painéis que discordam
+   * entre si na mesma tela — o defeito exato que este recorte único existe para
+   * fechar.
    *
-   * E tem um erro que isto conserta de vez: `entregas4` é `entregas.slice(-4)`,
-   * as quatro últimas semanas DA JANELA. Com um intervalo terminando em junho, o
-   * KPI mostraria as quatro últimas semanas de junho embaixo do rótulo "nas
-   * últimas 4 semanas". Ancorado em hoje, ele volta a dizer a verdade.
+   * A janela por dia é calculada à parte porque `fluxo.passos` já vem na
+   * granularidade escolhida, e o recorte não pode encolher só porque a pessoa
+   * trocou a espessura da coluna. Ele segue sempre a janela em SEMANAS, que é a
+   * que o seletor de período nomeia.
    */
-  const fluxoKpi = useMemo(
-    () =>
-      calcularFluxo(doRecorte, concluido, hoje, {
-        modo: "recentes",
-        semanas: SEMANAS_KPI,
-      }),
-    [doRecorte, concluido, hoje],
+  const limites = useMemo(
+    () => limitesDaJanela(janelaDePassos(hoje, janela, "semana")),
+    [hoje, janela],
+  );
+
+  const noPeriodo = useMemo(() => {
+    if (!limites) return doQuadro;
+    return doQuadro.filter((c) =>
+      ativaNaJanela(
+        c,
+        concluido(c) ? (c.enteredAt ?? null) : null,
+        limites.ini,
+        limites.fim,
+      ),
+    );
+  }, [doQuadro, concluido, limites]);
+
+  const abertos = useMemo(
+    () => noPeriodo.filter((c) => !concluido(c)),
+    [noPeriodo, concluido],
   );
 
   const recsNoRecorte = useMemo(
@@ -345,7 +398,18 @@ export default function DashboardPage() {
     { value: "", label: vazio },
     ...pessoas.map((e) => ({ value: e, label: nomeDe(e) })),
   ];
-  const sujo = !!(fSetor || fPessoaAtivo || fRespAtivo);
+  const sujo = !!(fPessoaAtivo || fRespAtivo);
+
+  /**
+   * A janela por extenso, para ir no rodapé dos indicadores.
+   *
+   * Todo KPI desta faixa passou a obedecer ao recorte do topo, e indicador que
+   * mudou de janela sem dizer é pior do que indicador sem janela: quem leu "12
+   * vencidas" ontem e lê "3" hoje precisa saber que o que mudou foi o recorte.
+   */
+  const janelaTxt = intervaloPronto
+    ? `${fmtDayMonth(de)} a ${fmtDayMonth(ate)}`
+    : PERIODO_LABEL[periodo].toLowerCase();
 
   /**
    * A faixa de indicadores não ganhou esqueleto: ganhou o travessão.
@@ -360,30 +424,100 @@ export default function DashboardPage() {
   const kpis = juntarFontes([fCards, fCols]);
   const kpiSemResposta = kpis.carregando || !!kpis.erro;
   const p85Txt =
-    kpiSemResposta || fluxoKpi.amostra < MIN_AMOSTRA ? "—" : String(fluxoKpi.p85);
+    kpiSemResposta || fluxo.amostra < MIN_AMOSTRA ? "—" : String(fluxo.p85);
   const kpi = (n: number) => (kpiSemResposta ? "—" : n);
 
   return (
     <div className={`${styles.page} ${styles.viz}`}>
       <div className={styles.head}>
         <div className={styles.headMain}>
-          <h1>Dashboard — {fSetor || "todos os setores"}</h1>
+          <h1>Dashboard — {quadro}</h1>
+          <p>
+            Os números abaixo são deste quadro, no período escolhido ao lado.
+          </p>
         </div>
       </div>
 
+      {/**
+       * A ESCOLHA DO QUADRO NÃO É UM FILTRO, então não mora entre eles.
+       *
+       * Um filtro recorta o que está na tela; isto TROCA a tela. São as mesmas
+       * abas do Kanban, no mesmo lugar e com o mesmo desenho, de propósito: quem
+       * vem de lá já sabe o que este controle faz antes de clicar. Some quando
+       * há um quadro só — um seletor de uma opção é decoração que pede decisão.
+       */}
+      {sectors.length > 1 && (
+        <div className={styles.quadros}>
+          {sectors.map((s) => (
+            <button
+              key={s}
+              className={`${styles.quadroBtn} ${s === quadro ? styles.quadroOn : ""}`}
+              onClick={() => setQuadroSel(s)}
+              aria-pressed={s === quadro}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className={styles.filtros}>
-        <Icon name="filter" size={15} />
-        <div className={styles.filtro}>
+        <span className={styles.acaoRot}>
+          <Icon name="calendar" size={14} /> Período
+        </span>
+        <div className={styles.periodo}>
           <Select
-            value={fSetor}
+            value={modoJanela === "intervalo" ? "custom" : String(periodo)}
             options={[
-              { value: "", label: "Todos os setores" },
-              ...sectors.map((s) => ({ value: s, label: s })),
+              ...PERIODOS.map((p) => ({
+                value: String(p),
+                label: PERIODO_LABEL[p],
+              })),
+              { value: "custom", label: "Escolher datas…" },
             ]}
-            onChange={setFSetor}
-            ariaLabel="Setor"
+            onChange={escolherJanela}
+            ariaLabel="Período de toda a tela"
           />
         </div>
+        {/* As datas aparecem SÓ no modo personalizado: dois campos apagados
+            ocupando a linha seriam um recorte que não recorta no mesmo espaço
+            do que recorta. */}
+        {modoJanela === "intervalo" && (
+          <>
+            <label className={styles.campoData}>
+              <span>De</span>
+              <input
+                type="date"
+                className={styles.dataInput}
+                value={de}
+                max={hojeISO}
+                onChange={(e) => setDe(e.target.value)}
+              />
+            </label>
+            <label className={styles.campoData}>
+              <span>Até</span>
+              <input
+                type="date"
+                className={styles.dataInput}
+                value={ate}
+                max={hojeISO}
+                onChange={(e) => setAte(e.target.value)}
+              />
+            </label>
+            <button
+              className={styles.limpar}
+              onClick={() => {
+                setModoJanela("recentes");
+                setDe("");
+                setAte("");
+              }}
+            >
+              <Icon name="x" size={13} /> Período fixo
+            </button>
+          </>
+        )}
+        <span className={styles.separador} aria-hidden="true" />
+        <Icon name="filter" size={15} />
         <div className={styles.filtro}>
           <Select
             value={fPessoaAtivo}
@@ -404,7 +538,6 @@ export default function DashboardPage() {
           <button
             className={styles.limpar}
             onClick={() => {
-              setFSetor("");
               setFPessoa("");
               setFResp("");
             }}
@@ -429,7 +562,7 @@ export default function DashboardPage() {
           rodape={
             kpiSemResposta
               ? "aguardando o quadro"
-              : `${doRecorte.length - abertos.length} concluída(s) fora da conta`
+              : `${noPeriodo.length - abertos.length} concluída(s) fora da conta · ${janelaTxt}`
           }
         />
         <Kpi
@@ -454,36 +587,44 @@ export default function DashboardPage() {
           rodape={
             kpiSemResposta
               ? "aguardando o quadro"
-              : fluxoKpi.amostra >= MIN_AMOSTRA
-                ? `85% saem nesse prazo ou menos · ${SEMANAS_KPI} semanas`
-                : `${fluxoKpi.amostra} conclusão(ões) em ${SEMANAS_KPI} semanas — amostra pequena demais`
+              : fluxo.amostra >= MIN_AMOSTRA
+                ? `85% saem nesse prazo ou menos · ${janelaTxt}`
+                : `${fluxo.amostra} conclusão(ões) em ${janelaTxt} — amostra pequena demais`
           }
         />
+        {/**
+         * "Entregas nas últimas 4 semanas" virou "entregas no período".
+         *
+         * O número antigo era `entregas.slice(-4)` — os quatro últimos PASSOS da
+         * janela. Com o recorte livre no topo, isso viraria "as quatro últimas
+         * semanas de junho" embaixo do rótulo "últimas 4 semanas" sempre que
+         * alguém escolhesse um intervalo terminado no passado, e "os últimos
+         * quatro dias" ao trocar a granularidade. Total da janela é o número que
+         * o rótulo consegue prometer.
+         */}
         <Kpi
           icone="check"
           rotulo="Entregas"
-          valor={kpi(fluxoKpi.entregas4)}
-          unidade="/4 sem"
-          rodape="concluídas nas últimas 4 semanas"
+          valor={kpi(fluxo.totalEntregas)}
+          rodape={`concluídas · ${janelaTxt}`}
         />
       </div>
 
       {/**
-       * UMA COLUNA, e todo painel na largura inteira.
+       * A ORDEM É A DA LEITURA, do resumo para o detalhe.
        *
-       * A grade era de duas colunas com uma escotilha (`largo`) para os painéis
-       * que não cabiam nela — e três dos cinco usavam a escotilha. O que a
-       * derrubou de vez foi o painel de setor solicitante passar a ocupar a
-       * largura toda (Issue #83): sobrava um único painel de meia largura, com
-       * meia linha vazia ao lado, que é exatamente o "card 80% vazio lê como
-       * bug" que o comentário de `align-items: start` existia para evitar.
+       * Primeiro os indicadores (acima). Depois DE QUE a fila é feita — a rosca
+       * de tipos, que responde numa olhada e por isso não precisa da largura da
+       * tela. Depois COMO ela anda, que é o painel de fluxo e é o mais denso
+       * desta tela. Só então o detalhe: quem carrega, de onde vem, o que vence.
        *
-       * Nenhum destes painéis é de meia largura por natureza. Três são séries e
-       * tabelas que ganham com cada pixel de largura; os dois de barra deitada
-       * medem por COMPRIMENTO, e comprimento cortado ao meio é a medida ficando
-       * pela metade. A ordem, agora, é só de assunto: quem carrega (pessoas),
-       * de que é feita a fila (tipo, origem), como ela anda (fluxo) e o que
-       * está vencendo (prazos).
+       * A rosca é o único painel COMPACTO, e é o único que pode ser: são seis
+       * fatias e seis linhas de legenda, que cabem em 420px e não melhoram com
+       * mil. Os outros quatro medem por comprimento (barra deitada) ou por
+       * quantidade de colunas (série, tabela) — cortá-los ao meio é a medida
+       * ficando pela metade, e foi por isso que a grade de duas colunas caiu na
+       * Issue #83. Compacto aqui é uma exceção com motivo, não o começo de uma
+       * grade nova.
        */}
       {/**
        * Cada painel espera pelas fontes QUE ELE LÊ, e por mais nenhuma.
@@ -496,6 +637,77 @@ export default function DashboardPage() {
        */}
       <div className={styles.paineis}>
         <Painel
+          titulo="Demandas por tipo"
+          compacto
+          fontes={[fCards, fCols]}
+          esqueleto={<SkeletonChart bars={5} texto="Carregando a divisão por tipo…" />}
+        >
+          <Rosca cards={abertos} />
+        </Painel>
+
+        {/**
+         * O subtítulo declara a janela DESENHADA, não a pedida.
+         *
+         * As duas divergem sempre que o intervalo é escolhido à mão: quem digita
+         * 15/07 a 20/07 recebe 13/07 a 26/07, porque a coluna é a semana inteira
+         * (ver `janelaDePassos`). Sem esta linha, o painel responderia por um
+         * recorte diferente do que foi pedido sem nunca dizer isso — e o eixo x,
+         * que só imprime uma data a cada tantas colunas, não denuncia. Por dia o
+         * encaixe não acontece, e a linha continua valendo: ela passa a
+         * confirmar que o recorte é exatamente o que foi digitado.
+         */}
+        <Painel
+          titulo="Demanda que entra × demanda que sai"
+          sub={
+            fluxo.passos.length
+              ? `${fluxo.passos.length} ${fluxo.passos.length === 1 ? PASSO_LABEL[gran] : PASSO_PLURAL[gran]} · ${fluxo.passos[0].rotuloLongo} a ${fluxo.passos[fluxo.passos.length - 1].rotuloLongo}`
+              : undefined
+          }
+          chip={`fila ${fluxo.fila[fluxo.fila.length - 1] ?? 0}`}
+          /**
+           * O QUE SOBROU AQUI É A ESPESSURA DA COLUNA, não o recorte de tempo.
+           *
+           * O período subiu para a barra do topo, porque agora ele vale para a
+           * tela inteira — e controle que vale para tudo não pode morar dentro
+           * de um painel, onde ele aparenta valer só para aquele. A troca
+           * dia/semana ficou, e ela é o oposto: só este painel desenha colunas,
+           * então só ele tem o que responder.
+           *
+           * Dois botões, e não um `Select` de duas opções: são duas opções
+           * mutuamente exclusivas que se alternam o tempo todo enquanto se lê o
+           * gráfico ("na semana parece estável — e por dia?"), e abrir um menu
+           * para cada troca é um clique a mais em cima de um gesto de leitura.
+           */
+          acoes={
+            <>
+              <span className={styles.acaoRot}>
+                <Icon name="trend" size={14} /> Cada coluna é
+              </span>
+              <div
+                className={styles.grupoBotoes}
+                role="group"
+                aria-label="Granularidade das colunas"
+              >
+                {(["dia", "semana"] as Granularidade[]).map((g) => (
+                  <button
+                    key={g}
+                    className={`${styles.granBtn} ${g === gran ? styles.granOn : ""}`}
+                    onClick={() => setGran(g)}
+                    aria-pressed={g === gran}
+                  >
+                    {PASSO_UM[g]}
+                  </button>
+                ))}
+              </div>
+            </>
+          }
+          fontes={[fCards, fCols]}
+          esqueleto={<SkeletonChart bars={10} texto="Carregando as séries…" />}
+        >
+          <FluxoNoTempo fluxo={fluxo} />
+        </Painel>
+
+        <Painel
           titulo="Consumo por responsável"
           fontes={[fCards, fCols, fRecs, fUsers]}
           esqueleto={<SkeletonRow rows={4} texto="Carregando a carga por responsável…" />}
@@ -505,14 +717,6 @@ export default function DashboardPage() {
             recs={recsNoRecorte}
             nomeDe={nomeDe}
           />
-        </Painel>
-
-        <Painel
-          titulo="Demandas por tipo"
-          fontes={[fCards, fCols]}
-          esqueleto={<SkeletonChart bars={5} texto="Carregando a divisão por tipo…" />}
-        >
-          <Rosca cards={abertos} />
         </Painel>
 
         {/**
@@ -536,7 +740,7 @@ export default function DashboardPage() {
          */}
         <Painel
           titulo="Demandas por setor solicitante"
-          chip={`${doRecorte.length} ${doRecorte.length === 1 ? "demanda" : "demandas"}`}
+          chip={`${noPeriodo.length} ${noPeriodo.length === 1 ? "demanda" : "demandas"}`}
           fontes={[fCards, fCols]}
           esqueleto={
             <SkeletonRow
@@ -545,99 +749,7 @@ export default function DashboardPage() {
             />
           }
         >
-          <OrigemPorEtapa cards={doRecorte} colsPorSetor={colsPorSetor} />
-        </Painel>
-
-        {/**
-         * O subtítulo declara a janela DESENHADA, não a pedida.
-         *
-         * As duas divergem sempre que o intervalo é escolhido à mão: quem digita
-         * 15/07 a 20/07 recebe 13/07 a 26/07, porque a coluna é a semana inteira
-         * (ver `janelaDeSemanas`). Sem esta linha, o painel responderia por um
-         * recorte diferente do que foi pedido sem nunca dizer isso — e o eixo x,
-         * que só imprime uma data a cada tantas colunas, não denuncia.
-         */}
-        <Painel
-          titulo="Demanda que entra × demanda que sai"
-          sub={
-            fluxo.semanas.length
-              ? `${fluxo.semanas.length} ${fluxo.semanas.length === 1 ? "semana" : "semanas"} · ${fluxo.semanas[0].rotuloLongo} a ${fluxo.semanas[fluxo.semanas.length - 1].rotuloLongo}`
-              : undefined
-          }
-          chip={`fila ${fluxo.fila[fluxo.fila.length - 1] ?? 0}`}
-          /**
-           * O recorte de tempo mora AQUI, encostado no gráfico que ele recorta.
-           *
-           * Ele já esteve no cabeçalho da página, ao lado do título, e de lá
-           * parecia valer para a tela inteira — mas nunca valeu: só três dos
-           * cinco painéis leem período, e os outros dois (carga, prazos) falam
-           * do estado de hoje, que não tem janela. Controle que aparenta um
-           * alcance maior do que tem é pior do que controle escondido; a pessoa
-           * mexe nele esperando que a tela toda responda e conclui que metade
-           * dela está quebrada.
-           */
-          acoes={
-            <>
-              <span className={styles.acaoRot}>
-                <Icon name="calendar" size={14} /> Período
-              </span>
-              <div className={styles.periodo}>
-                <Select
-                  value={modoJanela === "intervalo" ? "custom" : String(periodo)}
-                  options={[
-                    ...PERIODOS.map((p) => ({
-                      value: String(p),
-                      label: PERIODO_LABEL[p],
-                    })),
-                    { value: "custom", label: "Escolher datas…" },
-                  ]}
-                  onChange={escolherJanela}
-                  ariaLabel="Período das séries semanais"
-                />
-              </div>
-              {/* As datas aparecem SÓ no modo personalizado: dois campos
-                  apagados ocupando a linha seriam um recorte que não recorta no
-                  mesmo espaço do que recorta. */}
-              {modoJanela === "intervalo" && (
-                <>
-                  <label className={styles.campoData}>
-                    <span>De</span>
-                    <input
-                      type="date"
-                      className={styles.dataInput}
-                      value={de}
-                      max={hojeISO}
-                      onChange={(e) => setDe(e.target.value)}
-                    />
-                  </label>
-                  <label className={styles.campoData}>
-                    <span>Até</span>
-                    <input
-                      type="date"
-                      className={styles.dataInput}
-                      value={ate}
-                      max={hojeISO}
-                      onChange={(e) => setAte(e.target.value)}
-                    />
-                  </label>
-                  <button
-                    className={styles.limpar}
-                    onClick={() => {
-                      setModoJanela("recentes");
-                      setDe("");
-                      setAte("");
-                    }}
-                  >
-                    <Icon name="x" size={13} /> Período fixo
-                  </button>
-                </>
-              )}
-            </>
-          }
-          fontes={[fCards, fCols]}
-          esqueleto={<SkeletonChart bars={10} texto="Carregando as séries semanais…" />}
-        >
-          <FluxoSemanal fluxo={fluxo} />
+          <OrigemPorEtapa cards={noPeriodo} colsPorSetor={colsPorSetor} />
         </Painel>
 
         <Painel
@@ -751,6 +863,7 @@ function Painel({
   chip,
   chipTom,
   acoes,
+  compacto,
   fontes,
   esqueleto,
   children,
@@ -761,6 +874,14 @@ function Painel({
   chipTom?: "danger";
   /** Controles do próprio painel, entre o cabeçalho e o conteúdo. */
   acoes?: ReactNode;
+  /**
+   * O painel para de esticar até a borda e fica do tamanho do conteúdo.
+   *
+   * Só a rosca de tipos usa. Ver o comentário na ordem dos painéis: os outros
+   * medem por comprimento ou por número de colunas, e encolher a caixa é
+   * encolher a medida.
+   */
+  compacto?: boolean;
   fontes: Assinatura[];
   esqueleto: ReactNode;
   children: ReactNode;
@@ -768,7 +889,7 @@ function Painel({
   const { erro, carregando } = juntarFontes(fontes);
   return (
     <section
-      className={styles.painel}
+      className={`${styles.painel} ${compacto ? styles.painelCompacto : ""}`}
       aria-busy={carregando || undefined}
     >
       {/* O subtítulo cai junto com o chip enquanto não há resposta: ele fala do
@@ -1092,21 +1213,33 @@ function Rosca({ cards }: { cards: Card[] }) {
  * seletor de período e o próximo painel — acessibilidade que atrapalha quem ela
  * deveria servir. É também onde o número exato mora para quem precisa copiar.
  */
-function FluxoSemanal({ fluxo }: { fluxo: Fluxo }) {
-  const { semanas, entradas, entregas, fila, saldo } = fluxo;
+function FluxoNoTempo({ fluxo }: { fluxo: Fluxo }) {
+  const { passos, entradas, entregas, fila, saldo, granularidade } = fluxo;
+  /**
+   * TODO texto deste painel sai daqui, e nenhum diz "semana" escrito à mão.
+   *
+   * Era assim que estava — "Semana de …", "Saldo da semana", "cada coluna é uma
+   * semana inteira" — e essas frases eram a única coisa que dizia à pessoa o que
+   * uma coluna representa. Com duas granularidades, uma frase esquecida não sai
+   * errada de leve: ela afirma que a coluna é uma semana quando é um dia, e a
+   * afirmação vale mais que o gráfico para quem está aprendendo a lê-lo.
+   */
+  const umPasso = PASSO_LABEL[granularidade];
+  const varios = PASSO_PLURAL[granularidade];
+  const porDia = granularidade === "dia";
   /**
    * A semana sob o ponteiro. `null` é "nenhuma", e não a semana 0 — daí o tipo
    * nulável em vez de um -1 que a aritmética de índice trataria como número.
    */
   const [ativo, setAtivo] = useState<number | null>(null);
 
-  if (!semanas.length || (!entradas.some(Boolean) && !entregas.some(Boolean)))
+  if (!passos.length || (!entradas.some(Boolean) && !entregas.some(Boolean)))
     return (
       <EmptyState
         size="compact"
         icon="trend"
         title="Sem movimento no período"
-        description="As séries aparecem quando houver demanda criada ou concluída neste recorte. Troque o período no topo da tela, ou escolha outras datas, para alcançar semanas com movimento."
+        description="As séries aparecem quando houver demanda criada ou concluída neste recorte. Troque o período no topo da tela, ou escolha outras datas, para alcançar um trecho com movimento."
       />
     );
 
@@ -1122,7 +1255,7 @@ function FluxoSemanal({ fluxo }: { fluxo: Fluxo }) {
   // que declara o passo. Era ela que faltava para a coluna deixar de ler como
   // um dia — e legenda de eixo espremida contra a borda do painel não se lê.
   const pb = 52;
-  const n = semanas.length;
+  const n = passos.length;
   const base = H - pb;
   const max = Math.max(1, ...entradas, ...entregas);
   const maxFila = Math.max(1, ...fila);
@@ -1131,7 +1264,7 @@ function FluxoSemanal({ fluxo }: { fluxo: Fluxo }) {
    * Espessura proporcional ao passo, e nunca menor que 1.
    *
    * A conta antiga (`(passo - 6) / 2`) reservava 6 unidades de respiro fixas e
-   * virava NEGATIVA a partir de umas 120 semanas — o `Math.max(3, …)` salvava a
+   * virava NEGATIVA a partir de umas 120 colunas — o `Math.max(3, …)` salvava a
    * barra de sumir, mas as duas do par passavam a se sobrepor. Com a janela por
    * datas dá para pedir cinco anos, então o respiro também encolhe com o passo.
    */
@@ -1158,19 +1291,21 @@ function FluxoSemanal({ fluxo }: { fluxo: Fluxo }) {
    * imprimir de duas em duas, o eixo primeiro gasta todo o espaço que tem —
    * em 12 semanas ele nomeia as doze.
    */
-  const LARG_ROTULO = 64;
+  // "13–19/07" contra "13/07": o rótulo do dia ocupa pouco mais da metade, e
+  // um valor fixo faria o eixo por dia pular datas que caberiam folgadas.
+  const LARG_ROTULO = porDia ? 40 : 64;
   const maxRotulos = Math.max(2, Math.floor((W - pl - pr) / LARG_ROTULO));
   const passoRotulo = Math.max(1, Math.ceil(n / maxRotulos));
   const saldoPeriodo = fluxo.totalEntradas - fluxo.totalEntregas;
   const filaFinal = fila[n - 1] ?? 0;
 
   const resumoAcessivel =
-    `Colunas de entrada e entrega por semana, com a fila acumulada em linha. ` +
-    `${n} ${n === 1 ? "semana" : "semanas"}, de ${semanas[0].rotuloLongo} a ${semanas[n - 1].rotuloLongo}. ` +
+    `Colunas de entrada e entrega por ${umPasso}, com a fila acumulada em linha. ` +
+    `${n} ${n === 1 ? umPasso : varios}, de ${passos[0].rotuloLongo} a ${passos[n - 1].rotuloLongo}. ` +
     `${fluxo.totalEntradas} entrada(s), ${fluxo.totalEntregas} entrega(s), fila final de ${filaFinal}. ` +
-    `Os números de cada semana estão na tabela abaixo do gráfico.`;
+    `Os números de cada ${umPasso} estão na tabela abaixo do gráfico.`;
 
-  const s = ativo === null ? null : semanas[ativo];
+  const s = ativo === null ? null : passos[ativo];
 
   return (
     <>
@@ -1254,15 +1389,15 @@ function FluxoSemanal({ fluxo }: { fluxo: Fluxo }) {
             />
           )}
 
-          {semanas.map((sem, i) => (
-            <g key={sem.chave}>
+          {passos.map((p, i) => (
+            <g key={p.chave}>
               <rect
                 x={X(i) - bw - vao / 2}
                 y={Y(entradas[i])}
                 width={bw}
                 height={base - Y(entradas[i])}
                 rx={Math.min(3, bw / 2)}
-                className={`${styles.barEntrada} ${sem.parcial ? styles.barParcial : ""}`}
+                className={`${styles.barEntrada} ${p.parcial ? styles.barParcial : ""}`}
               />
               <rect
                 x={X(i) + vao / 2}
@@ -1270,9 +1405,9 @@ function FluxoSemanal({ fluxo }: { fluxo: Fluxo }) {
                 width={bw}
                 height={base - Y(entregas[i])}
                 rx={Math.min(3, bw / 2)}
-                className={`${styles.barEntrega} ${sem.parcial ? styles.barParcial : ""}`}
+                className={`${styles.barEntrega} ${p.parcial ? styles.barParcial : ""}`}
               />
-              {sem.parcial && (
+              {p.parcial && (
                 <>
                   <rect
                     x={X(i) - bw - vao / 2}
@@ -1299,14 +1434,14 @@ function FluxoSemanal({ fluxo }: { fluxo: Fluxo }) {
                   textAnchor="middle"
                   className={styles.eixo}
                 >
-                  {sem.rotulo}
+                  {p.rotulo}
                 </text>
               )}
             </g>
           ))}
 
           {/* A linha vem depois das colunas: desenhada antes, sumiria atrás delas
-              exatamente nas semanas de mais movimento — as que interessam. */}
+              exatamente nos passos de mais movimento — as que interessam. */}
           <path d={areaFila} className={styles.filaArea} />
           <path d={linhaFila} className={styles.filaHalo} />
           <path d={linhaFila} className={styles.filaLinha} />
@@ -1351,7 +1486,7 @@ function FluxoSemanal({ fluxo }: { fluxo: Fluxo }) {
             textAnchor="middle"
             className={styles.eixoTitulo}
           >
-            demandas na semana
+            demandas por {umPasso}
           </text>
           <text
             transform={`translate(${W - 9} ${(pt + base) / 2}) rotate(-90)`}
@@ -1366,17 +1501,18 @@ function FluxoSemanal({ fluxo }: { fluxo: Fluxo }) {
             textAnchor="middle"
             className={styles.eixoLegenda}
           >
-            cada coluna é uma semana inteira, de segunda a domingo · a data é a
-            segunda-feira em que ela começa
+            {porDia
+              ? "cada coluna é um dia · a data é o próprio dia"
+              : "cada coluna é uma semana inteira, de segunda a domingo · a data é a segunda-feira em que ela começa"}
           </text>
 
           {/* Faixa de captura: a coluna inteira, da grade ao chão. É ela que faz
               o alvo do ponteiro ser A SEMANA, e não um retângulo de 20px por
               série — mirar a barra baixa de uma semana fraca era o pior caso, e
               é justo a semana sobre a qual mais se pergunta "o que houve aqui?". */}
-          {semanas.map((sem, i) => (
+          {passos.map((p, i) => (
             <rect
-              key={`alvo-${sem.chave}`}
+              key={`alvo-${p.chave}`}
               x={pl + i * passo}
               y={pt}
               width={passo}
@@ -1404,7 +1540,7 @@ function FluxoSemanal({ fluxo }: { fluxo: Fluxo }) {
             aria-hidden="true"
           >
             <div className={styles.tipTitulo}>
-              Semana de {s.rotuloLongo}
+              {porDia ? s.rotuloLongo : `Semana de ${s.rotuloLongo}`}
               {s.parcial && <span className={styles.tipTag}>em curso</span>}
             </div>
             <div className={styles.tipLinha}>
@@ -1425,7 +1561,7 @@ function FluxoSemanal({ fluxo }: { fluxo: Fluxo }) {
             {/* O saldo é a única linha derivada, e vai separada por isso: as três
                 de cima são medidas, esta é a conta entre duas delas. */}
             <div className={`${styles.tipLinha} ${styles.tipSaldo}`}>
-              <span>Saldo da semana</span>
+              <span>Saldo {porDia ? "do dia" : "da semana"}</span>
               <b className={saldo[ativo!] > 0 ? styles.pior : styles.melhor}>
                 {saldo[ativo!] > 0 ? "+" : ""}
                 {saldo[ativo!]}
@@ -1448,10 +1584,10 @@ function FluxoSemanal({ fluxo }: { fluxo: Fluxo }) {
           <i className={styles.swFila} />
           Fila acumulada (eixo à direita)
         </span>
-        {semanas.some((sem) => sem.parcial) && (
+        {passos.some((p) => p.parcial) && (
           <span>
             <i className={styles.swParcial} />
-            Semana em curso — ainda vai somar
+            {porDia ? "Dia" : "Semana"} em curso — ainda vai somar
           </span>
         )}
       </div>
@@ -1463,7 +1599,7 @@ function FluxoSemanal({ fluxo }: { fluxo: Fluxo }) {
        * estavam desenhadas. "Quantas entraram no trimestre?" era uma pergunta
        * que só se respondia somando barra por barra — e a vazão média é a que
        * transforma o painel em previsão: com a fila em N e a vazão em V, quem
-       * lê sabe em quantas semanas ela zera se nada mais entrar.
+       * lê sabe em quantos passos ela zera se nada mais entrar.
        */}
       <div className={styles.resumo}>
         <div className={styles.resumoItem}>
@@ -1485,7 +1621,7 @@ function FluxoSemanal({ fluxo }: { fluxo: Fluxo }) {
           <span>Vazão média</span>
           <b>
             {hh(fluxo.vazaoMedia)}
-            <em>/semana</em>
+            <em>/{umPasso}</em>
           </b>
         </div>
         <div className={styles.resumoItem}>
@@ -1495,12 +1631,12 @@ function FluxoSemanal({ fluxo }: { fluxo: Fluxo }) {
       </div>
 
       <details className={styles.tabelaFluxo}>
-        <summary>Ver os números semana a semana</summary>
+        <summary>Ver os números {porDia ? "dia a dia" : "semana a semana"}</summary>
         <div className={styles.tabelaFluxoWrap}>
           <table className={styles.tabela}>
             <thead>
               <tr>
-                <th>Semana</th>
+                <th>{porDia ? "Dia" : "Semana"}</th>
                 <th className={styles.num}>Entradas</th>
                 <th className={styles.num}>Entregas</th>
                 <th className={styles.num}>Saldo</th>
@@ -1508,11 +1644,11 @@ function FluxoSemanal({ fluxo }: { fluxo: Fluxo }) {
               </tr>
             </thead>
             <tbody>
-              {semanas.map((sem, i) => (
-                <tr key={sem.chave}>
+              {passos.map((p, i) => (
+                <tr key={p.chave}>
                   <td>
-                    {sem.rotuloLongo}
-                    {sem.parcial && (
+                    {p.rotuloLongo}
+                    {p.parcial && (
                       <span className={styles.tipTag}>em curso</span>
                     )}
                   </td>
