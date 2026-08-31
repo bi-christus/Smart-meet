@@ -13,32 +13,199 @@
   font-size: 14px;
   margin-top: 4px;
 }
-.filters {
+/* ---------- busca ---------- */
+/* Ela tomou o lugar dos tres filtros (`Todas` / `A validar` / `Validada`), que
+   escondiam em vez de organizar. As duas secoes fazem o que eles faziam; o que
+   nao existia era achar UMA reuniao sem rolar a tela toda — e agora, com o
+   arquivo dentro de pastas, sem abrir pasta por pasta. */
+.buscaLinha {
   display: flex;
-  gap: 6px;
-  overflow-x: auto;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
   margin: 18px 0;
-  scrollbar-width: none;
 }
-.filters::-webkit-scrollbar {
-  display: none;
-}
-.filterBtn {
-  height: 30px;
+.buscaCampo {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
   padding: 0 12px;
+  flex: 1;
+  min-width: 240px;
+  max-width: 420px;
   border: 1px solid var(--line-soft);
   background: var(--card);
-  color: var(--tx-2);
-  border-radius: 8px;
-  font-family: inherit;
-  font-size: 12.5px;
-  cursor: pointer;
-  white-space: nowrap;
+  border-radius: 9px;
+  color: var(--tx-3);
+  transition: border-color 0.18s;
 }
-.filterBtn.on {
+.buscaCampo:focus-within {
   border-color: var(--brand);
-  background: rgba(255, 106, 43, 0.1);
-  color: var(--accent-2);
+}
+/* Sem moldura propria: quem desenha o campo e o `span` em volta. E o `search`
+   nativo traz um X de limpar do proprio navegador, que e melhor do que um botao
+   nosso — ele ja responde ao Escape. */
+.buscaInput {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  color: var(--tx);
+  font-family: inherit;
+  font-size: 13.5px;
+  padding: 0;
+}
+.buscaInput:focus {
+  outline: none;
+}
+.buscaConta {
+  font-size: 12px;
+  color: var(--tx-3);
+}
+
+/* ---------- secoes e pastas ---------- */
+.secao {
+  margin-bottom: 26px;
+}
+.secaoTitulo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--tx-3);
+  margin-bottom: 12px;
+}
+.secaoConta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: var(--s3, var(--card));
+  color: var(--tx-2);
+  font-size: 10.5px;
+  letter-spacing: 0;
+}
+/* "Nada a validar" e RESPOSTA, nao ausencia de conteudo. Sem esta linha, quem
+   chegasse com a fila limpa veria a tela abrir direto nas pastas fechadas —
+   quase vazia — e leria "nao carregou". E o mesmo falso vazio que o resto do
+   app persegue, so que causado pela boa noticia. */
+.tudoEmDia {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 13px 15px;
+  margin-bottom: 24px;
+  border: 1px solid var(--ok);
+  border-radius: 12px;
+  background: var(--ok-bg);
+  color: var(--tx-2);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.tudoEmDia svg {
+  color: var(--ok-tx);
+  flex: none;
+}
+
+.pastas {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pasta {
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  background: var(--card);
+  overflow: hidden;
+}
+/* O marcador nativo sai nos dois dialetos: o `::marker` do padrao e o
+   `::-webkit-details-marker` que o Safari ainda usa. Ficando um deles, o
+   triangulo do navegador aparece ao lado do nosso chevron. */
+.pastaHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 15px;
+  cursor: pointer;
+  list-style: none;
+  color: var(--tx-2);
+  transition: background 0.18s;
+}
+.pastaHead::-webkit-details-marker {
+  display: none;
+}
+.pastaHead::marker {
+  content: "";
+}
+.pastaHead:hover {
+  background: var(--s3, var(--bg));
+}
+/* Girar a seta E a unica animacao daqui, e ela e transicao de ESTADO (a pasta
+   abriu), nao enfeite — o AGENTS.md §3 libera exatamente esse caso. A ALTURA da
+   lista nao anima: uma pasta pode ter cinquenta cards, e animar isso e custo
+   sem informacao. */
+.pastaHead > svg:first-child {
+  color: var(--tx-3);
+  flex: none;
+  transition: transform 0.18s;
+}
+.pasta[open] .pastaHead > svg:first-child {
+  transform: rotate(90deg);
+}
+.pastaHead > svg:nth-child(2) {
+  color: var(--tx-3);
+  flex: none;
+}
+.pastaNome {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--tx);
+}
+.pastaConta {
+  flex: none;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--tx-2);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 20px;
+  text-align: center;
+}
+/**
+ * A gaveta aberta e RECUADA, e isso nao e enfeite: e o que faz o card existir.
+ *
+ * `.pasta` e `.card` usavam os dois `var(--card)`, entao o card dentro da pasta
+ * desaparecia — mesma cor de fundo, e a borda `--line-soft` some contra ela. Na
+ * renderizacao a reuniao aparecia como texto solto boiando dentro da moldura da
+ * pasta, sem ser clicavel aos olhos de ninguem.
+ *
+ * O fundo da gaveta desce para `--bg`, que e o fundo da PAGINA: os cards de
+ * dentro voltam a ser cards contra ele, exatamente como os de cima. A linha no
+ * topo separa a gaveta da aba, e junto ela diz que o conteudo pertence aquela
+ * pasta e nao a proxima.
+ */
+.pasta[open] .grid {
+  padding: 14px 15px 15px;
+  background: var(--bg);
+  border-top: 1px solid var(--line-soft);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pastaHead > svg:first-child {
+    transition: none;
+  }
 }
 .list {
   display: flex;
