@@ -94,3 +94,47 @@ export function montarRank(
 export function maiorEntrega(colocacoes: Colocacao[]): number {
   return colocacoes.reduce((m, c) => Math.max(m, c.entregues), 0);
 }
+
+/**
+ * A altura do bloco de cada degrau, em pixels.
+ *
+ * Mora aqui, e não na folha de estilo, porque a altura é a ÚNICA coisa que
+ * diferencia visualmente um degrau do outro — a cor não faz isso de propósito
+ * (ver `rank.module.css`). Uma regra que decide sozinha o que a tela afirma
+ * sobre quem ganhou merece teste.
+ *
+ * POR QUE NÃO É SÓ PROPORCIONAL À CONTAGEM, que foi como nasceu. Com 29, 28 e
+ * 22 entregas — números reais de agosto de 2026 — a proporção pura devolve três
+ * blocos de altura quase igual, e a silhueta de escada, que é o que faz alguém
+ * reconhecer um pódio antes de ler qualquer número, simplesmente não aparece. O
+ * desenho passa a depender de o mês ter sido desigual.
+ *
+ * Por isso a altura é PISO POR COLOCAÇÃO mais um acréscimo proporcional: o piso
+ * garante a escada em qualquer temporada, e o acréscimo devolve a informação que
+ * a proporção pura dava — a distância entre as contagens continua legível dentro
+ * de cada degrau.
+ *
+ * A ESCADA É INVARIANTE, e é isso que o teste guarda: colocação melhor nunca
+ * produz bloco mais baixo. Ela se sustenta porque o degrau da frente sempre tem
+ * contagem maior ou igual (é o que `montarRank` garante) e porque a diferença
+ * entre dois pisos é maior que o acréscimo inteiro. Mexer nos números abaixo sem
+ * manter essa relação quebra o pódio de um jeito que só aparece no mês em que as
+ * contagens ficarem parecidas — quer dizer, tarde.
+ */
+const PISO_POR_POSICAO: Record<number, number> = { 1: 132, 2: 96, 3: 74 };
+
+/** Quanto a contagem pode acrescentar sobre o piso. Menor que a menor distância entre pisos (22). */
+const ACRESCIMO_POR_CONTAGEM = 20;
+
+export function alturaDoDegrau(
+  posicao: number,
+  entregues: number,
+  maior: number,
+): number {
+  const piso = PISO_POR_POSICAO[posicao] ?? PISO_POR_POSICAO[3];
+  // `min(1, …)` não é paranoia: `maior` vem da lista INTEIRA, e um dia em que
+  // ele chegar menor que a contagem deste degrau o acréscimo estouraria o teto
+  // e derrubaria a escada em silêncio.
+  const fracao = Math.min(1, Math.max(0, entregues) / Math.max(1, maior));
+  return piso + Math.round(fracao * ACRESCIMO_POR_CONTAGEM);
+}

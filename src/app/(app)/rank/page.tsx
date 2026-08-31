@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useSetoresDaPessoa } from "@/lib/setores";
 import { subscribeUsers, type UserProfile } from "@/lib/users";
@@ -14,6 +14,7 @@ import {
 } from "@/lib/kanban";
 import {
   POSICOES_DO_PODIO,
+  alturaDoDegrau,
   maiorEntrega,
   montarRank,
   type Colocacao,
@@ -267,12 +268,20 @@ export default function RankPage() {
           }
         />
       ) : (
-        <>
+        /* Pódio e fila de honra na MESMA superfície, e não dois blocos
+           empilhados: era a faixa da arena terminando no pé do pódio que
+           desenhava uma aresta atravessando a tela (Issue #133).
+
+           `key` na temporada: trocar de mês no seletor troca a cena inteira, e
+           remontar é o que faz o pódio novo ENTRAR — sem isso, a mesma
+           plataforma fica no lugar e só os nomes mudam, o que se lê como falha
+           de tela e não como outra temporada. */
+        <div className={styles.arena} key={mesEscolhido}>
           <Podio colocacoes={podio} maior={maior} usersMap={usersMap} campea={!vendoAtual} />
           {honra.length > 0 && (
             <FilaDeHonra colocacoes={honra} usersMap={usersMap} />
           )}
-        </>
+        </div>
       )}
     </div>
   );
@@ -313,9 +322,14 @@ const TAM_AVATAR: Record<number, number> = { 1: 112, 2: 88, 3: 88 };
  * enquanto os olhos leem 2, 1, 3. Por isso a reordenação acontece aqui, no
  * array, e o DOM sai na mesma ordem em que o pódio é lido.
  *
- * A altura do bloco é proporcional à contagem, com um piso: um degrau de altura
- * zero — quem tem 1 entrega ao lado de quem tem 40 — deixaria a pessoa de pé no
- * chão, o que se lê como "não subiu ao pódio".
+ * A altura do bloco vem de `alturaDoDegrau` (`rank-core.ts`, com teste): piso
+ * por colocação mais um acréscimo proporcional à contagem. Só proporcional, o
+ * pódio dependia de o mês ter sido desigual — com 29, 28 e 22 entregas os três
+ * blocos saíam quase da mesma altura e a silhueta de escada desaparecia.
+ *
+ * O QUE ESTE COMPONENTE PINTA é o PALCO: a foto, o holofote e o chão. A fila de
+ * honra fica de fora dele e dentro da mesma arena — ver o comentário da folha
+ * sobre a faixa que cortava a tela.
  */
 function Podio({
   colocacoes,
@@ -337,22 +351,101 @@ function Podio({
   }, [colocacoes]);
 
   return (
-    <div className={styles.arena}>
+    <div className={styles.palco}>
       <div className={styles.podio}>
-        {naOrdemDoPodio.map((c, i) => (
+        {naOrdemDoPodio.map((c) => (
           <Degrau
             key={c.chave}
             colocacao={c}
             perfil={usersMap[c.chave]}
             maior={maior}
             campea={campea}
-            /* A entrada é escalonada pela posição na TELA, da borda para o meio:
-               o primeiro lugar assenta por último, que é onde o olho para. */
-            atraso={i * 70}
+            atraso={ATRASO_POR_POSICAO[c.posicao] ?? ATRASO_POR_POSICAO[3]}
           />
         ))}
       </div>
     </div>
+  );
+}
+
+/**
+ * Quando cada degrau assenta — 3º, 2º, 1º, nessa ordem.
+ *
+ * É a ordem em que um pódio se anuncia em qualquer cerimônia do mundo, e ela
+ * não é decorativa: o olho segue quem se mexe, então quem se mexe por último
+ * fica sendo o assunto. A versão anterior escalonava pela posição no ARRAY
+ * (2º, 1º, 3º) e entregava o desfecho no meio da frase — o campeão assentava
+ * antes do terceiro colocado.
+ *
+ * Os 120ms de piso são o tempo de o palco acender antes de alguém subir nele
+ * (`cortina`, em `rank.module.css`). Empate reparte o mesmo instante: dois
+ * segundos lugares sobem juntos, porque juntos foi como ficaram.
+ */
+const ATRASO_POR_POSICAO: Record<number, number> = { 1: 300, 2: 210, 3: 120 };
+
+/** Quanto tempo a contagem leva para chegar ao número. */
+const DUR_CONTAGEM = 620;
+
+/**
+ * A contagem sobe até o número, uma vez, na chegada.
+ *
+ * POR QUE ISTO GANHA O LUGAR, num app que proíbe motion decorativo (AGENTS.md
+ * §3): o número É o conteúdo desta tela. Um rank existe para dizer QUANTO, e
+ * ver o quanto se acumular é a única animação aqui que carrega informação em
+ * vez de enfeitar quem já a tem. Passa na Frequency Gate com folga — acontece
+ * uma vez por carga de uma tela que se abre de vez em quando, não a cada clique.
+ *
+ * Só no PÓDIO, e não na fila de honra: cinco contagens correndo lado a lado
+ * viram ruído numérico, e o que elas anunciariam (a 6ª colocação) não é o
+ * assunto da cerimônia.
+ *
+ * O DESLIGAMENTO PARA MOVIMENTO REDUZIDO É EM JAVASCRIPT, e tem de ser: o
+ * bloco `prefers-reduced-motion` da folha desliga `animation`, e isto aqui não
+ * é animação — é texto trocando. CSS nenhum congela um `setState`.
+ *
+ * O ESTADO É O PROGRESSO (0 a 1), E NÃO O NÚMERO, por duas razões que só
+ * aparecem quando o dado muda embaixo da tela — e ele muda: o Firestore é ao
+ * vivo, e uma demanda entregue enquanto alguém olha o pódio altera a contagem.
+ * Guardando o número, o efeito precisaria de `alvo` nas dependências e
+ * recomeçaria a contagem do zero a cada entrega, com um quadro piscando em "0".
+ * Guardando o progresso, o número novo simplesmente aparece — e quem pediu
+ * movimento reduzido nasce com progresso 1, sem `setState` nenhum dentro do
+ * efeito (que é, além de tudo, o que o lint do projeto proíbe).
+ *
+ * O valor inicial consulta a preferência, o que no servidor responderia
+ * diferente do navegador. Não há hidratação a divergir: sem `profile` a página
+ * inteira devolve `null`, então este componente só existe no cliente.
+ */
+function useContagem(alvo: number, atraso: number): number {
+  const [progresso, setProgresso] = useState(() => (semMovimento() ? 1 : 0));
+
+  useEffect(() => {
+    if (semMovimento()) return;
+    let raf = 0;
+    let inicio = 0;
+    const passo = (t: number) => {
+      inicio ||= t;
+      const p = Math.min(1, (t - inicio) / DUR_CONTAGEM);
+      // Cúbica de saída: rápido no começo e devagar no fim é o que faz a
+      // contagem PARAR num número em vez de ser interrompida nele.
+      setProgresso(1 - (1 - p) ** 3);
+      if (p < 1) raf = requestAnimationFrame(passo);
+    };
+    const id = setTimeout(() => (raf = requestAnimationFrame(passo)), atraso);
+    return () => {
+      clearTimeout(id);
+      cancelAnimationFrame(raf);
+    };
+  }, [atraso]);
+
+  return Math.round(alvo * progresso);
+}
+
+/** No servidor não há preferência a consultar — e não há movimento a fazer. */
+function semMovimento(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
   );
 }
 
@@ -370,9 +463,11 @@ function Degrau({
   campea: boolean;
 }) {
   const { posicao, entregues, rotulo } = colocacao;
-  // 96px no topo, 46 de piso. A proporção é sobre o maior do pódio, não sobre o
-  // total: é a diferença ENTRE eles que o degrau precisa mostrar.
-  const altura = 46 + Math.round((entregues / Math.max(1, maior)) * 96);
+  // A regra da altura mora em `rank-core.ts`, com teste: é ela que decide o que
+  // a tela AFIRMA sobre quem ganhou, e a escada tem de se sustentar mesmo num
+  // mês em que todo mundo entregou quase a mesma coisa.
+  const altura = alturaDoDegrau(posicao, entregues, maior);
+  const contagem = useContagem(entregues, atraso + 70);
 
   return (
     <div
@@ -413,8 +508,18 @@ function Degrau({
             inscrição do degrau, não um segundo campo do cadastro da pessoa. Um
             pódio sem contagem não dá para conferir — e conferir é a primeira
             coisa que se faz olhando para um rank. */}
+        {/* Duas cópias do mesmo número, e é de propósito: o leitor de tela não
+            assiste à contagem subir. Ele lê o que estiver ali no instante em que
+            o cursor virtual chega — que pode ser "7 entregas" no meio do
+            caminho — e segue em frente sem nunca voltar. Quem vê recebe a
+            contagem; quem ouve recebe o resultado. */}
         <span className={styles.entregas}>
-          {entregues} {entregues === 1 ? "entrega" : "entregas"}
+          <span aria-hidden="true">
+            {contagem} {contagem === 1 ? "entrega" : "entregas"}
+          </span>
+          <span className={styles.soLeitor}>
+            {entregues} {entregues === 1 ? "entrega" : "entregas"}
+          </span>
         </span>
       </div>
     </div>
@@ -442,7 +547,10 @@ function FilaDeHonra({
         <li
           key={c.chave}
           className={styles.honraItem}
-          style={{ ["--atraso" as string]: `${240 + i * 40}ms` }}
+          /* Depois do pódio inteiro — inclusive do troféu. A fila é o
+             desfecho da cena, e desfecho que começa junto do clímax não é
+             desfecho. */
+          style={{ ["--atraso" as string]: `${420 + i * 40}ms` }}
         >
           <span className={styles.honraPos}>{c.posicao}º</span>
           <Avatar

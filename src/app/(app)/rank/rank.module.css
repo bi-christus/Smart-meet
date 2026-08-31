@@ -18,6 +18,21 @@
  * mês em andamento, onde a liderança ainda pode trocar. Continua sendo UM
  * acento em vez de três medalhas, pela mesma razão de sempre: a hierarquia é o
  * tamanho, e o troféu não compete com isso, só anuncia o que já fechou.
+ *
+ * ---------------------------------------------------------------------------
+ * A FAIXA QUE CORTAVA A TELA (Issue #133) — o que mudou, e por quê.
+ *
+ * Até aqui a foto vivia numa faixa que TERMINAVA no pé do pódio, e o pódio
+ * fechava com `border-bottom: 2px solid`. O resultado era uma aresta reta
+ * atravessando a tela inteira: em cima, foto; embaixo, página. Duas telas.
+ *
+ * O conserto não foi tirar a linha, foi trocar quem termina. Agora o `.palco`
+ * é do tamanho exato do pódio e a última parada do degradê que cobre a foto é
+ * `var(--bg)` — a cor da página. A foto não acaba: ela vira a página. Como não
+ * existe borda nenhuma ali, não existe nada para o olho reconhecer como corte,
+ * em nenhum dos seis temas. A fila de honra passou para DENTRO da mesma
+ * superfície, e é isso que fecha o argumento: um pódio só, não um pódio e uma
+ * lista embaixo.
  */
 
 .page {
@@ -74,99 +89,209 @@
   color: var(--tx-3);
 }
 
-/* Reserva a altura do pódio montado: sem ela, a tela salta uns 300px no
+/* Reserva a altura do pódio montado: sem ela, a tela salta uns 380px no
    instante em que os dados chegam. */
 .esqueleto {
-  min-height: 330px;
+  min-height: 380px;
   display: flex;
   align-items: flex-end;
   justify-content: center;
   padding: 40px 22px 0;
 }
 
-/* ---------- a arena: fundo da temporada ---------- */
+/* ---------- a arena: pódio e fila de honra na mesma superfície ---------- */
 
-/* A foto (`public/rank-fundo.webp`) é gerada por IA, pedida no estilo "arena
-   escura premiada" — 1672×941 original, convertida com `sharp` para WebP
-   qualidade 82 (1.46 MB → 60 KB; um fundo decorativo não paga o preço de PNG
-   sem perdas).
-
-   O SCRIM POR CIMA NÃO É ENFEITE, é o que faz o pódio continuar legível. A
-   foto tem holofotes que convergem justo no centro do topo — exatamente
-   atrás do 1º lugar —, e ali ela estoura em laranja claro. Sem escurecer, o
-   degrau mais importante da tela é o que menos se lê. Mais forte em cima (o
-   estouro) e embaixo (onde ficam os blocos), mais leve no meio, onde a foto
-   pode aparecer.
-
-   Um degradê de MARCA por cima da foto foi tentado e removido: a foto já é
-   mais laranja que `--brand`, e somar mais laranja só empurrava a região
-   crítica para ainda mais claro.
-
-   Tudo ESTÁTICO, sem loop nem pulso: a skill de motion do projeto proíbe
-   glow chamando atenção sozinho. */
+/* A arena não pinta nada. Ela só recorta: margem lateral, cantos e o
+   `overflow` que segura a foto do `.palco`. Quem pinta é o `.palco`, e essa
+   divisão de trabalho é o que permite a foto acabar antes da arena — sem ela,
+   a foto teria de esticar até o último item da fila de honra e o degradê
+   mudaria de forma a cada linha que a fila ganhasse. */
 .arena {
   margin: 20px 22px 0;
-  /* SÓ os cantos de cima. Embaixo o pódio precisa continuar encostando na
-     fila de honra sem quina — ver o comentário de `.honra` sobre por que os
-     dois pedaços compartilham o mesmo chão. Arredondar ali quebraria essa
-     continuidade só porque a arena agora existe. */
-  border-radius: var(--r-lg) var(--r-lg) 0 0;
+  border-radius: var(--r-lg);
   overflow: hidden;
-  background:
-    linear-gradient(
-      180deg,
-      rgba(8, 5, 3, 0.72) 0%,
-      rgba(8, 5, 3, 0.48) 42%,
-      rgba(8, 5, 3, 0.78) 100%
-    ),
-    url(/rank-fundo.webp) center/cover no-repeat;
-  /* A FOTO É ESCURA NOS SEIS TEMAS, e o que fica direto sobre ela não pode
-     seguir o tema: no claro, `--tx` é quase preto e o nome sumia contra a
-     foto. Quem está dentro de um bloco opaco continua no tema normal — só o
-     que encosta na foto usa isto. */
+  padding-bottom: 26px;
+}
+
+/* ---------- o palco: a foto, o holofote e o chão ---------- */
+
+/* A foto (`public/rank-fundo.webp`) é a sala real, convertida com `sharp` para
+   WebP qualidade 80 (2,1 MB → 121 KB; um fundo decorativo não paga o preço de
+   PNG sem perdas).
+ *
+ * O SCRIM POR CIMA NÃO É ENFEITE, é o que faz o pódio existir. A foto é CLARA
+ * — escritório com luz de teto acesa —, e é o degradê escuro que a transforma
+ * na sala à noite com o pódio iluminado. Sem ele, texto claro sobre parede
+ * clara: nada se lê. Com ele, a foto continua reconhecível e o pódio ganha o
+ * único lugar iluminado da cena, que é exatamente o que um palco é.
+ *
+ * O HOLOFOTE É `var(--brand)`, e não laranja fixo: em tema azul o palco fica
+ * azul. Ele foi tentado e REMOVIDO na foto anterior, que já era laranja
+ * demais; com uma foto neutra ele volta a informar em vez de somar.
+ *
+ * `--sobre-foto` e `--chao` existem porque o que encosta na foto NÃO PODE
+ * seguir o tema: no tema claro, `--tx` é quase preto e o nome sumia contra a
+ * foto escurecida. Quem está dentro de um bloco opaco continua no tema
+ * normal — só o que encosta na foto usa isto. */
+.palco {
+  position: relative;
+  /* O respiro embaixo é onde a foto se dissolve. Curto demais, a dissolução
+     acontece em 30px e volta a ser uma faixa — só que borrada. */
+  padding-bottom: 88px;
   --sobre-foto: #f7f6f2;
+  --chao: rgba(255, 255, 255, 0.34);
+}
+
+/* A foto mora num pseudo-elemento, e não no fundo do `.palco`, por uma razão
+   só: assim ela pode entrar em cena (`cortina`) sem arrastar o pódio junto. */
+.palco::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background:
+    /* 1. o holofote, que morre bem antes do pé — nada de laranja na dissolução */
+    radial-gradient(
+      62% 66% at 50% 0%,
+      color-mix(in srgb, var(--brand) 20%, transparent),
+      transparent 66%
+    ),
+    /* 2. o escurecimento, e A PARADA QUE FECHA A ISSUE #133: `var(--bg)` em
+       100%. A foto termina virando a cor exata da página. */
+      linear-gradient(
+        180deg,
+        rgba(6, 6, 9, 0.9) 0%,
+        rgba(6, 6, 9, 0.56) 30%,
+        rgba(6, 6, 9, 0.76) 64%,
+        rgba(6, 6, 9, 0.84) 82%,
+        var(--bg) 100%
+      ),
+    /* 3. vinheta: puxa o olho para o meio, onde está o 1º lugar */
+      radial-gradient(120% 100% at 50% 46%, transparent 38%, rgba(0, 0, 0, 0.6)),
+    url(/rank-fundo.webp) center 44% / cover no-repeat;
+  /* A cena SOBE a luz uma vez, na chegada — o equivalente visual de acender o
+     palco. 1.04 de escala é pouco de propósito: é movimento de fundo, e fundo
+     que se mexe muito é enjoo, não cerimônia. */
+  animation: cortina 560ms both cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@keyframes cortina {
+  from {
+    opacity: 0;
+    transform: scale(1.04);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 /* ---------- os três degraus ---------- */
 
 /* `flex-end` é a regra que faz isto ser um pódio: os blocos têm alturas
    diferentes e todos assentam na MESMA linha de base. Alinhados pelo topo,
-   seriam três cartões de tamanhos aleatórios. */
+   seriam três cartões de tamanhos aleatórios.
+ *
+ * `gap` HORIZONTAL ZERO é a outra metade, e é o que mudou na Issue #133: com
+ * 14px de respiro entre eles, três blocos com canto arredondado leem como três
+ * cartões flutuando. Encostados, viram uma plataforma só — que é o que um
+ * pódio é. O respiro VERTICAL fica, para o caso de empate levar a quarta
+ * pessoa para uma segunda linha. */
 .podio {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  gap: 14px;
+  gap: 28px 0;
   /* Sem respiro horizontal aqui: quem já afasta das bordas da tela é a
      `.arena`, por fora. Repetir o respiro nos dois empurraria o pódio 44px
      para dentro em vez de 22px. */
-  padding: 44px 0 0;
+  padding: 46px 0 3px;
   flex-wrap: wrap;
-  /* A LINHA DE BASE do pódio mora aqui, e não no topo da fila de honra. Com
-     menos de quatro pessoas não existe fila nenhuma, e os blocos ficariam com
-     a borda de baixo aberta, flutuando — um pódio sem chão. */
-  border-bottom: 2px solid var(--line);
+}
+
+/* O poço de luz no chão, atrás da plataforma. É ele que dá ao pódio um lugar
+   onde estar: sem nada embaixo, os blocos ficam colados na foto como adesivo.
+   Estático — a skill de motion do projeto proíbe brilho que chama atenção
+   sozinho (nada em laço, nada pulsando). */
+.podio::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  left: 50%;
+  bottom: 3px;
+  width: min(860px, 100%);
+  height: 210px;
+  transform: translateX(-50%);
+  background: radial-gradient(
+    46% 88% at 50% 100%,
+    rgba(255, 255, 255, 0.2),
+    rgba(255, 255, 255, 0.06) 46%,
+    transparent 74%
+  );
+  pointer-events: none;
+}
+
+/* A LINHA DE BASE, que antes era `border-bottom: 2px solid` e ia de ponta a
+   ponta. Agora ela DISSOLVE nas duas pontas: um chão que some é chão; uma
+   linha reta que atravessa a tela inteira é divisória, e era exatamente a
+   queixa da Issue #133. */
+.podio::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  /* 25 de altura com 22 abaixo do pódio: a borda de cima do pseudo cai
+     exatamente no pé dos blocos (o `.podio` reserva 3px ali), e o resto desce. */
+  bottom: -22px;
+  height: 25px;
+  /* A plataforma tem 3 x 190px; a sobra de cada lado é o quanto o chão se
+     estende além dela antes de sumir. Largura de TELA aqui reconstituiria a
+     divisória, com pontas borradas. */
+  width: min(720px, 96%);
+  transform: translateX(-50%);
+  background:
+    /* a linha de contato — 3px, e some nas duas pontas */
+    linear-gradient(
+        90deg,
+        transparent,
+        var(--chao) 22%,
+        var(--chao) 78%,
+        transparent
+      )
+      top / 100% 3px no-repeat,
+    /* e a sombra que a plataforma joga no chão. É ela que impede os blocos de
+       flutuarem — sombra no próprio bloco não serve: `clip-path` recorta pela
+       caixa e apagaria qualquer coisa que passasse dela. */
+      radial-gradient(50% 100% at 50% 0%, rgba(0, 0, 0, 0.5), transparent 76%);
+  pointer-events: none;
 }
 
 .degrau {
+  position: relative;
+  z-index: 1;
   width: 190px;
   display: flex;
   flex-direction: column;
   align-items: center;
   min-width: 0;
-  animation: subir 220ms var(--atraso, 0ms) both cubic-bezier(0.32, 0.72, 0, 1);
+  animation: assenta 280ms var(--atraso, 0ms) both cubic-bezier(0.32, 0.72, 0, 1);
 }
-/* O degrau SOBE para o lugar, e a distância é pequena de propósito: 16px é o
-   bastante para o olho ler "assentou" sem virar uma apresentação. Uma vez, na
-   chegada dos dados — não a cada render, não em hover, não em laço. */
-@keyframes subir {
+
+/* O degrau SOBE para o lugar, e a distância é pequena de propósito: 18px é o
+   bastante para o olho ler "assentou" sem virar uma apresentação. O desfoque
+   que sai junto é o que faz a pessoa MATERIALIZAR em vez de só aparecer. Uma
+   vez, na chegada dos dados — não a cada render, não em hover, não em laço. */
+@keyframes assenta {
   from {
     opacity: 0;
-    transform: translateY(16px);
+    transform: translateY(18px);
+    filter: blur(5px);
   }
   to {
     opacity: 1;
     transform: none;
+    filter: blur(0);
   }
 }
 
@@ -181,18 +306,22 @@
 }
 .primeiro .rosto {
   border-color: var(--brand);
-  /* O halo translúcido sozinho não separa mais nada: ele é laranja sobre uma
-     foto laranja. A sombra escura por fora é o que descola o 1º lugar do
-     fundo — sem ela o rosto encosta na luz da foto e some. */
+  /* O halo translúcido sozinho não separa nada: ele é laranja sobre uma luz
+     laranja. A sombra escura por fora é o que descola o 1º lugar do fundo —
+     sem ela o rosto encosta no holofote e some. */
   box-shadow:
     0 0 0 5px var(--brand-soft),
-    0 8px 24px rgba(0, 0, 0, 0.55);
+    0 10px 28px rgba(0, 0, 0, 0.6);
 }
 
-/* O troféu: um selo estático sobre o rosto, nunca um badge que pulsa (a
-   skill de motion proíbe atenção em loop). `position: absolute` sobre
-   `.rosto`, que por isso ganhou `position: relative` — o mesmo truque de
-   ancoragem que o resto do app já usa para selo sobre avatar. */
+/* O troféu: um selo sobre o rosto, nunca um badge que pulsa (a skill de motion
+   proíbe atenção em laço). `position: absolute` sobre `.rosto`, que por isso
+   ganhou `position: relative` — o mesmo truque de ancoragem que o resto do app
+   já usa para selo sobre avatar.
+ *
+ * Ele chega DEPOIS do degrau assentar, e é a última coisa que se mexe na tela:
+   primeiro a pessoa sobe ao pódio, depois recebe o troféu. Invertida, a ordem
+   entrega o resultado antes do vencedor. */
 .trofeu {
   position: absolute;
   top: -8px;
@@ -207,15 +336,30 @@
   background: var(--brand);
   color: var(--bg);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+  animation: selo 260ms calc(var(--atraso, 0ms) + 300ms) both
+    cubic-bezier(0.32, 0.72, 0, 1);
 }
+/* 0.72 e não 0: partir de escala zero produz um movimento que não existe em
+   lugar nenhum do mundo físico, e se lê como "pipoco". */
+@keyframes selo {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.72);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+  }
+}
+
 .nome {
   margin-top: 12px;
   max-width: 100%;
   font-size: 14px;
   font-weight: 600;
-  /* Sobre a foto, não sobre a superfície do tema — ver `--sobre-foto` na
-     `.arena`. A sombra é o que segura o nome contra as faíscas claras da
-     foto, que passam bem na altura desta linha. */
+  /* Sobre a foto, não sobre a superfície do tema — ver `--sobre-foto` no
+     `.palco`. A sombra é o que segura o nome contra qualquer coisa clara que
+     sobre da foto na altura desta linha. */
   color: var(--sobre-foto, var(--tx));
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75);
   text-align: center;
@@ -231,64 +375,153 @@
   font-size: 16px;
 }
 
+/* O bloco: um plinto, não um cartão.
+ *
+ * Três coisas fazem o volume, e nenhuma delas é sombra projetada (que sobre uma
+ * foto vira borrão): a face escurece de cima para baixo, como coisa iluminada
+ * de cima; a laje do topo (`::before`) é a mesma peça vista de cima, mais
+ * clara; e as duas linhas internas das laterais separam um plinto do vizinho
+ * sem precisar de espaço entre eles.
+ *
+ * A LAJE MORA DENTRO da caixa do bloco (`top: 0`, e o `padding-top` compensa),
+ * e isso não é detalhe de gosto: o bloco cresce com `clip-path`, que recorta
+ * pelo border-box. Uma laje pendurada em `top: -9px` ficaria fora do recorte e
+ * sumiria para sempre no fim da animação. */
 .bloco {
-  margin-top: 12px;
+  position: relative;
+  margin-top: 14px;
   width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
-  background: var(--s2);
-  border: 1px solid var(--line-soft);
-  /* Sem raio embaixo: o bloco encosta na linha de base do pódio, e canto
-     arredondado ali o faria flutuar. */
-  border-radius: 10px 10px 0 0;
-  border-bottom: none;
+  gap: 3px;
+  padding-top: 9px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(0, 0, 0, 0.26)),
+    var(--s2);
+  /* Raio quase nulo: canto vivo é o que faz três peças encostadas lerem como
+     uma plataforma. Arredondado, cada uma volta a ser um cartão. */
+  border-radius: 4px 4px 0 0;
+  box-shadow:
+    inset 1px 0 0 rgba(255, 255, 255, 0.06),
+    inset -1px 0 0 rgba(0, 0, 0, 0.3);
+  animation: cresce 340ms calc(var(--atraso, 0ms) + 70ms) both
+    cubic-bezier(0.32, 0.72, 0, 1);
 }
-/* O bloco do 1º lugar precisa ser OPACO, e é aqui que a arena mudou a regra.
-   `--brand-soft` é translúcido (16% de laranja): sobre a superfície neutra de
-   antes ele desenhava um bloco laranja pálido, mas sobre a foto — que é
-   laranja forte justo atrás dele — a contagem simplesmente sumia. A camada
-   dupla é o mesmo laranja de sempre, agora assentado num fundo opaco em vez
-   de no que estiver por trás. */
+
+/* A laje do topo. */
+.bloco::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 9px;
+  border-radius: 4px 4px 0 0;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.22),
+    rgba(255, 255, 255, 0.05)
+  );
+}
+
+/* O bloco SAI DO CHÃO. `clip-path` recortando a borda de cima é o único jeito
+   de crescer para cima sem esmagar o número gravado nele — `scaleY` faria o
+   "1º" nascer achatado e esticar até o tamanho certo, que é o efeito de
+   borracha que denuncia animação feita sem olhar. */
+@keyframes cresce {
+  from {
+    clip-path: inset(100% 0 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+/* O bloco do 1º lugar precisa ser OPACO, e essa é a lição que a foto ensinou:
+   `--brand-soft` é translúcido (16% de laranja), e sobre superfície neutra ele
+   desenhava um bloco laranja pálido — mas sobre a foto, iluminada justo atrás
+   dele, a contagem simplesmente sumia. `color-mix` resolve o mesmo laranja
+   contra um fundo OPACO (`--s2`), e em 22% em vez de 16% porque o plinto do
+   campeão tem de se distinguir dos vizinhos à distância de um relance. */
 .primeiro .bloco {
   background:
-    linear-gradient(var(--brand-soft), var(--brand-soft)),
-    var(--s2);
-  border-color: var(--brand-line);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(0, 0, 0, 0.18)),
+    color-mix(in srgb, var(--brand) 22%, var(--s2));
+  box-shadow:
+    inset 0 1px 0 var(--brand-line),
+    inset 1px 0 0 rgba(255, 255, 255, 0.08),
+    inset -1px 0 0 rgba(0, 0, 0, 0.3);
+}
+.primeiro .bloco::before {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--brand) 60%, transparent),
+    color-mix(in srgb, var(--brand) 14%, transparent)
+  );
 }
 
 .posicao {
   font-family: var(--font-serif), serif;
-  font-size: 30px;
+  font-size: 32px;
   font-weight: 700;
   line-height: 1;
   color: var(--tx-2);
+  /* Gravado, não impresso: a luz vem de cima, então o alto-relevo pede sombra
+     embaixo. Uma linha, não três — mais que isso vira letra de camiseta. */
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
 }
 .primeiro .posicao {
-  font-size: 38px;
+  font-size: 42px;
   color: var(--brand);
+}
+/* No degrau laranja, `--tx-3` é cinza sobre laranja pálido — o pior contraste
+   do pódio justo no número que mais gente procura. */
+.primeiro .entregas {
+  color: var(--tx-2);
 }
 .entregas {
   font-family: var(--font-mono), monospace;
   font-size: 11px;
   color: var(--tx-3);
+  /* Tabular: a contagem sobe até o número na chegada, e sem largura fixa por
+     dígito o texto inteiro tremeria a cada quadro. */
   font-variant-numeric: tabular-nums;
+}
+
+/* Escondido do olho, presente para o leitor de tela. É a mesma receita que o
+   `skeleton.module.css` já tem, escrita de novo aqui em vez de um `composes`
+   entre folhas: nove linhas de utilitário sem regra de negócio não são o tipo
+   de cópia que diverge com o tempo, e o `composes` cruzando folhas seria o
+   primeiro do projeto — inaugurado por um pedaço de CSS que nunca vai mudar. */
+.soLeitor {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* ---------- do quarto ao oitavo ---------- */
 
-/* Encosta na linha de base do pódio, sem borda própria: os dois pedaços
-   compartilham o mesmo chão, e é isso que os faz ler como um pódio só em vez de
-   "um pódio e, embaixo, uma lista". */
+/* Dentro da arena, sobre a mesma superfície — e por isso sem margem lateral
+   própria: quem já afasta das bordas é a `.arena`. Na altura em que a fila
+   começa, o degradê do palco já virou a cor da página, então estes cartões
+   ficam sobre o fundo normal do tema sem que exista aresta nenhuma entre um
+   lugar e o outro. É isso que os faz ler como a continuação do pódio, e não
+   como uma tabela que começa depois dele. */
 .honra {
-  margin: 0 22px;
+  margin: 0;
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   gap: 8px;
-  padding: 16px 0 0;
+  padding: 18px 10px 0;
   list-style: none;
 }
 .honraItem {
@@ -302,7 +535,7 @@
   border: 1px solid var(--line-soft);
   border-radius: var(--r-lg);
   min-width: 0;
-  animation: subir 220ms var(--atraso, 0ms) both cubic-bezier(0.32, 0.72, 0, 1);
+  animation: assenta 260ms var(--atraso, 0ms) both cubic-bezier(0.32, 0.72, 0, 1);
 }
 .honraPos {
   font-family: var(--font-serif), serif;
@@ -329,10 +562,16 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Inegociável (AGENTS.md §3). A entrada some inteira; o pódio já está montado
-   quando a pessoa olha, que é o estado que interessava desde o começo. */
+/* Inegociável (AGENTS.md §3). Some a cena inteira: a luz do palco, o degrau
+   que sobe, o bloco que cresce, o selo. O pódio já está montado quando a
+   pessoa olha, que é o estado que interessava desde o começo. A contagem que
+   sobe até o número tem o mesmo desligamento, mas em JavaScript — ela é texto,
+   e texto CSS nenhum congela (ver `useContagem`, em `page.tsx`). */
 @media (prefers-reduced-motion: reduce) {
+  .palco::before,
   .degrau,
+  .bloco,
+  .trofeu,
   .honraItem {
     animation: none;
   }
@@ -351,7 +590,18 @@
     /* Empilhados, a altura proporcional vira um bloco enorme no topo da
        coluna. O `!important` não entra: o valor vem do style inline do
        elemento, então quem manda aqui é o `max-height`. */
-    max-height: 76px;
+    max-height: 84px;
+  }
+  /* Em coluna não existe plataforma: cada plinto é uma peça sozinha, e a luz
+     de chão desenhada para uma fileira ficaria atravessada no meio dela. */
+  .podio::before,
+  .podio::after {
+    display: none;
+  }
+  /* Sem chão para mostrar, os 88px viram buraco entre o último plinto e a fila
+     de honra. A dissolução da foto continua acontecendo, em menos espaço. */
+  .palco {
+    padding-bottom: 40px;
   }
   .honraItem {
     width: calc(50% - 4px);

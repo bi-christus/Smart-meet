@@ -18,6 +18,7 @@
 import {
   POSICOES_DO_PODIO,
   TETO_RANK,
+  alturaDoDegrau,
   maiorEntrega,
   montarRank,
 } from "../src/lib/rank-core.ts";
@@ -144,6 +145,67 @@ checa(
 checa(
   "maiorEntrega devolve 0 no vazio, e nunca -Infinity",
   maiorEntrega([]) === 0 && maiorEntrega(SIMPLES) === 12,
+);
+
+// --- a escada: a altura do bloco de cada degrau ---------------------------
+// A silhueta de escada é o que faz alguém reconhecer um pódio antes de ler um
+// número. Ela some quando a altura é só proporcional à contagem e o mês foi
+// parelho — o desenho passa a depender de o mês ter sido desigual, e o mês em
+// que ele quebra é justamente o que ninguém testou.
+const ESCADA = (r) =>
+  r
+    .filter((c) => c.posicao <= POSICOES_DO_PODIO)
+    .map((c) => alturaDoDegrau(c.posicao, c.entregues, maiorEntrega(r)));
+
+const desce = (alturas) => alturas.every((a, i) => i === 0 || a < alturas[i - 1]);
+
+checa(
+  "contagens quase iguais ainda desenham escada",
+  desce(ESCADA(montarRank(pessoas(["Ana", 29], ["Bruno", 28], ["Carla", 27])))),
+  ESCADA(montarRank(pessoas(["Ana", 29], ["Bruno", 28], ["Carla", 27]))).join(" > "),
+);
+
+checa(
+  "contagens muito distantes também",
+  desce(ESCADA(montarRank(pessoas(["Ana", 40], ["Bruno", 3], ["Carla", 1])))),
+  ESCADA(montarRank(pessoas(["Ana", 40], ["Bruno", 3], ["Carla", 1]))).join(" > "),
+);
+
+checa(
+  "empate no 2º lugar dá dois blocos de altura igual",
+  (() => {
+    const r = montarRank(pessoas(["Ana", 10], ["Bruno", 6], ["Carla", 6]));
+    const [a, b, c] = ESCADA(r);
+    return a > b && b === c;
+  })(),
+);
+
+// Varredura: nenhuma combinação de contagens pode inverter a escada. O piso por
+// colocação é maior que o acréscimo inteiro, e é isso que o laço confere.
+checa(
+  "colocação melhor nunca vira bloco mais baixo, em nenhuma combinação",
+  (() => {
+    for (let a = 1; a <= 40; a++)
+      for (let b = 1; b <= a; b++)
+        for (let c = 1; c <= b; c++) {
+          const r = montarRank(pessoas(["A", a], ["B", b], ["C", c]));
+          const alturas = ESCADA(r);
+          for (let i = 1; i < alturas.length; i++) {
+            const anterior = r.filter((x) => x.posicao <= POSICOES_DO_PODIO)[i - 1];
+            const atual = r.filter((x) => x.posicao <= POSICOES_DO_PODIO)[i];
+            const empate = anterior.posicao === atual.posicao;
+            if (empate ? alturas[i] !== alturas[i - 1] : alturas[i] >= alturas[i - 1])
+              return false;
+          }
+        }
+    return true;
+  })(),
+);
+
+checa(
+  "altura não depende de `maior` inconsistente — nada estoura o teto",
+  alturaDoDegrau(1, 99, 1) === alturaDoDegrau(1, 1, 1) &&
+    alturaDoDegrau(3, 0, 0) < alturaDoDegrau(2, 0, 0),
 );
 
 // --- as constantes que a tela usa para partir o desenho -------------------
