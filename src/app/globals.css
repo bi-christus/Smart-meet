@@ -201,6 +201,138 @@
   --field: #f5ecdf;
 }
 
+/* ---------------------------------------------------------------------------
+   acento ENTRE AULAS — a marca da cantina, e a primeira paleta COLORIDA
+
+   Os outros três acentos trocam a família da marca e param aí: `--ok` continua
+   o mesmo verde genérico, `--danger` o mesmo rosa, em todos eles. Aqui as
+   cores semânticas também saem da marca — é isso que faz o tema parecer um
+   tema, e não o app de sempre com outro botão laranja.
+
+   A paleta é a do manual "Entre Aulas — Campus Café" (19/08/2026), e os sete
+   nomes dele aparecem abaixo como comentário para que ninguém precise abrir o
+   PDF para saber de onde saiu um hex:
+
+     vinho #7a2e33 · bege #ebc8a5 · off white #f7f5ee · marrom café #4a2c2a
+     verde #2e4a38 · areia #8b7761 · terracota #c76f3d
+
+   POR QUE OS HEX AQUI NÃO SÃO OS DO MANUAL, LINHA POR LINHA. O manual manda
+   "respeitar o contraste" e "em fundos escuros, usar a versão negativa". Os
+   sete valores foram desenhados para tinta e para fundo claro: vinho #7a2e33
+   sobre o preto #17100e dá 2,1:1 — ilegível. Então a regra que este bloco segue
+   é a do manual, não a tabela dele: no tema escuro os tons SOBEM em
+   luminância (o vinho vira #d9636c, o verde vira #5fa97a); no claro eles ficam
+   como estão, que é onde foram desenhados para viver.
+
+   `--feriado` NÃO precisa de indireção aqui, e isso foi verificado, não
+   presumido: o comentário do token lá em cima explica que ele existe porque no
+   acento azul a marca encosta em `--info`. Aqui a marca é terracota e `--info`
+   é o verde-azulado — as duas famílias estão a meio círculo cromático de
+   distância, e o Cronograma continua distinguindo Reunião de feriado. */
+[data-accent="entreaulas"][data-theme="dark"] {
+  --brand: #e08b54;
+  --brand-hover: #eda271;
+  --brand-soft: rgba(224, 139, 84, 0.17);
+  --brand-line: rgba(224, 139, 84, 0.45);
+  --accent: #e8956a;
+  --accent-2: #ebc8a5;
+  --accent-3: #e08b54;
+
+  --bg: #17100e;
+  --s1: #1f1613;
+  --s2: #281d19;
+  --s3: #33251f;
+  --s4: #402f27;
+  --line: #3a2a23;
+  --line-soft: #291e19;
+
+  --tx: #f7f5ee;
+  --tx-2: #cbb49c;
+  --tx-3: #9a8471;
+
+  --topbar-bg: #1f1613;
+  --topbar-line: #3a2a23;
+  --topbar-fg: #cbb49c;
+  --topbar-fg-strong: #fff8ef;
+
+  --ok: #5fa97a;
+  --ok-bg: rgba(95, 169, 122, 0.16);
+  --ok-tx: #86c69c;
+  --warn: #e0b252;
+  --warn-bg: rgba(224, 178, 82, 0.15);
+  --warn-tx: #efcb84;
+  --danger: #d9636c;
+  --danger-bg: rgba(217, 99, 108, 0.16);
+  --danger-tx: #f09199;
+  --info: #5fa6c4;
+  --info-bg: rgba(95, 166, 196, 0.15);
+  --info-tx: #9ccfe4;
+  --susp: #c089b4;
+  --susp-bg: rgba(192, 137, 180, 0.16);
+  --susp-tx: #dcb4d3;
+
+  --scroll: #40302a;
+  --scroll-hover: #56423a;
+  --overlay: rgba(15, 9, 7, 0.7);
+  --shadow: 0 12px 34px rgba(10, 6, 4, 0.6);
+
+  --card: #281d19;
+  --field: #1f1613;
+}
+
+/* O claro é a casa da marca: o off white #f7f5ee é literalmente o fundo do
+   manual, e os sete tons entram quase como estão. */
+[data-accent="entreaulas"][data-theme="light"] {
+  --brand: #c76f3d;
+  --brand-hover: #a85a2e;
+  --brand-soft: rgba(199, 111, 61, 0.13);
+  --brand-line: rgba(199, 111, 61, 0.34);
+  --accent: #7a2e33;
+  --accent-2: #a03d44;
+  --accent-3: #c76f3d;
+
+  --bg: #efe9df;
+  --s1: #f7f5ee;
+  --s2: #fffdf8;
+  --s3: #ede5d8;
+  --s4: #e2d6c3;
+  --line: #e0d3bf;
+  --line-soft: #ede4d6;
+
+  --tx: #2a1c18;
+  --tx-2: #5e4b41;
+  --tx-3: #857260;
+
+  --topbar-bg: #fffdf8;
+  --topbar-line: #e5d9c6;
+  --topbar-fg: #6b584b;
+  --topbar-fg-strong: #2a1c18;
+
+  --ok: #2e4a38;
+  --ok-bg: rgba(46, 74, 56, 0.12);
+  --ok-tx: #2c5b40;
+  --warn: #a9762a;
+  --warn-bg: rgba(169, 118, 42, 0.14);
+  --warn-tx: #855b1c;
+  --danger: #7a2e33;
+  --danger-bg: rgba(122, 46, 51, 0.11);
+  --danger-tx: #7a2e33;
+  --info: #2f6379;
+  --info-bg: rgba(47, 99, 121, 0.12);
+  --info-tx: #245063;
+  --susp: #7a4a6b;
+  --susp-bg: rgba(122, 74, 107, 0.12);
+  --susp-tx: #5e3852;
+
+  --scroll: #dccfb9;
+  --scroll-hover: #c0ae91;
+  --overlay: rgba(42, 28, 24, 0.42);
+  --shadow: 0 10px 30px rgba(42, 28, 24, 0.13);
+
+  --card: #fffdf8;
+  --field: #f7f5ee;
+}
+
 * {
   box-sizing: border-box;
   padding: 0;

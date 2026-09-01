@@ -266,6 +266,12 @@
 .swCafe {
   background: #8a5a2b;
 }
+/* Vinho → terracota → verde: os três tons que a paleta Entre Aulas usa como
+   marca, perigo e sucesso. O degrade é o resumo honesto de um tema que troca
+   cinco famílias de cor, e não só a da marca. */
+.swEntre {
+  background: linear-gradient(135deg, #7a2e33 0%, #c76f3d 48%, #2e4a38 100%);
+}
 .swOn {
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.22), 0 0 0 2px var(--s2),
     0 0 0 4px currentColor;
@@ -278,6 +284,9 @@
 }
 .swCafe.swOn {
   color: #8a5a2b;
+}
+.swEntre.swOn {
+  color: #c76f3d;
 }
 .popSep {
   height: 1px;

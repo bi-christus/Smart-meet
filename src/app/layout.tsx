@@ -42,8 +42,15 @@ export default function RootLayout({
       <body>
         <script
           dangerouslySetInnerHTML={{
+            /* A lista de acentos aparece aqui E em `theme.tsx`, e é de
+               propósito: este script roda ANTES de qualquer JavaScript do app
+               ser baixado — é isso que evita o piscar. Importar o módulo aqui
+               desfaria a razão de ele existir. A conferência precisa estar nos
+               dois lados porque um `sm_accent` desconhecido (versão antiga,
+               dedo no console) vira um `data-accent` que folha nenhuma casa, e
+               o app abre sem cor de marca sem nada dizer por quê. */
             __html:
-              "(function(){try{var r=document.documentElement;r.dataset.theme=localStorage.getItem('sm_theme')||'dark';r.dataset.accent=localStorage.getItem('sm_accent')||'preto';}catch(e){}})();",
+              "(function(){try{var r=document.documentElement;var a=localStorage.getItem('sm_accent');r.dataset.theme=localStorage.getItem('sm_theme')||'dark';r.dataset.accent=['preto','azul','cafe','entreaulas'].indexOf(a)<0?'preto':a;}catch(e){}})();",
           }}
         />
         <ThemeProvider>
