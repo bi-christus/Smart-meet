@@ -122,6 +122,14 @@ const PATHS: Record<string, ReactNode> = {
     </>
   ),
   filter: <path d="M3 4h18l-7 8v7l-4 2v-9z" />,
+  // A etiqueta e o furo do barbante. O círculo é `fill="currentColor"` porque
+  // com 13px de lado um furo traçado vira um borrão do tamanho do próprio traço.
+  tag: (
+    <>
+      <path d="M3 12V4h8l9 9a2 2 0 0 1 0 3l-5 5a2 2 0 0 1-3 0z" />
+      <circle cx="7.5" cy="7.5" r="1.1" fill="currentColor" stroke="none" />
+    </>
+  ),
   info: (
     <>
       <circle cx="12" cy="12" r="9" />

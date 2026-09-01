@@ -305,3 +305,28 @@
     transform: none !important;
   }
 }
+
+/**
+ * O card que o destaque por tag deixou para trás.
+ *
+ * Opacidade, e não `filter: grayscale`: as cores do card carregam informação
+ * (tipo, prioridade, prazo vencido), e lavá-las faria o card apagado mentir
+ * sobre o próprio estado enquanto continua na tela. Meio-tom mantém tudo
+ * legível de perto e some do olho de longe, que é o que se quer.
+ *
+ * 0.32 e não 0.5: com meia opacidade o quadro fica com dois tons de cinza e a
+ * pergunta "qual está aceso?" continua exigindo esforço. E o card volta inteiro
+ * no `hover` — quem foi conferir o que está apagado já mostrou que quer lê-lo.
+ */
+.apagado {
+  opacity: 0.32;
+  transition: opacity 0.16s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.apagado:hover {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .apagado {
+    transition: none;
+  }
+}

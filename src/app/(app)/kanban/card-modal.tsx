@@ -57,6 +57,7 @@ import {
   proximoDiaUtilISO,
   rotuloDoDiaISO,
 } from "@/lib/datas";
+import { conferirTag, normalizarTag, semAcento } from "@/lib/tags-core";
 import { codigoDe, fraseDeFalha } from "@/lib/erro-ui-core";
 import { diffCard, mudancasIniciais, type Rotulos } from "@/lib/historico-core";
 import { subscribeDimensoes, type Dimensao } from "@/lib/dimensoes";
@@ -103,13 +104,13 @@ const GRUPO_ROTULO: Record<GrupoSugestao, string> = {
   demanda: "Demandas do quadro",
 };
 
-/** Texto comparável: sem acento e em minúsculas — "Manutenção" acha por "manut". */
-function semAcento(s: string): string {
-  return s
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase();
-}
+/**
+ * A comparação de tag saiu daqui e mora em `tags-core`, uma no app inteiro.
+ *
+ * Enquanto era local, o menu de sugestões escondia "Infra" por já existir no
+ * card e o Enter criava "infra" assim mesmo — duas respostas para a mesma
+ * pergunta, e quem desempatava era a velocidade de digitação.
+ */
 
 function toStr(d: Date): string {
   const p = (n: number) => String(n).padStart(2, "0");
@@ -633,6 +634,29 @@ export function CardModal({
     tags,
   ]);
 
+  /**
+   * As tags do quadro que se PARECEM com o que está sendo digitado.
+   *
+   * O aviso avisa, e não recusa (ver o cabeçalho de `tags-core`): "Compras" e
+   * "Compra" podem ser coisas diferentes num setor que ninguém aqui conhece, e
+   * um campo que recusa o que a pessoa sabe ser certo ensina a contornar o
+   * campo — que é como se ganha uma tag chamada "Compras2".
+   *
+   * Só aparece FORA da menção com "#": com o menu aberto, as sugestões já estão
+   * na tela e o aviso repetiria embaixo o que a lista diz em cima.
+   */
+  const parecidasComOTexto = useMemo(() => {
+    if (buscaTag !== null) return [];
+    const c = conferirTag(newTag, tagsDoQuadro.map((x) => x.tag));
+    if (!c.ok) return [];
+    // O empate não vira aviso: `incluirTag` já grava a grafia existente sem
+    // perguntar, e avisar sobre uma decisão que não é da pessoa é ruído.
+    return c.mesma ? [] : c.parecidas.slice(0, 3);
+  }, [newTag, buscaTag, tagsDoQuadro]);
+
+  /** A grafia que o Enter vai gravar — é ela que o aviso cita entre aspas. */
+  const conferirTagTexto = normalizarTag(newTag);
+
   /** A lista está na tela — mesmo vazia, ela explica que o Enter cria a tag. */
   const menuTagVisivel = buscaTag !== null && !menuTagFechado;
   /** Só quando há o que escolher é que as setas e o Enter mudam de comportamento. */
@@ -650,8 +674,25 @@ export function CardModal({
    * parecido fosse renomeada.
    */
   function incluirTag(t: string, ref?: TagRef) {
-    const limpa = t.trim();
-    if (!limpa || tags.includes(limpa)) {
+    /**
+     * A grafia passa pela régua ANTES de entrar, mesmo vinda do menu.
+     *
+     * Vinda do menu ela já está normalizada, e a conferência é barata — mas o
+     * caminho tem de ser um só. Enquanto o Enter normalizava e o clique não, a
+     * mesma tag entrava de dois jeitos conforme o gesto de quem digitou.
+     *
+     * `mesma` ganha da digitada: quem escreveu "PORTAL DO ALUNO" num quadro que
+     * já tem "Portal do aluno" escreveu a mesma tag, e gravar as duas grafias
+     * partiria o filtro em duas metades para sempre. Isto não é palpite do app
+     * sobre o que a pessoa quis — as duas TÊM a mesma chave, são a mesma tag.
+     */
+    const conferida = conferirTag(t, tagsDoQuadro.map((x) => x.tag));
+    if (!conferida.ok) {
+      setNewTag("");
+      return;
+    }
+    const limpa = conferida.mesma ?? conferida.tag;
+    if (tags.some((x) => semAcento(x) === semAcento(limpa))) {
       setNewTag("");
       return;
     }
@@ -663,7 +704,7 @@ export function CardModal({
   }
   /** Enter fora do menu: cria a tag digitada, com ou sem o "#" na frente. */
   function addTag() {
-    incluirTag(newTag.replace(/^\s*#+/, "").trim());
+    incluirTag(newTag);
   }
   function removeTag(t: string) {
     setTags((cur) => cur.filter((x) => x !== t));
@@ -1574,6 +1615,44 @@ export function CardModal({
           )}
         </div>
       </div>
+
+      {/**
+       * "Já existe algo parecido" — o aviso que impede o catálogo de inchar.
+       *
+       * Fica FORA de `.tagsEdit` porque aquele bloco é uma linha que embrulha
+       * chips: um aviso lá dentro entraria na fila deles e apareceria ao lado
+       * de uma tag qualquer, como se fosse dela.
+       *
+       * Cada tag parecida é um BOTÃO, e não texto. O aviso sem ação é só uma
+       * repreensão — quem lê "já existe Processos" ainda precisa apagar o campo,
+       * lembrar a grafia e redigitar, e nessa hora todo mundo prefere apertar
+       * Enter no que já escreveu. Um clique é mais barato que teimar.
+       *
+       * `onMouseDown` prevenido pelo mesmo motivo do menu logo acima: o blur do
+       * campo desmonta o aviso antes de o clique chegar.
+       */}
+      {parecidasComOTexto.length > 0 && (
+        <div className={styles.tagAviso} role="status">
+          <Icon name="info" size={13} />
+          <span>Já existe no quadro:</span>
+          {parecidasComOTexto.map((t) => (
+            <button
+              key={t}
+              type="button"
+              className={styles.tagAvisoBtn}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => incluirTag(t)}
+              title={`Usar a tag "${t}", que já existe neste quadro`}
+            >
+              <span className={styles.tagDot} style={{ background: tagColor(t) }} />
+              {t}
+            </button>
+          ))}
+          <span className={styles.tagAvisoFim}>
+            — ou Enter para criar “{conferirTagTexto}” assim mesmo.
+          </span>
+        </div>
+      )}
 
       </div>
       <div className={styles.mconteudo}>

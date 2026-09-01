@@ -30,10 +30,17 @@ import {
   COLUMN_COLORS,
   resolverTags,
   corrigirTagsDeCards,
+  tagColor,
   type Card,
   type Priority,
   type ColumnDoc,
 } from "@/lib/kanban";
+import {
+  cardTemTag,
+  catalogoDeTags,
+  filtrarPorTags,
+  type ModoDeTags,
+} from "@/lib/tags-core";
 import { carregarHistorico } from "@/lib/historico";
 import { codigoDe, fraseDeFalha } from "@/lib/erro-ui-core";
 import { auth } from "@/lib/firebase";
@@ -83,6 +90,19 @@ function dataHora(ts: number): string {
   const p = (n: number) => String(n).padStart(2, "0");
   return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
+/**
+ * Quantos chips de tag a barra mostra antes de precisar ser aberta.
+ *
+ * OITO, e o número foi MEDIDO, não estimado: com os controles de modo à
+ * direita, sobram cerca de 950px para os chips em um monitor de 1440, e doze
+ * deles já quebram para a segunda linha. Isso não é só estética — a segunda
+ * linha empurra o quadro para baixo, e o quadro é a tela.
+ */
+const VISIVEIS = 8;
+
+/** Lista vazia constante — ver o comentário em `tagsF`. */
+const SEM_TAGS: string[] = [];
+
 /** Valor sentinela do filtro de responsável (e-mails sempre têm "@"). */
 const NO_ASSIGNEE = "__sem__";
 
@@ -171,6 +191,30 @@ export default function KanbanPage() {
   const [prio, setPrio] = useState<"" | Priority>("");
   // O filtro de responsável é preso ao setor: trocar de quadro o descarta.
   const [assigneeSel, setAssigneeSel] = useState({ sector: "", value: "" });
+  /**
+   * As tags marcadas — presas ao setor pelo mesmo motivo do responsável.
+   *
+   * Tag é catálogo de QUADRO: "Estoque" existe em Cantinas e não existe em B.I.
+   * Levar a marcação na troca de aba deixaria o quadro novo abrindo vazio, ou
+   * (pior, no modo destacar) com tudo apagado e nenhum motivo visível na tela.
+   */
+  const [tagSel, setTagSel] = useState<{ sector: string; tags: string[] }>({
+    sector: "",
+    tags: [],
+  });
+  const [modoTags, setModoTags] = useState<ModoDeTags>("ou");
+  /**
+   * DESTACAR É O PADRÃO, e filtrar é a opção.
+   *
+   * Num quadro, ONDE a demanda está é metade da informação: esconder tudo o que
+   * não tem a tag também esconde que sete das nove marcadas estão paradas em
+   * "Aguardando". Destacar responde as duas perguntas de uma vez — quais são, e
+   * em que etapa estão — e mantém a contagem das colunas de pé. Filtrar
+   * continua ali para quando a marcação é a única coisa que interessa.
+   */
+  const [acaoTags, setAcaoTags] = useState<"destacar" | "filtrar">("destacar");
+  /** O catálogo cresce; a barra não. Isto abre o resto dele. */
+  const [tagsAbertas, setTagsAbertas] = useState(false);
   const [edit, setEdit] = useState<EditState>(null);
   /** Demanda com o histórico aberto — independente do modal de edição. */
   const [histCard, setHistCard] = useState<Card | null>(null);
@@ -307,6 +351,26 @@ export default function KanbanPage() {
   const assigneeF = assigneeSel.sector === sector ? assigneeSel.value : "";
   const setAssigneeF = (value: string) => setAssigneeSel({ sector, value });
 
+  /**
+   * `SEM_TAGS` e não `[]` escrito aqui, pelo mesmo motivo das outras listas
+   * vazias constantes deste arquivo: um literal no corpo nasce com identidade
+   * nova a cada render, e os dois `useMemo` que dependem daqui recalculariam o
+   * quadro inteiro sem nada ter mudado.
+   */
+  const tagsF = useMemo(
+    () => (tagSel.sector === sector ? tagSel.tags : SEM_TAGS),
+    [tagSel, sector],
+  );
+  /** Marca e desmarca — o gesto é o mesmo botão, sempre. */
+  const alternarTag = (tag: string) =>
+    setTagSel({
+      sector,
+      tags: tagsF.includes(tag)
+        ? tagsF.filter((t) => t !== tag)
+        : [...tagsF, tag],
+    });
+  const limparTags = () => setTagSel({ sector, tags: [] });
+
   // Busca + prioridade (sem o filtro de responsável — é a base das contagens).
   const baseFiltered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -319,7 +383,7 @@ export default function KanbanPage() {
     );
   }, [cardsVivos, search, prio]);
 
-  const filtered = useMemo(
+  const porResponsavel = useMemo(
     () =>
       !assigneeF
         ? baseFiltered
@@ -330,6 +394,25 @@ export default function KanbanPage() {
   );
 
   /**
+   * As tags só ENCOLHEM o quadro no modo filtrar.
+   *
+   * No modo destacar elas não tocam nesta lista de propósito: quem destaca quer
+   * o quadro inteiro na tela, com as marcadas acesas. Fazer as duas coisas com
+   * a mesma lista obrigaria a contagem da coluna a escolher qual dos dois
+   * números mostrar.
+   */
+  const filtered = useMemo(
+    () =>
+      acaoTags === "filtrar"
+        ? filtrarPorTags(porResponsavel, tagsF, modoTags)
+        : porResponsavel,
+    [porResponsavel, acaoTags, tagsF, modoTags],
+  );
+
+  /** No modo destacar, o que NÃO está marcado sai apagado. */
+  const apagarSemTag = acaoTags === "destacar" && tagsF.length > 0;
+
+  /**
    * Catálogo de tags do quadro — é o que o "#" oferece no formulário.
    *
    * Sai do quadro inteiro e não de `baseFiltered`: o catálogo não pode encolher porque
@@ -337,15 +420,20 @@ export default function KanbanPage() {
    * a tag que o setor repete toda semana aparece primeiro, e o resto tem ordem
    * estável em vez da ordem de chegada do Firestore.
    */
-  const tagsDoQuadro = useMemo(() => {
-    const uso = new Map<string, number>();
-    cardsVivos.forEach((c) =>
-      (c.tags ?? []).forEach((t) => uso.set(t, (uso.get(t) ?? 0) + 1)),
-    );
-    return [...uso.entries()]
-      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "pt-BR"))
-      .map(([tag, n]) => ({ tag, n }));
-  }, [cardsVivos]);
+  const tagsDoQuadro = useMemo(() => catalogoDeTags(cardsVivos), [cardsVivos]);
+
+  /**
+   * As tags que cabem na barra: as mais usadas, mais as marcadas.
+   *
+   * A ordem do catálogo é preservada — reordenar para trazer a marcada para a
+   * frente faria os chips dançarem embaixo do dedo a cada clique, e o segundo
+   * clique cairia em outra tag.
+   */
+  const tagsVisiveis = useMemo(() => {
+    if (tagsAbertas) return tagsDoQuadro;
+    const marcadas = new Set(tagsF);
+    return tagsDoQuadro.filter((t, i) => i < VISIVEIS || marcadas.has(t.tag));
+  }, [tagsDoQuadro, tagsAbertas, tagsF]);
 
   /** As demandas do quadro, para o "#" citar uma existente pelo título. */
   const demandasDoQuadro = useMemo(
@@ -630,6 +718,137 @@ export default function KanbanPage() {
         </button>
       </div>
 
+      {/**
+       * A BARRA DE TAGS — o filtro rápido do quadro.
+       *
+       * Fica numa linha própria, abaixo dos filtros, e não entre eles. Os
+       * outros quatro controles são campos de largura fixa; este é uma lista
+       * que cresce com o quadro, e enfiá-la na mesma linha faria a barra de
+       * filtros mudar de altura conforme o setor — o cabeçalho inteiro subindo
+       * e descendo ao trocar de aba.
+       *
+       * SÓ APARECE SE HOUVER TAG. Uma barra vazia com o rótulo "Tags" em um
+       * quadro que não usa tags é uma pergunta sem resposta ocupando 40px em
+       * cima do trabalho de todo dia.
+       *
+       * A LISTA É CORTADA em `VISIVEIS`. O catálogo de um quadro de dois anos
+       * passa de setenta entradas, e setenta chips empurram o quadro para fora
+       * da tela — que é o mesmo defeito que o painel de tags do Obsidian
+       * resolve com um painel rolável. Aqui a saída é mostrar as mais usadas
+       * (que é a ordem do catálogo) e abrir o resto a pedido. As marcadas
+       * entram sempre, mesmo fora do corte: chip marcado que some é filtro
+       * ativo e invisível.
+       */}
+      {tagsDoQuadro.length > 0 && (
+        <div className={styles.tagbar}>
+          <span className={styles.tagbarRot}>
+            <Icon name="tag" size={13} /> Tags
+          </span>
+          <div className={styles.tagChips}>
+            {tagsVisiveis.map((t) => {
+              const on = tagsF.includes(t.tag);
+              return (
+                <button
+                  key={t.tag}
+                  className={`${styles.tagFiltro} ${on ? styles.tagFiltroOn : ""}`}
+                  style={
+                    on
+                      ? {
+                          borderColor: tagColor(t.tag),
+                          background: `color-mix(in srgb, ${tagColor(t.tag)} 18%, transparent)`,
+                        }
+                      : undefined
+                  }
+                  onClick={() => alternarTag(t.tag)}
+                  aria-pressed={on}
+                  title={
+                    t.nivel > 0
+                      ? `${t.tag} — ${t.n} demanda(s)`
+                      : `${t.tag} — ${t.n} demanda(s), contando as tags derivadas`
+                  }
+                >
+                  <span
+                    className={styles.tagFiltroDot}
+                    style={{ background: tagColor(t.tag) }}
+                  />
+                  {/* A mãe já está escrita no chip ao lado; repeti-la em cada
+                      filha gastaria metade da largura da barra dizendo a mesma
+                      palavra. O caminho inteiro fica no `title`. */}
+                  {t.nivel > 0 ? t.tag.slice(t.tag.indexOf("/") + 1) : t.tag}
+                  <span className={styles.tagFiltroN}>{t.n}</span>
+                </button>
+              );
+            })}
+            {tagsDoQuadro.length > tagsVisiveis.length && (
+              <button
+                className={styles.tagMais}
+                onClick={() => setTagsAbertas(true)}
+              >
+                +{tagsDoQuadro.length - tagsVisiveis.length}
+              </button>
+            )}
+            {tagsAbertas && tagsDoQuadro.length > VISIVEIS && (
+              <button
+                className={styles.tagMais}
+                onClick={() => setTagsAbertas(false)}
+              >
+                Mostrar menos
+              </button>
+            )}
+          </div>
+
+          {/* Os controles do modo só existem depois de haver o que modular.
+              Antes da primeira tag marcada eles decidem sobre nada. */}
+          {tagsF.length > 0 && (
+            <div className={styles.tagbarAcoes}>
+              <div className={styles.tagModo} role="group" aria-label="O que fazer com as tags marcadas">
+                {(["destacar", "filtrar"] as const).map((m) => (
+                  <button
+                    key={m}
+                    className={`${styles.tagModoBtn} ${m === acaoTags ? styles.tagModoOn : ""}`}
+                    onClick={() => setAcaoTags(m)}
+                    aria-pressed={m === acaoTags}
+                  >
+                    {m === "destacar" ? "Destacar" : "Filtrar"}
+                  </button>
+                ))}
+              </div>
+              {/* "E" só faz diferença com duas marcadas — com uma, os dois
+                  modos devolvem o mesmo quadro, e um botão que não muda nada
+                  ensina que o botão não faz nada. */}
+              {tagsF.length > 1 && (
+                <>
+                  {/* O rótulo separa dois grupos que, colados, leem como um
+                      controle só de quatro opções — dois botões acesos em
+                      laranja lado a lado, respondendo a perguntas diferentes. */}
+                  <span className={styles.tagbarRot}>combinar</span>
+                <div className={styles.tagModo} role="group" aria-label="Como combinar as tags">
+                  {(["ou", "e"] as ModoDeTags[]).map((m) => (
+                    <button
+                      key={m}
+                      className={`${styles.tagModoBtn} ${m === modoTags ? styles.tagModoOn : ""}`}
+                      onClick={() => setModoTags(m)}
+                      aria-pressed={m === modoTags}
+                      title={
+                        m === "ou"
+                          ? "Qualquer uma das tags marcadas"
+                          : "Todas as tags marcadas, no mesmo card"
+                      }
+                    >
+                      {m === "ou" ? "qualquer uma" : "todas"}
+                    </button>
+                  ))}
+                </div>
+                </>
+              )}
+              <button className={styles.filterBtn} onClick={limparTags}>
+                <Icon name="x" size={13} /> Limpar tags
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {auxiliares.erro && (
         <div className={styles.avisoAux} role="status">
           <Icon name="warn" size={14} />
@@ -752,6 +971,7 @@ export default function KanbanPage() {
                         setDragCardId(null);
                         setOverCol(null);
                       }}
+                      apagado={apagarSemTag && !cardTemTag(c, tagsF, modoTags)}
                       onClick={() => setEdit({ mode: "edit", card: c })}
                       onHistorico={() => setHistCard(c)}
                       onPerfil={setPerfilDe}
