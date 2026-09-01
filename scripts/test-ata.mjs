@@ -16,6 +16,7 @@
  * projeto: teste que lê o relógio do sistema passa hoje e falha em outubro.
  */
 import {
+  ESTADOS_NA_ATA,
   ESTADO_LABEL,
   STATUS_TAREFA,
   ataVazia,
@@ -78,19 +79,70 @@ checa(
 // propósito: as duas precisam voltar a ser faladas.
 checa(
   "item com decisão em branco também é pendente",
-  estadoNaAta(card("e"), { cardId: "e", decisao: "", objetivo: "", proximaReuniao: false, tarefas: [] }, ENTREGUES, HOJE) ===
+  estadoNaAta(card("e"), { id: "e", cardId: "e", assunto: "", contexto: "", dimensaoId: "", subdimensaoId: "", decisao: "", objetivo: "", proximaReuniao: false, tarefas: [] }, ENTREGUES, HOJE) ===
     "pendente",
 );
 checa(
   "com decisão registrada, passa a em andamento",
   estadoNaAta(
     card("f"),
-    { cardId: "f", decisao: "Aprovar o piloto", objetivo: "", proximaReuniao: false, tarefas: [] },
+    { id: "f", cardId: "f", assunto: "", contexto: "", dimensaoId: "", subdimensaoId: "", decisao: "Aprovar o piloto", objetivo: "", proximaReuniao: false, tarefas: [] },
     ENTREGUES,
     HOJE,
   ) === "andamento",
 );
-checa("todo estado tem rótulo", Object.keys(ESTADO_LABEL).length === 4);
+checa(
+  "todo estado tem rótulo",
+  Object.keys(ESTADO_LABEL).length === ESTADOS_NA_ATA.length,
+  `${Object.keys(ESTADO_LABEL).length} rótulos para ${ESTADOS_NA_ATA.length} estados`,
+);
+checa(
+  "e a lista da tela cobre todos eles, sem sobra",
+  ESTADOS_NA_ATA.every((e) => ESTADO_LABEL[e]) &&
+    new Set(ESTADOS_NA_ATA).size === ESTADOS_NA_ATA.length,
+);
+
+console.log("\n— o assunto que ainda não é demanda —");
+
+// Um item sem card não tem quadro: não pode herdar prazo nem coluna, e por isso
+// não pode ser "atrasada" nem "concluída". Estas três checagens são a fronteira.
+const semCard = (extra = {}) => ({
+  id: "x",
+  cardId: "",
+  assunto: "Estoque",
+  contexto: "",
+  dimensaoId: "",
+  subdimensaoId: "",
+  decisao: "",
+  objetivo: "",
+  proximaReuniao: false,
+  tarefas: [],
+  ...extra,
+});
+
+checa(
+  "sem card, sem decisão e sem nada pedido é REGISTRO, não pendência",
+  estadoNaAta(null, semCard(), ENTREGUES, HOJE) === "registro",
+);
+checa(
+  "sem card, mas com objetivo, volta a ser pendente decisão",
+  estadoNaAta(null, semCard({ objetivo: "Fechar a cadência" }), ENTREGUES, HOJE) ===
+    "pendente",
+);
+checa(
+  "sem card, mas com tarefa, também é pendente decisão",
+  estadoNaAta(
+    null,
+    semCard({ tarefas: [{ id: "1", texto: "t", responsavel: "", prazo: "", status: "pendente", observacao: "" }] }),
+    ENTREGUES,
+    HOJE,
+  ) === "pendente",
+);
+checa(
+  "sem card e com decisão, é em andamento",
+  estadoNaAta(null, semCard({ decisao: "Regularizar o balanço" }), ENTREGUES, HOJE) ===
+    "andamento",
+);
 
 console.log("\n— a pauta: ordem, numeração e quem entra —");
 
@@ -109,6 +161,7 @@ const ata = {
 };
 const pauta = montarPauta({ cards, ata, dimensoes: DIMS, entregues: ENTREGUES, hoje: HOJE });
 const ordem = pauta.map((l) => l.card.id).join(",");
+checa("linha de card sempre traz o título dele", pauta.every((l) => l.titulo === l.card.title));
 
 checa(
   "o atrasado vem primeiro; o decidido, depois do pendente; o concluído por último",
@@ -198,9 +251,31 @@ const herdado = herdarParaProxima({
       ],
     },
     { cardId: "fica", decisao: "Encerrado", objetivo: "", proximaReuniao: false, tarefas: [] },
+    {
+      id: "9",
+      cardId: "",
+      assunto: "Sistema Connect e totens",
+      contexto: "Totem custa cerca de R$ 5.800",
+      dimensaoId: "d1",
+      subdimensaoId: "1",
+      decisao: "Separar sistema de totem",
+      objetivo: "Trazer a proposta",
+      proximaReuniao: true,
+      tarefas: [],
+    },
   ],
 });
-checa("só os marcados são levados", herdado.length === 1 && herdado[0].cardId === "vai");
+checa("só os marcados são levados", herdado.length === 2 && herdado[0].cardId === "vai");
+// Sem card, assunto e classificação são a ÚNICA coisa que diz do que a linha
+// trata. Deixá-los para trás levaria para a próxima reunião uma pauta de itens
+// sem nome — e a numeração da tela não ajuda a lembrar do que era o "04".
+checa(
+  "o assunto sem card vai junto, com contexto e dimensão",
+  herdado[1].assunto === "Sistema Connect e totens" &&
+    herdado[1].contexto === "Totem custa cerca de R$ 5.800" &&
+    herdado[1].dimensaoId === "d1" &&
+    herdado[1].subdimensaoId === "1",
+);
 // A decisão é DESTA reunião. Repeti-la faria a ata nova nascer afirmando que
 // decidiu o que outra decidiu.
 checa("a decisão NÃO vai junto", herdado[0].decisao === "");
@@ -249,7 +324,18 @@ checa("o título é limpo", suja.titulo === "Reunião das cantinas", suja.titulo
 checa("data em formato errado vira vazio, não uma data inventada", suja.data === "");
 checa("hora malformada cai fora, e a boa fica", suja.horaInicio === "" && suja.horaFim === "10:30");
 checa("participante repetido e lixo saem", suja.participantes.join(",") === "a@x");
-checa("item sem cardId sai; o bom fica", suja.itens.length === 1 && suja.itens[0].cardId === "c1");
+checa(
+  "item sem cardId E sem assunto sai; o bom fica",
+  suja.itens.length === 1 && suja.itens[0].cardId === "c1",
+);
+// A ata gravada antes de existir `id` de item não pode abrir quebrada. O
+// migrador é o próprio `cardId`, que já era único por item — sem script, sem
+// reescrever documento nenhum.
+checa(
+  "item antigo, sem id, herda o cardId como identidade",
+  suja.itens[0].id === "c1",
+  suja.itens[0].id,
+);
 checa("status inventado vira pendente", suja.itens[0].tarefas[0].status === "pendente");
 // Descartar a segunda apagaria a tarefa de alguém por causa de um id; ela é
 // renumerada. Duas linhas com a mesma `key` é o único estado que quebra a tela.
@@ -259,6 +345,49 @@ checa(
     suja.itens[0].tarefas[0].id !== suja.itens[0].tarefas[1].id,
   JSON.stringify(suja.itens[0].tarefas.map((t) => t.id)),
 );
+// Assunto sem card é a razão de ser da ata gerada de reunião: o setor Cantinas
+// não tinha card nenhum quando a primeira nasceu, e sem isto ela abriria vazia.
+const comAssunto = normalizarAta("b", {
+  setor: SETOR,
+  titulo: "Dimensões cantinas",
+  itens: [
+    { id: "1", assunto: "Estoque, recebimento e conferência", decisao: "Regularizar o balanço" },
+    { id: "2", assunto: "Em aberto", contexto: "POPs sem quem assine" },
+    { id: "2", assunto: "id repetido" },
+  ],
+});
+checa("item sem card sobrevive à leitura", comAssunto.itens.length === 3);
+checa(
+  "id de item repetido é renumerado, como o das tarefas e pelo mesmo motivo",
+  new Set(comAssunto.itens.map((i) => i.id)).size === 3,
+  JSON.stringify(comAssunto.itens.map((i) => i.id)),
+);
+
+const pautaSemCard = montarPauta({
+  cards: [],
+  ata: comAssunto,
+  dimensoes: DIMS,
+  entregues: ENTREGUES,
+  hoje: HOJE,
+});
+checa("quadro vazio não impede a pauta de existir", pautaSemCard.length === 3);
+checa(
+  "a linha sem card imprime o assunto como título",
+  pautaSemCard.some((l) => l.titulo === "Estoque, recebimento e conferência" && l.card === null),
+);
+// "Outros pontos" e "Em aberto" chegam sem decisão e sem tarefa. Contados como
+// pendência, abriam a pauta e empurravam para baixo o que a reunião decidiu.
+checa(
+  "o que não pede nada de ninguém vai para o fim, como registro",
+  pautaSemCard[pautaSemCard.length - 1].estado === "registro",
+  pautaSemCard.map((l) => `${l.titulo}:${l.estado}`).join(" | "),
+);
+checa(
+  "e registro não conta como demanda em aberto",
+  resumoDaAta(pautaSemCard).emAberto === 1,
+  String(resumoDaAta(pautaSemCard).emAberto),
+);
+
 checa("ata vazia nasce sem item e com o setor no lugar", ataVazia(SETOR, "2026-08-26").itens.length === 0);
 checa("limparTexto corta no teto", limparTexto("x".repeat(900)).length === 600);
 checa("todo status de tarefa tem valor", STATUS_TAREFA.length === 3);

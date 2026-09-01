@@ -78,15 +78,41 @@ export type TarefaDeAta = {
 };
 
 /**
- * O que a reunião registrou sobre UMA demanda.
+ * O que a reunião registrou sobre UM assunto.
  *
- * `cardId` e mais nada do card: título, área e status são lidos do quadro na
- * hora de desenhar. Copiar o título para cá faria a ata mostrar o nome velho
- * depois do primeiro rename — o mesmo defeito que `tags-ref.ts` documenta, e
- * pela mesma razão (nome é cópia; id é referência).
+ * Quando o assunto já é demanda, guarda-se `cardId` e mais nada do card:
+ * título, área e status são lidos do quadro na hora de desenhar. Copiar o
+ * título para cá faria a ata mostrar o nome velho depois do primeiro rename — o
+ * mesmo defeito que `tags-ref.ts` documenta, e pela mesma razão (nome é cópia;
+ * id é referência).
+ *
+ * NEM TODO ASSUNTO É DEMANDA, e é por isso que `cardId` pode estar vazio. Uma
+ * reunião discute coisas que ainda não têm card — e forçar um card para poder
+ * registrar a decisão inverteria a ordem das coisas: o card nasceria da
+ * necessidade de escrever a ata, e não de alguém decidir que aquilo é trabalho.
+ * A fronteira de demandas existe justamente para impedir isso. Enquanto não há
+ * card, o assunto e o contexto moram aqui; quando houver, `cardId` passa a
+ * responder por eles e estes dois viram histórico do que a reunião chamou.
  */
 export type ItemDeAta = {
+  /**
+   * Único dentro da ata, e estável: é a chave da linha na tela e o alvo de toda
+   * escrita. Antes deste campo o `cardId` fazia esse papel, o que só funcionava
+   * enquanto todo item tinha card.
+   */
+  id: string;
+  /** O card do quadro, quando este assunto já é demanda. Vazio = ainda não é. */
   cardId: string;
+  /** Como a reunião chamou o assunto. Só é lido quando não há card. */
+  assunto: string;
+  /** O que a reunião registrou em volta da decisão. Só é lido quando não há card. */
+  contexto: string;
+  /**
+   * A classificação do assunto que ainda não é demanda. Quando há card, quem
+   * responde é o card — a dimensão é estado, e estado vem do quadro.
+   */
+  dimensaoId: string;
+  subdimensaoId: string;
   /** O que ficou decidido. Vazio = a demanda foi discutida e nada se decidiu. */
   decisao: string;
   /** O que se espera ter na próxima reunião. */
@@ -111,6 +137,16 @@ export type Ata = {
   facilitador: string;
   /** E-mails. */
   participantes: string[];
+  /**
+   * Os nomes que a reunião citou, como ela os citou.
+   *
+   * Separado de `participantes` porque são coisas diferentes: participante é
+   * gente do app, com e-mail, que pode receber tarefa; citado é um nome ouvido
+   * na gravação, que pode nem ter conta. Enfiar um nome solto em
+   * `participantes` daria um avatar que não leva a lugar nenhum e um e-mail que
+   * não existe — e o campo é usado para decidir quem responde pelo quê.
+   */
+  citados: string[];
   /** A reunião gravada que originou esta ata, quando houve uma. */
   meetingId: string | null;
   itens: ItemDeAta[];
@@ -141,6 +177,24 @@ export function proximoIdDeTarefa(tarefas: readonly TarefaDeAta[]): string {
     return Number.isFinite(n) && n > m ? n : m;
   }, 0);
   return String(maior + 1);
+}
+
+/**
+ * O próximo id de item — mesma regra e mesmo motivo de `proximoIdDeTarefa`.
+ *
+ * O id migrado de uma ata antiga é o `cardId` (ver `normalizarItem`), que não é
+ * numérico; `Number("abc")` não é finito e simplesmente não conta, então o
+ * primeiro item novo de uma ata migrada nasce como "1" sem colidir com nada.
+ */
+export function proximoIdDeItem(itens: readonly ItemDeAta[]): string {
+  const usados = new Set(itens.map((i) => i.id));
+  const maior = itens.reduce((m, i) => {
+    const n = Number(i.id);
+    return Number.isFinite(n) && n > m ? n : m;
+  }, 0);
+  let n = maior + 1;
+  while (usados.has(String(n))) n++;
+  return String(n);
 }
 
 /** Uma tarefa nova, vazia, pronta para a linha da tabela. */
@@ -175,7 +229,15 @@ function normalizarTarefa(bruto: unknown, i: number): TarefaDeAta | null {
 function normalizarItem(bruto: unknown): ItemDeAta | null {
   if (!bruto || typeof bruto !== "object") return null;
   const b = bruto as Record<string, unknown>;
-  if (typeof b.cardId !== "string" || !b.cardId) return null;
+  const cardId = typeof b.cardId === "string" ? b.cardId : "";
+  const assunto = limparTexto(b.assunto, 200);
+  // Sem card e sem assunto não há o que desenhar na linha — some em silêncio,
+  // pela mesma razão que um item sem `cardId` sumia antes de existir assunto.
+  if (!cardId && !assunto) return null;
+  // ID MIGRADO DO `cardId`. Até esta versão o `cardId` era a chave da linha, e
+  // era única por item; reaproveitá-lo como `id` faz toda ata já gravada abrir
+  // com identidade estável, sem script de migração e sem reescrever nada.
+  const id = typeof b.id === "string" && b.id ? b.id : cardId;
   const tarefas = Array.isArray(b.tarefas)
     ? b.tarefas.map(normalizarTarefa).filter((t): t is TarefaDeAta => !!t)
     : [];
@@ -188,7 +250,12 @@ function normalizarItem(bruto: unknown): ItemDeAta | null {
     vistos.add(t.id);
   });
   return {
-    cardId: b.cardId,
+    id,
+    cardId,
+    assunto,
+    contexto: limparTexto(b.contexto),
+    dimensaoId: typeof b.dimensaoId === "string" ? b.dimensaoId : "",
+    subdimensaoId: typeof b.subdimensaoId === "string" ? b.subdimensaoId : "",
     decisao: limparTexto(b.decisao),
     objetivo: limparTexto(b.objetivo),
     proximaReuniao: b.proximaReuniao === true,
@@ -222,12 +289,32 @@ export function normalizarAta(id: string, bruto: unknown): Ata | null {
     participantes: Array.isArray(b.participantes)
       ? [...new Set(b.participantes.filter((p): p is string => typeof p === "string" && !!p))]
       : [],
-    meetingId: typeof b.meetingId === "string" && b.meetingId ? b.meetingId : null,
-    itens: Array.isArray(b.itens)
-      ? b.itens.map((x) => normalizarItem(x)).filter((x): x is ItemDeAta => !!x)
+    citados: Array.isArray(b.citados)
+      ? [...new Set(b.citados.filter((c): c is string => typeof c === "string" && !!c))]
       : [],
+    meetingId: typeof b.meetingId === "string" && b.meetingId ? b.meetingId : null,
+    itens: idsUnicos(
+      Array.isArray(b.itens)
+        ? b.itens.map((x) => normalizarItem(x)).filter((x): x is ItemDeAta => !!x)
+        : [],
+    ),
     createdBy: typeof b.createdBy === "string" ? b.createdBy : undefined,
   };
+}
+
+/**
+ * Id repetido entre itens quebra a edição do mesmo jeito que quebra entre
+ * tarefas: duas linhas com a mesma `key` do React, e a escrita de uma caindo na
+ * outra. O segundo é renumerado, nunca descartado — descartar apagaria da tela
+ * um assunto inteiro da reunião por causa de um id.
+ */
+function idsUnicos(itens: ItemDeAta[]): ItemDeAta[] {
+  const vistos = new Set<string>();
+  itens.forEach((i) => {
+    if (!i.id || vistos.has(i.id)) i.id = proximoIdDeItem(itens);
+    vistos.add(i.id);
+  });
+  return itens;
 }
 
 /** Ata sem item nenhum, para o formulário de criação. */
@@ -241,6 +328,7 @@ export function ataVazia(setor: string, data: string): Omit<Ata, "id"> {
     local: "",
     facilitador: "",
     participantes: [],
+    citados: [],
     meetingId: null,
     itens: [],
   };
@@ -268,14 +356,35 @@ export type CardDaPauta = CardContavel & {
  * essa é a informação que faz alguém falar dela na reunião. As outras três são
  * do quadro, lidas ao vivo.
  */
-export type EstadoNaAta = "atrasada" | "andamento" | "pendente" | "concluida";
+export type EstadoNaAta =
+  | "atrasada"
+  | "andamento"
+  | "pendente"
+  | "concluida"
+  | "registro";
 
 export const ESTADO_LABEL: Record<EstadoNaAta, string> = {
   atrasada: "Atrasada",
   andamento: "Em andamento",
   pendente: "Pendente decisão",
   concluida: "Concluída",
+  registro: "Registro",
 };
+
+/**
+ * A ordem em que os estados aparecem no painel e no filtro.
+ *
+ * Existe para que a lista lateral e o filtro não repitam o mesmo array literal
+ * em dois lugares — quando "registro" nasceu, os dois teriam de ser lembrados,
+ * e é o tipo de coisa que se lembra num e no outro não.
+ */
+export const ESTADOS_NA_ATA: readonly EstadoNaAta[] = [
+  "atrasada",
+  "andamento",
+  "pendente",
+  "concluida",
+  "registro",
+];
 
 /**
  * A ORDEM É A DA GRAVIDADE, e é ela que ordena a pauta.
@@ -290,14 +399,32 @@ const PESO: Record<EstadoNaAta, number> = {
   pendente: 1,
   andamento: 2,
   concluida: 3,
+  // Depois até das concluídas, e de propósito: registro é o que a reunião
+  // anotou sem pedir nada de ninguém. Ele entrou porque os blocos "Outros
+  // pontos" e "Em aberto" do documento chegavam sem decisão e, contados como
+  // "pendente decisão", abriam a pauta — empurrando para baixo os seis assuntos
+  // sobre os quais a reunião de fato decidiu alguma coisa.
+  registro: 4,
 };
 
 export function estadoNaAta(
-  card: CardDaPauta,
+  card: CardDaPauta | null,
   item: ItemDeAta | undefined,
   entregues: EntreguePorSetor,
   hoje: number,
 ): EstadoNaAta {
+  // Assunto que ainda não é demanda não tem quadro, e por isso não pode estar
+  // "atrasado" nem "concluído": os dois são estado de card. Sobra a leitura por
+  // decisão — e uma distinção que só aparece aqui: um assunto sobre o qual a
+  // reunião não decidiu, não pediu e não prometeu nada não está "pendente
+  // decisão", está anotado. É o caso de "Outros pontos" e "Em aberto", que o
+  // documento da reunião traz como apêndice; chamá-los de pendentes os colocaria
+  // na frente dos assuntos que realmente esperam alguém decidir.
+  if (!card) {
+    if (item?.decisao) return "andamento";
+    if (item?.objetivo || item?.tarefas.length) return "pendente";
+    return "registro";
+  }
   if (ehEntrega(card, entregues)) return "concluida";
   // `false` no segundo argumento: a pergunta "já foi entregue?" acabou de ser
   // respondida na linha acima, e passá-la de novo daria duas fontes para a
@@ -312,8 +439,12 @@ export function estadoNaAta(
 
 /** Uma linha da pauta: a demanda, o que a reunião registrou, e o estado de hoje. */
 export type ItemDaPauta = {
-  card: CardDaPauta;
+  /** O card do quadro, ou `null` no assunto que ainda não é demanda. */
+  card: CardDaPauta | null;
   item: ItemDeAta;
+  /** O que a tela imprime: o título do card, ou o assunto que a reunião deu. */
+  titulo: string;
+  descricao: string;
   estado: EstadoNaAta;
   /** "01", "02"… — a numeração que a tela imprime, sempre na ordem final. */
   numero: string;
@@ -332,7 +463,21 @@ export type DimensaoDaPauta = {
 
 /** Item vazio, para a demanda que entrou na pauta e ainda não foi tocada. */
 function itemVazio(cardId: string): ItemDeAta {
-  return { cardId, decisao: "", objetivo: "", proximaReuniao: false, tarefas: [] };
+  return {
+    // O id do item ainda não existe: ele só nasce quando alguém escreve alguma
+    // coisa, e aí `gravarItem` o cria. Usar o `cardId` aqui é o que mantém a
+    // `key` do React estável entre o item fantasma e o item gravado.
+    id: cardId,
+    cardId,
+    assunto: "",
+    contexto: "",
+    dimensaoId: "",
+    subdimensaoId: "",
+    decisao: "",
+    objetivo: "",
+    proximaReuniao: false,
+    tarefas: [],
+  };
 }
 
 /**
@@ -364,29 +509,52 @@ export function montarPauta(opcoes: {
 }): ItemDaPauta[] {
   const { cards, ata, dimensoes, entregues } = opcoes;
   const hoje = inicioDoDia(opcoes.hoje);
-  const porCard = new Map(ata.itens.map((i) => [i.cardId, i]));
+  // Só entra no índice o item que aponta para card. Os demais são a terceira
+  // origem, logo abaixo — e uma chave vazia colidiria todos eles num só.
+  const porCard = new Map<string, ItemDeAta>();
+  ata.itens.forEach((i) => {
+    if (i.cardId) porCard.set(i.cardId, i);
+  });
 
   const nomeDim = new Map(dimensoes.map((d) => [d.id, d.nome]));
   const nomeSub = new Map<string, string>();
   dimensoes.forEach((d) => d.subs.forEach((s) => nomeSub.set(`${d.id}/${s.id}`, s.nome)));
 
-  const linhas = cards
-    .filter((c) => porCard.has(c.id) || !ehEntrega(c, entregues))
-    .map((card) => {
-      const item = porCard.get(card.id);
-      return {
-        card,
-        item: item ?? itemVazio(card.id),
-        estado: estadoNaAta(card, item, entregues, hoje),
-        numero: "",
-        dimensao: (card.dimensaoId && nomeDim.get(card.dimensaoId)) || "",
-        subdimensao:
-          (card.dimensaoId &&
-            card.subdimensaoId &&
-            nomeSub.get(`${card.dimensaoId}/${card.subdimensaoId}`)) ||
-          "",
-      };
-    });
+  const linha = (
+    card: CardDaPauta | null,
+    item: ItemDeAta | undefined,
+    dimensaoId: string,
+    subdimensaoId: string,
+  ) => ({
+    card,
+    item: item ?? itemVazio(card?.id ?? ""),
+    titulo: card ? card.title : item?.assunto || "",
+    descricao: card ? (card.description ?? "") : item?.contexto || "",
+    estado: estadoNaAta(card, item, entregues, hoje),
+    numero: "",
+    dimensao: (dimensaoId && nomeDim.get(dimensaoId)) || "",
+    subdimensao:
+      (dimensaoId && subdimensaoId && nomeSub.get(`${dimensaoId}/${subdimensaoId}`)) || "",
+  });
+
+  const linhas = [
+    ...cards
+      .filter((c) => porCard.has(c.id) || !ehEntrega(c, entregues))
+      .map((card) =>
+        linha(
+          card,
+          porCard.get(card.id),
+          card.dimensaoId ?? "",
+          card.subdimensaoId ?? "",
+        ),
+      ),
+    // A terceira origem: o assunto que a reunião discutiu e que ainda não é
+    // demanda. Ele NÃO sai da lista por não ter card — sumir daqui apagaria da
+    // ata a decisão que foi tomada sobre ele, que é o oposto do que uma ata faz.
+    ...ata.itens
+      .filter((i) => !i.cardId)
+      .map((i) => linha(null, i, i.dimensaoId, i.subdimensaoId)),
+  ];
 
   linhas.sort(
     (a, b) =>
@@ -395,18 +563,24 @@ export function montarPauta(opcoes: {
       // manter as da mesma área juntas evita a reunião pular de assunto a cada
       // linha. `ordem` da dimensão, não o nome — é ela que a árvore respeita.
       ordemDaDim(a, dimensoes) - ordemDaDim(b, dimensoes) ||
-      a.card.title.localeCompare(b.card.title, "pt-BR"),
+      a.titulo.localeCompare(b.titulo, "pt-BR"),
   );
 
   return linhas.map((l, i) => ({ ...l, numero: String(i + 1).padStart(2, "0") }));
 }
 
-/** Sem classificação vai para o fim, e não para o começo com `ordem` 0. */
+/**
+ * Sem classificação vai para o fim, e não para o começo com `ordem` 0.
+ *
+ * Quem responde pela dimensão é o CARD quando existe um — dimensão é estado, e
+ * estado vem do quadro. Só o assunto que ainda não é demanda carrega a sua.
+ */
 function ordemDaDim(
-  l: { card: CardDaPauta },
+  l: { card: CardDaPauta | null; item: ItemDeAta },
   dimensoes: readonly DimensaoDaPauta[],
 ): number {
-  const d = dimensoes.find((x) => x.id === l.card.dimensaoId);
+  const id = l.card ? l.card.dimensaoId : l.item.dimensaoId;
+  const d = dimensoes.find((x) => x.id === id);
   return d ? d.ordem : Number.MAX_SAFE_INTEGER;
 }
 
@@ -426,6 +600,7 @@ export function resumoDaAta(pauta: readonly ItemDaPauta[]): ResumoDaAta {
     andamento: 0,
     pendente: 0,
     concluida: 0,
+    registro: 0,
   };
   let tarefas = 0;
   let tarefasFeitas = 0;
@@ -438,7 +613,9 @@ export function resumoDaAta(pauta: readonly ItemDaPauta[]): ResumoDaAta {
   });
   return {
     porEstado,
-    emAberto: pauta.length - porEstado.concluida,
+    // Registro não é trabalho em aberto: é anotação da reunião. Contá-lo aqui
+    // inflaria o número grande do painel com linhas que ninguém tem de entregar.
+    emAberto: pauta.length - porEstado.concluida - porEstado.registro,
     tarefas,
     tarefasFeitas,
   };
@@ -460,7 +637,15 @@ export function herdarParaProxima(ata: Pick<Ata, "itens">): ItemDeAta[] {
   return ata.itens
     .filter((i) => i.proximaReuniao)
     .map((i) => ({
+      id: i.id,
       cardId: i.cardId,
+      // Assunto, contexto e classificação vão junto: sem card, são a única
+      // coisa que diz do que a linha trata. Deixá-los para trás levaria para a
+      // próxima reunião uma pauta de itens sem nome.
+      assunto: i.assunto,
+      contexto: i.contexto,
+      dimensaoId: i.dimensaoId,
+      subdimensaoId: i.subdimensaoId,
       decisao: "",
       objetivo: i.objetivo,
       proximaReuniao: false,

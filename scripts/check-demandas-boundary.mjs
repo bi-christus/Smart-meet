@@ -124,6 +124,54 @@ const EXIGIDOS_EXPURGO = [
   },
 ];
 
+/**
+ * A rota que monta a ata a partir de uma reuniao processada.
+ *
+ * Ela le o documento do Drive com a conta de servico e escreve em /atas. E o
+ * caminho automatico mais novo, e a tentacao aqui tem nome: o documento traz os
+ * encaminhamentos da reuniao ("Fulano faz X ate dia tal"), e transformar cada
+ * um deles num card do Kanban parece util e economiza cliques. Nao pode. Card
+ * so nasce por decisao humana em api/demandas/decidir — a ata REGISTRA o que a
+ * reuniao decidiu, e registrar nao e o mesmo que criar trabalho para alguem.
+ */
+const PROIBIDOS_ATA = [
+  { padrao: /collection\(\s*["'`]cards["'`]\s*\)\s*\.\s*(?:add|doc)\s*\([^)]*\)\s*\.\s*set/, motivo: 'cria card na colecao "cards"' },
+  { padrao: /collection\(\s*["'`]cards["'`]\s*\)\s*\.\s*add\s*\(/, motivo: 'cria card na colecao "cards"' },
+  { padrao: /\.delete\s*\(/, motivo: "apaga documento" },
+  { padrao: /deleteDoc|FieldValue\.delete/, motivo: "apaga documento ou campo" },
+];
+
+/**
+ * O que a rota da ata tem de CONTER.
+ *
+ * Ela usa o Admin SDK, e o Admin SDK ignora firestore.rules: as duas checagens
+ * abaixo nao sao a primeira barreira, sao a unica. Tirar qualquer uma delas nao
+ * quebra teste, nao quebra tipo, nao quebra tela — passa verde e abre uma rota
+ * que planta ata em setor alheio, ou que le no Drive o documento de uma reuniao
+ * de outro setor.
+ */
+const EXIGIDOS_ATA = [
+  {
+    padrao: /\brequireUser\s*\(/,
+    exigencia: "nao chama requireUser — geraria ata sem saber quem pediu",
+    reponha: "volte a abrir o handler com `const caller = await requireUser(req);`",
+  },
+  {
+    // Especifico ao `setor` de DESTINO de proposito. O padrao generico
+    // `sectors...includes` casaria tambem com a checagem de leitura, que usa
+    // `setorDaReuniao` — e as duas sao coisas diferentes: uma diz se voce pode
+    // LER aquela reuniao, a outra se voce pode ESCREVER naquele setor. Um
+    // padrao que confunde as duas passa verde com metade da defesa apagada, que
+    // e exatamente o estado que este guarda existe para nao deixar acontecer.
+    padrao: /!\s*caller\.sectors\.includes\(\s*setor\s*\)/,
+    exigencia:
+      "nao confere o setor de DESTINO — qualquer um plantaria ata em setor alheio, e a ata e visivel por setor",
+    reponha:
+      "volte a checar o destino numa linha so, no formato " +
+      '`caller.role !== "admin" && !caller.sectors.includes(setor)`',
+  },
+];
+
 const REGRAS = [
   { arquivo: "src/lib/server/demand-ingest.ts", proibidos: PROIBIDOS_INGEST },
   {
@@ -138,6 +186,15 @@ const REGRAS = [
       "a rota de expurgo mudou de lugar, ou a exclusao definitiva voltou para o navegador? " +
       "Se mudou de lugar, aponte a regra para o novo caminho em scripts/check-demandas-boundary.mjs. " +
       "Se voltou para o cliente, o teto de acessos das regras derruba o admin de novo (Issue #59).",
+  },
+  {
+    arquivo: "src/app/api/ata/gerar/route.ts",
+    proibidos: PROIBIDOS_ATA,
+    exigidos: EXIGIDOS_ATA,
+    seSumiu:
+      "a rota que monta a ata a partir da reuniao mudou de lugar, ou a geracao voltou para o navegador? " +
+      "Se mudou de lugar, aponte a regra para o novo caminho em scripts/check-demandas-boundary.mjs. " +
+      "Se voltou para o cliente, ela perde o acesso ao Drive — o documento so e legivel pela conta de servico.",
   },
 ];
 

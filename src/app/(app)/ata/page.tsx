@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
+import { auth } from "@/lib/firebase";
 import { useSetoresDaPessoa } from "@/lib/setores";
 import { subscribeUsers, type UserProfile } from "@/lib/users";
 import {
@@ -15,13 +16,14 @@ import {
 } from "@/lib/kanban";
 import { subscribeDimensoes, type Dimensao } from "@/lib/dimensoes";
 import {
+  ESTADOS_NA_ATA,
   ESTADO_LABEL,
   STATUS_TAREFA,
   STATUS_TAREFA_LABEL,
   abrirProxima,
-  criarAta,
   deleteAta,
   montarPauta,
+  proximoIdDeItem,
   resumoDaAta,
   salvarItens,
   subscribeAtas,
@@ -33,6 +35,7 @@ import {
   type StatusTarefa,
   type TarefaDeAta,
 } from "@/lib/ata";
+import { subscribeMeetings, type Meeting } from "@/lib/meetings";
 import { fmtDayMonth, startOfDay, toISO } from "@/lib/datas";
 import { juntarFontes } from "@/lib/async-data-core";
 import { useAsyncData } from "@/lib/use-async-data";
@@ -72,6 +75,7 @@ const SEM_COLS: ColumnDoc[] = [];
 const SEM_ATAS: Ata[] = [];
 const SEM_USERS: UserProfile[] = [];
 const SEM_DIMS: Dimensao[] = [];
+const SEM_REUNIOES: Meeting[] = [];
 
 /** A cor de cada estado, na mesma ordem de gravidade da pauta. */
 const COR_ESTADO: Record<EstadoNaAta, string> = {
@@ -79,6 +83,9 @@ const COR_ESTADO: Record<EstadoNaAta, string> = {
   andamento: "#f5b13d",
   pendente: "#c084fc",
   concluida: "#34d399",
+  // Cinza, e o único da paleta que não é uma cor de alerta: registro não pede
+  // ação de ninguém. Ele acender igual aos outros ensinaria a ignorar todos.
+  registro: "#8b93a7",
 };
 
 export default function AtaPage() {
@@ -101,6 +108,17 @@ export default function AtaPage() {
   const fDims = useAsyncData<Dimensao>(setor, (onData, onErro) =>
     subscribeDimensoes(setor, onData, onErro),
   );
+  /**
+   * As reuniões de TODOS os setores da pessoa, e não só o do quadro na tela.
+   *
+   * É o que permite gerar em Cantinas a ata de uma reunião que correu no B.I. —
+   * o caso literal da primeira: o áudio subiu pelo setor de quem gravou, e o
+   * assunto pertence a outro. Filtrar pelo setor da aba esconderia justamente a
+   * reunião que se quer.
+   */
+  const fReunioes = useAsyncData<Meeting>(sectors.join("|"), (onData, onErro) =>
+    subscribeMeetings(sectors, onData, onErro),
+  );
   const fUsers = useAsyncData<UserProfile>("todos", (onData, onErro) =>
     subscribeUsers(onData, onErro),
   );
@@ -110,9 +128,10 @@ export default function AtaPage() {
   const atas = fAtas.data ?? SEM_ATAS;
   const dims = fDims.data ?? SEM_DIMS;
   const users = fUsers.data ?? SEM_USERS;
+  const reunioes = fReunioes.data ?? SEM_REUNIOES;
 
   const [ataSel, setAtaSel] = useState("");
-  const [novaAberta, setNovaAberta] = useState(false);
+  const [gerarAberta, setGerarAberta] = useState(false);
   const [proximaAberta, setProximaAberta] = useState(false);
   const [apagando, setApagando] = useState(false);
   const [erroEscrita, setErroEscrita] = useState<string | null>(null);
@@ -168,11 +187,11 @@ export default function AtaPage() {
     return pauta.filter(
       (l) =>
         (!q ||
-          l.card.title.toLowerCase().includes(q) ||
+          l.titulo.toLowerCase().includes(q) ||
           l.item.tarefas.some((t) => t.texto.toLowerCase().includes(q))) &&
         (!fEstado || l.estado === fEstado) &&
         (!fResp ||
-          l.card.assignee === fResp ||
+          l.card?.assignee === fResp ||
           l.item.tarefas.some((t) => t.responsavel === fResp)),
     );
   }, [pauta, busca, fEstado, fResp]);
@@ -181,7 +200,7 @@ export default function AtaPage() {
   const responsaveis = useMemo(() => {
     const set = new Set<string>();
     pauta.forEach((l) => {
-      if (l.card.assignee) set.add(l.card.assignee);
+      if (l.card?.assignee) set.add(l.card.assignee);
       l.item.tarefas.forEach((t) => t.responsavel && set.add(t.responsavel));
     });
     return [...set].sort((a, b) => nomeDe(a).localeCompare(nomeDe(b), "pt-BR"));
@@ -195,16 +214,22 @@ export default function AtaPage() {
    * próxima reunião, tarefa criada, mudada ou removida. Um caminho só é o que
    * garante que o array gravado seja sempre o array inteiro e coerente — ver o
    * cabeçalho de `ata.ts` sobre por que os itens moram dentro do documento.
+   *
+   * A CHAVE É O `id` DO ITEM, e não mais o `cardId`. A troca veio junto com o
+   * item sem card: com `cardId` vazio em mais de uma linha, a busca por ele
+   * acharia sempre a primeira e a edição de um assunto cairia em outro. A linha
+   * que ainda não foi tocada chega aqui com o item fantasma que `montarPauta`
+   * criou — dele só se aproveita o `cardId`, porque o `id` verdadeiro ainda não
+   * existe e é agora que ele nasce.
    */
-  async function gravarItem(cardId: string, muda: (i: ItemDeAta) => ItemDeAta) {
+  async function gravarItem(base: ItemDeAta, muda: (i: ItemDeAta) => ItemDeAta) {
     if (!ata) return;
-    const existe = ata.itens.some((i) => i.cardId === cardId);
-    const base: ItemDeAta = existe
-      ? ata.itens.find((i) => i.cardId === cardId)!
-      : { cardId, decisao: "", objetivo: "", proximaReuniao: false, tarefas: [] };
-    const novo = muda(base);
+    const existe = ata.itens.some((i) => i.id === base.id);
+    const novo = muda(
+      existe ? ata.itens.find((i) => i.id === base.id)! : { ...base, id: proximoIdDeItem(ata.itens) },
+    );
     const itens = existe
-      ? ata.itens.map((i) => (i.cardId === cardId ? novo : i))
+      ? ata.itens.map((i) => (i.id === base.id ? novo : i))
       : [...ata.itens, novo];
     try {
       setErroEscrita(null);
@@ -243,11 +268,11 @@ export default function AtaPage() {
           <h1>Ata — {setor}</h1>
           <p>
             A reunião organizada por demanda: o que foi decidido, o que fica de
-            tarefa e o que vai para a próxima.
+            tarefa e o que vai para a próxima. A pauta sai da reunião gravada.
           </p>
         </div>
-        <button className={styles.novaBtn} onClick={() => setNovaAberta(true)}>
-          <Icon name="plus" size={15} /> Nova ata
+        <button className={styles.novaBtn} onClick={() => setGerarAberta(true)}>
+          <Icon name="reunioes" size={15} /> Gerar da reunião
         </button>
       </div>
 
@@ -301,10 +326,10 @@ export default function AtaPage() {
           <EmptyState
             icon="reunioes"
             title="Nenhuma ata neste setor"
-            description="Crie a primeira: a pauta vem das demandas do quadro, já ordenada pelo que está atrasado."
+            description="Escolha uma reunião já processada: o sistema monta a pauta a partir dos pontos importantes que ela gerou, e junta as demandas do quadro."
             action={
-              <button className={styles.novaBtn} onClick={() => setNovaAberta(true)}>
-                <Icon name="plus" size={15} /> Nova ata
+              <button className={styles.novaBtn} onClick={() => setGerarAberta(true)}>
+                <Icon name="reunioes" size={15} /> Gerar da reunião
               </button>
             }
           />
@@ -349,6 +374,12 @@ export default function AtaPage() {
                 rotulo="Facilitador"
                 valor={ata.facilitador ? nomeDe(ata.facilitador) : "—"}
               />
+              {/* Citados NÃO é participantes, e por isso é outra linha: são os
+                  nomes que a gravação ouviu, gente que pode nem ter conta no
+                  app. Ver o comentário do campo em `ata-core`. */}
+              {ata.citados.length > 0 && (
+                <Linha rotulo="Citados na conversa" valor={ata.citados.join(", ")} />
+              )}
               <div className={styles.campo}>
                 <span>Participantes</span>
                 {ata.participantes.length === 0 ? (
@@ -378,11 +409,10 @@ export default function AtaPage() {
                   <Icon name="kanban" size={14} /> Demandas em aberto
                 </h2>
               </div>
-              {/* A ordem é a da GRAVIDADE, a mesma da pauta: quem lê a coluna e
-                  depois olha a lista encontra as duas contando a mesma história
-                  na mesma sequência. */}
-              {(["atrasada", "andamento", "pendente", "concluida"] as EstadoNaAta[]).map(
-                (e) => (
+              {/* A ordem vem de `ESTADOS_NA_ATA`, no core, e não de um array
+                  literal aqui: o filtro logo abaixo usa a mesma lista, e quando
+                  "registro" nasceu os dois teriam de ser lembrados. */}
+              {ESTADOS_NA_ATA.map((e) => (
                   <button
                     key={e}
                     className={`${styles.contagem} ${fEstado === e ? styles.contagemOn : ""}`}
@@ -392,10 +422,9 @@ export default function AtaPage() {
                   >
                     <span className={styles.dot} style={{ background: COR_ESTADO[e] }} />
                     <span className={styles.contagemNome}>{ESTADO_LABEL[e]}</span>
-                    <b>{resumo.porEstado[e]}</b>
-                  </button>
-                ),
-              )}
+                  <b>{resumo.porEstado[e]}</b>
+                </button>
+              ))}
               <div className={styles.total}>
                 <span>Total de demandas em aberto</span>
                 <b>{resumo.emAberto}</b>
@@ -444,13 +473,11 @@ export default function AtaPage() {
                   value={fEstado}
                   options={[
                     { value: "", label: "Todas as demandas" },
-                    ...(["atrasada", "andamento", "pendente", "concluida"] as EstadoNaAta[]).map(
-                      (e) => ({
-                        value: e,
-                        label: `${ESTADO_LABEL[e]} (${resumo.porEstado[e]})`,
-                        color: COR_ESTADO[e],
-                      }),
-                    ),
+                    ...ESTADOS_NA_ATA.map((e) => ({
+                      value: e,
+                      label: `${ESTADO_LABEL[e]} (${resumo.porEstado[e]})`,
+                      color: COR_ESTADO[e],
+                    })),
                   ]}
                   onChange={(v) => setFEstado(v as "" | EstadoNaAta)}
                   ariaLabel="Estado da demanda"
@@ -490,20 +517,20 @@ export default function AtaPage() {
             ) : (
               pautaFiltrada.map((linha) => (
                 <BlocoDaDemanda
-                  key={linha.card.id}
+                  key={linha.item.id}
                   linha={linha}
                   nomeDe={nomeDe}
                   usersMap={usersMap}
-                  recolhido={recolhidos.has(linha.card.id)}
+                  recolhido={recolhidos.has(linha.item.id)}
                   onRecolher={() =>
                     setRecolhidos((cur) => {
                       const n = new Set(cur);
-                      if (n.has(linha.card.id)) n.delete(linha.card.id);
-                      else n.add(linha.card.id);
+                      if (n.has(linha.item.id)) n.delete(linha.item.id);
+                      else n.add(linha.item.id);
                       return n;
                     })
                   }
-                  onGravar={(muda) => gravarItem(linha.card.id, muda)}
+                  onGravar={(muda) => gravarItem(linha.item, muda)}
                 />
               ))
             )}
@@ -511,16 +538,21 @@ export default function AtaPage() {
         </div>
       )}
 
-      {novaAberta && (
-        <ModalDeAta
-          titulo="Nova ata"
+      {gerarAberta && (
+        <ModalDeGerar
           setor={setor}
-          users={users}
-          onFechar={() => setNovaAberta(false)}
-          onCriar={async (dados) => {
-            const id = await criarAta({ ...dados, setor }, profile.email);
+          setores={sectors}
+          reunioes={reunioes}
+          carregando={juntarFontes([fReunioes]).carregando}
+          onFechar={() => setGerarAberta(false)}
+          onGerado={(id, setorDestino) => {
+            // A ata pode ter nascido em OUTRO setor — é o caso normal, não a
+            // exceção. Trocar o quadro junto é o que faz o botão terminar
+            // mostrando a ata que ele acabou de criar, em vez de deixar a
+            // pessoa procurando por ela numa aba que não a contém.
+            if (setorDestino !== setor) setQuadroSel(setorDestino);
             setAtaSel(id);
-            setNovaAberta(false);
+            setGerarAberta(false);
           }}
         />
       )}
@@ -628,7 +660,8 @@ function BlocoDaDemanda({
   onRecolher: () => void;
   onGravar: (muda: (i: ItemDeAta) => ItemDeAta) => void;
 }) {
-  const { card, item, estado, numero, dimensao, subdimensao } = linha;
+  const { card, item, titulo, descricao, estado, numero, dimensao, subdimensao } =
+    linha;
   const [decisao, setDecisao] = useState(item.decisao);
   const [objetivo, setObjetivo] = useState(item.objetivo);
 
@@ -651,13 +684,36 @@ function BlocoDaDemanda({
     setObjetivo(item.objetivo);
   }
 
+  /**
+   * A altura do campo acompanha o texto — a ata é lida muito mais vezes do que
+   * escrita.
+   *
+   * As duas linhas fixas bastavam enquanto a decisão era digitada durante a
+   * reunião, com o cronômetro correndo: ninguém escreve um parágrafo assim. A
+   * decisão que vem do documento da reunião é bem mais longa, e duas linhas a
+   * cortavam no meio de uma palavra — escondendo o campo mais importante da
+   * tela atrás de uma barra de rolagem que ninguém vê.
+   *
+   * Conta de linha em vez de auto-resize: medir o textarea de verdade pede um
+   * efeito lendo `scrollHeight` a cada render, e isso é trabalho de layout em
+   * cima de uma lista inteira que já redesenha junto. O teto de 8 segura o
+   * bloco; passou disso, a rolagem volta e a alça do canto continua lá.
+   */
+  const alturaDe = (texto: string) =>
+    Math.min(8, Math.max(2, Math.ceil(texto.length / 38)));
+
   return (
     <section className={styles.bloco}>
       <div className={styles.blocoTopo}>
         <div className={styles.demanda}>
-          <div className={styles.demandaRot}>Demanda · {numero}</div>
-          <h3>{card.title}</h3>
-          {card.description && <p>{card.description}</p>}
+          {/* "Demanda" só quando é demanda. O assunto que a reunião discutiu e
+              que ainda não virou card é ASSUNTO — chamá-lo de demanda faria a
+              ata prometer um card que não existe no quadro. */}
+          <div className={styles.demandaRot}>
+            {card ? "Demanda" : "Assunto"} · {numero}
+          </div>
+          <h3>{titulo}</h3>
+          {descricao && <p>{descricao}</p>}
           {(dimensao || subdimensao) && (
             <span className={styles.area}>
               {/* A dimensão é CLASSIFICADOR, e vai ao lado — nunca por cima. É a
@@ -679,7 +735,7 @@ function BlocoDaDemanda({
           >
             {ESTADO_LABEL[estado]}
           </span>
-          {card.assignee && (
+          {card?.assignee && (
             <div className={styles.resp}>
               <Avatar
                 pessoa={
@@ -701,13 +757,13 @@ function BlocoDaDemanda({
             className={styles.campoTexto}
             value={decisao}
             placeholder="—"
-            rows={2}
+            rows={alturaDe(decisao)}
             onChange={(e) => setDecisao(e.target.value)}
             onBlur={() => {
               if (decisao !== item.decisao)
                 onGravar((i) => ({ ...i, decisao: decisao.trim() }));
             }}
-            aria-label={`Decisão registrada sobre ${card.title}`}
+            aria-label={`Decisão registrada sobre ${titulo}`}
           />
         </div>
 
@@ -717,13 +773,13 @@ function BlocoDaDemanda({
             className={styles.campoTexto}
             value={objetivo}
             placeholder="—"
-            rows={2}
+            rows={alturaDe(objetivo)}
             onChange={(e) => setObjetivo(e.target.value)}
             onBlur={() => {
               if (objetivo !== item.objetivo)
                 onGravar((i) => ({ ...i, objetivo: objetivo.trim() }));
             }}
-            aria-label={`Objetivo na próxima reunião para ${card.title}`}
+            aria-label={`Objetivo na próxima reunião para ${titulo}`}
           />
           <button
             className={`${styles.levar} ${item.proximaReuniao ? styles.levarOn : ""}`}
@@ -901,6 +957,163 @@ function TabelaDeTarefas({
 // ---------------------------------------------------------------------------
 // O formulário de ata — serve para criar e para abrir a próxima
 // ---------------------------------------------------------------------------
+
+/**
+ * "Gerar da reunião" — o único caminho para uma ata nascer.
+ *
+ * SUBSTITUIU O FORMULÁRIO EM BRANCO, e a troca é a razão de ser deste PR. O que
+ * havia antes pedia à pessoa que redigitasse título, data, horário, local,
+ * facilitador e participantes de uma reunião que o sistema já tinha processado
+ * inteira — e a pauta nascia vazia, sem nenhuma das decisões que a reunião
+ * tomou. Aqui ela escolhe a reunião, e o servidor monta a ata.
+ *
+ * SÓ APARECE REUNIÃO QUE TEM DO QUE SAIR: processada e com o documento "Pontos
+ * importantes". Uma reunião ainda na esteira ofereceria um botão que só sabe
+ * devolver erro, e um botão que falha por desenho é pior do que um botão
+ * ausente — ele ensina a duvidar dos outros.
+ */
+function ModalDeGerar({
+  setor,
+  setores,
+  reunioes,
+  carregando,
+  onFechar,
+  onGerado,
+}: {
+  setor: string;
+  setores: string[];
+  reunioes: Meeting[];
+  carregando: boolean;
+  onFechar: () => void;
+  onGerado: (id: string, setorDestino: string) => void;
+}) {
+  const [reuniaoSel, setReuniaoSel] = useState("");
+  const [destino, setDestino] = useState(setor);
+  const [gerando, setGerando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  const elegiveis = useMemo(
+    () =>
+      reunioes.filter(
+        (r) =>
+          r.status === "processado" &&
+          (r.driveOutputs ?? []).some((o) => o.kind === "resumo"),
+      ),
+    [reunioes],
+  );
+
+  const escolhida = elegiveis.find((r) => r.id === reuniaoSel);
+
+  async function gerar() {
+    if (!escolhida) return;
+    setGerando(true);
+    setErro(null);
+    try {
+      const user = auth.currentUser;
+      if (!user) throw new Error("Sessão expirada. Entre novamente.");
+      const token = await user.getIdToken();
+      const r = await fetch("/api/ata/gerar", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ meetingId: escolhida.id, setor: destino }),
+      });
+      const body = await r.json();
+      if (!r.ok) throw new Error(body.error || "Não foi possível gerar a ata.");
+      onGerado(body.id as string, destino);
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Não foi possível gerar a ata.");
+      setGerando(false);
+    }
+  }
+
+  return (
+    <Modal
+      onClose={onFechar}
+      podeFechar={() => !gerando}
+      ariaLabel="Gerar ata da reunião"
+      overlayClassName={styles.overlay}
+      className={styles.modal}
+      width={520}
+    >
+      <div className={styles.mhead}>
+        <span className={styles.mchip}>
+          <Icon name="reunioes" size={12} /> Gerar ata da reunião
+        </span>
+        <span className={styles.mchip}>{destino}</span>
+      </div>
+
+      {carregando ? (
+        <SkeletonRow rows={3} texto="Procurando reuniões processadas…" />
+      ) : elegiveis.length === 0 ? (
+        /* "Ainda não respondeu" e "respondeu e está vazio" são telas diferentes
+           (AGENTS.md §3) — este é o segundo caso. */
+        <EmptyState
+          icon="reunioes"
+          title="Nenhuma reunião processada"
+          description="A ata sai dos pontos importantes que o processamento gera. Envie o áudio em Reuniões e volte quando ele estiver processado."
+        />
+      ) : (
+        <>
+          <label className={styles.rotulo}>Reunião</label>
+          <Select
+            value={reuniaoSel}
+            options={[
+              { value: "", label: "Escolha uma reunião…" },
+              ...elegiveis.map(
+                (r): SelectOption => ({
+                  value: r.id,
+                  label: `${r.title} · ${r.date ? fmtDayMonth(r.date) : "sem data"} · ${r.sector}`,
+                }),
+              ),
+            ]}
+            onChange={(v) => {
+              setReuniaoSel(v);
+              setErro(null);
+            }}
+            ariaLabel="Reunião"
+          />
+
+          {/* O setor de destino é escolha, e não o setor da reunião: o áudio
+              sobe pelo setor de quem gravou, e o assunto costuma pertencer a
+              outro. A primeira ata desta tela é exatamente isso — reunião do
+              B.I., ata das Cantinas. */}
+          <label className={styles.rotulo}>Setor da ata</label>
+          <Select
+            value={destino}
+            options={setores.map((x): SelectOption => ({ value: x, label: x }))}
+            onChange={setDestino}
+            ariaLabel="Setor da ata"
+          />
+
+          {escolhida && escolhida.sector !== destino && (
+            <p className={styles.avisoModal}>
+              A reunião correu no setor {escolhida.sector} e a ata vai para{" "}
+              {destino}. A pauta dela junta as demandas do quadro de {destino}.
+            </p>
+          )}
+
+          {erro && <p className={styles.erroModal}>{erro}</p>}
+        </>
+      )}
+
+      <div className={styles.macoes}>
+        <button className={styles.btnGhost} onClick={onFechar} disabled={gerando}>
+          Cancelar
+        </button>
+        <button
+          className={styles.btnPrim}
+          onClick={gerar}
+          disabled={gerando || !escolhida || !destino}
+        >
+          {gerando ? "Gerando…" : "Gerar ata"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
 
 function ModalDeAta({
   titulo,
