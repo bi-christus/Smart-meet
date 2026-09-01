@@ -43,7 +43,11 @@ import {
   startOfWeek,
   toISO,
 } from "@/lib/datas";
-import { diaSemExpediente, diasSemExpediente } from "@/lib/feriados-core";
+import {
+  diaSemExpediente,
+  diasSemExpediente,
+  rotuloDoFeriado,
+} from "@/lib/feriados-core";
 import { diffCard } from "@/lib/historico-core";
 import { codigoDe, fraseDeFalha } from "@/lib/erro-ui-core";
 import { juntarFontes } from "@/lib/async-data-core";
@@ -495,10 +499,16 @@ export default function CronogramaPage() {
         // Mesmo rótulo da faixa `.fds`: o dia da semana por extenso é o que
         // EXPLICA por que aquilo não está no quadro. "15 de novembro" não diz
         // nada; "domingo, 15 de novembro" diz tudo.
+        // O que a tira escreve sai INTEIRO de `rotuloDoFeriado`, e não de um
+        // "Feriado" fixo na frase. Hoje só feriado de lei chega aqui — os
+        // facultativos móveis são segunda, terça e quinta por construção —, mas
+        // a frase não pode depender disso: no dia em que um facultativo de data
+        // fixa entrar na tabela, ela passaria a chamá-lo de feriado nacional
+        // sem ninguém tocar nesta linha.
         return {
           iso: f.iso,
-          nome: f.nome,
           rotulo: `${DOW_LABEL[d.getDay()]}, ${d.getDate()} de ${MES_LONGO[d.getMonth()]}`,
+          descricao: rotuloDoFeriado(f),
         };
       });
   }, [janela]);
@@ -919,9 +929,14 @@ export default function CronogramaPage() {
           <div className={styles.fdsFeriado}>
             <span className={styles.fdsFeriadoMarca} aria-hidden="true" />
             <p>
-              {feriadosFds.length === 1 ? "Feriado" : "Feriados"} em fim de
-              semana, fora da grade:{" "}
-              {feriadosFds.map((f) => `${f.rotulo} — ${f.nome}`).join(" · ")}.
+              {feriadosFds.length === 1
+                ? "Um dia parado caiu"
+                : `${feriadosFds.length} dias parados caíram`}{" "}
+              em fim de semana, fora da grade:{" "}
+              {feriadosFds
+                .map((f) => `${f.rotulo} — ${f.descricao}`)
+                .join(" · ")}
+              .
             </p>
           </div>
         )}
@@ -1059,9 +1074,25 @@ export default function CronogramaPage() {
                       o `title` um nome truncado numa célula de um quinto de
                       tela é irrecuperável. */}
                   {feriado && (
-                    <span className={styles.feriadoTag} title={feriado.nome}>
-                      <span className={styles.srOnly}>Feriado: </span>
-                      {feriado.curto}
+                    <span
+                      className={styles.feriadoTag}
+                      title={rotuloDoFeriado(feriado)}
+                    >
+                      {/* A frase inteira para o leitor de tela, o apelido para
+                          quem enxerga — e o apelido some da árvore de
+                          acessibilidade para não ser lido duas vezes.
+
+                          Sai de `rotuloDoFeriado` e não de "Feriado: " fixo
+                          porque a figura desenhada tem a palavra FERIADO escrita
+                          nela e aparece igual no 7 de Setembro e no Carnaval.
+                          Só este texto separa lei de costume, e chamar o
+                          Carnaval de feriado nacional é dizer o que o Diário
+                          Oficial não diz. A regra mora no módulo: repeti-la aqui
+                          seria a segunda cópia a divergir na primeira exceção. */}
+                      <span className={styles.srOnly}>
+                        {rotuloDoFeriado(feriado)}
+                      </span>
+                      <span aria-hidden="true">{feriado.curto}</span>
                     </span>
                   )}
                 </div>

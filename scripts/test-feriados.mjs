@@ -187,6 +187,53 @@ checa(
   feriadoDe("2023-12-25")?.nome === "Natal",
 );
 
+// --- e as outras duas datas que não nasceram com a Lei 662 -----------------
+// A Lei 662/1949 declarou CINCO datas: 1º de janeiro, 1º de maio, 7 de setembro,
+// 15 de novembro e 25 de dezembro. É fácil escrever "Lei 662/1949, desde 1949"
+// nas nove linhas da tabela e seguir a vida — o texto fica plausível e ninguém
+// confere. Tiradentes veio pela Lei 1.266, de dezembro de 1950, e Finados só
+// pela Lei 10.607, de 19 de dezembro de 2002, DEPOIS do 2 de novembro daquele
+// ano. Estes quatro testes existem para que a correção não apodreça na primeira
+// vez que alguém "uniformizar" a tabela.
+checa(
+  "21/04/1950 ainda não era Tiradentes — a Lei 1.266 é de dezembro de 1950",
+  feriadoDe("1950-04-21") === null,
+  feriadoDe("1950-04-21")?.nome ?? "fora, como esperado",
+);
+checa(
+  "21/04/1951 já é Tiradentes",
+  feriadoDe("1951-04-21")?.tipo === "feriado",
+  feriadoDe("1951-04-21")?.base ?? "null",
+);
+checa(
+  "02/11/2002 ainda não era Finados — a Lei 10.607 é de 19 de dezembro",
+  feriadoDe("2002-11-02") === null,
+  feriadoDe("2002-11-02")?.nome ?? "fora, como esperado",
+);
+checa(
+  "02/11/2003 já é Finados",
+  feriadoDe("2003-11-02")?.tipo === "feriado",
+  feriadoDe("2003-11-02")?.base ?? "null",
+);
+// E o que a Lei 662 realmente criou continua valendo desde 1949.
+checa(
+  "as cinco datas originais da Lei 662 valem em 1949",
+  ["1949-01-01", "1949-05-01", "1949-09-07", "1949-11-15", "1949-12-25"].every(
+    (iso) => feriadoDe(iso)?.base === "Lei 662/1949 (redação da Lei 10.607/2002)",
+  ),
+);
+checa(
+  "e nenhuma outra data fixa se diz criada pela Lei 662",
+  feriadosDoAno(2026)
+    .filter((f) => f.base.startsWith("Lei 662"))
+    .map((f) => f.iso.slice(5))
+    .join(" ") === "01-01 05-01 09-07 11-15 12-25",
+  feriadosDoAno(2026)
+    .filter((f) => f.base.startsWith("Lei 662"))
+    .map((f) => f.iso.slice(5))
+    .join(" "),
+);
+
 // --- expediente: o campo que impede a tela de mentir -----------------------
 // Meio expediente NÃO é dia parado. Desenhar o adesivo de férias num dia em que
 // metade do setor está na mesa de manhã é afirmação falsa — e é `diaSemExpediente`,
@@ -195,7 +242,6 @@ const MEIO = [
   ["2026-02-18", "Quarta-feira de Cinzas"],
   ["2026-12-24", "véspera de Natal"],
   ["2026-12-31", "véspera de Ano-Novo"],
-  ["2026-10-28", "Dia do Servidor Público"],
 ];
 for (const [iso, nome] of MEIO) {
   checa(
@@ -301,19 +347,30 @@ checa(
     .map((f) => f.nome)
     .join(" + "),
 );
+// CRAVA O VENCEDOR, e nao a funcao consigo mesma. `feriadoDe(x) === feriadoDe(x)`
+// e verdade para qualquer implementacao — inclusive para uma que devolvesse a
+// Paixao hoje e o Tiradentes depois de alguem trocar a ordem do spread em
+// `feriadosDoAno`. O nome escrito aqui e o que impede essa troca de passar verde.
 checa(
-  "mas a consulta de um dia devolve UM, sempre o mesmo",
-  feriadoDe("2079-04-21")?.nome === feriadoDe("2079-04-21")?.nome &&
-    feriadoDe("2079-04-21") !== null,
-  feriadoDe("2079-04-21")?.nome,
+  "e a consulta de um dia devolve o Tiradentes, o feriado de data fixa",
+  feriadoDe("2079-04-21")?.nome === "Tiradentes",
+  feriadoDe("2079-04-21")?.nome ?? "null",
 );
 
 // --- forma da lista -------------------------------------------------------
 const de2026 = feriadosDoAno(2026);
 checa(
-  "2026 tem 17 datas — 12 fixas + 5 móveis",
-  de2026.length === 17,
+  "2026 tem 16 datas — 11 fixas + 5 móveis",
+  de2026.length === 16,
   String(de2026.length),
+);
+// O 28 de outubro fica de FORA de proposito: e dispensa integral, e so na
+// administracao publica federal. Marca-lo "meio expediente" esconderia o adesivo
+// pelo motivo certo com o fato errado. Este teste guarda a decisao.
+checa(
+  "28 de outubro nao esta na tabela — a Rede e privada",
+  feriadoDe("2026-10-28") === null,
+  feriadoDe("2026-10-28")?.nome ?? "fora, como esperado",
 );
 checa(
   "a lista sai em ordem cronológica",
@@ -393,9 +450,10 @@ checa(
 );
 // O cache por ano não pode mudar resposta: mesma pergunta, mesma resposta.
 checa(
-  "perguntar duas vezes devolve o mesmo feriado",
-  feriadoDe("2026-09-07")?.nome === feriadoDe("2026-09-07")?.nome &&
-    feriadoDe("2026-12-25")?.nome === "Natal",
+  "o cache nao muda resposta: o indice do ano devolve o que a lista tem",
+  feriadoDe("2026-09-07")?.nome === "Independência do Brasil" &&
+    feriadoDe("2026-12-25")?.nome === "Natal" &&
+    feriadoDe("2026-04-03")?.nome === "Sexta-feira Santa",
 );
 
 // --- os que caem em fim de semana ----------------------------------------

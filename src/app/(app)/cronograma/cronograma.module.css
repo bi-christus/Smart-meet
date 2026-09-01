@@ -66,7 +66,7 @@
 /* Cor nova na grade sem entrada na legenda e a mesma mentira por omissao que a
    legenda existe para nao contar, so ao contrario. */
 .dotFeriado {
-  background: var(--info);
+  background: var(--feriado);
 }
 
 .seg {
@@ -320,10 +320,15 @@
    ser legivel. Marca d'agua por baixo de chip seria o pior dos dois mundos:
    ilegivel e ainda por cima sujando o texto.
 
-   Azul (`--info`) porque e o unico token de cor livre nesta folha. `--brand` e
-   Reuniao e `--warn` e Prazo, os dois declarados na legenda do cabecalho:
+   A cor sai de `--feriado`, um token proprio, e nao de `--info` direto. `--brand`
+   e Reuniao e `--warn` e Prazo, os dois declarados na legenda do cabecalho:
    feriado em laranja ou ambar leria como compromisso e faria a legenda mentir.
-   E o adesivo ja e azul-e-amarelo — o campo azul e o fundo natural dele.
+   Sobra o azul, e o adesivo ja e azul-e-amarelo — mas a MARCA e trocavel, e no
+   acento azul ela vira #2b7fff, encostando no `--info`. Ai a celula de feriado
+   ficaria igual a de hoje e o ponto da legenda igual ao de Reuniao: exatamente a
+   confusao que escolher uma cor fora da marca existia para evitar. O token
+   troca de familia em `[data-accent="azul"]` (globals.css) e nenhuma regra daqui
+   precisa saber disso.
 
    SEM ANIMACAO, e isso e decisao, nao esquecimento. O AGENTS.md §3 nomeia dois
    casos aqui: ornamento permanente na grade de uma ferramenta de trabalho que
@@ -336,12 +341,12 @@
    nenhuma delas depende da ordem deste bloco no arquivo. Quem o mover nao
    quebra nada — que e a diferenca entre uma regra e uma armadilha. */
 .diaFeriado {
-  /* `color-mix` sobre `--s1` e nao `var(--info-bg)`, que tem alfa: a celula
+  /* `color-mix` sobre `--s1` e nao `var(--feriado-bg)`, que tem alfa: a celula
      compoe sobre `--line-soft`, o fundo da `.grade` que vira o vao de 1px entre
      celulas, e uma cor translucida sairia embacada. Opaca resolve, e acompanha
      os quatro temas de graca porque parte do proprio token de superficie. */
-  background: color-mix(in srgb, var(--info) 12%, var(--s1));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--info) 28%, transparent);
+  background: color-mix(in srgb, var(--feriado) 12%, var(--s1));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--feriado) 28%, transparent);
 }
 
 /* Dia de outro mes. O numero ja cai para 0.4 — e o rotulo do feriado cai junto,
@@ -349,8 +354,8 @@
    estas duas regras o dia que nem e deste mes seria a coisa mais chamativa da
    grade inteira, ao lado de um numero apagado. */
 .diaFora.diaFeriado {
-  background: color-mix(in srgb, var(--info) 6%, var(--bg));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--info) 14%, transparent);
+  background: color-mix(in srgb, var(--feriado) 6%, var(--bg));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--feriado) 14%, transparent);
 }
 .diaFora .feriadoArte {
   opacity: 0.4;
@@ -402,7 +407,7 @@
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.1px;
-  color: var(--info-tx);
+  color: var(--feriado-tx);
 }
 /* Sobre o fundo tingido de marca o azul-informacao perde contraste. Mesmo token
    que o `.hojeTag` ja usa para texto sobre fundo de marca. */
@@ -513,10 +518,10 @@
   gap: 10px;
   margin-bottom: 12px;
   padding: 8px 12px;
-  border: 1px solid color-mix(in srgb, var(--info) 34%, transparent);
-  background: var(--info-bg);
+  border: 1px solid color-mix(in srgb, var(--feriado) 34%, transparent);
+  background: var(--feriado-bg);
   border-radius: 9px;
-  color: var(--info-tx);
+  color: var(--feriado-tx);
   font-size: 12px;
   line-height: 1.5;
 }
@@ -952,5 +957,20 @@
      Texto truncado e canal; o `title` e o leitor de tela tem o nome inteiro. */
   .feriadoTag {
     font-size: 9px;
+  }
+  /* Feriado que TAMBEM e hoje: a palavra "hoje" sai da linha.
+     Sem esta regra os tres canais caem juntos, e so nesta largura. Medido a
+     360/390/430px numa celula com um chip: `.hojeTag` come 26px dos ~32px da
+     linha e o `.feriadoTag` fica com 0, 1 e 9px contra os 73 que precisa — nao e
+     nome truncado, e nome nenhum, sem nem as reticencias. Ao mesmo tempo a
+     figura ja saiu (regra do `:has(.chip)` acima) e `.diaHoje.diaFeriado`
+     devolveu o campo laranja de proposito. A celula volta a ser um "hoje"
+     comum, e o feriado desaparece dos tres canais de uma vez.
+     Some a palavra e nao o nome porque "hoje" e o que a celula ja diz sozinha:
+     `.diaHoje .diaNum` pinta o numero em `--accent` com peso 800, e o campo e da
+     marca. Ninguem perde a informacao de que hoje e hoje; sem esta regra e o
+     feriado que some inteiro. */
+  .diaFeriado .hojeTag {
+    display: none;
   }
 }

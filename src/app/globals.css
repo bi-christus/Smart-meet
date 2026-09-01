@@ -41,6 +41,16 @@
   --susp-bg: rgba(192, 132, 252, 0.16);
   --susp-tx: #e5c8ff;
 
+  /* Feriado, no Cronograma. Token próprio e não `--info` direto porque ele
+     precisa fugir da MARCA, e a marca é trocável: no acento azul `--brand` vira
+     #2b7fff e encosta em `--info`, deixando a célula de feriado igual à de hoje
+     e o ponto da legenda igual ao de Reunião — a confusão exata que escolher uma
+     cor fora da marca existia para evitar. A indireção resolve no ponto de uso,
+     então uma definição aqui já acompanha os dois temas. */
+  --feriado: var(--info);
+  --feriado-bg: var(--info-bg);
+  --feriado-tx: var(--info-tx);
+
   --scroll: #33333a;
   --scroll-hover: #45454e;
   --overlay: rgba(0, 0, 0, 0.66);
@@ -108,6 +118,13 @@
 
 /* acento AZUL — troca as cores da marca */
 [data-accent="azul"] {
+  /* Aqui a marca É azul, então o feriado sai do azul. `--susp` é a única família
+     livre nesta tela: `--brand` é Reunião, `--warn` é Prazo, `--ok` e `--danger`
+     são veredito, e `--info` acabou de virar a cor da marca. Só o token muda —
+     nenhuma regra do Cronograma sabe disto. */
+  --feriado: var(--susp);
+  --feriado-bg: var(--susp-bg);
+  --feriado-tx: var(--susp-tx);
   --brand: #2b7fff;
   --brand-hover: #4d94ff;
   --brand-soft: rgba(43, 127, 255, 0.16);

@@ -107,6 +107,12 @@ type Fixo = Omit<Feriado, "iso"> & {
   desde: number;
 };
 
+/**
+ * A Lei 662 original declarou CINCO datas: 1º de janeiro, 1º de maio, 7 de
+ * setembro, 15 de novembro e 25 de dezembro. Tiradentes e Finados entraram
+ * depois, por leis próprias, e por isso não usam esta string nem o `desde` dela
+ * — ver os comentários de cada um.
+ */
 const LEI_662 = "Lei 662/1949 (redação da Lei 10.607/2002)";
 const SEM_LEI_FEDERAL = "sem lei federal — ponto facultativo por portaria anual";
 
@@ -128,8 +134,11 @@ const FIXOS: Fixo[] = [
     curto: "Tiradentes",
     tipo: "feriado",
     expediente: "nenhum",
-    base: LEI_662,
-    desde: 1949,
+    // NÃO é a Lei 662: o 21 de abril não estava nas cinco datas dela. Entrou
+    // pelo art. 3º da Lei 1.266, de dezembro de 1950 — o primeiro Tiradentes
+    // nacional é o de 1951.
+    base: "Lei 1.266/1950",
+    desde: 1951,
   },
   {
     mes: 5,
@@ -161,19 +170,14 @@ const FIXOS: Fixo[] = [
     base: "Lei 6.802/1980",
     desde: 1980,
   },
-  {
-    mes: 10,
-    dia: 28,
-    nome: "Dia do Servidor Público",
-    curto: "Servidor",
-    // Ponto facultativo só na administração pública federal, e a Rede é
-    // privada: entra como MEIO expediente para nunca desenhar o adesivo, e fica
-    // registrado para quem for cruzar o calendário com o de um órgão público.
-    tipo: "facultativo",
-    expediente: "meio",
-    base: SEM_LEI_FEDERAL,
-    desde: 1990,
-  },
+  // O 28 de outubro (Dia do Servidor Público) NÃO está aqui, e a ausência é
+  // decisão. Ele é dispensa INTEGRAL, mas só na administração pública federal —
+  // e a Rede é privada. Marcá-lo `expediente: "meio"` esconderia o adesivo pelo
+  // motivo certo com o fato errado: diria que se trabalha meio dia num dia em
+  // que o órgão público fecha inteiro, e este campo responde "sobra trabalho no
+  // dia?", não "convém desenhar?". Usar um campo de fato como chave de desenho é
+  // como a tabela começa a mentir. Se um dia alguém precisar do calendário do
+  // serviço público, ele entra com um eixo próprio de âmbito.
   {
     mes: 11,
     dia: 2,
@@ -181,8 +185,11 @@ const FIXOS: Fixo[] = [
     curto: "Finados",
     tipo: "feriado",
     expediente: "nenhum",
-    base: LEI_662,
-    desde: 1949,
+    // Também não é a Lei 662 original: o 2 de novembro só entrou com a Lei
+    // 10.607, de 19 de dezembro de 2002 — DEPOIS do 2 de novembro daquele ano,
+    // então o primeiro Finados nacional é o de 2003.
+    base: "Lei 10.607/2002",
+    desde: 2003,
   },
   {
     mes: 11,
