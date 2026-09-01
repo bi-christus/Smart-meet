@@ -805,6 +805,45 @@ service cloud.firestore {
       allow delete: if gestorNoSetor(cur('sector'));
     }
 
+    // ---- atas de reunião ----
+    //
+    // MESMA REGRA DE LEITURA DOS CARDS: quem enxerga o setor, lê. É isto que
+    // mantém a ata das Cantinas fora do alcance do B.I. e vice-versa — o
+    // isolamento não é da tela, é daqui, e vale para qualquer caminho que não
+    // passe pela interface.
+    //
+    // ESCRITA É DE QUEM PARTICIPA DO SETOR, e não só do gestor. A ata é
+    // preenchida DURANTE a reunião, muitas vezes por quem está com o
+    // computador aberto, e uma tela em que só o gestor consegue registrar a
+    // decisão é uma tela em que a ata volta a ser escrita no bloco de notas.
+    // O que a regra garante é o que importa: ninguém escreve na ata de um setor
+    // que não é seu.
+    //
+    // O `setor` é IMUTÁVEL, mesmo motivo do card e da dimensão: trocá-lo por
+    // update seria a porta dos fundos para escrever na ata de outro setor. A
+    // comparação vem ANTES de `podeNoSetor` de propósito — um update recusado
+    // por mexer no setor é recusado sem ler documento nenhum.
+    //
+    // APAGAR é só de gestor ou admin. Ata é registro: quem participou da
+    // reunião corrige o que escreveu, mas não faz a reunião inteira deixar de
+    // ter existido.
+    match /atas/{doc} {
+      allow read: if podeNoSetor(cur('setor'));
+
+      allow create: if podeNoSetor(novo('setor'))
+                    && novo('setor') != ''
+                    && novo('titulo') != ''
+                    && novo('titulo').size() <= 120
+                    && souEu(novo('createdBy'));
+
+      allow update: if novo('setor') == cur('setor')
+                    && novo('titulo') != ''
+                    && novo('titulo').size() <= 120
+                    && podeNoSetor(cur('setor'));
+
+      allow delete: if gestorNoSetor(cur('setor'));
+    }
+
     // ---- propostas de demanda geradas a partir de reuniões ----
     // O cliente NUNCA escreve aqui. Quem grava é o servidor: o ingest cria as
     // propostas, e `api/demandas/decidir` registra a decisão depois de checar

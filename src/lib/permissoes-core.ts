@@ -59,6 +59,9 @@ export const ABAS: Aba[] = [
     configuravel: true,
   },
   { id: "kanban", label: "Kanban", href: "/kanban", configuravel: true },
+  // Depois do Kanban porque é dele que a pauta sai: a Ata não tem demanda
+  // própria, ela lê as do quadro do setor e registra o que a reunião decidiu.
+  { id: "ata", label: "Ata", href: "/ata", configuravel: true },
   {
     id: "dimensoes",
     label: "Dimensões",

@@ -121,6 +121,23 @@ const PATHS: Record<string, ReactNode> = {
       <path d="M21 13v2a4 4 0 0 1-4 4H3" />
     </>
   ),
+  // A ata: a folha com as linhas escritas e a marca de conferido na última.
+  // O nome tem de ser exatamente o `id` da aba em `permissoes-core` — é ele que
+  // a barra do topo passa para `<Icon>`, e ícone que falta sai como um quadrado
+  // vazio, sem erro nenhum.
+  ata: (
+    <>
+      <path d="M6 3h9l4 4v14H6z" />
+      <path d="M15 3v4h4" />
+      <path d="M9 11h6M9 14h6" />
+      <path d="M9 17.5l1.6 1.6L14 16" />
+    </>
+  ),
+  // Recolher e expandir. Duas setas, e não um "×" girado: o "×" lê como
+  // "fechar/excluir isto", e num bloco que tem uma demanda de verdade dentro,
+  // essa leitura custa caro.
+  chevronCima: <path d="M6 15l6-6 6 6" />,
+  chevronBaixo: <path d="M6 9l6 6 6-6" />,
   filter: <path d="M3 4h18l-7 8v7l-4 2v-9z" />,
   // A etiqueta e o furo do barbante. O círculo é `fill="currentColor"` porque
   // com 13px de lado um furo traçado vira um borrão do tamanho do próprio traço.
