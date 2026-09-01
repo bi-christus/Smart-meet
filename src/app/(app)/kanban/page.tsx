@@ -41,6 +41,8 @@ import {
   filtrarPorTags,
   type ModoDeTags,
 } from "@/lib/tags-core";
+import { rotuloDoMes, separarConcluidas } from "@/lib/concluidas-core";
+import { startOfDay } from "@/lib/datas";
 import { carregarHistorico } from "@/lib/historico";
 import { codigoDe, fraseDeFalha } from "@/lib/erro-ui-core";
 import { auth } from "@/lib/firebase";
@@ -204,6 +206,19 @@ export default function KanbanPage() {
   });
   const [modoTags, setModoTags] = useState<ModoDeTags>("ou");
   /**
+   * As colunas de conclusão em que alguém pediu para ver os meses anteriores.
+   *
+   * Presa ao setor, como as tags e o responsável: os ids de coluna são de
+   * quadro, e levar a marcação na troca de aba abriria uma coluna que não é a
+   * mesma. Nasce vazia a cada visita de propósito — o padrão é o mês corrente,
+   * e um "ver tudo" que sobrevivesse à sessão faria o corte deixar de existir
+   * na prática para quem clicou nele uma vez.
+   */
+  const [mesesAbertos, setMesesAbertos] = useState<{
+    sector: string;
+    cols: string[];
+  }>({ sector: "", cols: [] });
+  /**
    * DESTACAR É O PADRÃO, e filtrar é a opção.
    *
    * Num quadro, ONDE a demanda está é metade da informação: esconder tudo o que
@@ -361,6 +376,35 @@ export default function KanbanPage() {
     () => (tagSel.sector === sector ? tagSel.tags : SEM_TAGS),
     [tagSel, sector],
   );
+
+  const mesesF = useMemo(
+    () => (mesesAbertos.sector === sector ? mesesAbertos.cols : SEM_TAGS),
+    [mesesAbertos, sector],
+  );
+  const alternarMeses = (colId: string) =>
+    setMesesAbertos({
+      sector,
+      cols: mesesF.includes(colId)
+        ? mesesF.filter((c) => c !== colId)
+        : [...mesesF, colId],
+    });
+
+  /**
+   * O relógio da tela, lido UMA vez, na montagem.
+   *
+   * Lido a cada render, ele mudaria de valor a cada quadro e levaria junto o
+   * resultado de `separarConcluidas` — a coluna inteira recalculada à toa.
+   *
+   * `startOfDay()` e não `Date.now()`: só interessa em que MÊS estamos, os dois
+   * respondem igual, e o `Date.now()` cru é chamada impura dentro do render aos
+   * olhos do compilador do React (o lint reprova). É também o mesmo helper que
+   * o Dashboard usa para a mesma pergunta.
+   *
+   * O preço é que uma aba deixada aberta atravessando a virada do mês continua
+   * mostrando o mês anterior até alguém recarregar. É aceitável: quem está com
+   * o quadro aberto à meia-noite do dia 1º não é o caso que este corte serve.
+   */
+  const agora = useMemo(() => startOfDay().getTime(), []);
   /** Marca e desmarca — o gesto é o mesmo botão, sempre. */
   const alternarTag = (tag: string) =>
     setTagSel({
@@ -867,7 +911,30 @@ export default function KanbanPage() {
       ) : (
       <div className={styles.board} ref={boardRef}>
         {displayCols.map((col) => {
-          const colCards = filtered.filter((c) => c.columnId === col.colId);
+          const doQuadro = filtered.filter((c) => c.columnId === col.colId);
+          /**
+           * A COLUNA DE CONCLUSÃO ABRE NO MÊS CORRENTE. As outras, inteiras.
+           *
+           * Ela é a única do quadro sem porta de saída: nenhuma demanda sai de
+           * lá, então depois de um ano ela tem seiscentos cards e o que foi
+           * entregue esta semana está enterrado embaixo do ano passado. A regra
+           * mora em `concluidas-core` e é testada lá; aqui só se decide a quais
+           * colunas ela se aplica, e são as mesmas em que o prazo já não cobra
+           * nada (`colunasEntregues`).
+           *
+           * O CORTE SE DESLIGA DURANTE A BUSCA. Quem digitou um texto está
+           * procurando UMA demanda, e às vezes é justamente a concluída de
+           * março; devolver "nada encontrado" sobre um card que está ali seria
+           * a busca mentindo. Os outros filtros (prioridade, responsável, tag)
+           * não desligam: eles estreitam uma vista, não procuram um item, e
+           * manter as antigas escondidas ali é a mesma faxina de sempre.
+           */
+          const cortavel = entregues.has(col.colId) && !search.trim();
+          const aberta = mesesF.includes(col.colId);
+          const { recentes, antigas } = cortavel
+            ? separarConcluidas(doQuadro, agora)
+            : { recentes: doQuadro, antigas: [] };
+          const colCards = aberta ? doQuadro : recentes;
           return (
             <div
               key={col.id}
@@ -944,11 +1011,23 @@ export default function KanbanPage() {
                      aviso ficava pendurado sobre um vão enorme e a coluna lia
                      como quebrada em vez de vazia. */
                   <div className={styles.colVazio}>
+                    {/* Coluna de conclusão vazia SÓ POR CAUSA DO CORTE não é a
+                        mesma coisa que coluna vazia. "Nenhuma demanda" ali seria
+                        falso — há dezoito, logo abaixo do botão — e mandaria
+                        arrastar um card para uma coluna que já tem card. */}
                     <EmptyState
                       size="compact"
-                      icon="kanban"
-                      title="Nenhuma demanda"
-                      description="Arraste um card para cá ou use o + no topo da coluna."
+                      icon={antigas.length ? "check" : "kanban"}
+                      title={
+                        antigas.length
+                          ? `Nada concluído em ${rotuloDoMes(agora)}`
+                          : "Nenhuma demanda"
+                      }
+                      description={
+                        antigas.length
+                          ? `As ${antigas.length} entregas de meses anteriores continuam nesta coluna.`
+                          : "Arraste um card para cá ou use o + no topo da coluna."
+                      }
                     />
                   </div>
                 ) : (
@@ -977,6 +1056,44 @@ export default function KanbanPage() {
                       onPerfil={setPerfilDe}
                     />
                   ))
+                )}
+
+                {/**
+                 * O RESTO DA COLUNA, contado e a um clique.
+                 *
+                 * Fica no PÉ da lista, e não no cabeçalho: é onde a pessoa
+                 * chega depois de ler o que está à vista, e é a posição em que
+                 * as antigas de fato aparecem quando ele é acionado — o botão
+                 * abre a lista embaixo dele mesmo, sem empurrar nada para cima.
+                 *
+                 * A CONTA FICA VISÍVEL NA TELA: o cabeçalho conta o que está
+                 * desenhado (6) e o botão diz o que falta (+18). Um "24" em
+                 * cima de seis cards seria um número contradizendo a própria
+                 * coluna, que é o defeito que este projeto já caçou nos chips
+                 * de tag e no painel de setor solicitante.
+                 *
+                 * Espera o quadro responder, como a contagem: um "+0" durante
+                 * o carregamento é a mesma afirmação falsa em forma de botão.
+                 */}
+                {!quadro.carregando && antigas.length > 0 && (
+                  <button
+                    className={styles.mesesBtn}
+                    onClick={() => alternarMeses(col.colId)}
+                    aria-expanded={aberta}
+                    title={
+                      aberta
+                        ? `Mostrar só o que foi concluído em ${rotuloDoMes(agora)}`
+                        : `Mostrar também as ${antigas.length} entregas de meses anteriores`
+                    }
+                  >
+                    <Icon
+                      name={aberta ? "chevronCima" : "chevronBaixo"}
+                      size={13}
+                    />
+                    {aberta
+                      ? `Só ${rotuloDoMes(agora)}`
+                      : `+${antigas.length} de meses anteriores`}
+                  </button>
                 )}
               </div>
             </div>
