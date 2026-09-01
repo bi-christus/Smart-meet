@@ -36,12 +36,14 @@ import {
   DOW_LABEL,
   DOW_MINI_UTEIS,
   ehFimDeSemana,
+  ehFimDeSemanaISO,
   MES_LONGO,
   parseISO,
   startOfDay,
   startOfWeek,
   toISO,
 } from "@/lib/datas";
+import { diaSemExpediente, diasSemExpediente } from "@/lib/feriados-core";
 import { diffCard } from "@/lib/historico-core";
 import { codigoDe, fraseDeFalha } from "@/lib/erro-ui-core";
 import { juntarFontes } from "@/lib/async-data-core";
@@ -454,6 +456,54 @@ export default function CronogramaPage() {
   const noFimDeSemana = fimDeSemana.reduce((s, g) => s + g.itens.length, 0);
 
   /**
+   * A legenda só ganha o terceiro ponto quando há feriado à vista.
+   *
+   * Cor nova na grade sem entrada na legenda é a mesma mentira por omissão que a
+   * legenda existe para não contar. E legenda que explica o que não está na tela
+   * é ruído: a maioria dos meses não tem feriado nenhum.
+   *
+   * Olha `celulas` e não `janela`, de propósito — o ponto explica a CÉLULA azul,
+   * e feriado de fim de semana não tem célula. Aquele tem a tira própria abaixo,
+   * que se explica sozinha por escrito.
+   */
+  const temFeriado = useMemo(
+    () => celulas.some((d) => diaSemExpediente(toISO(d))),
+    [celulas],
+  );
+
+  /**
+   * Feriado que caiu em sábado ou domingo — o que a grade de cinco colunas não
+   * tem onde desenhar.
+   *
+   * Hoje esse dia não produz um pixel, e são DOIS filtros, não um: `fimDeSemana`
+   * descarta o dia (`if (!doDia?.length) continue`) antes de qualquer outra
+   * pergunta, e o render ainda exige `fimDeSemana.length > 0`. Um 7 de setembro
+   * num domingo, num mês sem compromisso nenhum de fim de semana, sumiria.
+   *
+   * NÃO entra naquela faixa, e não é para economizar código: ela é `--warn`,
+   * conta compromissos em `noFimDeSemana` e termina em "arraste para um dia
+   * útil". Feriado não se arrasta, ninguém errou ao tê-lo no sábado, e um grupo
+   * com `itens: []` faria a frase prometer compromissos que não existem. Os
+   * itens de lá também são `<button>` arrastáveis — um feriado virando um deles
+   * seria um objeto que a pessoa tenta arrastar e não sai do lugar.
+   */
+  const feriadosFds = useMemo(() => {
+    return diasSemExpediente(toISO(janela.ini), toISO(janela.fim))
+      .filter((f) => ehFimDeSemanaISO(f.iso))
+      .map((f) => {
+        const d = parseISO(f.iso);
+        // Mesmo rótulo da faixa `.fds`: o dia da semana por extenso é o que
+        // EXPLICA por que aquilo não está no quadro. "15 de novembro" não diz
+        // nada; "domingo, 15 de novembro" diz tudo.
+        return {
+          iso: f.iso,
+          nome: f.nome,
+          rotulo: `${DOW_LABEL[d.getDay()]}, ${d.getDate()} de ${MES_LONGO[d.getMonth()]}`,
+        };
+      });
+  }, [janela]);
+
+  /**
    * O que está aberto, lido do dado vivo.
    *
    * `find` e não a cópia guardada: quando a demanda vai para a lixeira — de
@@ -741,6 +791,12 @@ export default function CronogramaPage() {
               <i className={styles.dotPrazo} />
               Prazo
             </span>
+            {temFeriado && (
+              <span>
+                <i className={styles.dotFeriado} />
+                Feriado
+              </span>
+            )}
           </div>
 
           <div className={styles.filtroSetor}>
@@ -848,6 +904,28 @@ export default function CronogramaPage() {
          * TIRAR do sábado o que já está marcado nele, e a faixa existe
          * justamente para isso.
          */}
+        {/* Sem portão de carregamento nem de erro, de propósito. Feriado é
+            conhecimento local e estático — sai de uma tabela e do cálculo da
+            Páscoa, não do Firestore. Herdar o portão da faixa de baixo faria a
+            informação esperar a assinatura e MORRER de vez quando a grade
+            caísse em <ErrorState/>: sumir o dado mais estável da tela porque o
+            menos estável falhou.
+
+            E sem `classeAparece`, pelo mesmo motivo: aquele crossfade marca
+            CHEGADA DE DADO. Aqui não chegou nada — a tira já é verdade no
+            primeiro quadro, e animá-la seria movimento afirmando um evento que
+            não aconteceu. */}
+        {feriadosFds.length > 0 && (
+          <div className={styles.fdsFeriado}>
+            <span className={styles.fdsFeriadoMarca} aria-hidden="true" />
+            <p>
+              {feriadosFds.length === 1 ? "Feriado" : "Feriados"} em fim de
+              semana, fora da grade:{" "}
+              {feriadosFds.map((f) => `${f.rotulo} — ${f.nome}`).join(" · ")}.
+            </p>
+          </div>
+        )}
+
         {!grade.carregando && !grade.erro && fimDeSemana.length > 0 && (
           <div className={`${styles.fds} ${classeAparece}`}>
             <Icon name="warn" size={15} />
@@ -926,15 +1004,39 @@ export default function CronogramaPage() {
             const doMes = vista === "semana" || d.getMonth() === janela.ini.getMonth();
             const isHoje = iso === toISO(hoje);
             const eventos = porDia[iso] ?? [];
+            // A consulta mora AQUI e não em `celulas`: este é o único ponto que
+            // tem o `Date` e o ISO na mesma mão, a custo O(1) por célula.
+            //
+            // `diaSemExpediente` e não `feriadoDe`: quarta-feira de Cinzas e as
+            // vésperas de 24 e 31 de dezembro são MEIO expediente — gente
+            // trabalha de manhã, e desenhar um pato de férias num dia em que se
+            // trabalha é afirmação falsa. Elas continuam no módulo, para quem
+            // precisar delas; esta tela pergunta "tem alguém aqui?", não
+            // "existe lei?".
+            //
+            // Feriado NÃO entra em `porDia` nem no tipo `Item`: arraste, solta,
+            // `abrir` e `Previa` são todos fechados na união reunião|prazo. E
+            // fica fora de `noPeriodo` — feriado não é compromisso: se entrasse,
+            // o subtítulo mentiria e o estado de vazio sumiria num mês
+            // genuinamente vazio. O caso "mês sem nada marcado, com o adesivo
+            // desenhado na grade" é legítimo e vai acontecer.
+            const feriado = diaSemExpediente(iso);
             return (
               <div
                 key={iso}
                 className={`${styles.dia} ${doMes ? "" : styles.diaFora} ${
                   isHoje ? styles.diaHoje : ""
-                } ${diaAlvo === iso ? styles.diaAlvo : ""}`}
+                } ${feriado ? styles.diaFeriado : ""} ${
+                  diaAlvo === iso ? styles.diaAlvo : ""
+                }`}
                 // Toda célula da grade é dia útil por construção (a grade tem
                 // cinco colunas), então não há o que barrar aqui: o bloqueio de
                 // fim de semana está no desenho, não numa condição.
+                //
+                // Feriado também NÃO barra a solta. Recusar em silêncio leria
+                // como bug, e o dado é anterior à regra — quem marca ali pode
+                // ter motivo. O que muda é o que a célula DIZ enquanto o item
+                // está no ar: o rótulo vira pílula âmbar. Aviso, não bloqueio.
                 onDragOver={(e) => {
                   if (!arrastando) return;
                   e.preventDefault();
@@ -945,6 +1047,23 @@ export default function CronogramaPage() {
                 <div className={styles.diaNum}>
                   {d.getDate()}
                   {isHoje && <span className={styles.hojeTag}>hoje</span>}
+                  {/* O nome é TEXTO DE VERDADE e mora na linha do número: é ele
+                      que o leitor de tela anuncia, é ele que o Ctrl+F acha, e é
+                      ele que continua na tela quando a figura sai por falta de
+                      espaço. A figura nunca é a única forma de saber que o dia
+                      é feriado.
+
+                      COM `title`, ao contrário do chip logo abaixo — que o
+                      evita de propósito. Lá o motivo era a prévia abrir aos
+                      320ms com o mesmo texto; aqui não há prévia nenhuma, e sem
+                      o `title` um nome truncado numa célula de um quinto de
+                      tela é irrecuperável. */}
+                  {feriado && (
+                    <span className={styles.feriadoTag} title={feriado.nome}>
+                      <span className={styles.srOnly}>Feriado: </span>
+                      {feriado.curto}
+                    </span>
+                  )}
                 </div>
                 {eventos.map((it) => {
                   const dono =
@@ -1004,6 +1123,25 @@ export default function CronogramaPage() {
                     </button>
                   );
                 })}
+
+                {/* ÚLTIMO filho, de propósito, e em FLUXO, de propósito.
+
+                    `<span>` com `background-image` e não `<img>`, e isso resolve
+                    três coisas de uma vez em vez de remendá-las: (1) não há nó
+                    de imagem para o leitor de tela anunciar uma vez por feriado;
+                    (2) não há `draggable` nativo brigando com o `onDrop` da
+                    célula — `<img>` é arrastável por padrão, e com
+                    `arrastando === null` o guarda do `onDragOver` devolve antes
+                    do `preventDefault`, então soltar em cima dela viraria
+                    navegação do navegador; (3) não há `alt` para alguém
+                    preencher por engano num commit futuro.
+
+                    O quanto ela cresce é decidido no CSS, por espaço: `flex`
+                    com base ZERO, para ela ocupar só a sobra que os chips
+                    deixaram e nunca engordar a linha do grid. */}
+                {feriado && (
+                  <span className={styles.feriadoArte} aria-hidden="true" />
+                )}
               </div>
             );
           })}
