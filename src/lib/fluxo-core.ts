@@ -13,7 +13,13 @@
  * essa forma sem o SDK precisar aparecer aqui.
  */
 
-import { MES_CURTO, addDays, startOfDay, startOfWeek } from "./datas.ts";
+import {
+  DOW_SHORT,
+  MES_CURTO,
+  addDays,
+  startOfDay,
+  startOfWeek,
+} from "./datas.ts";
 
 /**
  * O tanto de card que o cálculo lê — e nada além disso.
@@ -27,30 +33,76 @@ export type CardFluxo = {
   enteredAt?: number | null;
 };
 
-export type Semana = {
-  /** Segunda-feira, à meia-noite local. */
+/**
+ * De quanto em quanto tempo a série anda.
+ *
+ * A semana continua sendo o passo padrão — é a unidade em que o setor conversa
+ * ("quantas entraram esta semana?") e a única que aguenta uma janela de um ano
+ * sem virar uma parede de barras. O dia entrou porque a semana esconde o que
+ * acontece DENTRO dela: uma segunda-feira que recebe trinta demandas e quatro
+ * dias parados desenham a mesma coluna de uma semana distribuída, e as duas
+ * pedem providências opostas.
+ */
+export type Granularidade = "dia" | "semana";
+
+/** O nome do passo no singular, para o texto que fala de uma coluna. */
+export const PASSO_LABEL: Record<Granularidade, string> = {
+  dia: "dia",
+  semana: "semana",
+};
+
+/** O mesmo no plural, para o texto que fala da janela inteira. */
+export const PASSO_PLURAL: Record<Granularidade, string> = {
+  dia: "dias",
+  semana: "semanas",
+};
+
+/**
+ * "um dia" · "uma semana" — o passo com o artigo certo.
+ *
+ * Existe porque `um ${PASSO_LABEL[g]}` monta "um semana", e concordância errada
+ * num botão de dois é o tipo de defeito que passa em revisão de código e não
+ * passa na tela. Aqui as duas formas estão escritas, não deduzidas.
+ */
+export const PASSO_UM: Record<Granularidade, string> = {
+  dia: "um dia",
+  semana: "uma semana",
+};
+
+/**
+ * Uma coluna da série — um dia ou uma semana, conforme a granularidade.
+ *
+ * Chamava-se `Semana` enquanto só existia um passo. O nome mudou porque o tipo
+ * mudou de significado, e tipo com nome que mente é pior do que tipo sem nome:
+ * a próxima pessoa a ler `semanas[i].parcial` num gráfico por dia concluiria
+ * que o campo fala de outra coisa.
+ */
+export type Passo = {
+  /** Início do passo, à meia-noite local (segunda-feira, quando é semana). */
   inicio: Date;
-  /** Domingo da mesma semana, à meia-noite local. */
+  /** Último dia do passo, à meia-noite local (o próprio dia, quando é dia). */
   fim: Date;
   /**
-   * `aaaa-mm-dd` da segunda-feira — identidade da semana, nunca texto de tela.
+   * `aaaa-mm-dd` do início — identidade do passo, nunca texto de tela.
    *
    * É ela que vai na `key` do React. Os dois rótulos REPETEM de um ano para o
    * outro ("13–19/07" existe em 2025 e em 2026), e a janela por datas alcança
-   * cinco anos: com o rótulo na chave, duas semanas distintas passariam a
+   * cinco anos: com o rótulo na chave, dois passos distintos passariam a
    * disputar o mesmo nó, e o React reaproveitaria a coluna errada.
    */
   chave: string;
-  /** "13–19/07" — o PERÍODO da semana, que é o que vai embaixo da coluna. */
+  /** "13–19/07" ou "13/07" — o rótulo curto, que vai embaixo da coluna. */
   rotulo: string;
-  /** "13 a 19 jul" — a semana por extenso, para o tooltip e o leitor de tela. */
+  /** "13 a 19 jul" ou "seg, 13 jul" — por extenso, para tooltip e leitor de tela. */
   rotuloLongo: string;
-  /** A semana que ainda está correndo: os números dela estão pela metade. */
+  /** O passo que ainda está correndo: os números dele estão pela metade. */
   parcial: boolean;
 };
 
 export type Fluxo = {
-  semanas: Semana[];
+  /** A granularidade com que estas séries foram contadas. */
+  granularidade: Granularidade;
+  passos: Passo[];
   entradas: number[];
   entregas: number[];
   /** Fila acumulada no fim de cada semana, já contando o que existia antes. */
@@ -59,10 +111,9 @@ export type Fluxo = {
   saldo: number[];
   p85: number;
   amostra: number;
-  entregas4: number;
   totalEntradas: number;
   totalEntregas: number;
-  /** Entregas por semana, contando só as semanas COMPLETAS da janela. */
+  /** Entregas por passo, contando só os passos COMPLETOS da janela. */
   vazaoMedia: number;
   /** O que já estava em aberto quando a janela começou. */
   filaInicial: number;
@@ -74,10 +125,14 @@ export type Janela =
   | { modo: "intervalo"; de: string; ate: string };
 
 /** Quantas semanas cada opção do seletor cobre. */
-export const PERIODOS = [12, 26, 52] as const;
+export const PERIODOS = [4, 12, 26, 52] as const;
 export type Periodo = (typeof PERIODOS)[number];
 
 export const PERIODO_LABEL: Record<Periodo, string> = {
+  // Quatro semanas entrou junto com a leitura por dia: 28 colunas se leem uma a
+  // uma, e 84 (que é o que as 12 semanas viram em dias) já não. Sem uma janela
+  // curta, a granularidade por dia nasceria útil só no papel.
+  4: "Últimas 4 semanas",
   12: "Últimas 12 semanas",
   26: "Últimos 6 meses",
   52: "Últimos 12 meses",
@@ -93,6 +148,19 @@ export const PERIODO_LABEL: Record<Periodo, string> = {
  * de lá que vem a leitura que interessa.
  */
 export const MAX_SEMANAS = 260;
+
+/**
+ * O mesmo teto, por granularidade.
+ *
+ * O do dia é mais apertado pelo mesmo motivo, aplicado a um passo sete vezes
+ * menor: 400 colunas num SVG de 1120 unidades já dão menos de 3px por dia. Um
+ * ano de dias cabe; cinco, não — e cinco anos de dias é uma pergunta que se faz
+ * por semana, não por dia.
+ */
+export const MAX_PASSOS: Record<Granularidade, number> = {
+  semana: MAX_SEMANAS,
+  dia: 400,
+};
 
 function anoDe(d: Date): number {
   return d.getFullYear();
@@ -142,20 +210,56 @@ export function rotuloEixo(inicio: Date, fim: Date): string {
     : `${dd(inicio)}/${mm(inicio)}–${dd(fim)}/${mm(fim)}`;
 }
 
-function montarSemana(inicio: Date, hoje: Date, anoRef: number): Semana {
-  const fim = addDays(inicio, 6);
+/**
+ * "seg, 13 jul" · "qua, 31 dez 2025" — o dia por extenso.
+ *
+ * O dia da semana vem junto, e não é enfeite: numa série por dia, o vale que
+ * mais aparece é o do fim de semana, e sem o "sáb"/"dom" no tooltip a leitura
+ * vira "caiu de 8 para 0, o que houve?" toda sexta-feira. O ano, como no rótulo
+ * de semana, só entra quando o dia é de outro ano que não o de referência.
+ */
+export function rotuloDia(d: Date, anoRef: number): string {
+  const ano = anoDe(d) !== anoRef ? ` ${anoDe(d)}` : "";
+  return `${DOW_SHORT[d.getDay()].slice(0, 3)}, ${d.getDate()} ${MES_CURTO[d.getMonth()]}${ano}`;
+}
+
+/** "13/07" — o rótulo do eixo x quando cada coluna é um dia. */
+export function rotuloEixoDia(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)}`;
+}
+
+/** Quantos dias o passo cobre. É o que transforma "semana" em aritmética. */
+function diasDoPasso(gran: Granularidade): number {
+  return gran === "dia" ? 1 : 7;
+}
+
+function montarPasso(
+  inicio: Date,
+  hoje: Date,
+  anoRef: number,
+  gran: Granularidade,
+): Passo {
+  const dias = diasDoPasso(gran);
+  const fim = addDays(inicio, dias - 1);
   return {
     inicio,
     fim,
     chave: isoDe(inicio),
-    rotulo: rotuloEixo(inicio, fim),
-    rotuloLongo: rotuloSemana(inicio, fim, anoRef),
-    // Parcial é a semana que CONTÉM hoje e ainda não fechou no domingo. Janela
-    // que termina no passado não tem semana parcial nenhuma: já aconteceu toda.
+    rotulo: gran === "dia" ? rotuloEixoDia(inicio) : rotuloEixo(inicio, fim),
+    rotuloLongo:
+      gran === "dia" ? rotuloDia(inicio, anoRef) : rotuloSemana(inicio, fim, anoRef),
+    // Parcial é o passo que CONTÉM hoje e ainda não fechou. Janela que termina
+    // no passado não tem passo parcial nenhum: já aconteceu todo.
     parcial:
       inicio.getTime() <= hoje.getTime() &&
-      hoje.getTime() < addDays(inicio, 7).getTime(),
+      hoje.getTime() < addDays(inicio, dias).getTime(),
   };
+}
+
+/** Onde o passo que contém esta data começa. */
+function inicioDoPasso(d: Date, gran: Granularidade): Date {
+  return gran === "dia" ? startOfDay(d) : startOfWeek(d);
 }
 
 /**
@@ -200,30 +304,102 @@ export function isoDe(d: Date): string {
  * ainda é anterior à primeira — e um painel que pisca "sem dados" no meio da
  * digitação é pior do que um painel que mostra o intervalo pedido.
  */
-export function janelaDeSemanas(hoje: Date, janela: Janela): Semana[] {
+export function janelaDePassos(
+  hoje: Date,
+  janela: Janela,
+  gran: Granularidade = "semana",
+): Passo[] {
   const anoRef = anoDe(hoje);
-  if (janela.modo === "recentes") {
-    const n = Math.max(1, Math.min(MAX_SEMANAS, Math.floor(janela.semanas)));
-    const primeira = addDays(startOfWeek(hoje), -(n - 1) * 7);
-    return Array.from({ length: n }, (_, i) =>
-      montarSemana(addDays(primeira, i * 7), hoje, anoRef),
+  const dias = diasDoPasso(gran);
+  const teto = MAX_PASSOS[gran];
+  const montar = (base: Date, n: number) =>
+    Array.from({ length: n }, (_, i) =>
+      montarPasso(addDays(base, i * dias), hoje, anoRef, gran),
     );
+
+  if (janela.modo === "recentes") {
+    // `semanas` continua sendo o tamanho da janela EM SEMANAS, granularidade à
+    // parte: trocar de "por semana" para "por dia" tem de manter o recorte de
+    // tempo no lugar e mudar só a espessura da fatia. Um seletor que mudasse as
+    // duas coisas ao mesmo tempo seria impossível de usar para comparar.
+    const semanas = Math.max(1, Math.floor(janela.semanas));
+    const n = Math.max(1, Math.min(teto, (semanas * 7) / dias));
+    const primeira = addDays(inicioDoPasso(hoje, gran), -(n - 1) * dias);
+    return montar(primeira, n);
   }
 
   const a = parseData(janela.de);
   const b = parseData(janela.ate);
   if (!a || !b) return [];
   const [ini, fim] = a.getTime() <= b.getTime() ? [a, b] : [b, a];
-  const primeira = startOfWeek(ini);
-  const ultima = startOfWeek(fim);
+  const primeira = inicioDoPasso(ini, gran);
+  const ultima = inicioDoPasso(fim, gran);
   const total =
-    Math.round((ultima.getTime() - primeira.getTime()) / (86400000 * 7)) + 1;
-  const n = Math.max(1, Math.min(MAX_SEMANAS, total));
-  // Corte pelo FIM: janela grande demais perde as semanas antigas, não as novas.
-  const base = addDays(ultima, -(n - 1) * 7);
-  return Array.from({ length: n }, (_, i) =>
-    montarSemana(addDays(base, i * 7), hoje, anoRef),
-  );
+    Math.round((ultima.getTime() - primeira.getTime()) / (86400000 * dias)) + 1;
+  const n = Math.max(1, Math.min(teto, total));
+  // Corte pelo FIM: janela grande demais perde os passos antigos, não os novos.
+  return montar(addDays(ultima, -(n - 1) * dias), n);
+}
+
+/**
+ * A janela em semanas — o que a tela chama quando precisa só das datas-limite.
+ *
+ * Continua existindo porque é a pergunta que `escolherJanela` faz para
+ * pré-preencher os campos de data, e ali a granularidade não importa: o começo
+ * da janela de 12 semanas é o mesmo, esteja o gráfico desenhando dias ou
+ * semanas.
+ */
+export function janelaDeSemanas(hoje: Date, janela: Janela): Passo[] {
+  return janelaDePassos(hoje, janela, "semana");
+}
+
+/**
+ * O intervalo que a janela cobre de verdade, em milissegundos: `[ini, fim)`.
+ *
+ * É o que permite ao recorte de tempo valer para os painéis que NÃO desenham
+ * série — prazos, carga, divisão por tipo. Sem isto, o seletor de período
+ * mudaria um painel e deixaria os outros quatro falando de outro recorte, que é
+ * o defeito que ele existe para consertar.
+ */
+export function limitesDaJanela(
+  passos: readonly Passo[],
+): { ini: number; fim: number } | null {
+  if (!passos.length) return null;
+  const ultimo = passos[passos.length - 1];
+  return {
+    ini: passos[0].inicio.getTime(),
+    // O fim é EXCLUSIVO, e vale o dia seguinte ao último: `fim` é meia-noite do
+    // último dia, e comparar contra ele jogaria fora tudo o que aconteceu nele.
+    fim: addDays(ultimo.fim, 1).getTime(),
+  };
+}
+
+/**
+ * Esta demanda estava VIVA em algum momento da janela?
+ *
+ * A pergunta não é "nasceu dentro dela". Uma demanda aberta em março e ainda
+ * parada hoje é o caso que mais interessa a quem olha prazos e carga, e um
+ * recorte que a descartasse por causa da data de nascimento esconderia
+ * justamente o que está atrasado há mais tempo. Então:
+ *
+ *   - nasceu depois do fim da janela → fora (ainda não existia);
+ *   - foi entregue antes do começo   → fora (já tinha acabado);
+ *   - qualquer outro caso            → dentro.
+ *
+ * Com a janela padrão terminando hoje, isto devolve exatamente o conjunto que a
+ * tela mostrava antes de o recorte existir — a mudança não reescreve nenhum
+ * número de quem não mexer no seletor.
+ */
+export function ativaNaJanela<C extends CardFluxo>(
+  c: C,
+  entregueEm: number | null,
+  ini: number,
+  fim: number,
+): boolean {
+  const nasceu = criadoEm(c);
+  if (nasceu !== null && nasceu >= fim) return false;
+  if (entregueEm !== null && entregueEm < ini) return false;
+  return true;
 }
 
 export function criadoEm(c: CardFluxo): number | null {
@@ -255,30 +431,32 @@ export function calcularFluxo<C extends CardFluxo>(
   concluido: (c: C) => boolean,
   hoje: Date,
   janela: Janela,
+  gran: Granularidade = "semana",
 ): Fluxo {
-  const semanas = janelaDeSemanas(hoje, janela);
-  const n = semanas.length;
+  const passos = janelaDePassos(hoje, janela, gran);
+  const n = passos.length;
   if (!n)
     return {
-      semanas,
+      granularidade: gran,
+      passos,
       entradas: [],
       entregas: [],
       fila: [],
       saldo: [],
       p85: 0,
       amostra: 0,
-      entregas4: 0,
       totalEntradas: 0,
       totalEntregas: 0,
       vazaoMedia: 0,
       filaInicial: 0,
     };
 
-  const primeira = semanas[0].inicio.getTime();
-  const depoisDoFim = addDays(semanas[n - 1].inicio, 7).getTime();
+  const dias = diasDoPasso(gran);
+  const primeira = passos[0].inicio.getTime();
+  const depoisDoFim = addDays(passos[n - 1].inicio, dias).getTime();
   const indiceDa = (ms: number) => {
     if (ms < primeira || ms >= depoisDoFim) return -1;
-    return Math.floor((ms - primeira) / (86400000 * 7));
+    return Math.floor((ms - primeira) / (86400000 * dias));
   };
 
   const entradas = new Array<number>(n).fill(0);
@@ -318,18 +496,19 @@ export function calcularFluxo<C extends CardFluxo>(
     saldo.push(entradas[i] - entregas[i]);
   }
 
-  // A vazão média ignora a semana em curso: dividir uma semana pela metade pelo
-  // mesmo divisor das completas puxa a média para baixo todo início de semana, e
+  // A vazão média ignora o passo em curso: dividir um passo pela metade pelo
+  // mesmo divisor dos completos puxa a média para baixo todo início de semana, e
   // o número que serve para prometer prazo passaria a variar conforme o dia em
   // que alguém abriu o Dashboard.
-  const completas = semanas.filter((s) => !s.parcial).length;
+  const completas = passos.filter((s) => !s.parcial).length;
   const entregasCompletas = entregas.reduce(
-    (a, b, i) => a + (semanas[i].parcial ? 0 : b),
+    (a, b, i) => a + (passos[i].parcial ? 0 : b),
     0,
   );
 
   return {
-    semanas,
+    granularidade: gran,
+    passos,
     entradas,
     entregas,
     fila,
@@ -339,7 +518,6 @@ export function calcularFluxo<C extends CardFluxo>(
       0.85,
     ),
     amostra: duracoes.length,
-    entregas4: entregas.slice(-4).reduce((a, b) => a + b, 0),
     totalEntradas: entradas.reduce((a, b) => a + b, 0),
     totalEntregas: entregas.reduce((a, b) => a + b, 0),
     vazaoMedia: completas ? entregasCompletas / completas : 0,

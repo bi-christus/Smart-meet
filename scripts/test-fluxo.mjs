@@ -13,10 +13,15 @@
  * relógio do sistema passa hoje e falha na segunda-feira seguinte.
  */
 import {
+  MAX_PASSOS,
   MAX_SEMANAS,
+  ativaNaJanela,
   calcularFluxo,
+  criadoEm,
   isoDe,
+  janelaDePassos,
   janelaDeSemanas,
+  limitesDaJanela,
   parseData,
   percentil,
   rotuloEixo,
@@ -284,7 +289,7 @@ const cards = [
 const conc = (c) => c.enteredAt !== undefined;
 const f = calcularFluxo(cards, conc, HOJE, { modo: "recentes", semanas: 2 });
 
-checa("duas semanas na janela", f.semanas.length === 2);
+checa("duas semanas na janela", f.passos.length === 2);
 checa("a semana de 06/07 teve 1 entrada", f.entradas[0] === 1, String(f.entradas[0]));
 checa("a semana de 13/07 teve 3 entradas", f.entradas[1] === 3, String(f.entradas[1]));
 checa("domingo 23h contou na semana certa", f.entradas[1] === 3);
@@ -337,7 +342,131 @@ const semJanela = calcularFluxo(cards, conc, HOJE, {
 });
 checa(
   "janela vazia devolve séries vazias sem estourar",
-  semJanela.semanas.length === 0 && semJanela.fila.length === 0,
+  semJanela.passos.length === 0 && semJanela.fila.length === 0,
+);
+
+console.log("\n— a mesma janela, agora contada por dia —");
+
+/**
+ * O que estas afirmações protegem: que trocar de "por semana" para "por dia"
+ * mude a ESPESSURA da fatia e mais nada. Se o recorte de tempo andasse junto, o
+ * gráfico responderia a duas perguntas diferentes com o mesmo seletor — e a
+ * comparação entre as duas leituras, que é o único motivo de o botão existir,
+ * deixaria de valer.
+ */
+const d2 = janelaDePassos(HOJE, { modo: "recentes", semanas: 2 }, "dia");
+checa("2 semanas viram 14 dias", d2.length === 14, String(d2.length));
+checa(
+  "o último dia é hoje, e o primeiro está 13 dias atrás",
+  isoDe(d2[13].inicio) === "2026-07-15" && isoDe(d2[0].inicio) === "2026-07-02",
+  `${isoDe(d2[0].inicio)}..${isoDe(d2[13].inicio)}`,
+);
+checa("no passo de um dia, início e fim são o mesmo dia", isoDe(d2[3].inicio) === isoDe(d2[3].fim));
+checa("só o dia de hoje é parcial", d2.filter((p) => p.parcial).length === 1);
+checa(
+  "o rótulo do eixo vira a data seca",
+  d2[13].rotulo === "15/07",
+  d2[13].rotulo,
+);
+checa(
+  "o rótulo longo traz o dia da semana",
+  d2[13].rotuloLongo === "qua, 15 jul",
+  d2[13].rotuloLongo,
+);
+
+/**
+ * AS DUAS JANELAS NÃO TERMINAM NO MESMO DIA, e isso é decisão, não descuido.
+ *
+ * A semanal fecha no domingo da semana em curso, porque a coluna é a semana
+ * inteira — cortá-la em "hoje" daria uma barra de três dias com a largura de
+ * uma de sete (é o que `janelaDePassos` já explica sobre o intervalo à mão). A
+ * diária fecha hoje, porque um dia futuro é uma coluna que ainda não existe.
+ *
+ * Na prática nada muda: o app não cria demanda com data no futuro. Este teste
+ * existe para que a diferença fique escrita — quem cruzar os dois totais numa
+ * segunda-feira vai encontrá-la, e é melhor achá-la aqui do que na reunião.
+ */
+const j2 = janelaDeSemanas(HOJE, { modo: "recentes", semanas: 2 });
+checa(
+  "a janela por dia fecha HOJE; a por semana, no domingo da semana em curso",
+  isoDe(d2[13].fim) === "2026-07-15" && isoDe(j2[1].fim) === "2026-07-19",
+  `${isoDe(d2[13].fim)} vs ${isoDe(j2[1].fim)}`,
+);
+
+const fd = calcularFluxo(cards, conc, HOJE, { modo: "recentes", semanas: 2 }, "dia");
+checa("as séries por dia têm um ponto por dia", fd.entradas.length === 14);
+
+// Com um conjunto sem nada no futuro — que é o caso real — os dois totais
+// batem. É esta a garantia que interessa: mudar a espessura da fatia não pode
+// mudar o tamanho do bolo.
+const soPassado = cards.filter((c) => criadoEm(c) <= HOJE.getTime() && !c.enteredAt);
+const semSem = calcularFluxo(soPassado, conc, HOJE, { modo: "recentes", semanas: 1 });
+const semDia = calcularFluxo(soPassado, conc, HOJE, { modo: "recentes", semanas: 1 }, "dia");
+checa(
+  "sem dado no futuro, os totais não mudam com a granularidade",
+  semDia.totalEntradas === semSem.totalEntradas &&
+    semDia.totalEntregas === semSem.totalEntregas,
+  `${semDia.totalEntradas}/${semDia.totalEntregas} vs ${semSem.totalEntradas}/${semSem.totalEntregas}`,
+);
+checa(
+  "e a fila ao fim também não",
+  semDia.fila[semDia.fila.length - 1] === semSem.fila[semSem.fila.length - 1],
+  `${semDia.fila[semDia.fila.length - 1]} vs ${semSem.fila[semSem.fila.length - 1]}`,
+);
+checa("a granularidade volta declarada no resultado", fd.granularidade === "dia");
+checa(
+  "cada entrada cai no dia certo (14/07 recebeu uma)",
+  fd.entradas[12] === 1,
+  String(fd.entradas[12]),
+);
+checa(
+  "o teto por dia é mais apertado que o por semana",
+  MAX_PASSOS.dia < MAX_PASSOS.semana * 7,
+);
+const anoEmDias = janelaDePassos(HOJE, { modo: "recentes", semanas: 260 }, "dia");
+checa(
+  "janela absurda em dias para no teto",
+  anoEmDias.length === MAX_PASSOS.dia,
+  String(anoEmDias.length),
+);
+checa(
+  "e o corte é pelo fim: o último passo continua sendo hoje",
+  isoDe(anoEmDias[anoEmDias.length - 1].inicio) === "2026-07-15",
+);
+
+console.log("\n— o recorte que vale para os painéis sem série —");
+
+/**
+ * A regra de "estava viva na janela" é a que faz o seletor de período valer
+ * para prazos, carga e divisão por tipo. Ela erra para os dois lados com a
+ * mesma facilidade: apertada demais, esconde a demanda velha e parada — que é
+ * exatamente a que alguém foi procurar; frouxa demais, o filtro não filtra.
+ */
+const lim = limitesDaJanela(j2);
+checa("o fim do intervalo é EXCLUSIVO e cobre o último dia inteiro", lim.fim === ms(2026, 7, 20, 0));
+checa("janela vazia não tem limites", limitesDaJanela([]) === null);
+
+const viva = (c) => ativaNaJanela(c, conc(c) ? c.enteredAt : null, lim.ini, lim.fim);
+checa("demanda criada dentro da janela entra", viva(nasceu(2026, 7, 14)));
+checa(
+  "demanda velha e ainda aberta entra — é a que mais interessa nos prazos",
+  viva(nasceu(2025, 1, 4)),
+);
+checa(
+  "demanda entregue ANTES da janela sai",
+  !viva(entregue(nasceu(2026, 1, 4), 2026, 2, 4)),
+);
+checa(
+  "demanda entregue DENTRO da janela entra, mesmo nascida antes",
+  viva(entregue(nasceu(2026, 1, 4), 2026, 7, 15)),
+);
+checa(
+  "demanda nascida depois do fim da janela sai",
+  !viva(nasceu(2026, 9, 1)),
+);
+checa(
+  "o último dia da janela ainda está dentro",
+  viva(nasceu(2026, 7, 19, 23)),
 );
 
 console.log("\n— percentil —");
