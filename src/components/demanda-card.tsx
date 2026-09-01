@@ -45,6 +45,7 @@ export function DemandaCard({
   requester,
   requesterSector,
   dragging,
+  apagado,
   onDragStart,
   onDragEnd,
   onClick,
@@ -64,6 +65,19 @@ export function DemandaCard({
   requester?: string;
   requesterSector?: string;
   dragging?: boolean;
+  /**
+   * O card sai apagado — está na tela, mas não é o que se está procurando.
+   *
+   * Quem decide é o quadro (o destaque por tag). O card não sabe da regra, só
+   * do estado: é a mesma divisão de `dragging`, e é o que permite a árvore de
+   * Dimensões usar a prop um dia sem herdar o conceito de tag junto.
+   *
+   * APAGADO NÃO É DESABILITADO. Ele continua clicável, arrastável e legível —
+   * baixar a opacidade e tirar o clique junto transformaria "isto não é o que
+   * você procura" em "isto quebrou", e quem destaca uma tag frequentemente
+   * quer justamente mover um card que não a tem para perto dos que têm.
+   */
+  apagado?: boolean;
   onDragStart?: (e: React.DragEvent) => void;
   onDragEnd?: () => void;
   onClick: () => void;
@@ -103,7 +117,7 @@ export function DemandaCard({
 
   return (
     <div
-      className={`${styles.kcard} ${dragging ? styles.drag : ""} ${arrastavel ? "" : styles.semArraste}`}
+      className={`${styles.kcard} ${dragging ? styles.drag : ""} ${arrastavel ? "" : styles.semArraste} ${apagado ? styles.apagado : ""}`}
       draggable={arrastavel}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}

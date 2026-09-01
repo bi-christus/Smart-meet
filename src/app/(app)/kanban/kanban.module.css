@@ -1899,3 +1899,193 @@
 .linkIcone:hover {
   filter: brightness(1.08);
 }
+
+/* ---------- barra de tags: o filtro rápido do quadro ---------- */
+/**
+ * Linha própria, entre os filtros e o quadro.
+ *
+ * `margin-top: -6px` encosta-a nos filtros de propósito: sem isso ela ficaria
+ * flutuando entre dois blocos, à mesma distância dos dois, e leria como uma
+ * terceira coisa em vez de a continuação da barra de cima. Quando não há tag no
+ * quadro a linha não existe, e o espaçamento antigo volta inteiro.
+ */
+.tagbar {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 0 22px 12px;
+  margin-top: -6px;
+}
+.tagbarRot {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--tx-3);
+  flex: none;
+}
+.tagChips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
+}
+.tagFiltro {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  background: var(--s1);
+  border-radius: 999px;
+  color: var(--tx-2);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: border-color 0.16s, color 0.16s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tagFiltro {
+    transition: none;
+  }
+}
+.tagFiltro:hover {
+  color: var(--tx);
+  border-color: var(--brand-line);
+}
+/* A cor da borda e do fundo do chip marcado vem da própria tag, por `style` —
+   é a mesma `tagColor` do card, e é o que liga o chip ao ponto colorido lá.
+   Aqui fica só o que não depende dela. */
+.tagFiltroOn {
+  color: var(--tx);
+}
+.tagFiltroDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+}
+.tagFiltroN {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--tx-3);
+  font-variant-numeric: tabular-nums;
+}
+.tagFiltroOn .tagFiltroN {
+  color: var(--tx-2);
+}
+.tagMais {
+  height: 26px;
+  padding: 0 9px;
+  border: 1px dashed var(--line);
+  background: none;
+  border-radius: 999px;
+  color: var(--tx-3);
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tagMais:hover {
+  color: var(--tx);
+  border-color: var(--brand-line);
+}
+.tagbarAcoes {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+}
+.tagModo {
+  display: inline-flex;
+  background: var(--s1);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+}
+.tagModoBtn {
+  padding: 3px 10px;
+  border: none;
+  background: none;
+  border-radius: 6px;
+  color: var(--tx-2);
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tagModoBtn:hover {
+  color: var(--tx);
+}
+.tagModoOn,
+.tagModoOn:hover {
+  background: var(--brand);
+  color: #fff;
+}
+
+/**
+ * O aviso de tag parecida, embaixo do campo.
+ *
+ * Tom de INFORMAÇÃO, não de erro: nada aqui está errado, e pintar de vermelho
+ * uma tag que a pessoa tem todo direito de criar treina a ignorar o vermelho
+ * nos campos em que ele significa alguma coisa.
+ */
+.tagAviso {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 9px;
+  background: var(--s2);
+  font-size: 11.5px;
+  color: var(--tx-3);
+  line-height: 1.5;
+}
+.tagAviso > svg {
+  flex: none;
+  color: var(--tx-3);
+}
+.tagAvisoBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  background: var(--s1);
+  border-radius: 999px;
+  color: var(--tx);
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tagAvisoBtn:hover {
+  border-color: var(--brand-line);
+}
+/* Quebra sozinha para a linha de baixo quando os chips já encheram a primeira:
+   a frase é o que explica que o Enter continua valendo, e ela espremida entre
+   dois botões lê como legenda de um deles. */
+.tagAvisoFim {
+  flex-basis: 100%;
+}
