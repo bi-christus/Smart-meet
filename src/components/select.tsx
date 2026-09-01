@@ -3,7 +3,20 @@
 import { useEffect, useId, useRef, useState } from "react";
 import styles from "./select.module.css";
 
-export type SelectOption = { value: string; label: string; color?: string };
+export type SelectOption = {
+  value: string;
+  label: string;
+  color?: string;
+  /**
+   * O que desempata duas opções de mesmo nome — o e-mail, quase sempre.
+   *
+   * Só o `<Combobox>` desenha, e só quem monta a lista sabe quando preencher:
+   * pendurar o e-mail em toda linha encheria a lista de ruído para resolver um
+   * problema que a maioria das listas não tem. Nome repetido numa lista de
+   * escolha é escolha no escuro; nome único com e-mail embaixo é ruído.
+   */
+  hint?: string;
+};
 
 export function Select({
   value,

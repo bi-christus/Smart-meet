@@ -55,7 +55,12 @@ export function Combobox({
   const filtradas = useMemo(() => {
     const q = chave(busca.trim());
     if (!q) return options;
-    const hits = options.filter((o) => chave(o.label).includes(q));
+    // O `hint` entra na busca junto com o rótulo: quem digita o começo do
+    // e-mail está procurando a mesma pessoa que quem digita o nome, e uma
+    // busca que acha por um e não pelo outro parece quebrada.
+    const hits = options.filter(
+      (o) => chave(o.label).includes(q) || (!!o.hint && chave(o.hint).includes(q)),
+    );
     // Quem começa com o que foi digitado vem antes de quem só contém: digitar
     // "ma" tem de oferecer "Marketing" antes de "Comercial". `sort` é estável,
     // então o resto mantém a ordem do cadastro.
@@ -208,7 +213,10 @@ export function Combobox({
                 {o.color && (
                   <span className={styles.dot} style={{ background: o.color }} />
                 )}
-                <span className={styles.optLabel}>{o.label}</span>
+                <span className={styles.optTexto}>
+                  <span className={styles.optLabel}>{o.label}</span>
+                  {o.hint && <span className={styles.optHint}>{o.hint}</span>}
+                </span>
                 {o.value === value && (
                   <svg
                     className={styles.check}
