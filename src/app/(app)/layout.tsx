@@ -211,6 +211,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     title="Café"
                     aria-label="Café"
                   />
+                  {/* Em degrade, e não numa cor só: este é o único acento que
+                      redefine a paleta semântica inteira, e um quadrado
+                      terracota mentiria sobre isso — pareceria mais um laranja
+                      ao lado do laranja que já está na primeira posição. */}
+                  <button
+                    className={`${styles.swatch} ${styles.swEntre} ${accent === "entreaulas" ? styles.swOn : ""}`}
+                    onClick={() => setAccent("entreaulas")}
+                    title="Entre Aulas"
+                    aria-label="Entre Aulas"
+                  />
                 </div>
 
                 <div className={styles.popSep} />

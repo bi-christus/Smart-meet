@@ -9,7 +9,31 @@ import {
 } from "react";
 
 export type Theme = "dark" | "light";
-export type Accent = "preto" | "azul" | "cafe";
+/**
+ * Os acentos que o app sabe desenhar.
+ *
+ * `entreaulas` é o único que não é só uma família de marca: ele redefine também
+ * `--ok`, `--warn`, `--danger`, `--info` e `--susp` a partir da paleta da
+ * cantina (ver o bloco dele em `globals.css`). O tipo não distingue os dois
+ * casos de propósito — para quem lê o valor, acento é acento; a diferença é de
+ * quanto cada um redefine, e isso é assunto da folha.
+ */
+export type Accent = "preto" | "azul" | "cafe" | "entreaulas";
+
+/** Os valores válidos, para conferir o que voltou do `localStorage`. */
+const ACENTOS: readonly Accent[] = ["preto", "azul", "cafe", "entreaulas"];
+
+/**
+ * O acento guardado, ou o padrão.
+ *
+ * A conferência existe porque o `localStorage` é um campo aberto: um valor
+ * antigo de uma versão que oferecia outra lista, ou um dedo no console, entrava
+ * como `Accent` por causa do `as` e virava um `data-accent` que folha nenhuma
+ * casa — o app abria sem cor de marca, e nada na tela dizia por quê.
+ */
+function acentoValido(bruto: string | null): Accent {
+  return ACENTOS.includes(bruto as Accent) ? (bruto as Accent) : "preto";
+}
 
 type ThemeContextValue = {
   theme: Theme;
@@ -35,7 +59,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     try {
       const t = (localStorage.getItem("sm_theme") as Theme) || "dark";
-      const a = (localStorage.getItem("sm_accent") as Accent) || "preto";
+      const a = acentoValido(localStorage.getItem("sm_accent"));
       setThemeState(t);
       setAccentState(a);
       apply(t, a);
