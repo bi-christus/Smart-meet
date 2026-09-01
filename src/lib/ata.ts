@@ -85,6 +85,7 @@ export type NovaAta = {
   local?: string;
   facilitador?: string;
   participantes?: string[];
+  citados?: string[];
   meetingId?: string | null;
   /** Itens herdados da ata anterior — ver `herdarParaProxima`. */
   itens?: ItemDeAta[];
@@ -103,6 +104,7 @@ export async function criarAta(nova: NovaAta, createdBy: string): Promise<string
     local: limparTexto(nova.local, 80),
     facilitador: nova.facilitador ?? "",
     participantes: nova.participantes ?? [],
+    citados: nova.citados ?? [],
     meetingId: nova.meetingId ?? null,
     itens: nova.itens ?? [],
     createdAt: serverTimestamp(),
@@ -120,7 +122,20 @@ export async function criarAta(nova: NovaAta, createdBy: string): Promise<string
  */
 export async function salvarCabecalho(
   id: string,
-  patch: Partial<Pick<Ata, "titulo" | "data" | "horaInicio" | "horaFim" | "local" | "facilitador" | "participantes" | "meetingId">>,
+  patch: Partial<
+    Pick<
+      Ata,
+      | "titulo"
+      | "data"
+      | "horaInicio"
+      | "horaFim"
+      | "local"
+      | "facilitador"
+      | "participantes"
+      | "citados"
+      | "meetingId"
+    >
+  >,
 ): Promise<void> {
   const limpo = Object.fromEntries(
     Object.entries(patch).filter(([, v]) => v !== undefined),
@@ -158,6 +173,9 @@ export async function abrirProxima(
       local: anterior.local,
       facilitador: anterior.facilitador,
       participantes: anterior.participantes,
+      // Os citados NÃO vão junto: são quem apareceu NAQUELA gravação. A próxima
+      // reunião tem a sua, e herdar a lista faria a ata nova nascer afirmando
+      // presença de gente que ainda não entrou na sala.
       itens: herdarParaProxima(anterior),
     },
     createdBy,
