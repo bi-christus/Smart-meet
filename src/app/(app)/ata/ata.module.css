@@ -1,0 +1,858 @@
+/**
+ * A folha da aba Ata.
+ *
+ * DUAS COLUNAS, e a da esquerda é fixa. À esquerda mora o que descreve a
+ * reunião (quem, quando, onde, quantas demandas em cada estado); à direita, o
+ * trabalho. É a divisão que a reunião faz na vida real — alguém conduz olhando
+ * para a pauta enquanto o resumo fica de canto — e é por isso que a lateral não
+ * rola junto com a pauta: a contagem de atrasadas precisa continuar à vista
+ * enquanto se desce a lista.
+ *
+ * Abaixo de 1100px a lateral vira a primeira faixa horizontal: numa tela
+ * estreita, duas colunas de 300px espremem a tabela de tarefas a ponto de a
+ * coluna "Observação" caber uma palavra por linha.
+ */
+
+.page {
+  height: calc(100vh - 56px);
+  overflow: auto;
+  padding-bottom: 30px;
+}
+
+/* ---------- cabeçalho ---------- */
+.head {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 16px 22px 0;
+}
+.headMain {
+  min-width: 0;
+  flex: 1;
+}
+.headMain h1 {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  color: var(--tx);
+}
+.headMain p {
+  font-size: 12px;
+  color: var(--tx-3);
+  margin-top: 3px;
+  max-width: 620px;
+  line-height: 1.5;
+}
+.novaBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--brand);
+  color: #fff;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  flex: none;
+}
+.novaBtn:hover {
+  filter: brightness(1.08);
+}
+
+/* As mesmas abas do Kanban e do Dashboard — ver o comentário de `.quadros` lá. */
+.quadros {
+  display: inline-flex;
+  margin: 14px 22px 0;
+  background: var(--s1);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 3px;
+  gap: 2px;
+  overflow-x: auto;
+  max-width: calc(100% - 44px);
+  scrollbar-width: none;
+}
+.quadros::-webkit-scrollbar {
+  display: none;
+}
+.quadroBtn {
+  padding: 5px 12px;
+  border: none;
+  background: none;
+  border-radius: 6px;
+  color: var(--tx-2);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.16s cubic-bezier(0.4, 0, 0.2, 1), color 0.16s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .quadroBtn {
+    transition: none;
+  }
+}
+.quadroBtn:hover {
+  color: var(--tx);
+}
+.quadroOn,
+.quadroOn:hover {
+  background: var(--brand);
+  color: #fff;
+}
+
+.vazioTela {
+  margin: 22px;
+  padding: 26px;
+  border: 1px dashed var(--line);
+  border-radius: var(--r-lg);
+  color: var(--tx-3);
+  font-size: 13px;
+  text-align: center;
+}
+
+/**
+ * O erro de ESCRITA fica no topo, e não dentro do campo que falhou.
+ *
+ * Quem digita a decisão de uma demanda e a perde por falta de permissão precisa
+ * saber disso mesmo já tendo rolado para a demanda seguinte — e é justamente aí
+ * que uma mensagem presa ao campo já saiu da tela.
+ */
+.avisoErro {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 12px 22px 0;
+  padding: 9px 12px;
+  border: 1px solid rgba(251, 113, 133, 0.42);
+  border-radius: 10px;
+  background: color-mix(in srgb, #fb7185 10%, transparent);
+  color: var(--tx);
+  font-size: 12.5px;
+}
+.avisoErro > span {
+  flex: 1;
+}
+.avisoErro button {
+  border: 0;
+  background: none;
+  color: var(--tx-3);
+  cursor: pointer;
+  display: inline-flex;
+}
+
+/* ---------- corpo ---------- */
+.corpo {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 16px;
+  padding: 16px 22px 0;
+  align-items: start;
+}
+@media (max-width: 1100px) {
+  .corpo {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.lateral {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* Gruda no topo enquanto a pauta rola: a contagem de atrasadas é a régua com
+     que se conduz a reunião, e ela não pode sair da tela na terceira demanda. */
+  position: sticky;
+  top: 0;
+}
+@media (max-width: 1100px) {
+  .lateral {
+    position: static;
+  }
+}
+
+.painel {
+  background: var(--s1);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-lg);
+  padding: 14px;
+  min-width: 0;
+}
+.painelHead {
+  margin-bottom: 12px;
+}
+.painelHead h2 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--tx);
+}
+.painelHead h2 svg {
+  color: var(--tx-3);
+}
+
+.campo {
+  margin-bottom: 11px;
+}
+.campo > span {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--tx-3);
+  margin-bottom: 4px;
+}
+.valor {
+  font-size: 13px;
+  color: var(--tx);
+}
+.rostos {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.maisRostos {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--s2);
+  border: 1px solid var(--line);
+  color: var(--tx-3);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/**
+ * Cada contagem é um BOTÃO, e filtra a pauta.
+ *
+ * Ler "2 atrasadas" e ter de ir procurá-las na lista é o passo que faz a coluna
+ * virar enfeite. Clicando, a pauta encolhe para as duas — e é o mesmo estado do
+ * `Select` de estado ao lado da busca, para não haver dois filtros discordando.
+ */
+.contagem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  color: var(--tx-2);
+  font-family: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  text-align: left;
+}
+.contagem:hover {
+  background: var(--s2);
+  color: var(--tx);
+}
+.contagemOn {
+  border-color: var(--brand-line);
+  background: var(--s2);
+  color: var(--tx);
+}
+.contagemNome {
+  flex: 1;
+}
+.contagem b {
+  font-variant-numeric: tabular-nums;
+  color: var(--tx);
+}
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+.total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: var(--s2);
+}
+.total > span {
+  font-size: 11.5px;
+  color: var(--tx-3);
+}
+.total b {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--tx);
+  font-variant-numeric: tabular-nums;
+}
+.total b em {
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--tx-3);
+}
+
+.lateralAcoes {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.acaoSec,
+.acaoPerigo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--s1);
+  color: var(--tx-2);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.acaoSec:hover {
+  color: var(--tx);
+  border-color: var(--brand-line);
+}
+.acaoPerigo {
+  color: var(--tx-3);
+}
+.acaoPerigo:hover {
+  color: #fb7185;
+  border-color: rgba(251, 113, 133, 0.42);
+}
+
+/* ---------- a pauta ---------- */
+.principal {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.filtros {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+.buscawrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 220px;
+}
+.buscawrap svg {
+  position: absolute;
+  left: 10px;
+  color: var(--tx-3);
+  pointer-events: none;
+}
+.busca {
+  width: 100%;
+  height: 34px;
+  padding: 0 12px 0 32px;
+  background: var(--s1);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--tx);
+  font-family: inherit;
+  font-size: 12.5px;
+}
+.busca:focus {
+  outline: none;
+  border-color: var(--brand-line);
+}
+.filtro {
+  width: 200px;
+}
+
+.bloco {
+  background: var(--s1);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+}
+
+/**
+ * A demanda ocupa a largura que sobra; as três colunas de leitura são fixas.
+ *
+ * Elas respondem perguntas curtas ("qual o status?", "o que se decidiu?") e uma
+ * largura elástica faria as três mudarem de tamanho a cada demanda de título
+ * comprido — o olho perderia a referência de onde a decisão está escrita, que é
+ * a coluna que se lê em sequência descendo a pauta.
+ */
+.blocoTopo {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 150px 250px 250px 32px;
+  gap: 16px;
+  padding: 16px;
+  align-items: start;
+}
+@media (max-width: 1320px) {
+  .blocoTopo {
+    grid-template-columns: minmax(0, 1fr) 150px 32px;
+  }
+}
+@media (max-width: 760px) {
+  .blocoTopo {
+    grid-template-columns: minmax(0, 1fr) 32px;
+  }
+}
+
+.demanda {
+  min-width: 0;
+}
+.demandaRot {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: var(--tx-3);
+  margin-bottom: 5px;
+}
+.demanda h3 {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--tx);
+  line-height: 1.35;
+}
+.demanda p {
+  font-size: 12px;
+  color: var(--tx-3);
+  line-height: 1.5;
+  margin-top: 5px;
+}
+.area {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 9px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--s2);
+  border: 1px solid var(--line-soft);
+  font-size: 11px;
+  color: var(--tx-2);
+}
+
+.coluna {
+  min-width: 0;
+}
+.colunaRot {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--tx-3);
+  margin-bottom: 7px;
+}
+.selo {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.resp {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: var(--tx-2);
+}
+
+/**
+ * O campo de decisão parece TEXTO até alguém clicar nele.
+ *
+ * Sem borda e sem fundo, ele lê como o conteúdo da coluna — que é o que ele é
+ * na maior parte do tempo, porque a ata é lida muito mais vezes do que
+ * escrita. A moldura aparece no foco e no hover: é ali que ele precisa avisar
+ * que é editável.
+ */
+.campoTexto {
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 5px 7px;
+  margin: -5px -7px;
+  background: none;
+  color: var(--tx);
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 1.5;
+  resize: vertical;
+}
+.campoTexto::placeholder {
+  color: var(--tx-3);
+}
+.campoTexto:hover {
+  border-color: var(--line);
+}
+.campoTexto:focus {
+  outline: none;
+  border-color: var(--brand-line);
+  background: var(--s2);
+}
+
+.levar {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 9px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--s1);
+  color: var(--tx-2);
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+.levar:hover {
+  color: var(--tx);
+  border-color: var(--brand-line);
+}
+.levarOn,
+.levarOn:hover {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+
+.recolher {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: none;
+  color: var(--tx-3);
+  cursor: pointer;
+}
+.recolher:hover {
+  color: var(--tx);
+  border-color: var(--brand-line);
+}
+
+/* ---------- tarefas ---------- */
+.tarefas {
+  border-top: 1px solid var(--line-soft);
+  background: var(--s2);
+  padding: 12px 16px 14px;
+}
+.tarefasRot {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--tx-3);
+  margin-bottom: 9px;
+}
+/* A tabela rola DENTRO da própria caixa: o corpo da página nunca rola na
+   horizontal (regra do projeto), e são seis colunas com dois `Select` dentro. */
+.tabelaWrap {
+  overflow-x: auto;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: var(--s1);
+}
+.tabela {
+  width: 100%;
+  min-width: 780px;
+  border-collapse: collapse;
+}
+.tabela th {
+  text-align: left;
+  padding: 8px 10px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--tx-3);
+  border-bottom: 1px solid var(--line-soft);
+  white-space: nowrap;
+}
+.tabela td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line-soft);
+  vertical-align: middle;
+}
+.tabela tr:last-child td {
+  border-bottom: 0;
+}
+.tabela td:nth-child(1) {
+  min-width: 200px;
+}
+.tabela td:nth-child(2) {
+  width: 170px;
+}
+.tabela td:nth-child(3) {
+  width: 140px;
+}
+.tabela td:nth-child(4) {
+  width: 150px;
+}
+
+/* Mesmo partido do `.campoTexto`: lê como célula, vira campo no foco. */
+.celula {
+  width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: none;
+  color: var(--tx);
+  font-family: inherit;
+  font-size: 12.5px;
+}
+.celula::placeholder {
+  color: var(--tx-3);
+}
+.celula:hover {
+  border-color: var(--line);
+}
+.celula:focus {
+  outline: none;
+  border-color: var(--brand-line);
+  background: var(--s2);
+}
+
+.remover {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--tx-3);
+  cursor: pointer;
+}
+.remover:hover {
+  color: #fb7185;
+  background: color-mix(in srgb, #fb7185 12%, transparent);
+}
+
+.addTarefa {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 10px;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: none;
+  color: var(--tx-2);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.addTarefa:hover {
+  color: var(--tx);
+  border-color: var(--brand-line);
+}
+.tarefasResumo {
+  margin-left: 10px;
+  font-size: 11.5px;
+  color: var(--tx-3);
+}
+
+/* ---------- modais ---------- */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  z-index: 60;
+}
+.modal {
+  width: 100%;
+  max-height: 88vh;
+  overflow: auto;
+  background: var(--s1);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 18px;
+}
+.mhead {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.mchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: var(--s2);
+  border: 1px solid var(--line-soft);
+  font-size: 11px;
+  color: var(--tx-2);
+}
+.mtitulo {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--tx);
+  margin-bottom: 10px;
+}
+.confirma {
+  font-size: 12.5px;
+  color: var(--tx-2);
+  line-height: 1.6;
+  margin-bottom: 8px;
+}
+.macoes {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+.rotulo {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--tx-3);
+  margin: 12px 0 5px;
+}
+.input {
+  width: 100%;
+  height: 34px;
+  padding: 0 11px;
+  background: var(--s2);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--tx);
+  font-family: inherit;
+  font-size: 12.5px;
+}
+.input:focus {
+  outline: none;
+  border-color: var(--brand-line);
+}
+.linhaCampos {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+}
+.pessoas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.pessoa {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px 0 5px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--s2);
+  color: var(--tx-2);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.pessoa:hover {
+  color: var(--tx);
+  border-color: var(--brand-line);
+}
+.pessoaOn {
+  border-color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 16%, transparent);
+  color: var(--tx);
+}
+.vazioInline {
+  font-size: 12px;
+  color: var(--tx-3);
+}
+.avisoModal {
+  padding: 9px 11px;
+  border: 1px solid var(--line-soft);
+  border-radius: 9px;
+  background: var(--s2);
+  font-size: 12px;
+  color: var(--tx-2);
+  line-height: 1.5;
+}
+.erroModal {
+  margin-top: 12px;
+  padding: 9px 11px;
+  border: 1px solid rgba(251, 113, 133, 0.42);
+  border-radius: 9px;
+  background: color-mix(in srgb, #fb7185 10%, transparent);
+  font-size: 12px;
+  color: var(--tx);
+}
+
+.btnGhost,
+.btnPrim,
+.btnPerigo {
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 9px;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btnGhost {
+  border: 1px solid var(--line);
+  background: none;
+  color: var(--tx-2);
+}
+.btnGhost:hover {
+  color: var(--tx);
+}
+.btnPrim {
+  border: 0;
+  background: var(--brand);
+  color: #fff;
+}
+.btnPrim:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.btnPerigo {
+  border: 0;
+  background: #d13c52;
+  color: #fff;
+}
+.btnPerigo:hover {
+  filter: brightness(1.08);
+}

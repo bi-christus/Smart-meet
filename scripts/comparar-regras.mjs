@@ -419,6 +419,45 @@ for (const quem of Object.keys(PESSOAS)) {
     { sector: "B.I.", createdBy: "op@px.com.br" },
     { sector: "B.I.", createdBy: "op@px.com.br", title: "Nova" },
   );
+  // ---- atas de reuniao ----
+  //
+  // A pergunta que estes casos respondem, e que o Italo fez por escrito: o B.I.
+  // nao pode ver a ata das Cantinas, nem o contrario. O "operador de outro
+  // setor" e o "gestor de outro setor" sao dessa pergunta — os dois estao em
+  // "RH" e devem sair negados nas cinco linhas abaixo.
+  const ATA = {
+    setor: "B.I.",
+    titulo: "Reuniao semanal",
+    createdBy: "op@px.com.br",
+  };
+  caso(quem, "ler ata", "get", doc("atas/a1"), ATA, null);
+  caso(quem, "listar atas do setor", "list", doc("atas/a1"), ATA, null);
+  caso(quem, "criar ata", "create", doc("atas/a1"), null, {
+    ...ATA,
+    createdBy: PESSOAS[quem].email,
+  });
+  // Registrar decisao e tarefa e ESCRITA DE QUEM PARTICIPA, nao so do gestor:
+  // a ata e preenchida durante a reuniao, por quem esta com o computador aberto.
+  caso(quem, "registrar decisao na ata", "update", doc("atas/a1"), ATA, {
+    ...ATA,
+    itens: [{ cardId: "c1", decisao: "Aprovado" }],
+  });
+  // O setor e imutavel: trocá-lo por update seria a porta dos fundos para
+  // escrever na ata de outro setor.
+  caso(quem, "mudar o setor da ata", "update", doc("atas/a1"), ATA, {
+    ...ATA,
+    setor: "RH",
+  });
+  // Ata sem titulo nao entra — e o mesmo teto de 120 que o core aplica.
+  caso(quem, "criar ata sem titulo", "create", doc("atas/a1"), null, {
+    ...ATA,
+    titulo: "",
+    createdBy: PESSOAS[quem].email,
+  });
+  // Apagar e so de gestor ou admin: quem participou corrige o que escreveu, mas
+  // nao faz a reuniao inteira deixar de ter existido.
+  caso(quem, "apagar ata", "delete", doc("atas/a1"), ATA, null);
+
   caso(
     quem,
     "listar colunas",
