@@ -42,6 +42,7 @@ import { useAsyncData } from "@/lib/use-async-data";
 import { Icon } from "@/components/icons";
 import { Avatar } from "@/components/avatar";
 import { Select, type SelectOption } from "@/components/select";
+import { Combobox } from "@/components/combobox";
 import { Modal } from "@/components/modal";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
@@ -195,6 +196,71 @@ export default function AtaPage() {
           l.item.tarefas.some((t) => t.responsavel === fResp)),
     );
   }, [pauta, busca, fEstado, fResp]);
+
+  /**
+   * Quem pode receber uma tarefa desta ata.
+   *
+   * DUAS ORIGENS, e a segunda existe para não apagar trabalho de ninguém.
+   *
+   * A primeira é o SETOR. Antes desta lista, a tabela oferecia
+   * `Object.values(usersMap)` — todo usuário ativo do app inteiro, porque
+   * `subscribeUsers` assina a coleção sem filtro. Dava para atribuir a tarefa de
+   * uma ata de Cantinas a alguém que a regra do Firestore nem deixa ler aquela
+   * ata. O modal de participantes desta mesma tela já fazia o certo, e diz por
+   * quê: convidar quem não pode ler é um convite que o app não cumpre.
+   *
+   * A segunda são os JÁ ATRIBUÍDOS. Quem recebeu tarefa e depois saiu do setor
+   * some da primeira lista — e, sem esta segunda, o `<Combobox>` abriria sem
+   * nenhuma opção correspondendo ao valor gravado. O campo apareceria vazio, e a
+   * primeira pessoa a tocar naquela linha apagaria o responsável sem saber.
+   *
+   * `hint` só é preenchido no HOMÔNIMO. Duas "Ana Silva" numa lista de escolha
+   * é escolha no escuro; o e-mail embaixo de todo nome único seria ruído.
+   */
+  const pessoasDaAta = useMemo<SelectOption[]>(() => {
+    const doSetor = users.filter(
+      (u) => u.active && (u.sectors ?? []).includes(setor),
+    );
+    const conhecidos = new Set(doSetor.map((u) => u.email));
+    const forasteiros: { email: string; name: string; color?: string }[] = [];
+    const vistos = new Set<string>();
+    (ata?.itens ?? []).forEach((i) =>
+      i.tarefas.forEach((t) => {
+        if (!t.responsavel || conhecidos.has(t.responsavel) || vistos.has(t.responsavel))
+          return;
+        vistos.add(t.responsavel);
+        const u = usersMap[t.responsavel];
+        forasteiros.push({
+          email: t.responsavel,
+          name: u?.name ?? t.responsavel,
+          color: u?.color,
+        });
+      }),
+    );
+
+    const todos = [...doSetor, ...forasteiros];
+    const quantos = new Map<string, number>();
+    todos.forEach((u) => quantos.set(u.name, (quantos.get(u.name) ?? 0) + 1));
+    const opcao = (u: { email: string; name: string; color?: string }): SelectOption => ({
+      value: u.email,
+      label: u.name,
+      color: u.color,
+      hint: (quantos.get(u.name) ?? 0) > 1 ? u.email : undefined,
+    });
+
+    return [
+      { value: "", label: "Sem responsável" },
+      ...doSetor
+        .slice()
+        .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
+        .map(opcao),
+      // Depois de todo mundo do setor, e nunca misturados: quem já não pertence
+      // ao setor é exceção, e exceção no meio da lista alfabética parece regra.
+      ...forasteiros
+        .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
+        .map(opcao),
+    ];
+  }, [users, usersMap, setor, ata]);
 
   /** Só quem tem demanda ou tarefa nesta ata entra no filtro. */
   const responsaveis = useMemo(() => {
@@ -521,6 +587,7 @@ export default function AtaPage() {
                   linha={linha}
                   nomeDe={nomeDe}
                   usersMap={usersMap}
+                  pessoas={pessoasDaAta}
                   recolhido={recolhidos.has(linha.item.id)}
                   onRecolher={() =>
                     setRecolhidos((cur) => {
@@ -649,6 +716,7 @@ function BlocoDaDemanda({
   linha,
   nomeDe,
   usersMap,
+  pessoas,
   recolhido,
   onRecolher,
   onGravar,
@@ -656,6 +724,7 @@ function BlocoDaDemanda({
   linha: ItemDaPauta;
   nomeDe: (email: string) => string;
   usersMap: Record<string, UserProfile>;
+  pessoas: SelectOption[];
   recolhido: boolean;
   onRecolher: () => void;
   onGravar: (muda: (i: ItemDeAta) => ItemDeAta) => void;
@@ -807,7 +876,7 @@ function BlocoDaDemanda({
         <TabelaDeTarefas
           tarefas={item.tarefas}
           nomeDe={nomeDe}
-          usersMap={usersMap}
+          pessoas={pessoas}
           onGravar={onGravar}
         />
       )}
@@ -815,25 +884,73 @@ function BlocoDaDemanda({
   );
 }
 
+/**
+ * Uma célula de texto da tabela de tarefas — que grava quando você SAI dela.
+ *
+ * Antes disto, os dois campos de texto da tabela chamavam `onGravar` no
+ * `onChange`, e `onGravar` é `salvarItens`: uma escrita do array de itens
+ * INTEIRO da ata, no Firestore, por caractere digitado. Uma tarefa de quarenta
+ * letras eram quarenta escritas do documento inteiro, durante a reunião, com
+ * outras pessoas na mesma tela recebendo os quarenta snapshots de volta.
+ *
+ * A decisão e o objetivo, no bloco acima, já faziam o certo — estado local e
+ * gravação no `blur`. Isto é a mesma coisa, extraída porque agora são dois
+ * campos por linha vezes as linhas de cada demanda da pauta.
+ *
+ * O Enter tira o foco de propósito: numa tabela que se preenche com o
+ * cronômetro correndo, "terminei esta célula" é o gesto mais frequente que
+ * existe, e ele não pode exigir mirar o mouse em outro lugar.
+ */
+function CelulaTexto({
+  valor,
+  placeholder,
+  ariaLabel,
+  onGravar,
+}: {
+  valor: string;
+  placeholder?: string;
+  ariaLabel: string;
+  onGravar: (v: string) => void;
+}) {
+  const [texto, setTexto] = useState(valor);
+  // O mesmo eco de `BlocoDaDemanda`, e pelo mesmo motivo: o campo é local
+  // enquanto se digita e volta a seguir a ata quando o snapshot traz OUTRO
+  // valor. Sem a comparação, o eco da própria escrita devolveria o cursor para
+  // o fim do campo no meio da digitação de outra pessoa.
+  const [eco, setEco] = useState(valor);
+  if (valor !== eco) {
+    setEco(valor);
+    setTexto(valor);
+  }
+  return (
+    <input
+      className={styles.celula}
+      value={texto}
+      placeholder={placeholder}
+      onChange={(e) => setTexto(e.target.value)}
+      onBlur={() => {
+        if (texto !== valor) onGravar(texto.trim());
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+      }}
+      aria-label={ariaLabel}
+    />
+  );
+}
+
 function TabelaDeTarefas({
   tarefas,
   nomeDe,
-  usersMap,
+  pessoas,
   onGravar,
 }: {
   tarefas: TarefaDeAta[];
   nomeDe: (email: string) => string;
-  usersMap: Record<string, UserProfile>;
+  /** Montada uma vez na página — ver `pessoasDaAta`. */
+  pessoas: SelectOption[];
   onGravar: (muda: (i: ItemDeAta) => ItemDeAta) => void;
 }) {
-  const pessoas: SelectOption[] = [
-    { value: "", label: "Sem responsável" },
-    ...Object.values(usersMap)
-      .filter((u) => u.active)
-      .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
-      .map((u) => ({ value: u.email, label: u.name, color: u.color })),
-  ];
-
   const mudar = (id: string, patch: Partial<TarefaDeAta>) =>
     onGravar((i) => ({
       ...i,
@@ -860,20 +977,26 @@ function TabelaDeTarefas({
               {tarefas.map((t) => (
                 <tr key={t.id}>
                   <td>
-                    <input
-                      className={styles.celula}
-                      value={t.texto}
+                    <CelulaTexto
+                      valor={t.texto}
                       placeholder="O que fazer"
-                      onChange={(e) => mudar(t.id, { texto: e.target.value })}
-                      aria-label="Tarefa"
+                      ariaLabel="Tarefa"
+                      onGravar={(v) => mudar(t.id, { texto: v })}
                     />
                   </td>
                   <td>
-                    <Select
+                    {/* `<Combobox>` e não `<Select>`: a lista de gente cresce
+                        sem teto, e quem preenche a ata durante a reunião sabe o
+                        nome de cor — digitar três letras é mais rápido do que
+                        procurar com o olho numa lista rolante. Mesmo motivo que
+                        já tinha trocado os dois campos de Solicitante. */}
+                    <Combobox
                       value={t.responsavel}
                       options={pessoas}
                       onChange={(v) => mudar(t.id, { responsavel: v })}
+                      placeholder="Sem responsável"
                       ariaLabel={`Responsável por ${t.texto || "a tarefa"}`}
+                      vazioTexto="Ninguém com esse nome neste setor."
                     />
                   </td>
                   <td>
@@ -903,12 +1026,11 @@ function TabelaDeTarefas({
                     />
                   </td>
                   <td>
-                    <input
-                      className={styles.celula}
-                      value={t.observacao}
+                    <CelulaTexto
+                      valor={t.observacao}
                       placeholder="—"
-                      onChange={(e) => mudar(t.id, { observacao: e.target.value })}
-                      aria-label="Observação"
+                      ariaLabel="Observação"
+                      onGravar={(v) => mudar(t.id, { observacao: v })}
                     />
                   </td>
                   <td>

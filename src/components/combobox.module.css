@@ -114,7 +114,23 @@
   cursor: pointer;
   transition: background 0.1s, color 0.1s;
 }
+/* O `min-width: 0` é o que faz o `text-overflow` da linha de baixo funcionar:
+   sem ele o item flex assume a largura do conteúdo e o menu é que estoura. */
+.optTexto {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
 .optLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.optHint {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10.5px;
+  color: var(--tx-3);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
