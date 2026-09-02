@@ -15,7 +15,7 @@
  * Mantém a API do `Select` (mesmo `SelectOption`), então trocar um pelo outro é
  * só trocar o nome do componente.
  */
-import { useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { SelectOption } from "./select";
 import styles from "./combobox.module.css";
 
@@ -46,6 +46,13 @@ export function Combobox({
   const [busca, setBusca] = useState("");
   const [ativa, setAtiva] = useState(0);
   const [up, setUp] = useState(false);
+  /** Onde o menu é desenhado, em coordenadas de janela — ver `medir`. */
+  const [pos, setPos] = useState<{
+    top: number;
+    left: number;
+    width: number;
+    maxHeight: number;
+  } | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const baseId = useId();
   const listId = `${baseId}-list`;
@@ -76,13 +83,65 @@ export function Combobox({
   // resultado, e um índice antigo escolheria o nome errado no Enter.
   const idx = Math.min(ativa, filtradas.length - 1);
 
+  /**
+   * O menu acompanha o campo enquanto a página rola.
+   *
+   * `capture: true` porque quem rola quase nunca é a janela: é o `.modal` ou a
+   * tabela em volta. Rolagem não sobe na árvore — só na captura dá para ouvir
+   * todos com um listener só.
+   */
+  useEffect(() => {
+    if (!open) return;
+    const aoMover = () => medir();
+    window.addEventListener("scroll", aoMover, true);
+    window.addEventListener("resize", aoMover);
+    return () => {
+      window.removeEventListener("scroll", aoMover, true);
+      window.removeEventListener("resize", aoMover);
+    };
+  }, [open]);
+
+  /**
+   * A seta rola o menu até a opção ativa.
+   *
+   * Sem isto, a partir da sétima opção — o que `max-height: 260px` comporta —
+   * `ArrowDown` movia um cursor que estava fora da tela.
+   */
+  useEffect(() => {
+    if (!open) return;
+    document
+      .getElementById(`${baseId}-opt-${idx}`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [open, idx, baseId]);
+
+  /**
+   * Mede o campo e decide onde o menu cabe — em coordenadas de JANELA.
+   *
+   * Mesma história do `<Select>`: o menu era `absolute` dentro do `.root`, e
+   * qualquer ancestral com `overflow` diferente de `visible` o recortava. O
+   * `.modal` desta base tem `max-height: 88vh` com `overflow: auto`, e o
+   * `<Combobox>` de responsável mora dentro de uma tabela que também rola. Com
+   * `fixed`, o preço é remedir quando a página rola.
+   */
+  function medir() {
+    const r = rootRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const abaixo = window.innerHeight - r.bottom;
+    const acima = r.top;
+    const paraCima = abaixo < 280 && acima > abaixo;
+    const altura = Math.min(260, Math.max(120, (paraCima ? acima : abaixo) - 14));
+    setUp(paraCima);
+    setPos({
+      top: paraCima ? r.top - 6 - altura : r.bottom + 6,
+      left: r.left,
+      width: r.width,
+      maxHeight: altura,
+    });
+  }
+
   function abrir() {
     if (open) return;
-    const r = rootRef.current?.getBoundingClientRect();
-    if (r) {
-      const below = window.innerHeight - r.bottom;
-      setUp(below < 280 && r.top > below);
-    }
+    medir();
     // Abre limpo, mostrando a lista inteira: quem abriu pode só querer olhar as
     // opções, e começar com o nome atual no campo obrigaria a apagá-lo antes.
     setBusca("");
@@ -186,11 +245,17 @@ export function Combobox({
         </svg>
       </div>
 
-      {open && (
+      {open && pos && (
         <div
           className={`${styles.menu} ${up ? styles.up : ""}`}
           role="listbox"
           id={listId}
+          style={{
+            top: pos.top,
+            left: pos.left,
+            width: pos.width,
+            maxHeight: pos.maxHeight,
+          }}
         >
           {filtradas.length === 0 ? (
             <div className={styles.vazio}>{vazioTexto}</div>

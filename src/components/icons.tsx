@@ -358,6 +358,19 @@ const PATHS: Record<string, ReactNode> = {
   chevronRight: <path d="M9 6l6 6-6 6" />,
 };
 
+/**
+ * `aria-hidden` SEMPRE, e é isto que faz o ícone ser só desenho.
+ *
+ * O `<svg>` saía sem `aria-hidden`, sem `<title>` e sem `role`. Um `<svg>` sem
+ * nome acessível não contribui nome nenhum — então um botão só-ícone ficava
+ * mudo para leitor de tela —, mas ele ainda entra na árvore de acessibilidade
+ * como nó de imagem sem rótulo, que é ruído em toda lista e todo cabeçalho onde
+ * o ícone acompanha um texto que já diz a mesma coisa.
+ *
+ * A regra que sai daí, e vale para o app inteiro: **botão só-ícone precisa de
+ * `aria-label` no BOTÃO**. O ícone nunca vai nomeá-lo. O `<Combobox>` já fazia
+ * isso nos svgs dele; aqui a correção vale para os 60 ícones de uma vez.
+ */
 export function Icon({ name, size = 24 }: { name: string; size?: number }) {
   return (
     <svg
@@ -369,6 +382,8 @@ export function Icon({ name, size = 24 }: { name: string; size?: number }) {
       strokeWidth={2}
       strokeLinecap="round"
       strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
     >
       {PATHS[name] ?? null}
     </svg>

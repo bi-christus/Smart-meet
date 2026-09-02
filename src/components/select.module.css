@@ -62,11 +62,16 @@
   color: var(--accent);
 }
 
+/* `fixed`, e as coordenadas vêm do TSX.
+
+   Era `absolute` dentro do `.root`, o que entregava o menu a qualquer ancestral
+   com `overflow` diferente de `visible` — e há dois comuns: o `.tabelaWrap` da
+   tabela de tarefas da Ata e o próprio `.modal`, que tem `max-height: 88vh` com
+   `overflow: auto`. Nos dois, o menu das últimas linhas era recortado pela
+   metade. `fixed` escapa do recorte de todos eles; o preço é medir o gatilho,
+   que é o que `medir()` faz. */
 .menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  right: 0;
+  position: fixed;
   z-index: 90;
   background: var(--s2);
   border: 1px solid var(--line);
@@ -91,9 +96,8 @@
     transform: none;
   }
 }
+/* Só a origem da animação: a posição inteira vem do TSX agora. */
 .menu.up {
-  top: auto;
-  bottom: calc(100% + 6px);
   transform-origin: bottom center;
   animation: menuUp 0.12s cubic-bezier(0.32, 0.72, 0, 1);
 }
@@ -122,18 +126,17 @@
   text-align: left;
   cursor: pointer;
   transition: background 0.1s, color 0.1s;
-  animation: optIn 0.24s both cubic-bezier(0.4, 0, 0.2, 1);
 }
-@keyframes optIn {
-  from {
-    opacity: 0;
-    transform: translateX(-5px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
+/* O `optIn` escalonado por índice saiu daqui, e o `animationDelay` saiu do TSX.
+
+   Era `animation: optIn 0.24s both` com `animationDelay: ${i * 18}ms`. Como
+   `both` inclui `backwards`, cada opção ficava em `opacity: 0` durante toda a
+   espera — medido: com 20 opções a última só termina de aparecer em 582ms, com
+   50 em 1122ms, com 80 em 1662ms. AGENTS.md §3 põe o teto em 300ms, e a lista
+   de responsável de uma ata passa fácil de 20 nomes.
+
+   O `menuIn` de 0,12s no container já dá todo o sinal de entrada necessário — e
+   é exatamente o que o `<Combobox>` faz, com a mesma lista de gente. */
 .optLabel {
   overflow: hidden;
   text-overflow: ellipsis;

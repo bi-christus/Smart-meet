@@ -54,11 +54,12 @@
   color: var(--accent);
 }
 
+/* `fixed` pelo mesmo motivo do `select.module.css`: `absolute` entregava o menu
+   a qualquer ancestral com `overflow` — o `.modal` (`max-height: 88vh`) e o
+   `.tabelaWrap` da Ata recortavam as últimas opções pela metade. As coordenadas
+   vêm do TSX. */
 .menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  right: 0;
+  position: fixed;
   z-index: 90;
   background: var(--s2);
   border: 1px solid var(--line);
@@ -82,9 +83,8 @@
     transform: none;
   }
 }
+/* Só a origem da animação: a posição vem do TSX. */
 .menu.up {
-  top: auto;
-  bottom: calc(100% + 6px);
   transform-origin: bottom center;
   animation: menuUp 0.12s cubic-bezier(0.32, 0.72, 0, 1);
 }
