@@ -172,6 +172,72 @@ const EXIGIDOS_ATA = [
   },
 ];
 
+/**
+ * A regua da demanda que nasce DENTRO da ata.
+ *
+ * A ata passou a criar card, e isso NAO fura a fronteira: e clique humano, com
+ * formulario aberto, no navegador — a mesma natureza da criacao no Kanban e da
+ * aceitacao em api/demandas/decidir. A fronteira continua sendo sobre o caminho
+ * AUTOMATICO, e PROIBIDOS_ATA (acima) continua impedindo a rota de gerar de
+ * criar card sozinha.
+ *
+ * O que este alvo guarda e outra coisa, e ela some sem quebrar nada: a
+ * obrigatoriedade da dimensao no CAMINHO DE ESCRITA. Hoje a tela confere duas
+ * vezes — o botao fica desabilitado sem dimensao, e `criarDemanda` chama
+ * `conferirClassificacao` antes de montar o card. A segunda e a que importa: o
+ * `disabled` do botao e estado de formulario, e formulario e reescrito. No dia
+ * em que alguem trocar o modal, a checagem do caminho pode ir junto sem que
+ * teste, tipo, lint ou tela reclamem — e a aba volta a abrir demanda sem
+ * dominio, que e exatamente o que o Mapa de Dominios das Cantinas existe para
+ * impedir. Um `disabled` nao e uma regra; uma funcao pura chamada no caminho e.
+ */
+const EXIGIDOS_ATA_TELA = [
+  {
+    padrao: /\bconferirClassificacao\s*\(/,
+    // DOIS caminhos de escrita precisam da mesma regua, e por isso a conta e de
+    // chamadas e nao de existencia: `criarDemanda` (a demanda que nasce) e
+    // `classificar` (a dimensao trocada depois). Com "existe pelo menos um", a
+    // checagem podia sumir de um dos dois e o guarda continuava verde — foi
+    // exatamente o que aconteceu quando este alvo foi testado pela primeira vez.
+    vezes: 2,
+    exigencia:
+      "nao confere a classificacao nos dois caminhos de escrita — a aba voltaria a abrir ou reclassificar demanda sem dimensao",
+    reponha:
+      "volte a chamar `conferirClassificacao(...)` dentro de `criarDemanda` (antes de montar o CardInput) " +
+      "E dentro de `classificar`, recusando quando `ok` for falso",
+  },
+  {
+    padrao: /\bconferirAssuntoNovo\s*\(/,
+    exigencia:
+      "nao confere o assunto novo — assunto sem dimensao entraria na pauta e nunca seria cobrado",
+    reponha:
+      "volte a chamar `conferirAssuntoNovo(dados, ata.itens, dims)` dentro de `criarAssunto`",
+  },
+  {
+    // O vinculo tem de entrar no MESMO lote do card. Duas escritas separadas
+    // deixam alcancavel o pior estado: card no quadro e ata ainda chamando
+    // aquilo de assunto — e o proximo clique cria um card duplicado.
+    padrao: /\bsalvarItensNoLote\s*\(/,
+    exigencia:
+      "nao grava o vinculo no mesmo lote do card — card orfao e demanda duplicada voltam a ser alcancaveis",
+    reponha:
+      "volte a passar `(batch, novoId) => salvarItensNoLote(batch, ata.id, ...)` como ultimo argumento de `createCard`",
+  },
+];
+
+/**
+ * O modulo puro da regua (AGENTS.md §4): regra que da para testar mora num
+ * `*-core.ts` SEM `firebase/firestore` dentro. E o que permite
+ * `scripts/test-ata-demanda.mjs` rodar a obrigatoriedade da dimensao inteira em
+ * Node puro, sem subir nada. Um import de SDK aqui nao quebra a tela — quebra o
+ * teste, que e a unica coisa que reprova a regua quando ela some.
+ */
+const PROIBIDOS_ATA_CORE = [
+  { padrao: /from\s+["']firebase\//, motivo: "importa o SDK do Firebase num modulo puro" },
+  { padrao: /from\s+["']firebase-admin/, motivo: "importa o Admin SDK num modulo puro" },
+  { padrao: /\bfetch\s*\(/, motivo: "faz rede num modulo puro" },
+];
+
 const REGRAS = [
   { arquivo: "src/lib/server/demand-ingest.ts", proibidos: PROIBIDOS_INGEST },
   {
@@ -195,6 +261,23 @@ const REGRAS = [
       "a rota que monta a ata a partir da reuniao mudou de lugar, ou a geracao voltou para o navegador? " +
       "Se mudou de lugar, aponte a regra para o novo caminho em scripts/check-demandas-boundary.mjs. " +
       "Se voltou para o cliente, ela perde o acesso ao Drive — o documento so e legivel pela conta de servico.",
+  },
+  {
+    arquivo: "src/app/(app)/ata/page.tsx",
+    exigidos: EXIGIDOS_ATA_TELA,
+    seSumiu:
+      "a tela da ata mudou de lugar? Aponte a regra para o novo caminho em " +
+      "scripts/check-demandas-boundary.mjs. A demanda que nasce na ata e criacao HUMANA e " +
+      "do lado do cliente, de proposito — se ela migrou para uma rota de servidor, a fronteira " +
+      "passa a valer sobre ela e o alvo certo deixa de ser este.",
+  },
+  {
+    arquivo: "src/lib/ata-demanda-core.ts",
+    proibidos: PROIBIDOS_ATA_CORE,
+    seSumiu:
+      "o modulo puro da regua da ata sumiu ou mudou de nome. A obrigatoriedade da dimensao mora " +
+      "nele e e testada por scripts/test-ata-demanda.mjs; se ela foi para outro arquivo, aponte " +
+      "esta regra e o teste para la — nao apague nenhum dos dois.",
   },
 ];
 
@@ -243,9 +326,30 @@ for (const regra of REGRAS) {
       }
     }
 
-    for (const { padrao, exigencia, reponha } of regra.exigidos ?? []) {
-      if (!padrao.test(codigo)) {
-        console.error(`✗ ${rel}: ${exigencia}  [${padrao}]\n  → ${reponha}.`);
+    /**
+     * `vezes` conta CASAMENTOS, e nao "existe pelo menos um".
+     *
+     * Nasceu de um guarda que nao reprovou o proprio teste. A exigencia de
+     * `conferirClassificacao` na tela da ata passava verde depois de a checagem
+     * ser apagada do caminho de criacao da demanda — porque o mesmo nome ainda
+     * aparecia no caminho de reclassificacao, do outro lado do arquivo. Uma
+     * defesa apagada e outra intacta somam "existe", e "existe" era tudo o que o
+     * guarda perguntava.
+     *
+     * Quando o alvo tem N caminhos de escrita que precisam da MESMA regua, a
+     * pergunta certa e quantos deles a chamam. O preco e conhecido e aceito: um
+     * refactor legitimo que unifique os dois caminhos num so derruba o build e
+     * obriga alguem a abrir este arquivo e baixar o numero no mesmo PR. E o
+     * mesmo trade da decisao 4 do cabecalho — errar para o lado de reprovar
+     * codigo correto, e nunca para o de aprovar defesa ausente.
+     */
+    for (const { padrao, exigencia, reponha, vezes = 1 } of regra.exigidos ?? []) {
+      const flags = padrao.flags.includes("g") ? padrao.flags : padrao.flags + "g";
+      const achados = codigo.match(new RegExp(padrao.source, flags))?.length ?? 0;
+      if (achados < vezes) {
+        const quantos =
+          vezes > 1 ? ` (esperado ${vezes} chamada(s), achei ${achados})` : "";
+        console.error(`✗ ${rel}: ${exigencia}${quantos}  [${padrao}]\n  → ${reponha}.`);
         faltando++;
       }
     }

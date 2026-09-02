@@ -13,6 +13,7 @@ import {
   arrayUnion,
   runTransaction,
   type QuerySnapshot,
+  type WriteBatch,
 } from "firebase/firestore";
 import { db } from "./firebase";
 
@@ -175,6 +176,23 @@ export type Card = {
   recId?: string;
   recDate?: string;
   /**
+   * As reuniões gravadas que originaram esta demanda.
+   *
+   * Já era escrito por `api/demandas/decidir` e lido por `api/ata/gerar`; entra
+   * no tipo agora porque a ata passou a gravá-lo também, e um campo que duas
+   * telas escrevem sem estar no tipo é um campo que a terceira esquece.
+   */
+  meetingIds?: string[];
+  /**
+   * A ata em que se decidiu abrir esta demanda.
+   *
+   * Proveniência, e nunca vínculo de ida: quem responde "esta demanda está na
+   * ata?" continua sendo o `cardId` do item, lá na ata. Este campo responde a
+   * outra pergunta, a de quem abre o card meses depois — "de onde isto saiu?" —
+   * e é a única coisa no quadro que aponta de volta para a reunião que decidiu.
+   */
+  ataId?: string;
+  /**
    * Contador de versão, incrementado a cada edição pelo modal. Serve para
    * detectar que o card mudou entre o momento em que uma mudança automática
    * foi calculada e o momento em que seria aplicada.
@@ -313,16 +331,45 @@ export function subscribeLixeira(
 }
 
 /**
+ * De onde a demanda veio, para quem abrir o card daqui a meses.
+ *
+ * `origem` já existia no `Card` e era gravada só pelas rotas do servidor
+ * (`api/demandas/decidir`, `api/recorrencias/gerar`). A ata precisa do mesmo, e
+ * copiá-lo para dentro da tela faria a proveniência ser escrita de dois jeitos.
+ */
+export type Proveniencia = {
+  origem?: "reuniao" | "recorrencia";
+  /** A reunião gravada que originou a demanda, quando houve uma. */
+  meetingIds?: string[];
+  /** A ata em que a decisão de abrir esta demanda foi tomada. */
+  ataId?: string;
+};
+
+/**
  * Abre a demanda e a primeira linha do histórico dela, no mesmo lote.
  *
  * `mudancas` é o estado inicial já traduzido (ver `mudancasIniciais`) — é o que
  * responde "com quem ela nasceu, e para quando".
+ *
+ * `noMesmoLote` É A ESCRITA DE QUEM CHAMOU, e ela entra AQUI por um motivo só:
+ * AGENTS.md §4 — escrita e registro andam no mesmo lote, ou as duas entram ou
+ * nenhuma. Quem trouxe a necessidade foi a ata, que cria a demanda e no mesmo
+ * gesto grava o `cardId` no item da pauta. Em duas escritas separadas, a falha
+ * da segunda deixaria o pior estado possível: um card de verdade no quadro e a
+ * ata ainda chamando aquilo de assunto — e a próxima tentativa criaria um card
+ * duplicado, porque nada na ata diria que o primeiro existe.
+ *
+ * O `WriteBatch` vaza na assinatura de propósito. A alternativa era esta função
+ * conhecer a ata, e aí ela conheceria a próxima tela também. Quem passa a
+ * função é sempre um módulo de `lib/` (nunca uma página): é lá que o SDK mora.
  */
 export async function createCard(
   sector: string,
   input: CardInput,
   createdBy: string,
   mudancas: Mudanca[],
+  extras?: Proveniencia,
+  noMesmoLote?: (batch: WriteBatch, cardId: string) => void,
 ): Promise<string> {
   const now = Date.now();
   // Id gerado aqui, e não pelo `addDoc`: o evento do histórico precisa do id do
@@ -354,6 +401,11 @@ export async function createCard(
     createdAt: serverTimestamp(),
     createdBy,
     histCount: 1,
+    // Espalhado no fim, e só com o que veio: `undefined` num campo do Firestore
+    // é erro de escrita, não campo ausente.
+    ...(extras?.origem ? { origem: extras.origem } : {}),
+    ...(extras?.meetingIds?.length ? { meetingIds: extras.meetingIds } : {}),
+    ...(extras?.ataId ? { ataId: extras.ataId } : {}),
   });
   const eventoId = anexarEvento(
     batch,
@@ -362,6 +414,7 @@ export async function createCard(
     "criada",
     mudancas,
   );
+  noMesmoLote?.(batch, ref.id);
   await batch.commit();
   // Depois do commit, sempre. Avisar antes publicaria no canal uma demanda que
   // ainda pode não existir — e o lote falha inteiro, não pela metade.

@@ -440,16 +440,71 @@
   line-height: 1.5;
   margin-top: 5px;
 }
+/* A linha de baixo do bloco: a dimensão, e o botão que abre a demanda.
+
+   Os dois moram juntos porque respondem à mesma pergunta em ordem — "onde isto
+   mora?" e "isto é trabalho de alguém?". Separados, o segundo botão teria de
+   nascer numa coluna própria e o bloco ganharia uma sexta coluna para caber um
+   clique que quase todo assunto recebe uma vez só. */
+.rodapeDemanda {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 9px;
+}
 .area {
   display: inline-flex;
   align-items: center;
-  margin-top: 9px;
+  gap: 5px;
   padding: 3px 9px;
   border-radius: 999px;
   background: var(--s2);
   border: 1px solid var(--line-soft);
+  font-family: inherit;
   font-size: 11px;
   color: var(--tx-2);
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s;
+}
+.area:hover {
+  color: var(--tx);
+  border-color: var(--brand-line);
+}
+.area svg {
+  opacity: 0.75;
+}
+/* Sem dimensão a etiqueta ACENDE, em vez de sumir. Uma etiqueta que só aparece
+   quando está preenchida esconde exatamente o caso que precisa de alguém. */
+.areaFalta {
+  background: var(--warn-bg);
+  border-color: color-mix(in srgb, var(--warn) 42%, transparent);
+  color: var(--warn-tx);
+}
+.areaFalta:hover {
+  color: var(--warn-tx);
+  border-color: var(--warn);
+}
+.areaFalta svg {
+  opacity: 1;
+}
+.virarDemanda {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--brand-soft);
+  border: 1px solid var(--brand-line);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent-2);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.virarDemanda:hover {
+  background: color-mix(in srgb, var(--brand) 26%, transparent);
 }
 
 .coluna {
@@ -855,4 +910,119 @@
 }
 .btnPerigo:hover {
   filter: brightness(1.08);
+}
+
+/* ---------- o que a pauta cobra, e o que ela deixa acrescentar ---------- */
+
+/* O contador de linhas sem dimensão, no painel lateral.
+
+   Cor de AVISO e não de erro: não há nada quebrado — há trabalho que ainda não
+   foi classificado, e o conserto é de quem está na reunião. Vermelho aqui
+   competiria com "Atrasada" logo acima, que é a única coisa nesta lateral que
+   pede reação hoje. */
+.alerta {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  border: 1px solid color-mix(in srgb, var(--warn) 38%, transparent);
+  background: var(--warn-bg);
+  color: var(--warn-tx);
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.12s;
+}
+.alerta:hover {
+  border-color: var(--warn);
+}
+.alertaOn {
+  border-color: var(--warn);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn) 40%, transparent);
+}
+
+.addAssunto {
+  flex: none;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 13px;
+  border-radius: 9px;
+  border: 1px solid var(--brand-line);
+  background: var(--brand-soft);
+  color: var(--accent-2);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.addAssunto:hover {
+  background: color-mix(in srgb, var(--brand) 24%, transparent);
+}
+
+/* "obrigatória", ao lado do rótulo do campo.
+
+   No RÓTULO e não como asterisco: asterisco é uma convenção que exige legenda,
+   e a legenda nunca cabe num modal de seis campos. A palavra dispensa nota de
+   rodapé. */
+.obrigatorio {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--brand-soft);
+  color: var(--accent-2);
+  font-size: 9px;
+  letter-spacing: 0.3px;
+}
+
+.inputArea {
+  width: 100%;
+  padding: 9px 11px;
+  background: var(--s2);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--tx);
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 1.5;
+  resize: vertical;
+}
+.inputArea:focus {
+  outline: none;
+  border-color: var(--brand-line);
+}
+
+/* O aviso que nasce EMBAIXO do campo, onde os olhos acabaram de estar — mesma
+   escolha do modal do Kanban, e pelo mesmo motivo: mandar procurar a frase no
+   rodapé do formulário é mandar procurar. */
+.avisoCampo {
+  margin-top: 6px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--warn-tx);
+}
+
+/* A linha que acabou de nascer.
+
+   Anel e não fundo colorido: o bloco já carrega quatro cores de estado (selo,
+   dimensão, botões), e mais uma tinta ali dentro competiria com elas. O anel
+   fica por fora, some em 2,4 s, e não muda a leitura de nada.
+
+   `box-shadow` e não `border`, porque borda muda a caixa: a linha inteira
+   pularia 2px quando o destaque acabasse. */
+.blocoNovo {
+  box-shadow: 0 0 0 2px var(--brand-line);
+  transition: box-shadow 0.3s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .blocoNovo {
+    transition: none;
+  }
 }

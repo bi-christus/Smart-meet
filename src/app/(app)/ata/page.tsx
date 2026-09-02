@@ -1,34 +1,58 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { auth } from "@/lib/firebase";
 import { useSetoresDaPessoa } from "@/lib/setores";
 import { subscribeUsers, type UserProfile } from "@/lib/users";
 import {
+  DEMAND_TYPES,
+  DEMAND_TYPE_COLOR,
+  DEMAND_TYPE_LABEL,
+  KNOWN_PRIORITIES,
+  PRIORITY_LABEL,
+  columnsBySector,
+  createCard,
+  deliveredBySector,
   subscribeCards,
   subscribeColumns,
-  columnsBySector,
-  deliveredBySector,
+  updateCard,
   viva,
   type Card,
+  type CardInput,
   type ColumnDoc,
+  type DemandType,
+  type Priority,
 } from "@/lib/kanban";
-import { subscribeDimensoes, type Dimensao } from "@/lib/dimensoes";
+import { diffCard, mudancasIniciais, type Rotulos } from "@/lib/historico-core";
+import {
+  corDaDimensao,
+  subscribeDimensoes,
+  type Dimensao,
+} from "@/lib/dimensoes";
 import {
   ESTADOS_NA_ATA,
   ESTADO_LABEL,
   STATUS_TAREFA,
   STATUS_TAREFA_LABEL,
   abrirProxima,
+  classificacaoDaLinha,
+  conferirAssuntoNovo,
+  conferirClassificacao,
+  conferirTitulo,
+  LIMITE_ASSUNTO_CHARS,
   deleteAta,
   montarPauta,
   proximoIdDeItem,
   resumoDaAta,
   salvarItens,
+  salvarItensNoLote,
+  semClassificacao,
   subscribeAtas,
   tarefaNova,
+  vincularCard,
   type Ata,
+  type Classificacao,
   type EstadoNaAta,
   type ItemDaPauta,
   type ItemDeAta,
@@ -36,7 +60,7 @@ import {
   type TarefaDeAta,
 } from "@/lib/ata";
 import { subscribeMeetings, type Meeting } from "@/lib/meetings";
-import { fmtDayMonth, startOfDay, toISO } from "@/lib/datas";
+import { ehFimDeSemanaISO, fmtDayMonth, startOfDay, toISO } from "@/lib/datas";
 import { juntarFontes } from "@/lib/async-data-core";
 import { useAsyncData } from "@/lib/use-async-data";
 import { Icon } from "@/components/icons";
@@ -59,11 +83,20 @@ import styles from "./ata.module.css";
  * ao lado — e prevaleceu a segunda, para que cada participante saísse com
  * tarefa no nome. Esta tela é essa decisão desenhada.
  *
- * ELA NÃO CRIA DEMANDA. A pauta sai do quadro do setor, ao vivo; o que a ata
- * guarda é o que a REUNIÃO produziu — decisão, objetivo para a próxima, e as
- * tarefas derivadas. A separação está escrita em `ata-core.ts` e vale como
- * regra: o que é decisão fica na ata, o que é estado vem do card. Demanda nova
- * continua nascendo no Kanban, que é onde ela é acompanhada.
+ * O QUE ELA GUARDA CONTINUA SENDO DECISÃO. A pauta sai do quadro do setor, ao
+ * vivo; o que a ata grava é o que a REUNIÃO produziu — decisão, objetivo para a
+ * próxima, e as tarefas derivadas. A separação está escrita em `ata-core.ts` e
+ * vale como regra: o que é decisão fica na ata, o que é estado vem do card.
+ *
+ * ELA PASSOU A CRIAR DEMANDA, e isso não contradiz o parágrafo acima. Até esta
+ * versão, o assunto que a reunião discutiu não tinha caminho nenhum para virar
+ * trabalho: a saída era abrir o Kanban em outra aba, criar o card à mão e
+ * voltar — com o vínculo (`item.cardId`) ficando para trás, e a reunião
+ * seguinte discutindo de novo um assunto que já era demanda. Agora o botão está
+ * no bloco, o card nasce no MESMO lote que grava o vínculo, e a linha passa a
+ * ler estado do quadro como qualquer outra. O porquê inteiro — inclusive por
+ * que isso não fura a fronteira de demandas, e por que a dimensão é obrigatória
+ * aqui e não no Kanban — está no cabeçalho de `ata-demanda-core.ts`.
  *
  * O QUE O ISOLAMENTO POR SETOR GARANTE: a ata das Cantinas não aparece para o
  * B.I. e vice-versa. Quem garante não é esta tela — é `firestore.rules`,
@@ -77,6 +110,23 @@ const SEM_ATAS: Ata[] = [];
 const SEM_USERS: UserProfile[] = [];
 const SEM_DIMS: Dimensao[] = [];
 const SEM_REUNIOES: Meeting[] = [];
+
+/**
+ * A identidade de uma linha da pauta, estável entre renders.
+ *
+ * NÃO É `item.id` SOZINHO. A linha que ninguém tocou é desenhada a partir do
+ * item fantasma de `itemVazio`, cujo `id` é o `cardId`; na primeira gravação o
+ * item de verdade nasce com id numérico e o `id` troca. Como a `key` do React e
+ * o conjunto de recolhidos são lidos por esta chave, um `item.id` cru faria o
+ * bloco remontar (perdendo foco e rascunho) e a tabela de tarefas reabrir
+ * sozinha, no meio da reunião.
+ *
+ * `cardId` é único por linha quando existe — `montarPauta` indexa um item por
+ * card — e o assunto sem card já nasce com id próprio e estável.
+ */
+function chaveDaLinha(l: ItemDaPauta): string {
+  return l.item.cardId || l.item.id;
+}
 
 /** A cor de cada estado, na mesma ordem de gravidade da pauta. */
 const COR_ESTADO: Record<EstadoNaAta, string> = {
@@ -139,7 +189,26 @@ export default function AtaPage() {
   const [busca, setBusca] = useState("");
   const [fEstado, setFEstado] = useState<"" | EstadoNaAta>("");
   const [fResp, setFResp] = useState("");
+  /** Ver só o que está fora do mapa — ver `semClassificacao`. */
+  const [soSemDim, setSoSemDim] = useState(false);
   const [recolhidos, setRecolhidos] = useState<Set<string>>(new Set());
+  const [assuntoAberto, setAssuntoAberto] = useState(false);
+  /**
+   * A linha que acabou de nascer, para a tela ir até ela.
+   *
+   * A PAUTA É ORDENADA POR GRAVIDADE, e isso não vai mudar — é a decisão que
+   * originou a tela inteira (`ata-core.ts`): o que está atrasado fica em cima.
+   * Só que ela cobra um preço no assunto recém-criado: sem decisão, sem
+   * objetivo e sem tarefa, ele é "registro" e vai para o FIM de uma pauta de
+   * quinze linhas. Quem clicou em "Acrescentar" vê a tela não mudar e conclui
+   * que o botão não funcionou.
+   *
+   * A saída não é furar a ordem — é levar os olhos até onde a linha foi.
+   */
+  const [destaque, setDestaque] = useState("");
+  /** A linha que está virando demanda no quadro, ou sendo classificada. */
+  const [promovendo, setPromovendo] = useState<ItemDaPauta | null>(null);
+  const [classificando, setClassificando] = useState<ItemDaPauta | null>(null);
 
   const usersMap = useMemo(() => {
     const m: Record<string, UserProfile> = {};
@@ -183,6 +252,19 @@ export default function AtaPage() {
 
   const resumo = useMemo(() => resumoDaAta(pauta), [pauta]);
 
+  /**
+   * O que ainda está fora do mapa.
+   *
+   * Vive na página e não dentro do bloco porque duas coisas leem a mesma
+   * resposta: o contador do painel e o filtro. Contadas em dois lugares, elas
+   * divergem no primeiro `if` que alguém escrever só num deles.
+   */
+  const foraDoMapa = useMemo(() => semClassificacao(pauta), [pauta]);
+  const idsForaDoMapa = useMemo(
+    () => new Set(foraDoMapa.map((l) => l.item.id)),
+    [foraDoMapa],
+  );
+
   const pautaFiltrada = useMemo(() => {
     const q = busca.trim().toLowerCase();
     return pauta.filter(
@@ -191,11 +273,12 @@ export default function AtaPage() {
           l.titulo.toLowerCase().includes(q) ||
           l.item.tarefas.some((t) => t.texto.toLowerCase().includes(q))) &&
         (!fEstado || l.estado === fEstado) &&
+        (!soSemDim || idsForaDoMapa.has(l.item.id)) &&
         (!fResp ||
           l.card?.assignee === fResp ||
           l.item.tarefas.some((t) => t.responsavel === fResp)),
     );
-  }, [pauta, busca, fEstado, fResp]);
+  }, [pauta, busca, fEstado, fResp, soSemDim, idsForaDoMapa]);
 
   /**
    * Quem pode receber uma tarefa desta ata.
@@ -305,6 +388,207 @@ export default function AtaPage() {
         e instanceof Error ? e.message : "Não foi possível salvar a ata.",
       );
     }
+  }
+
+  /**
+   * O destaque apaga sozinho, e o relógio mora AQUI.
+   *
+   * Não no bloco: ele pode sair da lista filtrada antes de o tempo acabar, e um
+   * `setTimeout` de dentro dele morreria junto — o anel voltaria aceso na
+   * próxima vez que a linha aparecesse. O `setState` está dentro do timeout, e
+   * não no corpo do efeito, que é o que a regra do lint pede.
+   */
+  useEffect(() => {
+    if (!destaque) return;
+    const t = setTimeout(() => setDestaque(""), 2400);
+    return () => clearTimeout(t);
+  }, [destaque]);
+
+  /** Tira todos os filtros de uma vez — ver o comentário de `destaque`. */
+  function limparFiltros() {
+    setBusca("");
+    setFEstado("");
+    setFResp("");
+    setSoSemDim(false);
+  }
+
+  /** As colunas do quadro deste setor, na ordem — a primeira é a de entrada. */
+  const colunas = useMemo(
+    () => columnsBySector(cols, setor ? [setor] : [])[setor] ?? [],
+    [cols, setor],
+  );
+
+  /**
+   * Como o histórico da demanda escreve cada valor.
+   *
+   * Igual ao do modal do Kanban, e de propósito: a timeline de uma demanda
+   * nascida na ata tem de ler exatamente como a de uma nascida no quadro. Se
+   * aqui dissesse "alta" e lá "Alta", a mesma demanda contaria duas histórias.
+   */
+  const rotulos: Rotulos = useMemo(
+    () => ({
+      pessoa: (email) => usersMap[email]?.name ?? email,
+      coluna: (colId) => colunas.find((c) => c.id === colId)?.title ?? colId,
+      prioridade: (p) => PRIORITY_LABEL[p as Priority] ?? p,
+      tipo: (t) => DEMAND_TYPE_LABEL[t as DemandType] ?? t,
+    }),
+    [usersMap, colunas],
+  );
+
+  /** Nome da dimensão e da subdimensão, para o histórico (que guarda texto). */
+  const nomesDaArvore = (dimensaoId: string, subdimensaoId: string) => {
+    const d = dims.find((x) => x.id === dimensaoId);
+    return {
+      dimensaoNome: d?.nome ?? null,
+      subdimensaoNome: d?.subs.find((s) => s.id === subdimensaoId)?.nome ?? null,
+    };
+  };
+
+  /**
+   * O assunto novo entra na pauta.
+   *
+   * Ele nasce SEM card, e é isso que o distingue da demanda: a reunião discutiu
+   * uma coisa, e ainda não decidiu que aquilo é trabalho de alguém. A fronteira
+   * de demandas existe para que essa ordem não se inverta — o card não pode
+   * nascer só porque alguém precisava de uma linha onde escrever.
+   */
+  async function criarAssunto(dados: {
+    assunto: string;
+    contexto: string;
+    dimensaoId: string;
+    subdimensaoId: string;
+  }) {
+    if (!ata) throw new Error("Nenhuma ata aberta.");
+    const conferido = conferirAssuntoNovo(dados, ata.itens, dims);
+    if (!conferido.ok) throw new Error(conferido.motivo);
+    await salvarItens(ata.id, [...ata.itens, conferido.valor]);
+    // Devolve a chave para a tela ir até lá — ver `destaque`.
+    return conferido.valor.id;
+  }
+
+  /**
+   * O assunto vira demanda no quadro — em UMA escrita, e não em duas.
+   *
+   * O card, a primeira linha do histórico dele e o `cardId` no item da pauta
+   * entram no MESMO lote (`salvarItensNoLote`). Em duas escritas separadas, a
+   * falha da segunda deixaria o pior estado alcançável: um card de verdade no
+   * Kanban e a ata ainda chamando aquilo de assunto — e o próximo clique
+   * criaria um card duplicado, porque nada na ata diria que o primeiro existe.
+   *
+   * A DIMENSÃO É CONFERIDA AQUI TAMBÉM, e não só no formulário. O modal é uma
+   * tela; esta função é o caminho. Régua que mora só no formulário é régua que
+   * o segundo formulário esquece.
+   */
+  async function criarDemanda(
+    linha: ItemDaPauta,
+    dados: {
+      titulo: string;
+      descricao: string;
+      dimensaoId: string;
+      subdimensaoId: string;
+      responsavel: string;
+      tipo: DemandType;
+      prioridade: Priority;
+      prazo: string;
+    },
+  ) {
+    if (!ata || !profile) throw new Error("Nenhuma ata aberta.");
+    const titulo = conferirTitulo(dados.titulo, "o título da demanda");
+    if (!titulo.ok) throw new Error(titulo.motivo);
+    const classe = conferirClassificacao(dados, dims);
+    if (!classe.ok) throw new Error(classe.motivo);
+    const coluna = colunas[0];
+    if (!coluna) {
+      throw new Error(
+        "O quadro deste setor não tem coluna nenhuma. Abra o Kanban e crie a primeira etapa.",
+      );
+    }
+
+    const input: CardInput = {
+      title: titulo.valor,
+      description: dados.descricao.trim(),
+      columnId: coluna.id,
+      type: dados.tipo,
+      assignee: dados.responsavel || null,
+      // Solicitante fica em branco de propósito: a demanda foi pedida pela
+      // reunião, e a reunião não é um nome do cadastro de solicitantes.
+      // Inventar um ali encheria o relatório "demandas por solicitante" com um
+      // rótulo que ninguém pediu.
+      requester: null,
+      requesterSector: null,
+      dimensaoId: classe.valor.dimensaoId,
+      subdimensaoId: classe.valor.subdimensaoId || null,
+      startDate: null,
+      due: dados.prazo || null,
+      priority: dados.prioridade,
+      tags: [],
+      tagRefs: [],
+      checklist: [],
+      links: [],
+    };
+
+    const cardId = await createCard(
+      setor,
+      input,
+      profile.email,
+      mudancasIniciais(
+        { ...input, ...nomesDaArvore(classe.valor.dimensaoId, classe.valor.subdimensaoId) },
+        rotulos,
+      ),
+      {
+        origem: "reuniao",
+        // A reunião gravada que originou a ata, quando houve uma. É o mesmo
+        // campo que `api/demandas/decidir` grava, para que a proveniência se
+        // leia igual venha a demanda de qual caminho vier.
+        meetingIds: ata.meetingId ? [ata.meetingId] : undefined,
+        ataId: ata.id,
+      },
+      (batch, novoId) =>
+        salvarItensNoLote(
+          batch,
+          ata.id,
+          vincularCard(ata.itens, linha.item.id, novoId, linha.item),
+        ),
+    );
+    return cardId;
+  }
+
+  /**
+   * Classifica a linha — e a escrita cai em lugar diferente conforme a origem.
+   *
+   * Onde há card, quem responde pela dimensão é o CARD: dimensão é estado, e
+   * estado vem do quadro (regra do cabeçalho de `ata-core.ts`). Gravar no item
+   * daria duas respostas para a mesma pergunta, e a ata passaria a discordar do
+   * Kanban sobre onde a demanda mora.
+   */
+  async function classificar(linha: ItemDaPauta, escolha: Classificacao) {
+    if (!ata || !profile) throw new Error("Nenhuma ata aberta.");
+    const conferido = conferirClassificacao(escolha, dims);
+    if (!conferido.ok) throw new Error(conferido.motivo);
+    const { dimensaoId, subdimensaoId } = conferido.valor;
+
+    if (!linha.card) {
+      await gravarItem(linha.item, (i) => ({ ...i, dimensaoId, subdimensaoId }));
+      return;
+    }
+
+    const antes = classificacaoDaLinha(linha);
+    await updateCard(
+      linha.card.id,
+      { dimensaoId, subdimensaoId: subdimensaoId || null },
+      {
+        ctx: { autor: profile.email, sector: setor },
+        acao: "editada",
+        // O diff leva os NOMES resolvidos agora, porque o histórico guarda texto
+        // congelado — o mesmo cuidado do modal do Kanban. Sem isso, a troca de
+        // dimensão viraria uma linha "de undefined para undefined".
+        mudancas: diffCard(
+          nomesDaArvore(antes.dimensaoId, antes.subdimensaoId),
+          nomesDaArvore(dimensaoId, subdimensaoId),
+          rotulos,
+        ),
+      },
+    );
   }
 
   if (!profile) return null;
@@ -504,6 +788,24 @@ export default function AtaPage() {
                   </b>
                 </div>
               )}
+              {/* SÓ APARECE QUANDO HÁ O QUE CONSERTAR. Um "0 sem classificação"
+                  fixo na lateral é uma linha que se aprende a não ler — e a
+                  primeira vez que ela virasse 3, ninguém veria. */}
+              {foraDoMapa.length > 0 && (
+                <button
+                  className={`${styles.alerta} ${soSemDim ? styles.alertaOn : ""}`}
+                  onClick={() => setSoSemDim((v) => !v)}
+                  aria-pressed={soSemDim}
+                  title="Ver só o que ainda não tem dimensão"
+                >
+                  <Icon name="warn" size={13} />
+                  <span>
+                    {foraDoMapa.length === 1
+                      ? "1 linha sem dimensão"
+                      : `${foraDoMapa.length} linhas sem dimensão`}
+                  </span>
+                </button>
+              )}
             </section>
 
             <div className={styles.lateralAcoes}>
@@ -564,6 +866,16 @@ export default function AtaPage() {
                   ariaLabel="Responsável"
                 />
               </div>
+              {/* No fim da barra de filtros, e não no cabeçalho da página: o
+                  cabeçalho fala da ATA (qual reunião, gerar outra), e isto fala
+                  da PAUTA — que é o que está logo abaixo. */}
+              <button
+                className={styles.addAssunto}
+                onClick={() => setAssuntoAberto(true)}
+                title="Acrescentar à pauta um assunto que ainda não é demanda"
+              >
+                <Icon name="plus" size={14} /> Assunto
+              </button>
             </div>
 
             {pautaFiltrada.length === 0 ? (
@@ -571,38 +883,101 @@ export default function AtaPage() {
                 icon="kanban"
                 title={
                   pauta.length === 0
-                    ? "O quadro deste setor não tem demanda em aberto"
+                    ? "Esta reunião ainda não tem pauta"
                     : "Nenhuma demanda com esses filtros"
                 }
                 description={
                   pauta.length === 0
-                    ? "A pauta sai das demandas do Kanban. Crie uma demanda lá e ela aparece aqui."
+                    ? "A pauta junta as demandas em aberto do quadro deste setor com os assuntos que a reunião levantou. Acrescente o primeiro assunto aqui, ou abra uma demanda no Kanban."
                     : "Tire um dos filtros para ver o resto da pauta."
+                }
+                action={
+                  pauta.length === 0 ? (
+                    <button onClick={() => setAssuntoAberto(true)}>
+                      <Icon name="plus" size={14} /> Acrescentar assunto
+                    </button>
+                  ) : undefined
                 }
               />
             ) : (
               pautaFiltrada.map((linha) => (
                 <BlocoDaDemanda
-                  key={linha.item.id}
+                  key={chaveDaLinha(linha)}
                   linha={linha}
                   nomeDe={nomeDe}
                   usersMap={usersMap}
                   pessoas={pessoasDaAta}
-                  recolhido={recolhidos.has(linha.item.id)}
+                  semDimensao={idsForaDoMapa.has(linha.item.id)}
+                  destacado={destaque === chaveDaLinha(linha)}
+                  /* A MESMA chave da `key` acima, e não o `item.id` cru: com o
+                     id trocando na primeira gravação, recolher as tarefas de
+                     uma demanda e depois escrever a decisão dela faria a tabela
+                     reabrir sozinha, desfazendo o que a pessoa acabou de pedir. */
+                  recolhido={recolhidos.has(chaveDaLinha(linha))}
                   onRecolher={() =>
                     setRecolhidos((cur) => {
                       const n = new Set(cur);
-                      if (n.has(linha.item.id)) n.delete(linha.item.id);
-                      else n.add(linha.item.id);
+                      const k = chaveDaLinha(linha);
+                      if (n.has(k)) n.delete(k);
+                      else n.add(k);
                       return n;
                     })
                   }
                   onGravar={(muda) => gravarItem(linha.item, muda)}
+                  onClassificar={() => setClassificando(linha)}
+                  onPromover={() => setPromovendo(linha)}
                 />
               ))
             )}
           </main>
         </div>
+      )}
+
+      {assuntoAberto && ata && (
+        <ModalDeAssunto
+          setor={setor}
+          dimensoes={dims}
+          onFechar={() => setAssuntoAberto(false)}
+          onCriar={async (dados) => {
+            // Os filtros saem do caminho: acrescentar um assunto e ele não
+            // aparecer porque um filtro de responsável de dez minutos atrás
+            // continua ligado seria o mesmo que o botão não ter funcionado.
+            limparFiltros();
+            setDestaque(await criarAssunto(dados));
+            setAssuntoAberto(false);
+          }}
+        />
+      )}
+
+      {promovendo && ata && (
+        <ModalDeDemanda
+          setor={setor}
+          linha={promovendo}
+          dimensoes={dims}
+          pessoas={pessoasDaAta}
+          colunaDeEntrada={colunas[0]?.title ?? ""}
+          onFechar={() => setPromovendo(null)}
+          onCriar={async (dados) => {
+            // A chave da linha passa a ser o `cardId` assim que o vínculo é
+            // gravado (`chaveDaLinha`), e a linha muda de lugar na pauta —
+            // deixa de ser "registro" e passa a valer o estado do card.
+            setDestaque(await criarDemanda(promovendo, dados));
+            setPromovendo(null);
+          }}
+        />
+      )}
+
+      {classificando && ata && (
+        <ModalDeClassificar
+          setor={setor}
+          linha={classificando}
+          dimensoes={dims}
+          onFechar={() => setClassificando(null)}
+          onSalvar={async (escolha) => {
+            await classificar(classificando, escolha);
+            setClassificando(null);
+          }}
+        />
       )}
 
       {gerarAberta && (
@@ -717,17 +1092,27 @@ function BlocoDaDemanda({
   nomeDe,
   usersMap,
   pessoas,
+  semDimensao,
+  destacado,
   recolhido,
   onRecolher,
   onGravar,
+  onClassificar,
+  onPromover,
 }: {
   linha: ItemDaPauta;
   nomeDe: (email: string) => string;
   usersMap: Record<string, UserProfile>;
   pessoas: SelectOption[];
+  /** Calculado uma vez na página — ver `foraDoMapa`. */
+  semDimensao: boolean;
+  /** Acabou de nascer: rola até aqui e acende por um instante. */
+  destacado: boolean;
   recolhido: boolean;
   onRecolher: () => void;
   onGravar: (muda: (i: ItemDeAta) => ItemDeAta) => void;
+  onClassificar: () => void;
+  onPromover: () => void;
 }) {
   const { card, item, titulo, descricao, estado, numero, dimensao, subdimensao } =
     linha;
@@ -771,8 +1156,37 @@ function BlocoDaDemanda({
   const alturaDe = (texto: string) =>
     Math.min(8, Math.max(2, Math.ceil(texto.length / 38)));
 
+  /**
+   * Levar os olhos até a linha que acabou de nascer.
+   *
+   * `block: "center"` e não `"start"`: a linha nova quase sempre está no fim de
+   * uma pauta longa, e alinhar no topo a deixaria colada na barra de filtros,
+   * com a tabela de tarefas dela cortada embaixo.
+   *
+   * O `behavior` respeita `prefers-reduced-motion` porque o bloco global de
+   * `globals.css` não alcança rolagem programática — ele força
+   * `scroll-behavior: auto` no CSS, e este `behavior: "smooth"` passa por cima
+   * de CSS. Aqui a pergunta tem de ser feita em JavaScript.
+   *
+   * QUEM APAGA O DESTAQUE É A PÁGINA, e não este bloco. O relógio precisa
+   * sobreviver ao bloco sair da lista filtrada; um `setTimeout` daqui morreria
+   * junto com ele e o anel voltaria aceso na próxima vez que a linha aparecesse.
+   */
+  const ref = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!destacado) return;
+    const suave = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    ref.current?.scrollIntoView({
+      block: "center",
+      behavior: suave ? "smooth" : "auto",
+    });
+  }, [destacado]);
+
   return (
-    <section className={styles.bloco}>
+    <section
+      className={`${styles.bloco} ${destacado ? styles.blocoNovo : ""}`}
+      ref={ref}
+    >
       <div className={styles.blocoTopo}>
         <div className={styles.demanda}>
           {/* "Demanda" só quando é demanda. O assunto que a reunião discutiu e
@@ -783,14 +1197,44 @@ function BlocoDaDemanda({
           </div>
           <h3>{titulo}</h3>
           {descricao && <p>{descricao}</p>}
-          {(dimensao || subdimensao) && (
-            <span className={styles.area}>
-              {/* A dimensão é CLASSIFICADOR, e vai ao lado — nunca por cima. É a
-                  decisão registrada na ata que originou esta tela. */}
-              {dimensao}
-              {subdimensao ? ` · ${subdimensao}` : ""}
-            </span>
-          )}
+          <div className={styles.rodapeDemanda}>
+            {/* A dimensão é CLASSIFICADOR, e vai ao lado — nunca por cima. É a
+                decisão registrada na ata que originou esta tela.
+
+                Virou BOTÃO, e sem classificação ele acende: toda demanda desta
+                aba precisa de dimensão, e uma etiqueta que só some quando falta
+                deixa o problema calado — que é o oposto de cobrar. */}
+            <button
+              className={`${styles.area} ${semDimensao ? styles.areaFalta : ""}`}
+              onClick={onClassificar}
+              title={
+                semDimensao
+                  ? "Escolher a dimensão desta linha"
+                  : "Trocar a dimensão desta linha"
+              }
+            >
+              <Icon name={semDimensao ? "warn" : "dimensoes"} size={12} />
+              {semDimensao ? (
+                "Sem dimensão"
+              ) : (
+                <>
+                  {dimensao}
+                  {subdimensao ? ` · ${subdimensao}` : ""}
+                </>
+              )}
+            </button>
+            {/* SÓ NO ASSUNTO. A linha que já tem card não vira demanda de novo,
+                e oferecer o botão ali seria oferecer a duplicata. */}
+            {!card && (
+              <button
+                className={styles.virarDemanda}
+                onClick={onPromover}
+                title="Abrir esta linha como demanda no quadro do setor"
+              >
+                <Icon name="kanban" size={12} /> Criar demanda
+              </button>
+            )}
+          </div>
         </div>
 
         <div className={styles.coluna}>
@@ -1076,6 +1520,463 @@ function TabelaDeTarefas({
   );
 }
 
+// ---------------------------------------------------------------------------
+// A demanda que nasce na ata — e a dimensão que ela é obrigada a ter
+// ---------------------------------------------------------------------------
+
+/**
+ * O par dimensão + subdimensão, no formulário.
+ *
+ * Um componente para os três lugares que perguntam a mesma coisa (assunto novo,
+ * promoção a demanda, reclassificação). Escrito três vezes, o dia em que a
+ * árvore ganhar um terceiro nível seria o dia em que dois dos três formulários
+ * continuariam com dois.
+ *
+ * A SUBDIMENSÃO É ZERADA QUANDO A DIMENSÃO TROCA, e isso não é zelo: os ids de
+ * subdimensão são locais à dimensão ("s1" existe em todas), então manter a
+ * escolha antiga produziria um par que aponta para outra caixa — sem erro
+ * nenhum na tela, e com a demanda indo parar no lugar errado da árvore.
+ */
+function SeletorDeDimensao({
+  dimensoes,
+  valor,
+  onChange,
+}: {
+  dimensoes: Dimensao[];
+  valor: Classificacao;
+  onChange: (c: Classificacao) => void;
+}) {
+  const dim = dimensoes.find((d) => d.id === valor.dimensaoId);
+  const subs = dim?.subs ?? [];
+
+  if (dimensoes.length === 0) {
+    return (
+      <p className={styles.avisoModal}>
+        Este setor ainda não tem dimensão cadastrada, e toda demanda desta aba
+        precisa de uma. Abra a aba <b>Dimensões</b> e cadastre a árvore do setor
+        primeiro.
+      </p>
+    );
+  }
+
+  return (
+    <>
+      <label className={styles.rotulo}>
+        Dimensão <span className={styles.obrigatorio}>obrigatória</span>
+      </label>
+      <Combobox
+        value={valor.dimensaoId}
+        options={dimensoes.map(
+          (d): SelectOption => ({
+            value: d.id,
+            label: d.nome,
+            color: corDaDimensao(d.ordem),
+          }),
+        )}
+        onChange={(v) => onChange({ dimensaoId: v, subdimensaoId: "" })}
+        placeholder="Escolha a dimensão…"
+        ariaLabel="Dimensão"
+        vazioTexto="Nenhuma dimensão com esse nome."
+      />
+      {/* A subdimensão só aparece quando há onde escolher. Um campo vazio e
+          desabilitado ali embaixo parece defeito; a ausência dele não. */}
+      {subs.length > 0 && (
+        <>
+          <label className={styles.rotulo}>Subdimensão (opcional)</label>
+          <Combobox
+            value={valor.subdimensaoId}
+            options={[
+              { value: "", label: "Direto na dimensão" },
+              ...subs.map((s): SelectOption => ({ value: s.id, label: s.nome })),
+            ]}
+            onChange={(v) => onChange({ ...valor, subdimensaoId: v })}
+            placeholder="Direto na dimensão"
+            ariaLabel="Subdimensão"
+            vazioTexto="Nenhuma subdimensão com esse nome."
+          />
+        </>
+      )}
+    </>
+  );
+}
+
+/**
+ * "Acrescentar assunto" — a linha de pauta que ainda NÃO é demanda.
+ *
+ * Ela nasce sem card de propósito, e é a fronteira de demandas em ação: a
+ * reunião discute muita coisa que ainda não é trabalho de ninguém, e forçar um
+ * card para poder registrar a conversa inverteria a ordem — o card nasceria da
+ * necessidade de ter onde escrever, e não de alguém decidir que aquilo é
+ * trabalho. Quando a decisão vier, o botão "Criar demanda" está no bloco.
+ */
+function ModalDeAssunto({
+  setor,
+  dimensoes,
+  onFechar,
+  onCriar,
+}: {
+  setor: string;
+  dimensoes: Dimensao[];
+  onFechar: () => void;
+  onCriar: (dados: {
+    assunto: string;
+    contexto: string;
+    dimensaoId: string;
+    subdimensaoId: string;
+  }) => Promise<void>;
+}) {
+  const [assunto, setAssunto] = useState("");
+  const [contexto, setContexto] = useState("");
+  const [classe, setClasse] = useState<Classificacao>({
+    dimensaoId: "",
+    subdimensaoId: "",
+  });
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  return (
+    <Modal
+      onClose={onFechar}
+      podeFechar={() => !salvando}
+      ariaLabel="Acrescentar assunto à pauta"
+      overlayClassName={styles.overlay}
+      className={styles.modal}
+      width={520}
+    >
+      <div className={styles.mhead}>
+        <span className={styles.mchip}>
+          <Icon name="plus" size={12} /> Assunto da pauta
+        </span>
+        <span className={styles.mchip}>{setor}</span>
+      </div>
+      <p className={styles.avisoModal}>
+        Assunto é o que a reunião discutiu e que <b>ainda não é demanda</b>. Ele
+        entra na pauta com decisão, objetivo e tarefas — e vira demanda no quadro
+        quando alguém decidir que é trabalho.
+      </p>
+
+      <label className={styles.rotulo}>Assunto</label>
+      <input
+        className={styles.input}
+        value={assunto}
+        onChange={(e) => setAssunto(e.target.value)}
+        placeholder="Padrão de recebimento e tipificação"
+        maxLength={LIMITE_ASSUNTO_CHARS}
+        autoFocus
+      />
+
+      <label className={styles.rotulo}>Contexto (opcional)</label>
+      <input
+        className={styles.input}
+        value={contexto}
+        onChange={(e) => setContexto(e.target.value)}
+        placeholder="O que se falou em volta do assunto"
+      />
+
+      <SeletorDeDimensao dimensoes={dimensoes} valor={classe} onChange={setClasse} />
+
+      {erro && <p className={styles.erroModal}>{erro}</p>}
+      <div className={styles.macoes}>
+        <button className={styles.btnGhost} onClick={onFechar} disabled={salvando}>
+          Cancelar
+        </button>
+        <button
+          className={styles.btnPrim}
+          disabled={salvando || !assunto.trim() || !classe.dimensaoId}
+          onClick={async () => {
+            setSalvando(true);
+            setErro(null);
+            try {
+              await onCriar({ assunto, contexto, ...classe });
+            } catch (e) {
+              setErro(
+                e instanceof Error
+                  ? e.message
+                  : "Não foi possível acrescentar o assunto.",
+              );
+              setSalvando(false);
+            }
+          }}
+        >
+          {salvando ? "Salvando…" : "Acrescentar"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/**
+ * "Criar demanda" — o assunto vira card no quadro do setor.
+ *
+ * O FORMULÁRIO É CURTO DE PROPÓSITO. O modal do Kanban tem tags, checklist,
+ * links, comentários, solicitante, setor solicitante e data de início; aqui
+ * ficam só os campos que a reunião responde em voz alta na hora — o quê, de
+ * quem, para quando, e onde mora. O resto se preenche depois, no quadro, que é
+ * onde a demanda é acompanhada. Um formulário completo aqui pararia a reunião.
+ *
+ * A COLUNA NÃO É PERGUNTADA: a demanda entra na primeira etapa do quadro, que é
+ * a de entrada. Perguntar seria oferecer a alguém, no meio da reunião, a chance
+ * de abrir uma demanda já em "Concluído".
+ */
+function ModalDeDemanda({
+  setor,
+  linha,
+  dimensoes,
+  pessoas,
+  colunaDeEntrada,
+  onFechar,
+  onCriar,
+}: {
+  setor: string;
+  linha: ItemDaPauta;
+  dimensoes: Dimensao[];
+  pessoas: SelectOption[];
+  colunaDeEntrada: string;
+  onFechar: () => void;
+  onCriar: (dados: {
+    titulo: string;
+    descricao: string;
+    dimensaoId: string;
+    subdimensaoId: string;
+    responsavel: string;
+    tipo: DemandType;
+    prioridade: Priority;
+    prazo: string;
+  }) => Promise<void>;
+}) {
+  // Título e descrição já vêm do que a reunião escreveu. Reaproveitar é o ponto
+  // inteiro deste botão: quem chegou aqui já digitou isso uma vez.
+  const [titulo, setTitulo] = useState(linha.titulo);
+  const [descricao, setDescricao] = useState(linha.descricao);
+  const [classe, setClasse] = useState<Classificacao>(
+    classificacaoDaLinha(linha),
+  );
+  const [responsavel, setResponsavel] = useState("");
+  const [tipo, setTipo] = useState<DemandType>("implementacao");
+  const [prioridade, setPrioridade] = useState<Priority>("media");
+  const [prazo, setPrazo] = useState("");
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  // O prazo em fim de semana é AVISO, e não recusa: o modal do Kanban cobra
+  // porque lá a demanda é planejada; aqui ela é anotada com a reunião correndo,
+  // e travar o botão por causa de um sábado faria alguém desistir de registrar.
+  const prazoNoFimDeSemana = !!prazo && ehFimDeSemanaISO(prazo);
+
+  return (
+    <Modal
+      onClose={onFechar}
+      podeFechar={() => !salvando}
+      ariaLabel="Criar demanda a partir do assunto"
+      overlayClassName={styles.overlay}
+      className={styles.modal}
+      width={560}
+    >
+      <div className={styles.mhead}>
+        <span className={styles.mchip}>
+          <Icon name="kanban" size={12} /> Nova demanda
+        </span>
+        <span className={styles.mchip}>{setor}</span>
+      </div>
+      <p className={styles.avisoModal}>
+        A demanda entra no quadro em <b>{colunaDeEntrada || "—"}</b> e passa a
+        aparecer nesta pauta com o estado dela, ao vivo. A decisão e as tarefas
+        que você já registrou continuam na ata.
+      </p>
+
+      <label className={styles.rotulo}>Título da demanda</label>
+      <input
+        className={styles.input}
+        value={titulo}
+        onChange={(e) => setTitulo(e.target.value)}
+        placeholder="O que precisa ser feito"
+        maxLength={LIMITE_ASSUNTO_CHARS}
+        autoFocus
+      />
+
+      <label className={styles.rotulo}>Descrição</label>
+      <textarea
+        className={styles.inputArea}
+        value={descricao}
+        onChange={(e) => setDescricao(e.target.value)}
+        placeholder="O contexto que quem for executar precisa saber"
+        rows={3}
+      />
+
+      <SeletorDeDimensao dimensoes={dimensoes} valor={classe} onChange={setClasse} />
+
+      <label className={styles.rotulo}>Responsável</label>
+      <Combobox
+        value={responsavel}
+        options={pessoas}
+        onChange={setResponsavel}
+        placeholder="Sem responsável"
+        ariaLabel="Responsável pela demanda"
+        vazioTexto="Ninguém com esse nome neste setor."
+      />
+
+      <div className={styles.linhaCampos}>
+        <div>
+          <label className={styles.rotulo}>Tipo</label>
+          <Select
+            value={tipo}
+            options={DEMAND_TYPES.map((t) => ({
+              value: t,
+              label: DEMAND_TYPE_LABEL[t],
+              color: DEMAND_TYPE_COLOR[t],
+            }))}
+            onChange={(v) => setTipo(v as DemandType)}
+            ariaLabel="Tipo da demanda"
+          />
+        </div>
+        <div>
+          <label className={styles.rotulo}>Prioridade</label>
+          <Select
+            value={prioridade}
+            options={KNOWN_PRIORITIES.map((p) => ({
+              value: p,
+              label: PRIORITY_LABEL[p],
+            }))}
+            onChange={(v) => setPrioridade(v as Priority)}
+            ariaLabel="Prioridade"
+          />
+        </div>
+        <div>
+          <label className={styles.rotulo}>Prazo</label>
+          <input
+            type="date"
+            className={styles.input}
+            value={prazo}
+            onChange={(e) => setPrazo(e.target.value)}
+            aria-label="Prazo de entrega"
+          />
+        </div>
+      </div>
+      {prazoNoFimDeSemana && (
+        <p className={styles.avisoCampo}>
+          {fmtDayMonth(prazo)} cai no fim de semana. Dá para gravar assim, mas
+          quase ninguém entrega no sábado.
+        </p>
+      )}
+
+      {erro && <p className={styles.erroModal}>{erro}</p>}
+      <div className={styles.macoes}>
+        <button className={styles.btnGhost} onClick={onFechar} disabled={salvando}>
+          Cancelar
+        </button>
+        <button
+          className={styles.btnPrim}
+          disabled={salvando || !titulo.trim() || !classe.dimensaoId}
+          onClick={async () => {
+            setSalvando(true);
+            setErro(null);
+            try {
+              await onCriar({
+                titulo,
+                descricao,
+                responsavel,
+                tipo,
+                prioridade,
+                prazo,
+                ...classe,
+              });
+            } catch (e) {
+              setErro(
+                e instanceof Error
+                  ? e.message
+                  : "Não foi possível criar a demanda.",
+              );
+              setSalvando(false);
+            }
+          }}
+        >
+          {salvando ? "Criando…" : "Criar demanda"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/**
+ * Trocar a dimensão de uma linha da pauta.
+ *
+ * O MESMO BOTÃO, DUAS ESCRITAS DIFERENTES — e a tela diz qual, porque as
+ * consequências não são iguais. No assunto, a classificação fica na ata. Na
+ * demanda ela vai para o CARD, aparece na árvore de Dimensões e deixa linha no
+ * histórico da demanda. Quem clica precisa saber que está mexendo no quadro.
+ */
+function ModalDeClassificar({
+  setor,
+  linha,
+  dimensoes,
+  onFechar,
+  onSalvar,
+}: {
+  setor: string;
+  linha: ItemDaPauta;
+  dimensoes: Dimensao[];
+  onFechar: () => void;
+  onSalvar: (c: Classificacao) => Promise<void>;
+}) {
+  const [classe, setClasse] = useState<Classificacao>(
+    classificacaoDaLinha(linha),
+  );
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  return (
+    <Modal
+      onClose={onFechar}
+      podeFechar={() => !salvando}
+      ariaLabel="Classificar a linha da pauta"
+      overlayClassName={styles.overlay}
+      className={styles.modal}
+      width={480}
+    >
+      <div className={styles.mhead}>
+        <span className={styles.mchip}>
+          <Icon name="dimensoes" size={12} /> Dimensão
+        </span>
+        <span className={styles.mchip}>{setor}</span>
+      </div>
+      <h2 className={styles.mtitulo}>{linha.titulo}</h2>
+      <p className={styles.avisoModal}>
+        {linha.card
+          ? "Esta linha é uma demanda do quadro: a dimensão é gravada no card, aparece na árvore de Dimensões e deixa registro no histórico da demanda."
+          : "Esta linha ainda é um assunto: a dimensão fica na ata, e passa para o card no dia em que ela virar demanda."}
+      </p>
+
+      <SeletorDeDimensao dimensoes={dimensoes} valor={classe} onChange={setClasse} />
+
+      {erro && <p className={styles.erroModal}>{erro}</p>}
+      <div className={styles.macoes}>
+        <button className={styles.btnGhost} onClick={onFechar} disabled={salvando}>
+          Cancelar
+        </button>
+        <button
+          className={styles.btnPrim}
+          disabled={salvando || !classe.dimensaoId}
+          onClick={async () => {
+            setSalvando(true);
+            setErro(null);
+            try {
+              await onSalvar(classe);
+            } catch (e) {
+              setErro(
+                e instanceof Error
+                  ? e.message
+                  : "Não foi possível gravar a dimensão.",
+              );
+              setSalvando(false);
+            }
+          }}
+        >
+          {salvando ? "Salvando…" : "Salvar"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
 // ---------------------------------------------------------------------------
 // O formulário de ata — serve para criar e para abrir a próxima
 // ---------------------------------------------------------------------------

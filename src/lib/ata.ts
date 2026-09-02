@@ -10,6 +10,7 @@ import {
   deleteDoc,
   doc,
   serverTimestamp,
+  type WriteBatch,
 } from "firebase/firestore";
 import { db } from "./firebase";
 import {
@@ -44,6 +45,10 @@ import {
  */
 
 export * from "./ata-core.ts";
+// A régua da demanda que nasce na ata — obrigatoriedade da dimensão inclusive.
+// Reexportada daqui pelo mesmo motivo de tudo o mais neste arquivo: quem monta
+// a tela lê um módulo só.
+export * from "./ata-demanda-core.ts";
 
 export function subscribeAtas(
   setor: string,
@@ -147,6 +152,29 @@ export async function salvarCabecalho(
 /** Grava os itens da ata inteiros — ver o cabeçalho sobre o custo disso. */
 export async function salvarItens(id: string, itens: ItemDeAta[]): Promise<void> {
   await updateDoc(doc(db, "atas", id), { itens });
+}
+
+/**
+ * A mesma escrita de `salvarItens`, mas DENTRO de um lote que outro já abriu.
+ *
+ * Existe por causa de um caso só, e ele justifica a segunda porta: a demanda que
+ * nasce na ata. `createCard` grava o card e a primeira linha do histórico num
+ * `writeBatch`; o `cardId` precisa entrar no item da pauta no MESMO lote, senão
+ * o pior estado possível fica alcançável — card de verdade no quadro e a ata
+ * ainda chamando aquilo de assunto, com a próxima tentativa criando um card
+ * duplicado porque nada na ata diz que o primeiro existe.
+ *
+ * É a regra de AGENTS.md §4 aplicada onde ela ainda não estava: escrita e
+ * registro andam no mesmo lote, ou as duas entram ou nenhuma.
+ *
+ * Não devolve promessa de propósito — quem faz `commit()` é quem abriu o lote.
+ */
+export function salvarItensNoLote(
+  batch: WriteBatch,
+  id: string,
+  itens: ItemDeAta[],
+): void {
+  batch.update(doc(db, "atas", id), { itens });
 }
 
 export async function deleteAta(id: string): Promise<void> {
