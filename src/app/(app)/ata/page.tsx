@@ -43,6 +43,7 @@ import {
   LIMITE_ASSUNTO_CHARS,
   LIMITE_TEXTO_CHARS,
   deleteAta,
+  editarAssunto,
   montarPauta,
   proximoIdDeItem,
   resumoDaAta,
@@ -266,6 +267,16 @@ export default function AtaPage() {
   /** A linha que está virando demanda no quadro, ou sendo classificada. */
   const [promovendo, setPromovendo] = useState<ItemDaPauta | null>(null);
   const [classificando, setClassificando] = useState<ItemDaPauta | null>(null);
+  /**
+   * A linha cujo ASSUNTO está sendo corrigido.
+   *
+   * Só entra aqui linha SEM card. Onde há card, o nome e a descrição são do
+   * quadro — nome é estado, e estado vem do card (cabeçalho de `ata-core.ts`).
+   * A recusa não fica só neste `if`: `editarAssunto` a repete no caminho da
+   * escrita, porque régua que mora só no formulário é régua que o segundo
+   * formulário esquece.
+   */
+  const [editando, setEditando] = useState<ItemDaPauta | null>(null);
 
   const usersMap = useMemo(() => {
     const m: Record<string, UserProfile> = {};
@@ -305,6 +316,14 @@ export default function AtaPage() {
     setSoSemDim(false);
     setRecolhidos(new Set());
     setErroEscrita(null);
+    // E os modais que carregam UMA LINHA da ata anterior. A ata da tela pode
+    // trocar sem ninguém clicar em nada — ela é `atas[0]` enquanto ninguém
+    // escolheu, e alguém do setor criando uma reunião mais recente muda quem é
+    // o primeiro. Um modal aberto continuaria mirando o item de id "1", que
+    // existe nas duas atas e é um assunto diferente em cada uma.
+    setPromovendo(null);
+    setClassificando(null);
+    setEditando(null);
   }
 
   const entregues = useMemo(
@@ -594,6 +613,39 @@ export default function AtaPage() {
     await escrever(() => salvarItens(ata.id, [...ata.itens, conferido.valor]));
     // Devolve a chave para a tela ir até lá — ver `destaque`.
     return conferido.valor.id;
+  }
+
+  /**
+   * O assunto corrigido depois de criado.
+   *
+   * O QUE ISTO CONSERTA: até aqui, o assunto nascia e nunca mais mudava. A tela
+   * desenhava `assunto` e `contexto` como texto morto, e o único editável da
+   * linha era o que vem DEPOIS — decisão, objetivo, tarefas e a dimensão. Um
+   * nome digitado errado no meio da reunião ficava errado para sempre naquela
+   * ata, e a saída era excluir a ata inteira, levando junto as decisões e as
+   * tarefas de todo mundo.
+   *
+   * A RÉGUA NÃO MORA AQUI, e sim em `editarAssunto` — a mesma do assunto novo,
+   * inclusive a obrigatoriedade da dimensão. Esta função só leva ao banco o
+   * array que ele conferiu.
+   *
+   * O ERRO SOBE em vez de virar tarja no topo: quem chama é o modal, que
+   * continua aberto com o texto digitado. Uma tarja atrás do overlay diria o
+   * que aconteceu num lugar onde ninguém está olhando.
+   */
+  async function salvarAssunto(
+    linha: ItemDaPauta,
+    dados: {
+      assunto: string;
+      contexto: string;
+      dimensaoId: string;
+      subdimensaoId: string;
+    },
+  ) {
+    if (!ata) throw new Error("Nenhuma ata aberta.");
+    const conferido = editarAssunto(ata.itens, linha.item.id, dados, dims);
+    if (!conferido.ok) throw new Error(conferido.motivo);
+    await escrever(() => salvarItens(ata.id, conferido.valor));
   }
 
   /**
@@ -1180,6 +1232,7 @@ export default function AtaPage() {
                   onGravar={(muda) => gravarItem(linha.item, muda)}
                   onClassificar={() => setClassificando(linha)}
                   onPromover={() => setPromovendo(linha)}
+                  onEditar={() => setEditando(linha)}
                 />
               ))
             )}
@@ -1192,13 +1245,41 @@ export default function AtaPage() {
           setor={setor}
           dimensoes={dims}
           onFechar={() => setAssuntoAberto(false)}
-          onCriar={async (dados) => {
+          onSalvar={async (dados) => {
             // Os filtros saem do caminho: acrescentar um assunto e ele não
             // aparecer porque um filtro de responsável de dez minutos atrás
             // continua ligado seria o mesmo que o botão não ter funcionado.
             limparFiltros();
             setDestaque(await criarAssunto(dados));
             setAssuntoAberto(false);
+          }}
+        />
+      )}
+
+      {editando && ata && (
+        <ModalDeAssunto
+          setor={setor}
+          dimensoes={dims}
+          /* Com `inicial` preenchido, o mesmo modal é o de EDIÇÃO. Um segundo
+             componente com os mesmos três campos seria o lugar onde a régua da
+             dimensão deixaria de valer no dia em que ela mudasse. */
+          inicial={{
+            assunto: editando.item.assunto,
+            contexto: editando.item.contexto,
+            dimensaoId: editando.item.dimensaoId,
+            subdimensaoId: editando.item.subdimensaoId,
+          }}
+          onFechar={() => setEditando(null)}
+          onSalvar={async (dados) => {
+            await salvarAssunto(editando, dados);
+            // A LINHA CORRIGIDA PODE SAIR DE ONDE ESTAVA, e por dois motivos:
+            // um filtro de busca que o nome novo não casa mais, e a ordenação
+            // da pauta, que desempata por dimensão e por título. Sem tirar os
+            // filtros e sem levar os olhos até ela, salvar leria exatamente
+            // como apagar.
+            limparFiltros();
+            setDestaque(chaveDaLinha(editando));
+            setEditando(null);
           }}
         />
       )}
@@ -1389,6 +1470,7 @@ function BlocoDaDemanda({
   onGravar,
   onClassificar,
   onPromover,
+  onEditar,
 }: {
   linha: ItemDaPauta;
   nomeDe: (email: string) => string;
@@ -1403,6 +1485,8 @@ function BlocoDaDemanda({
   onGravar: (muda: (i: ItemDeAta) => ItemDeAta) => void;
   onClassificar: () => void;
   onPromover: () => void;
+  /** Corrigir o assunto e o contexto — só a linha sem card oferece. */
+  onEditar: () => void;
 }) {
   const {
     card,
@@ -1545,18 +1629,38 @@ function BlocoDaDemanda({
                 </>
               )}
             </button>
-            {/* SÓ NO ASSUNTO. A linha que já tem card não vira demanda de novo,
-                e oferecer o botão ali seria oferecer a duplicata — nem a que
-                está no quadro, nem a que saiu dele: a segunda já teve card, e
-                abrir outro perderia o vínculo com o que foi para a lixeira. */}
+            {/* SÓ NO ASSUNTO — os dois botões, e por razões diferentes.
+
+                "Criar demanda": a linha que já tem card não vira demanda de
+                novo, e oferecer o botão ali seria oferecer a duplicata — nem a
+                que está no quadro, nem a que saiu dele: a segunda já teve card,
+                e abrir outro perderia o vínculo com o que foi para a lixeira.
+
+                "Editar": aqui o assunto e o contexto são o ÚNICO nome que a
+                linha tem, e até esta versão eram texto morto — nascido no modal
+                e sem caminho de volta. Onde há card, quem responde pelo nome é
+                o quadro, e o lugar de corrigi-lo é o Kanban; oferecer o botão
+                ali deixaria alguém achando que renomeou a demanda escrevendo em
+                dois campos que a tela não lê mais. A dimensão continua no botão
+                ao lado, porque ela também é editável na linha COM card — e lá a
+                escrita cai no card, não no item. */}
             {!card && !foraDoQuadro && (
-              <button
-                className={styles.virarDemanda}
-                onClick={onPromover}
-                title="Abrir esta linha como demanda no quadro do setor"
-              >
-                <Icon name="kanban" size={12} /> Criar demanda
-              </button>
+              <>
+                <button
+                  className={styles.editarAssunto}
+                  onClick={onEditar}
+                  title="Corrigir o assunto e o contexto desta linha"
+                >
+                  <Icon name="edit" size={12} /> Editar
+                </button>
+                <button
+                  className={styles.virarDemanda}
+                  onClick={onPromover}
+                  title="Abrir esta linha como demanda no quadro do setor"
+                >
+                  <Icon name="kanban" size={12} /> Criar demanda
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -1962,35 +2066,52 @@ function SeletorDeDimensao({
 }
 
 /**
- * "Acrescentar assunto" — a linha de pauta que ainda NÃO é demanda.
+ * O assunto da pauta — a linha que ainda NÃO é demanda. Acrescenta e corrige.
  *
  * Ela nasce sem card de propósito, e é a fronteira de demandas em ação: a
  * reunião discute muita coisa que ainda não é trabalho de ninguém, e forçar um
  * card para poder registrar a conversa inverteria a ordem — o card nasceria da
  * necessidade de ter onde escrever, e não de alguém decidir que aquilo é
  * trabalho. Quando a decisão vier, o botão "Criar demanda" está no bloco.
+ *
+ * UM COMPONENTE PARA OS DOIS MOMENTOS, com `inicial` decidindo qual é — mesmo
+ * partido de `ModalDeAta`, que já serve para abrir a próxima reunião e para
+ * editar o cabeçalho desta. São os mesmos três campos e a MESMA régua
+ * (`conferirAssuntoNovo` e `editarAssunto` chamam as duas mesmas conferências);
+ * um segundo formulário seria o lugar onde a obrigatoriedade da dimensão
+ * deixaria de valer no dia em que ela mudasse — e ninguém veria, porque os dois
+ * desenham igual.
  */
 function ModalDeAssunto({
   setor,
   dimensoes,
+  inicial,
   onFechar,
-  onCriar,
+  onSalvar,
 }: {
   setor: string;
   dimensoes: Dimensao[];
+  /** O ponto de partida do formulário. Ausente = assunto NOVO. */
+  inicial?: {
+    assunto: string;
+    contexto: string;
+    dimensaoId: string;
+    subdimensaoId: string;
+  };
   onFechar: () => void;
-  onCriar: (dados: {
+  onSalvar: (dados: {
     assunto: string;
     contexto: string;
     dimensaoId: string;
     subdimensaoId: string;
   }) => Promise<void>;
 }) {
-  const [assunto, setAssunto] = useState("");
-  const [contexto, setContexto] = useState("");
+  const editando = !!inicial;
+  const [assunto, setAssunto] = useState(inicial?.assunto ?? "");
+  const [contexto, setContexto] = useState(inicial?.contexto ?? "");
   const [classe, setClasse] = useState<Classificacao>({
-    dimensaoId: "",
-    subdimensaoId: "",
+    dimensaoId: inicial?.dimensaoId ?? "",
+    subdimensaoId: inicial?.subdimensaoId ?? "",
   });
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -1999,21 +2120,35 @@ function ModalDeAssunto({
     <Modal
       onClose={onFechar}
       podeFechar={() => !salvando}
-      ariaLabel="Acrescentar assunto à pauta"
+      ariaLabel={
+        editando ? "Editar o assunto da pauta" : "Acrescentar assunto à pauta"
+      }
       overlayClassName={styles.overlay}
       className={styles.modal}
       width={520}
     >
       <div className={styles.mhead}>
         <span className={styles.mchip}>
-          <Icon name="plus" size={12} /> Assunto da pauta
+          <Icon name={editando ? "edit" : "plus"} size={12} />{" "}
+          {editando ? "Editar assunto" : "Assunto da pauta"}
         </span>
         <span className={styles.mchip}>{setor}</span>
       </div>
       <p className={styles.avisoModal}>
-        Assunto é o que a reunião discutiu e que <b>ainda não é demanda</b>. Ele
-        entra na pauta com decisão, objetivo e tarefas — e vira demanda no quadro
-        quando alguém decidir que é trabalho.
+        {editando ? (
+          <>
+            Isto muda só como a reunião <b>chamou</b> o assunto. A decisão, o
+            objetivo e as tarefas desta linha ficam como estão — e a dimensão
+            nova vale a partir de agora, inclusive no dia em que a linha virar
+            demanda no quadro.
+          </>
+        ) : (
+          <>
+            Assunto é o que a reunião discutiu e que <b>ainda não é demanda</b>.
+            Ele entra na pauta com decisão, objetivo e tarefas — e vira demanda
+            no quadro quando alguém decidir que é trabalho.
+          </>
+        )}
       </p>
 
       <label className={styles.rotulo}>Assunto</label>
@@ -2048,18 +2183,20 @@ function ModalDeAssunto({
             setSalvando(true);
             setErro(null);
             try {
-              await onCriar({ assunto, contexto, ...classe });
+              await onSalvar({ assunto, contexto, ...classe });
             } catch (e) {
               setErro(
                 e instanceof Error
                   ? e.message
-                  : "Não foi possível acrescentar o assunto.",
+                  : editando
+                    ? "Não foi possível salvar o assunto."
+                    : "Não foi possível acrescentar o assunto.",
               );
               setSalvando(false);
             }
           }}
         >
-          {salvando ? "Salvando…" : "Acrescentar"}
+          {salvando ? "Salvando…" : editando ? "Salvar" : "Acrescentar"}
         </button>
       </div>
     </Modal>

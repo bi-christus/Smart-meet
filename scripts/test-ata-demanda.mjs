@@ -20,12 +20,19 @@
  *    responde pela dimensão é o card; onde não há, o item. Uma contagem que
  *    olhasse só uma delas diria "0 linhas sem dimensão" com metade da pauta
  *    fora do mapa.
+ *
+ * 4. QUE CORRIGIR O ASSUNTO NÃO APAGUE A REUNIÃO. `editarAssunto` mescla no
+ *    item que JÁ existe. Uma versão que montasse item novo desenharia
+ *    exatamente igual na tela — mesmo nome, mesma caixa — e zeraria a decisão,
+ *    o objetivo e as tarefas daquela linha. O prejuízo só apareceria depois,
+ *    com a ata já gravada e a reunião acabada.
  */
 import {
   classificacaoDaLinha,
   conferirAssuntoNovo,
   conferirClassificacao,
   conferirTitulo,
+  editarAssunto,
   semClassificacao,
   vincularCard,
   LIMITE_ASSUNTO_CHARS,
@@ -259,6 +266,85 @@ checa(
   "mas ela NÃO é cobrada por falta de dimensão",
   semClassificacao(pautaComOrfa).length === 0,
 );
+
+
+console.log("\n— corrigir o assunto depois de criado —");
+
+const antes = [
+  item("1", {
+    assunto: "Padrao de recebimente",
+    contexto: "veio do bloco 3",
+    dimensaoId: "d1",
+    subdimensaoId: "s1",
+    decisao: "combinado com Suprimentos",
+    objetivo: "medir na proxima",
+    proximaReuniao: true,
+    tarefas: [{ id: "1", texto: "aplicar o formulario", responsavel: "a@b.c", prazo: "", status: "pendente", observacao: "" }],
+  }),
+  item("2", { assunto: "outro assunto" }),
+];
+
+const corrigido = editarAssunto(
+  antes,
+  "1",
+  {
+    assunto: "  Padrão de recebimento  ",
+    contexto: "  veio do bloco 3, revisado  ",
+    dimensaoId: "d1",
+    subdimensaoId: "s2",
+  },
+  DIMS,
+);
+checa("o assunto corrigido passa", corrigido.ok === true, corrigido.motivo);
+const alvo = corrigido.ok && corrigido.valor.find((i) => i.id === "1");
+checa("o texto novo chega aparado", alvo.assunto === "Padrão de recebimento");
+checa("o contexto novo também", alvo.contexto === "veio do bloco 3, revisado");
+checa("a subdimensão troca", alvo.subdimensaoId === "s2");
+
+// O CORAÇÃO DESTA FRENTE: corrigir o nome não é motivo para a reunião perder o
+// que decidiu. Um `editarAssunto` que montasse item novo em vez de mesclar
+// desenharia igual na tela e zeraria a tabela de tarefas de todo mundo.
+checa("a decisão registrada continua lá", alvo.decisao === "combinado com Suprimentos");
+checa("o objetivo continua lá", alvo.objetivo === "medir na proxima");
+checa("a marca de próxima reunião continua lá", alvo.proximaReuniao === true);
+checa("as tarefas continuam lá", alvo.tarefas.length === 1 && alvo.tarefas[0].texto === "aplicar o formulario");
+checa("o outro item não é tocado", corrigido.valor.find((i) => i.id === "2").assunto === "outro assunto");
+checa("nada é acrescentado nem removido", corrigido.valor.length === 2);
+checa("o array de entrada não é mutado", antes[0].assunto === "Padrao de recebimente");
+
+// As mesmas duas réguas da criação, chamadas daqui e não copiadas.
+checa(
+  "assunto apagado é recusado",
+  editarAssunto(antes, "1", { assunto: "   ", dimensaoId: "d1" }, DIMS).ok === false,
+);
+checa(
+  "dimensão apagada é recusada",
+  editarAssunto(antes, "1", { assunto: "vale", dimensaoId: "" }, DIMS).ok === false,
+);
+checa(
+  "subdimensão de OUTRA dimensão é recusada aqui também",
+  editarAssunto(antes, "1", { assunto: "vale", dimensaoId: "d2", subdimensaoId: "s1" }, DIMS)
+    .ok === false,
+);
+
+// Entre abrir o modal e salvar, o item pode ter sumido do array — a ata é
+// editada por várias pessoas na mesma reunião. Sem esta recusa, o `map` não
+// acharia nada, a escrita passaria "com sucesso" e a correção sumiria calada.
+const sumiu = editarAssunto(antes, "99", { assunto: "vale", dimensaoId: "d1" }, DIMS);
+checa("item que não existe mais é recusado", sumiu.ok === false);
+checa("e a recusa DIZ o que aconteceu", /não está mais na pauta/.test(sumiu.motivo));
+
+// Onde há card, quem responde pelo nome é o quadro. Gravar aqui daria a
+// impressão de ter renomeado a demanda, escrevendo em dois campos que a tela
+// não lê mais.
+const comCard = editarAssunto(
+  [item("3", { cardId: "c9", assunto: "virou demanda" })],
+  "3",
+  { assunto: "outro nome", dimensaoId: "d1" },
+  DIMS,
+);
+checa("linha que já tem card é recusada", comCard.ok === false);
+checa("e a recusa manda para o Kanban", /Kanban/.test(comCard.motivo));
 
 console.log(
   falhas === 0
