@@ -253,3 +253,82 @@ export function classificacaoDaLinha(l: ItemDaPauta): Classificacao {
       }
     : { dimensaoId: l.item.dimensaoId, subdimensaoId: l.item.subdimensaoId };
 }
+
+/**
+ * O assunto corrigido — mesmo item, outro nome, outro contexto, outra caixa.
+ *
+ * POR QUE ISTO PRECISOU EXISTIR. O assunto nascia e nunca mais mudava: a tela
+ * desenhava `assunto` e `contexto` como texto morto, e o único editável da
+ * linha era o que vem DEPOIS da criação — decisão, objetivo, tarefas e a
+ * dimensão. Um nome digitado errado no meio da reunião ficava errado para
+ * sempre naquela ata, e a única saída era excluir a ata inteira, levando junto
+ * as decisões e as tarefas de todo mundo.
+ *
+ * DEVOLVE O ARRAY INTEIRO, como `vincularCard` e pelo mesmo motivo: os itens
+ * moram dentro do documento e a ata grava sempre o array completo (cabeçalho de
+ * `ata.ts`). Devolver só o item mudado obrigaria quem chama a remontar o array,
+ * que é onde o `id` errado acaba escrevendo por cima de outra linha.
+ *
+ * O QUE ELE NÃO TOCA, de propósito: decisão, objetivo, `proximaReuniao` e as
+ * tarefas. Corrigir o nome de um assunto não é motivo para a reunião perder o
+ * que decidiu sobre ele — e o oposto (recriar o item) foi justamente o
+ * contorno que a falta desta função obrigava.
+ *
+ * DUAS RECUSAS QUE SÃO DE NEGÓCIO, e não de formulário:
+ *
+ *   1. ITEM QUE NÃO EXISTE MAIS. A ata é editada por várias pessoas na mesma
+ *      reunião; entre abrir o modal e salvar, o item pode ter sumido do array.
+ *      Sem esta conferência, o `map` não acharia nada, a escrita passaria
+ *      "com sucesso" e a correção sumiria calada.
+ *   2. LINHA QUE JÁ TEM CARD. Aí `assunto` e `contexto` viram histórico do que
+ *      a reunião chamou, e quem responde pelo nome é o quadro — nome é estado,
+ *      e estado vem do card (cabeçalho de `ata-core.ts`). Deixar gravar aqui
+ *      daria a alguém a impressão de ter renomeado a demanda, escrevendo em
+ *      dois campos que a tela não lê mais.
+ *
+ * A régua do título e a da dimensão são as MESMAS da criação, chamadas daqui e
+ * não copiadas: régua que mora só no formulário é régua que o segundo
+ * formulário esquece.
+ */
+export function editarAssunto(
+  itens: readonly ItemDeAta[],
+  itemId: string,
+  bruto: Partial<AssuntoNovo> | null | undefined,
+  dimensoes: readonly DimensaoDaPauta[],
+): Conferido<ItemDeAta[]> {
+  const atual = itens.find((i) => i.id === itemId);
+  if (!atual) {
+    return {
+      ok: false,
+      motivo:
+        "Este assunto não está mais na pauta desta ata. Feche e abra a ata para ver como ela está agora.",
+    };
+  }
+  if (atual.cardId) {
+    return {
+      ok: false,
+      motivo:
+        "Esta linha já é uma demanda do quadro: o título e a descrição dela se editam no Kanban.",
+    };
+  }
+
+  const titulo = conferirTitulo(bruto?.assunto, "o assunto");
+  if (!titulo.ok) return titulo;
+  const classe = conferirClassificacao(bruto, dimensoes);
+  if (!classe.ok) return classe;
+
+  return {
+    ok: true,
+    valor: itens.map((i) =>
+      i.id === itemId
+        ? {
+            ...i,
+            assunto: titulo.valor,
+            contexto: limparTexto(bruto?.contexto),
+            dimensaoId: classe.valor.dimensaoId,
+            subdimensaoId: classe.valor.subdimensaoId,
+          }
+        : i,
+    ),
+  };
+}
