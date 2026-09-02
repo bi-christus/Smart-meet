@@ -190,7 +190,27 @@ export async function deleteAta(id: string): Promise<void> {
  */
 export async function abrirProxima(
   anterior: Ata,
-  dados: { titulo: string; data: string },
+  /**
+   * O QUE O FORMULÁRIO COLETOU, inteiro — e não só título e data.
+   *
+   * Era `{ titulo, data }`, e os outros cinco campos do modal caíam no chão: a
+   * ata nova nascia com o local e o facilitador da reunião ANTERIOR e sem
+   * horário nenhum, mesmo com a pessoa tendo acabado de digitar "Sala 3,
+   * 14h–15h, facilitador Fulano". Nada na tela dizia que aquilo tinha sido
+   * ignorado.
+   *
+   * A ata anterior continua servindo de ponto de partida — mas como valor
+   * INICIAL do formulário (`inicial`, na tela), que é onde esse papel cabe.
+   */
+  dados: {
+    titulo: string;
+    data: string;
+    horaInicio?: string;
+    horaFim?: string;
+    local?: string;
+    facilitador?: string;
+    participantes?: string[];
+  },
   createdBy: string,
 ): Promise<string> {
   return criarAta(
@@ -198,9 +218,11 @@ export async function abrirProxima(
       setor: anterior.setor,
       titulo: dados.titulo,
       data: dados.data,
-      local: anterior.local,
-      facilitador: anterior.facilitador,
-      participantes: anterior.participantes,
+      horaInicio: dados.horaInicio ?? "",
+      horaFim: dados.horaFim ?? "",
+      local: dados.local ?? anterior.local,
+      facilitador: dados.facilitador ?? anterior.facilitador,
+      participantes: dados.participantes ?? anterior.participantes,
       // Os citados NÃO vão junto: são quem apareceu NAQUELA gravação. A próxima
       // reunião tem a sua, e herdar a lista faria a ata nova nascer afirmando
       // presença de gente que ainda não entrou na sala.

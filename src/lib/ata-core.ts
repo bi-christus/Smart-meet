@@ -167,6 +167,33 @@ export function limparTexto(bruto: unknown, teto = LIMITE_TEXTO_CHARS): string {
 }
 
 /**
+ * O mesmo, para o campo que aceita PARÁGRAFO — decisão e objetivo.
+ *
+ * `limparTexto` faz `replace(/\s+/g, " ")`, e isso engolia a quebra de linha.
+ * Os dois campos são `<textarea>` com altura calculada para até oito linhas: o
+ * Enter é o comportamento esperado ali, e a decisão que vem do documento da
+ * reunião já chega com mais de uma frase. O que acontecia era invisível e
+ * irreversível — a pessoa escrevia em três parágrafos, a escrita ia inteira
+ * para o banco, e o snapshot de volta devolvia tudo numa linha só, sem nada na
+ * tela dizendo que o texto tinha sido reescrito.
+ *
+ * O que ele ainda aparta: espaço e tabulação sobrando DENTRO da linha, e mais de
+ * duas quebras seguidas. Parágrafo é separação, não espaço em branco vertical —
+ * e um `<textarea>` colado de outro lugar chega com cinco quebras com
+ * frequência.
+ */
+export function limparParagrafo(bruto: unknown, teto = LIMITE_TEXTO_CHARS): string {
+  return String(bruto ?? "")
+    .replace(/\r\n?/g, "\n")
+    .replace(/[^\S\n]+/g, " ")
+    .replace(/ *\n */g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+    .slice(0, teto)
+    .trim();
+}
+
+/**
  * O próximo id de tarefa — sempre MAIOR que todos, nunca um buraco reaproveitado.
  *
  * Mesma regra e mesmo motivo de `proximoIdDeSub` em `dimensoes-core`: id
@@ -260,8 +287,9 @@ function normalizarItem(bruto: unknown): ItemDeAta | null {
     contexto: limparTexto(b.contexto),
     dimensaoId: typeof b.dimensaoId === "string" ? b.dimensaoId : "",
     subdimensaoId: typeof b.subdimensaoId === "string" ? b.subdimensaoId : "",
-    decisao: limparTexto(b.decisao),
-    objetivo: limparTexto(b.objetivo),
+    // Os dois únicos campos de parágrafo da ata — ver `limparParagrafo`.
+    decisao: limparParagrafo(b.decisao),
+    objetivo: limparParagrafo(b.objetivo),
     proximaReuniao: b.proximaReuniao === true,
     tarefas,
   };
@@ -455,6 +483,16 @@ export type ItemDaPauta = {
   /** Nome da dimensão e da subdimensão, quando classificada. */
   dimensao: string;
   subdimensao: string;
+  /**
+   * O item aponta para um card que não está mais no quadro do setor.
+   *
+   * Lixeira, mudança de setor, exclusão definitiva. A linha continua na pauta —
+   * a decisão da reunião não some porque a demanda saiu —, mas ela não tem
+   * estado, prazo nem responsável para mostrar, e a tela precisa dizer por quê.
+   * Sem este campo, ela leria como um assunto que nunca virou demanda, que é
+   * uma história diferente da verdadeira.
+   */
+  foraDoQuadro?: boolean;
 };
 
 /** O mínimo que a pauta precisa da árvore de dimensões. */
@@ -541,23 +579,51 @@ export function montarPauta(opcoes: {
       (dimensaoId && subdimensaoId && nomeSub.get(`${dimensaoId}/${subdimensaoId}`)) || "",
   });
 
+  // Quais cards de fato viraram linha. É o conjunto que responde a pergunta da
+  // terceira origem, logo abaixo — e ele precisa ser montado aqui, e não a
+  // partir de `cards`, porque nem todo card entra (a demanda entregue sem item
+  // fica de fora).
+  const desenhados = new Set<string>();
+  const doQuadro = cards
+    .filter((c) => porCard.has(c.id) || !ehEntrega(c, entregues))
+    .map((card) => {
+      desenhados.add(card.id);
+      return linha(
+        card,
+        porCard.get(card.id),
+        card.dimensaoId ?? "",
+        card.subdimensaoId ?? "",
+      );
+    });
+
   const linhas = [
-    ...cards
-      .filter((c) => porCard.has(c.id) || !ehEntrega(c, entregues))
-      .map((card) =>
-        linha(
-          card,
-          porCard.get(card.id),
-          card.dimensaoId ?? "",
-          card.subdimensaoId ?? "",
-        ),
-      ),
-    // A terceira origem: o assunto que a reunião discutiu e que ainda não é
-    // demanda. Ele NÃO sai da lista por não ter card — sumir daqui apagaria da
-    // ata a decisão que foi tomada sobre ele, que é o oposto do que uma ata faz.
+    ...doQuadro,
+    /**
+     * A terceira origem: TODO item que não ganhou linha lá em cima.
+     *
+     * São dois casos, e o segundo levou um tempo para aparecer:
+     *
+     *   1. O assunto que a reunião discutiu e que ainda não é demanda
+     *      (`cardId` vazio). Sumir daqui apagaria da ata a decisão tomada sobre
+     *      ele, que é o oposto do que uma ata faz.
+     *   2. O item que APONTA para um card que não está mais no quadro — a
+     *      demanda foi para a lixeira, mudou de setor ou foi apagada de vez.
+     *      Enquanto o filtro aqui era `!i.cardId`, esse item não entrava por
+     *      nenhuma das origens: a decisão registrada em 26/08 sobre aquela
+     *      demanda simplesmente desaparecia do documento que a registrou.
+     *
+     * Nos dois casos a linha é desenhada SEM card, caindo no assunto e no
+     * contexto que a própria ata guarda. O segundo caso ganha `foraDoQuadro`,
+     * porque quem lê precisa saber por que aquela linha não tem estado nem
+     * responsável — e a diferença entre "ainda não é demanda" e "era e saiu" é
+     * a diferença entre uma pauta e um erro.
+     */
     ...ata.itens
-      .filter((i) => !i.cardId)
-      .map((i) => linha(null, i, i.dimensaoId, i.subdimensaoId)),
+      .filter((i) => !i.cardId || !desenhados.has(i.cardId))
+      .map((i) => ({
+        ...linha(null, i, i.dimensaoId, i.subdimensaoId),
+        foraDoQuadro: !!i.cardId,
+      })),
   ];
 
   linhas.sort(
