@@ -139,6 +139,22 @@ const PROIBIDOS_ATA = [
   { padrao: /collection\(\s*["'`]cards["'`]\s*\)\s*\.\s*add\s*\(/, motivo: 'cria card na colecao "cards"' },
   { padrao: /\.delete\s*\(/, motivo: "apaga documento" },
   { padrao: /deleteDoc|FieldValue\.delete/, motivo: "apaga documento ou campo" },
+  {
+    // A IDEMPOTENCIA DA ATA, guardada pelo lado do que nao pode voltar.
+    //
+    // A rota gravava com `collection("atas").add(...)` depois de uma consulta —
+    // um check-then-add. Dois pedidos simultaneos (duas pessoas do setor, ou a
+    // mesma pessoa em duas abas) liam antes de qualquer escrita, nenhum achava
+    // nada, e os dois gravavam: nasciam DUAS atas da mesma reuniao no mesmo
+    // setor, e as decisoes passavam a se dividir entre elas conforme quem tinha
+    // aberto qual. Agora e `doc(idDaAta(...)).create(...)`, que falha com
+    // ALREADY_EXISTS no servidor.
+    //
+    // Voltar para `add()` nao quebra teste, tipo nem tela — devolve a corrida
+    // em silencio. Por isso a proibicao e do metodo, e nao do resultado.
+    padrao: /collection\(\s*["'`]atas["'`]\s*\)\s*\.\s*add\s*\(/,
+    motivo: 'grava a ata com add() — a idempotencia volta a ser check-then-add',
+  },
 ];
 
 /**
@@ -151,6 +167,18 @@ const PROIBIDOS_ATA = [
  * de outro setor.
  */
 const EXIGIDOS_ATA = [
+  {
+    // O par da proibicao de `add()` logo acima: proibir o metodo errado nao
+    // basta se o certo puder sumir junto. Um `set()` no lugar de `create()`
+    // sobrescreveria a ata existente — apagando as decisoes ja escritas nela —
+    // e passaria por todos os portoes.
+    padrao: /\bidDaAta\s*\(/,
+    exigencia:
+      "nao usa o id deterministico — a idempotencia da ata volta a depender de uma consulta",
+    reponha:
+      "volte a gravar em `db.collection(\"atas\").doc(idDaAta(meetingId, setor)).create({...})`, " +
+      "tratando ALREADY_EXISTS como `jaExistia: true`",
+  },
   {
     padrao: /\brequireUser\s*\(/,
     exigencia: "nao chama requireUser — geraria ata sem saber quem pediu",
@@ -278,6 +306,15 @@ const REGRAS = [
       "o modulo puro da regua da ata sumiu ou mudou de nome. A obrigatoriedade da dimensao mora " +
       "nele e e testada por scripts/test-ata-demanda.mjs; se ela foi para outro arquivo, aponte " +
       "esta regra e o teste para la — nao apague nenhum dos dois.",
+  },
+  {
+    arquivo: "src/lib/ata-gerar-core.ts",
+    proibidos: PROIBIDOS_ATA_CORE,
+    seSumiu:
+      "o modulo puro da rota da ata sumiu ou mudou de nome. O id deterministico da idempotencia " +
+      "e a frase que a pessoa le quando o Drive falha moram nele, testados por " +
+      "scripts/test-ata-gerar.mjs; se foram para outro arquivo, aponte esta regra e o teste " +
+      "para la — nao apague nenhum dos dois.",
   },
 ];
 
