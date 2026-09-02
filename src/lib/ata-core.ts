@@ -93,6 +93,10 @@ export type TarefaDeAta = {
  * A fronteira de demandas existe justamente para impedir isso. Enquanto não há
  * card, o assunto e o contexto moram aqui; quando houver, `cardId` passa a
  * responder por eles e estes dois viram histórico do que a reunião chamou.
+ *
+ * A TRAVESSIA DE UM PARA O OUTRO mora em `ata-demanda-core.ts`, e ela é sempre
+ * um clique humano: `vincularCard` preenche este campo no mesmo lote em que o
+ * card nasce. Nada aqui preenche `cardId` sozinho.
  */
 export type ItemDeAta = {
   /**
