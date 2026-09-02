@@ -49,6 +49,16 @@
  * E a obrigatoriedade não vale só para o que nasce depois desta mudança: a
  * pauta CONTA quantas linhas estão sem classificação (`semClassificacao`), para
  * que a ata antiga não fique com o problema calado.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * O QUE MAIS MORA AQUI HOJE
+ *
+ * O arquivo nasceu para o nascimento da demanda, e virou o do CICLO DE VIDA da
+ * linha de pauta que ainda não é uma: ela nasce (`conferirAssuntoNovo`), se
+ * corrige (`editarAssunto`), muda de reunião (`moverAssunto`) e vira card
+ * (`vincularCard`). Os quatro dividem as mesmas duas conferências e o mesmo
+ * `Conferido`; em quatro arquivos, seriam quatro lugares para a régua da
+ * dimensão deixar de valer — e o quarto ninguém lembraria de mudar.
  */
 
 import type { DimensaoDaPauta, ItemDaPauta, ItemDeAta } from "./ata-core.ts";
@@ -330,5 +340,90 @@ export function editarAssunto(
           }
         : i,
     ),
+  };
+}
+
+/**
+ * O assunto lançado na reunião errada muda de ata — levando tudo o que tem.
+ *
+ * POR QUE ISTO PRECISOU EXISTIR. A pauta que se abre é quase sempre a mais
+ * recente, e o assunto que se quer registrar é muitas vezes o da reunião
+ * passada. Errar o alvo era barato de fazer e caríssimo de desfazer: sem
+ * "remover", a linha errada ficava lá para sempre; recriar na reunião certa
+ * cobrava redigitar a decisão, o objetivo, a marca de próxima reunião e a
+ * tabela de tarefas inteira; e a única saída limpa era excluir a ata, que é de
+ * gestor e apaga a reunião de todo mundo.
+ *
+ * DEVOLVE OS DOIS ARRAYS, e quem chama grava os dois no MESMO `writeBatch` —
+ * ver `moverItensEntreAtas`. Em duas escritas soltas, a falha da segunda deixa
+ * o assunto nas duas atas ou em nenhuma, e nada na tela diria qual dos dois
+ * aconteceu.
+ *
+ * O `id` É RENUMERADO NO DESTINO, e este é o detalhe que derruba tudo se
+ * passar. Os ids são sequenciais POR ATA: o item "3" que chega de outra ata
+ * colide com o "3" que já mora lá, e duas linhas com a mesma `key` do React
+ * fazem a escrita de uma cair na outra — é o mesmo estado que `idsUnicos`
+ * conserta na leitura, e que aqui dá para simplesmente não criar.
+ *
+ * O RESTO VAI INTEIRO: assunto, contexto, dimensão, decisão, objetivo,
+ * `proximaReuniao` e as tarefas. O item não mudou de natureza, mudou de pasta —
+ * e a decisão que a reunião tomou sobre ele continua sendo a mesma decisão.
+ *
+ * TRÊS RECUSAS, e as três são de negócio:
+ *
+ *   1. A MESMA ATA de origem e destino. Sem isto o item sairia do array e
+ *      voltaria com id novo — inofensivo por acaso, e confuso de ler para
+ *      sempre.
+ *   2. SETORES DIFERENTES. A ata é escopada por setor em `firestore.rules`, e a
+ *      árvore de dimensões também: o `dimensaoId` do item não aponta para a
+ *      mesma caixa do outro lado, e a linha chegaria classificada em algo que
+ *      não existe lá. A tela só oferece atas do mesmo setor; esta é a segunda
+ *      barreira, no caminho.
+ *   3. LINHA COM CARD. A demanda do quadro aparece na pauta de TODA reunião do
+ *      setor, vinda do Kanban — mover o item não a moveria, apenas levaria para
+ *      outro dia a decisão tomada neste. Uma ata que empresta a decisão de
+ *      outra deixou de ser registro.
+ */
+export function moverAssunto(
+  origem: { id: string; setor: string; itens: readonly ItemDeAta[] },
+  destino: { id: string; setor: string; itens: readonly ItemDeAta[] },
+  itemId: string,
+): Conferido<{ origem: ItemDeAta[]; destino: ItemDeAta[] }> {
+  if (origem.id === destino.id) {
+    return { ok: false, motivo: "Escolha uma reunião diferente desta." };
+  }
+  if (origem.setor !== destino.setor) {
+    return {
+      ok: false,
+      motivo:
+        "As duas reuniões precisam ser do mesmo setor: a dimensão do assunto só existe na árvore do setor dele.",
+    };
+  }
+
+  const item = origem.itens.find((i) => i.id === itemId);
+  if (!item) {
+    return {
+      ok: false,
+      motivo:
+        "Este assunto não está mais na pauta desta ata. Feche e abra a ata para ver como ela está agora.",
+    };
+  }
+  if (item.cardId) {
+    return {
+      ok: false,
+      motivo:
+        "Esta linha é uma demanda do quadro: ela já aparece na pauta de toda reunião do setor, e o que a ata guarda sobre ela é a decisão daquele dia.",
+    };
+  }
+
+  return {
+    ok: true,
+    valor: {
+      origem: origem.itens.filter((i) => i.id !== itemId),
+      destino: [
+        ...destino.itens,
+        { ...item, id: proximoIdDeItem(destino.itens) },
+      ],
+    },
   };
 }

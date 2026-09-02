@@ -576,16 +576,15 @@
 .areaFalta svg {
   opacity: 1;
 }
-/* Corrigir o assunto — a MESMA pastilha da dimensão, e de propósito.
+/* As ações do assunto — "Editar" e "Mover" — na MESMA pastilha da dimensão.
 
-   Os dois botões fazem a mesma coisa em naturezas diferentes (mudar o que a
-   linha diz de si), e o terceiro — "Criar demanda" — é o único que muda o
-   mundo fora da ata. Ele é o único com o acento da marca; dar destaque igual
-   aos três faria o rodapé competir consigo mesmo e a ação mais rara e mais
+   As três mudam o que a linha diz de si; só "Criar demanda" muda o mundo fora
+   da ata, e por isso é a única com o acento da marca. Dar destaque igual às
+   quatro faria o rodapé competir consigo mesmo, e a ação mais rara e mais
    grave deixaria de saltar. `composes` em vez de copiar as onze linhas do
    `.area`: a pastilha da linha é uma só, e no dia em que o raio ou a cor dela
    mudar, um botão não pode ficar para trás. */
-.editarAssunto {
+.acaoAssunto {
   composes: area;
 }
 .virarDemanda {

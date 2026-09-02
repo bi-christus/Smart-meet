@@ -45,6 +45,8 @@ import {
   deleteAta,
   editarAssunto,
   montarPauta,
+  moverAssunto,
+  moverItensEntreAtas,
   proximoIdDeItem,
   resumoDaAta,
   salvarCabecalho,
@@ -129,6 +131,18 @@ const SEM_REUNIOES: Meeting[] = [];
  */
 function chaveDaLinha(l: ItemDaPauta): string {
   return l.item.cardId || l.item.id;
+}
+
+/**
+ * Como uma reunião se chama nas listas — título e dia, sempre nessa ordem.
+ *
+ * Um lugar só porque são três: o seletor do resumo, a lista de destino do
+ * "Mover" e a frase que diz para onde o assunto foi. Duas reuniões com o mesmo
+ * título são o caso comum ("Reunião Semanal de Operações"), e é a data que as
+ * distingue — se um dos três esquecer dela, a escolha vira sorteio.
+ */
+function rotuloDaAta(a: Pick<Ata, "titulo" | "data">): string {
+  return a.data ? `${a.titulo} · ${fmtDayMonth(a.data)}` : a.titulo;
 }
 
 /** A cor de cada estado, na mesma ordem de gravidade da pauta. */
@@ -277,6 +291,8 @@ export default function AtaPage() {
    * formulário esquece.
    */
   const [editando, setEditando] = useState<ItemDaPauta | null>(null);
+  /** A linha que está mudando de reunião — mesma fronteira de `editando`. */
+  const [movendo, setMovendo] = useState<ItemDaPauta | null>(null);
 
   const usersMap = useMemo(() => {
     const m: Record<string, UserProfile> = {};
@@ -324,6 +340,7 @@ export default function AtaPage() {
     setPromovendo(null);
     setClassificando(null);
     setEditando(null);
+    setMovendo(null);
   }
 
   const entregues = useMemo(
@@ -646,6 +663,33 @@ export default function AtaPage() {
     const conferido = editarAssunto(ata.itens, linha.item.id, dados, dims);
     if (!conferido.ok) throw new Error(conferido.motivo);
     await escrever(() => salvarItens(ata.id, conferido.valor));
+  }
+
+  /**
+   * O assunto muda de reunião — e as duas atas mudam no mesmo lote.
+   *
+   * A régua mora em `moverAssunto`, inclusive a renumeração do id no destino:
+   * os ids são sequenciais POR ATA, e o item que chega encontra um homônimo do
+   * outro lado. A escrita atômica mora em `moverItensEntreAtas`, e o porquê
+   * está lá — o estado intermediário perde a decisão e as tarefas em silêncio.
+   *
+   * DEVOLVE A ATA DE DESTINO porque quem chama precisa dizer para onde a linha
+   * foi. Ela some desta pauta no mesmo instante, e um sumiço sem endereço é
+   * indistinguível de ter apagado.
+   */
+  async function mover(linha: ItemDaPauta, destinoId: string) {
+    if (!ata) throw new Error("Nenhuma ata aberta.");
+    const destino = atas.find((a) => a.id === destinoId);
+    if (!destino) throw new Error("Escolha a reunião de destino.");
+    const conferido = moverAssunto(ata, destino, linha.item.id);
+    if (!conferido.ok) throw new Error(conferido.motivo);
+    await escrever(() =>
+      moverItensEntreAtas(
+        { id: ata.id, itens: conferido.valor.origem },
+        { id: destino.id, itens: conferido.valor.destino },
+      ),
+    );
+    return destino;
   }
 
   /**
@@ -976,10 +1020,7 @@ export default function AtaPage() {
                 <Select
                   value={ata.id}
                   options={atas.map(
-                    (a): SelectOption => ({
-                      value: a.id,
-                      label: a.data ? `${a.titulo} · ${fmtDayMonth(a.data)}` : a.titulo,
-                    }),
+                    (a): SelectOption => ({ value: a.id, label: rotuloDaAta(a) }),
                   )}
                   onChange={setAtaSel}
                   ariaLabel="Reunião"
@@ -1233,6 +1274,9 @@ export default function AtaPage() {
                   onClassificar={() => setClassificando(linha)}
                   onPromover={() => setPromovendo(linha)}
                   onEditar={() => setEditando(linha)}
+                  /* Sem uma segunda reunião no setor não há para onde mover, e
+                     o botão não nasce — ver `onMover`. */
+                  onMover={atas.length > 1 ? () => setMovendo(linha) : null}
                 />
               ))
             )}
@@ -1280,6 +1324,28 @@ export default function AtaPage() {
             limparFiltros();
             setDestaque(chaveDaLinha(editando));
             setEditando(null);
+          }}
+        />
+      )}
+
+      {movendo && ata && (
+        <ModalDeMover
+          setor={setor}
+          linha={movendo}
+          /* A ata de origem sai da lista: mover para ela mesma é o único
+             destino que `moverAssunto` recusa, e oferecê-lo seria desenhar um
+             caminho que só sabe terminar em erro. */
+          destinos={atas.filter((a) => a.id !== ata.id)}
+          onFechar={() => setMovendo(null)}
+          onMover={async (destinoId) => {
+            const destino = await mover(movendo, destinoId);
+            setMovendo(null);
+            // A LINHA SOME DESTA PAUTA NO MESMO INSTANTE, e sumiço sem endereço
+            // lê como exclusão. Esta frase é o recibo: diz para onde foi e o
+            // que foi junto.
+            setAviso(
+              `“${movendo.titulo}” foi para ${rotuloDaAta(destino)}, com a decisão, o objetivo e as tarefas. Esta pauta não tem mais essa linha.`,
+            );
           }}
         />
       )}
@@ -1471,6 +1537,7 @@ function BlocoDaDemanda({
   onClassificar,
   onPromover,
   onEditar,
+  onMover,
 }: {
   linha: ItemDaPauta;
   nomeDe: (email: string) => string;
@@ -1487,6 +1554,14 @@ function BlocoDaDemanda({
   onPromover: () => void;
   /** Corrigir o assunto e o contexto — só a linha sem card oferece. */
   onEditar: () => void;
+  /**
+   * Mudar de reunião, ou `null` quando não há para onde.
+   *
+   * Nulo em vez de um segundo `podeMover`: quem sabe se existe outra ata do
+   * setor é a página, e um botão que só sabe responder "não há para onde" é
+   * pior do que botão nenhum — ele ensina a duvidar dos outros.
+   */
+  onMover: (() => void) | null;
 }) {
   const {
     card,
@@ -1629,7 +1704,7 @@ function BlocoDaDemanda({
                 </>
               )}
             </button>
-            {/* SÓ NO ASSUNTO — os dois botões, e por razões diferentes.
+            {/* SÓ NO ASSUNTO — os três botões, e por razões diferentes.
 
                 "Criar demanda": a linha que já tem card não vira demanda de
                 novo, e oferecer o botão ali seria oferecer a duplicata — nem a
@@ -1643,16 +1718,30 @@ function BlocoDaDemanda({
                 ali deixaria alguém achando que renomeou a demanda escrevendo em
                 dois campos que a tela não lê mais. A dimensão continua no botão
                 ao lado, porque ela também é editável na linha COM card — e lá a
-                escrita cai no card, não no item. */}
+                escrita cai no card, não no item.
+
+                "Mover": o assunto mora DENTRO de uma ata, e é a única linha da
+                pauta de que isso é verdade. A demanda do quadro já aparece em
+                toda reunião do setor, vinda do Kanban — mover o item dela não a
+                moveria, apenas levaria para outro dia a decisão tomada neste. */}
             {!card && !foraDoQuadro && (
               <>
                 <button
-                  className={styles.editarAssunto}
+                  className={styles.acaoAssunto}
                   onClick={onEditar}
                   title="Corrigir o assunto e o contexto desta linha"
                 >
                   <Icon name="edit" size={12} /> Editar
                 </button>
+                {onMover && (
+                  <button
+                    className={styles.acaoAssunto}
+                    onClick={onMover}
+                    title="Mover este assunto para outra reunião do setor"
+                  >
+                    <Icon name="ata" size={12} /> Mover
+                  </button>
+                )}
                 <button
                   className={styles.virarDemanda}
                   onClick={onPromover}
@@ -2475,6 +2564,110 @@ function ModalDeClassificar({
     </Modal>
   );
 }
+/**
+ * "Mover" — o assunto lançado na reunião errada muda de ata.
+ *
+ * O ERRO QUE ELE DESFAZ é barato de cometer: a pauta que se abre é sempre a
+ * reunião mais recente, e o assunto que se quer registrar é muitas vezes o da
+ * semana passada. Antes disto, desfazer custava redigitar a decisão, o objetivo
+ * e a tabela de tarefas inteira na ata certa — ou excluir a ata, que é de
+ * gestor e apaga a reunião de todo mundo.
+ *
+ * A LISTA DIZ O DIA, e não só o título. "Reunião Semanal de Operações" é o nome
+ * de todas elas; sem a data ao lado, escolher o destino seria sorteio — e o
+ * sorteio erra exatamente do mesmo jeito que o erro que se veio consertar.
+ *
+ * `<Combobox>` e não `<Select>`: a lista de reuniões de um setor só cresce, e
+ * uma ata de seis meses atrás está a muitas rolagens de distância.
+ */
+function ModalDeMover({
+  setor,
+  linha,
+  destinos,
+  onFechar,
+  onMover,
+}: {
+  setor: string;
+  linha: ItemDaPauta;
+  /** As outras atas do setor — a de origem já saiu da lista. */
+  destinos: Ata[];
+  onFechar: () => void;
+  onMover: (destinoId: string) => Promise<void>;
+}) {
+  const [destino, setDestino] = useState("");
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  // Dizer o número é o que faz a frase valer alguma coisa: "e as 6 tarefas"
+  // responde a pergunta que a pessoa tem antes de clicar, e "e as tarefas" não.
+  const quantas = linha.item.tarefas.length;
+  const eAsTarefas =
+    quantas === 0 ? "" : quantas === 1 ? " e a tarefa" : ` e as ${quantas} tarefas`;
+
+  return (
+    <Modal
+      onClose={onFechar}
+      podeFechar={() => !salvando}
+      ariaLabel="Mover o assunto para outra reunião"
+      overlayClassName={styles.overlay}
+      className={styles.modal}
+      width={480}
+    >
+      <div className={styles.mhead}>
+        <span className={styles.mchip}>
+          <Icon name="ata" size={12} /> Mover assunto
+        </span>
+        <span className={styles.mchip}>{setor}</span>
+      </div>
+      <h2 className={styles.mtitulo}>{linha.titulo}</h2>
+      <p className={styles.avisoModal}>
+        A linha inteira muda de reunião: o contexto, a dimensão, a decisão, o
+        objetivo{eAsTarefas}. Ela sai desta pauta e aparece na da reunião
+        escolhida.
+      </p>
+
+      <label className={styles.rotulo}>Para qual reunião</label>
+      <Combobox
+        value={destino}
+        options={destinos.map(
+          (a): SelectOption => ({ value: a.id, label: rotuloDaAta(a) }),
+        )}
+        onChange={setDestino}
+        placeholder="Escolha a reunião…"
+        ariaLabel="Reunião de destino"
+        vazioTexto="Nenhuma reunião deste setor com esse nome."
+      />
+
+      {erro && <p className={styles.erroModal}>{erro}</p>}
+      <div className={styles.macoes}>
+        <button className={styles.btnGhost} onClick={onFechar} disabled={salvando}>
+          Cancelar
+        </button>
+        <button
+          className={styles.btnPrim}
+          disabled={salvando || !destino}
+          onClick={async () => {
+            setSalvando(true);
+            setErro(null);
+            try {
+              await onMover(destino);
+            } catch (e) {
+              setErro(
+                e instanceof Error
+                  ? e.message
+                  : "Não foi possível mover o assunto.",
+              );
+              setSalvando(false);
+            }
+          }}
+        >
+          {salvando ? "Movendo…" : "Mover"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // O formulário de ata — serve para criar e para abrir a próxima
 // ---------------------------------------------------------------------------
