@@ -239,6 +239,27 @@ checa(
   classificacaoDaLinha(linhaSolta).dimensaoId === "d2",
 );
 
+// A linha cuja demanda saiu do quadro é REGISTRO, não trabalho: não há card
+// para classificar, e contá-la encheria o alerta de linhas históricas que
+// ninguém consegue resolver. Alerta que não zera é alerta que se ignora.
+const pautaComOrfa = montarPauta({
+  cards: [],
+  ata: {
+    itens: [item("7", { cardId: "sumido", assunto: "demanda que saiu", dimensaoId: "" })],
+  },
+  dimensoes: DIMS,
+  entregues: { Cantinas: new Set() },
+  hoje: new Date(2026, 7, 26).getTime(),
+});
+checa(
+  "a linha fora do quadro existe na pauta",
+  pautaComOrfa.length === 1 && pautaComOrfa[0].foraDoQuadro === true,
+);
+checa(
+  "mas ela NÃO é cobrada por falta de dimensão",
+  semClassificacao(pautaComOrfa).length === 0,
+);
+
 console.log(
   falhas === 0
     ? "\n✅ demanda que nasce na ata: ok"

@@ -234,9 +234,14 @@ export function vincularCard(
 export function semClassificacao(
   pauta: readonly ItemDaPauta[],
 ): ItemDaPauta[] {
-  return pauta.filter((l) =>
-    l.card ? !l.card.dimensaoId : !l.item.dimensaoId,
-  );
+  return pauta.filter((l) => {
+    // A linha cuja demanda saiu do quadro é REGISTRO, não trabalho: não há
+    // card para classificar e não há o que cobrar de ninguém. Contá-la aqui
+    // encheria o alerta de linhas históricas que ninguém pode resolver — e um
+    // alerta que não se consegue zerar é um alerta que se aprende a ignorar.
+    if (l.foraDoQuadro) return false;
+    return l.card ? !l.card.dimensaoId : !l.item.dimensaoId;
+  });
 }
 
 /** A classificação que a linha mostra hoje, venha ela do card ou do item. */

@@ -22,6 +22,7 @@ import {
   ataVazia,
   estadoNaAta,
   herdarParaProxima,
+  limparParagrafo,
   limparTexto,
   montarPauta,
   normalizarAta,
@@ -391,6 +392,88 @@ checa(
 checa("ata vazia nasce sem item e com o setor no lugar", ataVazia(SETOR, "2026-08-26").itens.length === 0);
 checa("limparTexto corta no teto", limparTexto("x".repeat(900)).length === 600);
 checa("todo status de tarefa tem valor", STATUS_TAREFA.length === 3);
+
+console.log("\n— a decisão que a demanda saiu do quadro não leva junto —");
+
+/**
+ * O DEFEITO QUE ESTE BLOCO PRENDE. A terceira origem de `montarPauta` filtrava
+ * `!i.cardId`, então o item que APONTA para um card ausente do quadro não
+ * entrava por origem nenhuma: nem pelos cards (o card não está lá), nem pelos
+ * assuntos (ele tem `cardId`). A demanda ia para a lixeira e a decisão tomada
+ * sobre ela em 26/08 desaparecia do documento que a registrou — que é o oposto
+ * do que uma ata faz, e contradiz o cabeçalho de `ata-core.ts`.
+ */
+const ataComOrfao = {
+  itens: [
+    {
+      id: "1",
+      cardId: "sumido",
+      assunto: "Troca de fornecedor de hortifrúti",
+      contexto: "",
+      dimensaoId: "d1",
+      subdimensaoId: "",
+      decisao: "Fechado com o fornecedor B a partir de setembro.",
+      objetivo: "",
+      proximaReuniao: false,
+      tarefas: [],
+    },
+  ],
+};
+const pautaOrfa = montarPauta({
+  // O card "sumido" NÃO está no quadro — foi para a lixeira, mudou de setor ou
+  // foi apagado de vez. `cardsVivos` já o filtrou antes de chegar aqui.
+  cards: [card("vivo")],
+  ata: ataComOrfao,
+  dimensoes: DIMS,
+  entregues: ENTREGUES,
+  hoje: HOJE,
+});
+checa("a linha do card sumido continua na pauta", pautaOrfa.length === 2);
+const orfa = pautaOrfa.find((l) => l.item.cardId === "sumido");
+checa("e ela é marcada como fora do quadro", orfa?.foraDoQuadro === true);
+checa("com a decisão da reunião intacta", orfa?.item.decisao.startsWith("Fechado"));
+checa("caindo no assunto que a ata guardou", orfa?.titulo === "Troca de fornecedor de hortifrúti");
+checa(
+  "a linha do card que está no quadro NÃO é marcada",
+  pautaOrfa.find((l) => l.card?.id === "vivo")?.foraDoQuadro !== true,
+);
+
+console.log("\n— o parágrafo sobrevive à ida e volta do banco —");
+
+/**
+ * `limparTexto` colapsa `\s+` em espaço, e decisão e objetivo são `<textarea>`
+ * com altura calculada para até oito linhas: o Enter é o comportamento esperado
+ * ali. A pessoa escrevia em três parágrafos, a escrita ia inteira para o banco,
+ * e o snapshot de volta devolvia tudo numa linha só — invisível e irreversível.
+ */
+const comQuebra = "Primeira decisão.\n\nSegunda decisão.";
+checa(
+  "limparTexto (linha única) continua colapsando tudo",
+  limparTexto(comQuebra) === "Primeira decisão. Segunda decisão.",
+);
+checa(
+  "limparParagrafo preserva a quebra",
+  limparParagrafo(comQuebra) === comQuebra,
+  JSON.stringify(limparParagrafo(comQuebra)),
+);
+checa(
+  "e apara espaço sobrando dentro da linha",
+  limparParagrafo("a   b\n\n\n\nc") === "a b\n\nc",
+  JSON.stringify(limparParagrafo("a   b\n\n\n\nc")),
+);
+checa(
+  "o teto continua valendo",
+  limparParagrafo("x".repeat(900)).length === 600,
+);
+// A leitura do banco tem de usar a variante de parágrafo nos dois campos —
+// senão a preservação existe na função e não no caminho.
+const lida = normalizarAta("a1", {
+  setor: SETOR,
+  titulo: "r",
+  itens: [{ id: "1", cardId: "c", decisao: comQuebra, objetivo: comQuebra }],
+});
+checa("normalizarAta preserva a quebra na decisão", lida.itens[0].decisao === comQuebra);
+checa("e no objetivo", lida.itens[0].objetivo === comQuebra);
 
 console.log(falhas === 0 ? "\nata: ok" : `\nata: ${falhas} falha(s)`);
 process.exit(falhas === 0 ? 0 : 1);

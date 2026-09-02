@@ -41,10 +41,12 @@ import {
   conferirClassificacao,
   conferirTitulo,
   LIMITE_ASSUNTO_CHARS,
+  LIMITE_TEXTO_CHARS,
   deleteAta,
   montarPauta,
   proximoIdDeItem,
   resumoDaAta,
+  salvarCabecalho,
   salvarItens,
   salvarItensNoLote,
   semClassificacao,
@@ -184,8 +186,21 @@ export default function AtaPage() {
   const [ataSel, setAtaSel] = useState("");
   const [gerarAberta, setGerarAberta] = useState(false);
   const [proximaAberta, setProximaAberta] = useState(false);
+  const [cabecalhoAberto, setCabecalhoAberto] = useState(false);
   const [apagando, setApagando] = useState(false);
   const [erroEscrita, setErroEscrita] = useState<string | null>(null);
+  /**
+   * Um recado que NÃO é erro — hoje só um, e ele merecia existir.
+   *
+   * A rota de gerar é idempotente e responde `jaExistia`; o cliente descartava
+   * esse campo. Quem gerava de novo a ata de uma reunião que já tinha seis
+   * decisões escritas não recebia sinal nenhum de que abriu a existente, e podia
+   * passar a reunião inteira achando que estava numa ata em branco.
+   *
+   * Separado de `erroEscrita` porque não é a mesma coisa: um diz que algo
+   * falhou, o outro que algo foi diferente do esperado e deu certo assim.
+   */
+  const [aviso, setAviso] = useState<string | null>(null);
   const [busca, setBusca] = useState("");
   const [fEstado, setFEstado] = useState<"" | EstadoNaAta>("");
   const [fResp, setFResp] = useState("");
@@ -219,6 +234,36 @@ export default function AtaPage() {
 
   /** A ata na tela: a escolhida, ou a mais recente. */
   const ata = atas.find((a) => a.id === ataSel) ?? atas[0];
+
+  /**
+   * TROCOU DE ATA? O que era da anterior sai do caminho.
+   *
+   * Três coisas viajavam de uma reunião para a outra, e as três mentiam:
+   *
+   *   - os FILTROS. `responsaveis` é derivado da ata atual, então o e-mail
+   *     guardado em `fResp` sumia das opções e o `<Select>` voltava a mostrar
+   *     o placeholder. A pauta ficava vazia, com "Nenhuma demanda com esses
+   *     filtros" e nenhum filtro visível para tirar.
+   *   - os RECOLHIDOS. A chave é o id do item, e os ids são sequenciais POR
+   *     ATA: recolher os itens 1 a 4 de 26/08 abria os itens 1 a 4 de 02/09
+   *     recolhidos, escondendo as tarefas da reunião de hoje.
+   *   - a TARJA DE ERRO. Uma escrita negada nas Cantinas continuava vermelha
+   *     depois da troca para o B.I., acusando uma ata que ninguém tocou.
+   *
+   * Derivado no render, e não em efeito: é o mesmo padrão de eco que os campos
+   * de texto desta tela já usam, e o efeito custaria um segundo render com a
+   * tela mostrando o estado velho.
+   */
+  const [ecoDaAta, setEcoDaAta] = useState("");
+  if (ata && ata.id !== ecoDaAta) {
+    setEcoDaAta(ata.id);
+    setBusca("");
+    setFEstado("");
+    setFResp("");
+    setSoSemDim(false);
+    setRecolhidos(new Set());
+    setErroEscrita(null);
+  }
 
   const entregues = useMemo(
     () => deliveredBySector(columnsBySector(cols, setor ? [setor] : [])),
@@ -260,6 +305,10 @@ export default function AtaPage() {
    * divergem no primeiro `if` que alguém escrever só num deles.
    */
   const foraDoMapa = useMemo(() => semClassificacao(pauta), [pauta]);
+
+  /** Todas as demandas com as tarefas recolhidas? Decide o que o botão faz. */
+  const tudoRecolhido =
+    pauta.length > 0 && pauta.every((l) => recolhidos.has(chaveDaLinha(l)));
   const idsForaDoMapa = useMemo(
     () => new Set(foraDoMapa.map((l) => l.item.id)),
     [foraDoMapa],
@@ -382,7 +431,7 @@ export default function AtaPage() {
       : [...ata.itens, novo];
     try {
       setErroEscrita(null);
-      await salvarItens(ata.id, itens);
+      await escrever(() => salvarItens(ata.id, itens));
     } catch (e) {
       setErroEscrita(
         e instanceof Error ? e.message : "Não foi possível salvar a ata.",
@@ -410,6 +459,45 @@ export default function AtaPage() {
     setFEstado("");
     setFResp("");
     setSoSemDim(false);
+  }
+
+  /**
+   * Quantas escritas estão em voo, e quando a última voltou.
+   *
+   * A TELA SÓ FALAVA QUANDO FALHAVA, e isso não cobre o caso mais comum de uma
+   * reunião: a rede da sala oscilando. `updateDoc` offline **não rejeita** — a
+   * escrita entra na fila local, o snapshot local já devolve o texto novo, e a
+   * promessa simplesmente nunca resolve. O facilitador registra oito decisões e
+   * vinte tarefas, tudo aparece na tela exatamente como se tivesse sido gravado,
+   * e nada distingue isso de ter sido.
+   *
+   * O contador é a resposta honesta: ele fica em "Salvando…" enquanto a promessa
+   * não voltar, que é precisamente a verdade. E "Tudo salvo às 14:32" só aparece
+   * quando alguma voltou de fato.
+   */
+  const [emVoo, setEmVoo] = useState(0);
+  const [salvoAs, setSalvoAs] = useState("");
+
+  /**
+   * Toda escrita da tela passa por aqui — inclusive as que criam card.
+   *
+   * Devolve o resultado e RELANÇA o erro: quem chama é que sabe se o erro vira
+   * tarja no topo (a edição da pauta) ou mensagem dentro do modal (a criação).
+   */
+  async function escrever<T>(fn: () => Promise<T>): Promise<T> {
+    setEmVoo((n) => n + 1);
+    try {
+      const r = await fn();
+      setSalvoAs(
+        new Date().toLocaleTimeString("pt-BR", {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+      );
+      return r;
+    } finally {
+      setEmVoo((n) => n - 1);
+    }
   }
 
   /** As colunas do quadro deste setor, na ordem — a primeira é a de entrada. */
@@ -461,7 +549,7 @@ export default function AtaPage() {
     if (!ata) throw new Error("Nenhuma ata aberta.");
     const conferido = conferirAssuntoNovo(dados, ata.itens, dims);
     if (!conferido.ok) throw new Error(conferido.motivo);
-    await salvarItens(ata.id, [...ata.itens, conferido.valor]);
+    await escrever(() => salvarItens(ata.id, [...ata.itens, conferido.valor]));
     // Devolve a chave para a tela ir até lá — ver `destaque`.
     return conferido.valor.id;
   }
@@ -527,30 +615,34 @@ export default function AtaPage() {
       links: [],
     };
 
-    const cardId = await createCard(
-      setor,
-      input,
-      profile.email,
-      mudancasIniciais(
-        { ...input, ...nomesDaArvore(classe.valor.dimensaoId, classe.valor.subdimensaoId) },
-        rotulos,
-      ),
-      {
-        origem: "reuniao",
-        // A reunião gravada que originou a ata, quando houve uma. É o mesmo
-        // campo que `api/demandas/decidir` grava, para que a proveniência se
-        // leia igual venha a demanda de qual caminho vier.
-        meetingIds: ata.meetingId ? [ata.meetingId] : undefined,
-        ataId: ata.id,
-      },
-      (batch, novoId) =>
-        salvarItensNoLote(
-          batch,
-          ata.id,
-          vincularCard(ata.itens, linha.item.id, novoId, linha.item),
+    return escrever(() =>
+      createCard(
+        setor,
+        input,
+        profile.email,
+        mudancasIniciais(
+          {
+            ...input,
+            ...nomesDaArvore(classe.valor.dimensaoId, classe.valor.subdimensaoId),
+          },
+          rotulos,
         ),
+        {
+          origem: "reuniao",
+          // A reunião gravada que originou a ata, quando houve uma. É o mesmo
+          // campo que `api/demandas/decidir` grava, para que a proveniência se
+          // leia igual venha a demanda de qual caminho vier.
+          meetingIds: ata.meetingId ? [ata.meetingId] : undefined,
+          ataId: ata.id,
+        },
+        (batch, novoId) =>
+          salvarItensNoLote(
+            batch,
+            ata.id,
+            vincularCard(ata.itens, linha.item.id, novoId, linha.item),
+          ),
+      ),
     );
-    return cardId;
   }
 
   /**
@@ -573,22 +665,52 @@ export default function AtaPage() {
     }
 
     const antes = classificacaoDaLinha(linha);
-    await updateCard(
-      linha.card.id,
-      { dimensaoId, subdimensaoId: subdimensaoId || null },
-      {
-        ctx: { autor: profile.email, sector: setor },
-        acao: "editada",
-        // O diff leva os NOMES resolvidos agora, porque o histórico guarda texto
-        // congelado — o mesmo cuidado do modal do Kanban. Sem isso, a troca de
-        // dimensão viraria uma linha "de undefined para undefined".
-        mudancas: diffCard(
-          nomesDaArvore(antes.dimensaoId, antes.subdimensaoId),
-          nomesDaArvore(dimensaoId, subdimensaoId),
-          rotulos,
-        ),
-      },
+    await escrever(() =>
+      updateCard(
+        linha.card!.id,
+        { dimensaoId, subdimensaoId: subdimensaoId || null },
+        {
+          ctx: { autor: profile.email, sector: setor },
+          acao: "editada",
+          // O diff leva os NOMES resolvidos agora, porque o histórico guarda
+          // texto congelado — o mesmo cuidado do modal do Kanban. Sem isso, a
+          // troca de dimensão viraria uma linha "de undefined para undefined".
+          mudancas: diffCard(
+            nomesDaArvore(antes.dimensaoId, antes.subdimensaoId),
+            nomesDaArvore(dimensaoId, subdimensaoId),
+            rotulos,
+          ),
+        },
+      ),
     );
+  }
+
+  /**
+   * Apagar a ata é de GESTOR — e a tela precisa saber disso antes de oferecer.
+   *
+   * `firestore.rules` só permite `delete` em `/atas` a `gestorNoSetor`. O botão
+   * era desenhado para qualquer participante: o clique rejeitava com
+   * permission-denied dentro de um `onClick` async sem `try/catch`, virava
+   * rejeição não tratada, o modal continuava aberto e a ata continuava lá — sem
+   * uma palavra dizendo por quê.
+   */
+  const podeExcluir =
+    profile?.role === "admin" ||
+    (profile?.role === "gestor" && (profile.sectors ?? []).includes(setor));
+
+  async function excluirAta() {
+    if (!ata) return;
+    try {
+      setErroEscrita(null);
+      await escrever(() => deleteAta(ata.id));
+      setAtaSel("");
+      setApagando(false);
+    } catch (e) {
+      setErroEscrita(
+        e instanceof Error ? e.message : "Não foi possível excluir a ata.",
+      );
+      setApagando(false);
+    }
   }
 
   if (!profile) return null;
@@ -609,7 +731,18 @@ export default function AtaPage() {
     );
   }
 
-  const fontes = juntarFontes([fCards, fCols, fAtas]);
+  /**
+   * As CINCO fontes, e não três.
+   *
+   * `fDims` e `fUsers` ficavam de fora, e o `.erro` das duas não era lido em
+   * lugar nenhum: `data ?? SEM_DIMS` transformava falha em lista vazia — que é
+   * exatamente a mentira que `async-data-core.ts` foi escrito para matar. Com a
+   * assinatura de usuários quebrada, todo responsável virava e-mail cru, a
+   * lista de responsáveis sumia e a tela não dizia nada; com a de dimensões
+   * quebrada, a pauta inteira aparecia "sem classificação" e o painel acusava
+   * um problema que era da rede.
+   */
+  const fontes = juntarFontes([fCards, fCols, fAtas, fDims, fUsers]);
 
   return (
     <div className={styles.page}>
@@ -621,6 +754,19 @@ export default function AtaPage() {
             tarefa e o que vai para a próxima. A pauta sai da reunião gravada.
           </p>
         </div>
+        {/* O estado da escrita fica ao lado do botão principal, no cabeçalho:
+            é a única parte da tela que não rola, e a pergunta "isso foi
+            gravado?" pode surgir com a pauta em qualquer posição. */}
+        {(emVoo > 0 || salvoAs) && (
+          <span
+            className={`${styles.gravando} ${emVoo > 0 ? styles.gravandoOn : ""}`}
+            role="status"
+            aria-live="polite"
+          >
+            <Icon name={emVoo > 0 ? "clock" : "check"} size={13} />
+            {emVoo > 0 ? "Salvando…" : `Tudo salvo às ${salvoAs}`}
+          </span>
+        )}
         <button className={styles.novaBtn} onClick={() => setGerarAberta(true)}>
           <Icon name="reunioes" size={15} /> Gerar da reunião
         </button>
@@ -650,7 +796,22 @@ export default function AtaPage() {
         <div className={styles.avisoErro} role="alert">
           <Icon name="warn" size={14} />
           <span>{erroEscrita}</span>
-          <button onClick={() => setErroEscrita(null)}>
+          {/* Sem nome, este botão era um alvo mudo para quem usa leitor de tela:
+              nem texto, nem `aria-label`, e o `<svg>` do `Icon` não contribui
+              nome nenhum. */}
+          <button onClick={() => setErroEscrita(null)} aria-label="Fechar o aviso">
+            <Icon name="x" size={13} />
+          </button>
+        </div>
+      )}
+
+      {aviso && (
+        // `status` e não `alert`: nada falhou, e anunciar com urgência de erro
+        // uma coisa que deu certo ensina a ignorar os dois.
+        <div className={styles.avisoInfo} role="status">
+          <Icon name="info" size={14} />
+          <span>{aviso}</span>
+          <button onClick={() => setAviso(null)} aria-label="Fechar o aviso">
             <Icon name="x" size={13} />
           </button>
         </div>
@@ -663,6 +824,8 @@ export default function AtaPage() {
             fCards.tentarDeNovo();
             fCols.tentarDeNovo();
             fAtas.tentarDeNovo();
+            fDims.tentarDeNovo();
+            fUsers.tentarDeNovo();
           }}
         />
       ) : fontes.carregando ? (
@@ -692,6 +855,24 @@ export default function AtaPage() {
                 <h2>
                   <Icon name="calendar" size={14} /> Resumo da reunião
                 </h2>
+                {/* O CABEÇALHO ERA IMUTÁVEL, e isso não era uma decisão — era
+                    uma função sem chamador. `salvarCabecalho` existe desde o
+                    primeiro dia, escrita separada dos itens exatamente para
+                    este caso, e nenhuma tela a chamava.
+
+                    O efeito era permanente e visível: a ata sempre nasce por
+                    `api/ata/gerar`, que grava horário e local vazios e põe como
+                    facilitador quem SUBIU o áudio — quase nunca quem conduziu.
+                    O painel ficava com "Horário —", "Local —" e o nome errado,
+                    para sempre. */}
+                <button
+                  className={styles.editarCabecalho}
+                  onClick={() => setCabecalhoAberto(true)}
+                  title="Corrigir horário, local, facilitador e participantes"
+                  aria-label="Editar o cabeçalho da reunião"
+                >
+                  <Icon name="edit" size={13} />
+                </button>
               </div>
               {/* A escolha da reunião mora AQUI, e não no cabeçalho da página:
                   ela é a primeira linha do resumo, que é o bloco que descreve
@@ -816,12 +997,17 @@ export default function AtaPage() {
               >
                 <Icon name="calendar" size={14} /> Abrir próxima reunião
               </button>
-              <button
-                className={styles.acaoPerigo}
-                onClick={() => setApagando(true)}
-              >
-                <Icon name="trash" size={14} /> Excluir esta ata
-              </button>
+              {/* Só para quem a regra do Firestore deixa apagar. Oferecer o
+                  botão a todo mundo era prometer uma ação que o banco nega —
+                  e a negativa chegava como silêncio. */}
+              {podeExcluir && (
+                <button
+                  className={styles.acaoPerigo}
+                  onClick={() => setApagando(true)}
+                >
+                  <Icon name="trash" size={14} /> Excluir esta ata
+                </button>
+              )}
             </div>
           </aside>
 
@@ -869,6 +1055,32 @@ export default function AtaPage() {
               {/* No fim da barra de filtros, e não no cabeçalho da página: o
                   cabeçalho fala da ATA (qual reunião, gerar outra), e isto fala
                   da PAUTA — que é o que está logo abaixo. */}
+              {/* Toda demanda abre com a tabela de tarefas aberta, e uma pauta
+                  de quinze itens obriga a rolar muito antes de chegar ao
+                  terceiro assunto. Um botão só, que alterna, porque dois
+                  ("recolher" e "expandir") ocupariam o dobro para responder à
+                  mesma pergunta. */}
+              <button
+                className={styles.recolherTudo}
+                onClick={() =>
+                  setRecolhidos(
+                    tudoRecolhido
+                      ? new Set()
+                      : new Set(pauta.map((l) => chaveDaLinha(l))),
+                  )
+                }
+                title={
+                  tudoRecolhido
+                    ? "Mostrar as tarefas de todas as demandas"
+                    : "Recolher as tarefas de todas as demandas"
+                }
+                aria-pressed={tudoRecolhido}
+              >
+                <Icon
+                  name={tudoRecolhido ? "chevronBaixo" : "chevronCima"}
+                  size={14}
+                />
+              </button>
               <button
                 className={styles.addAssunto}
                 onClick={() => setAssuntoAberto(true)}
@@ -985,9 +1197,9 @@ export default function AtaPage() {
           setor={setor}
           setores={sectors}
           reunioes={reunioes}
-          carregando={juntarFontes([fReunioes]).carregando}
+          fonte={fReunioes}
           onFechar={() => setGerarAberta(false)}
-          onGerado={(id, setorDestino) => {
+          onGerado={(id, setorDestino, jaExistia) => {
             // A ata pode ter nascido em OUTRO setor — é o caso normal, não a
             // exceção. Trocar o quadro junto é o que faz o botão terminar
             // mostrando a ata que ele acabou de criar, em vez de deixar a
@@ -995,6 +1207,15 @@ export default function AtaPage() {
             if (setorDestino !== setor) setQuadroSel(setorDestino);
             setAtaSel(id);
             setGerarAberta(false);
+            // A rota é idempotente e responde `jaExistia`. Sem dizer isso, quem
+            // gerou de novo uma ata que já tinha seis decisões escritas não
+            // recebe nenhum sinal de que abriu a existente — e pode passar a
+            // reunião inteira achando que está numa ata nova, em branco.
+            if (jaExistia) {
+              setAviso(
+                "Esta reunião já tinha ata neste setor. Abrimos a que existe, com o que já foi registrado nela.",
+              );
+            }
           }}
         />
       )}
@@ -1015,9 +1236,39 @@ export default function AtaPage() {
           }}
           onFechar={() => setProximaAberta(false)}
           onCriar={async (dados) => {
-            const id = await abrirProxima(ata, dados, profile.email);
+            // `dados` vai INTEIRO. Antes desta versão o `abrirProxima` só
+            // aceitava título e data, e os outros cinco campos que o formulário
+            // acabou de coletar caíam no chão — a ata nova nascia com o local e
+            // o facilitador da reunião ANTERIOR, e sem horário nenhum.
+            const id = await escrever(() =>
+              abrirProxima(ata, dados, profile.email),
+            );
             setAtaSel(id);
             setProximaAberta(false);
+          }}
+        />
+      )}
+
+      {cabecalhoAberto && ata && (
+        <ModalDeAta
+          titulo="Editar o cabeçalho da reunião"
+          setor={setor}
+          users={users}
+          aviso="Isto muda só o cabeçalho. A pauta, as decisões e as tarefas ficam como estão."
+          rotuloAcao="Salvar"
+          inicial={{
+            titulo: ata.titulo,
+            data: ata.data,
+            horaInicio: ata.horaInicio,
+            horaFim: ata.horaFim,
+            local: ata.local,
+            facilitador: ata.facilitador,
+            participantes: ata.participantes,
+          }}
+          onFechar={() => setCabecalhoAberto(false)}
+          onCriar={async (dados) => {
+            await escrever(() => salvarCabecalho(ata.id, dados));
+            setCabecalhoAberto(false);
           }}
         />
       )}
@@ -1051,13 +1302,10 @@ export default function AtaPage() {
             </button>
             <button
               className={styles.btnPerigo}
-              onClick={async () => {
-                await deleteAta(ata.id);
-                setAtaSel("");
-                setApagando(false);
-              }}
+              onClick={excluirAta}
+              disabled={emVoo > 0}
             >
-              Excluir
+              {emVoo > 0 ? "Excluindo…" : "Excluir"}
             </button>
           </div>
         </Modal>
@@ -1114,8 +1362,17 @@ function BlocoDaDemanda({
   onClassificar: () => void;
   onPromover: () => void;
 }) {
-  const { card, item, titulo, descricao, estado, numero, dimensao, subdimensao } =
-    linha;
+  const {
+    card,
+    item,
+    titulo,
+    descricao,
+    estado,
+    numero,
+    dimensao,
+    subdimensao,
+    foraDoQuadro,
+  } = linha;
   const [decisao, setDecisao] = useState(item.decisao);
   const [objetivo, setObjetivo] = useState(item.objetivo);
 
@@ -1154,7 +1411,18 @@ function BlocoDaDemanda({
    * bloco; passou disso, a rolagem volta e a alça do canto continua lá.
    */
   const alturaDe = (texto: string) =>
-    Math.min(8, Math.max(2, Math.ceil(texto.length / 38)));
+    Math.min(
+      8,
+      Math.max(
+        2,
+        // As quebras de linha contam junto com o comprimento: desde que
+        // `limparParagrafo` passou a preservá-las, um texto de três parágrafos
+        // curtos ocupa três linhas e a conta por caractere sozinha devolveria
+        // duas — cortando o parágrafo do meio atrás de uma rolagem que ninguém
+        // vê.
+        Math.ceil(texto.length / 38) + (texto.match(/\n/g)?.length ?? 0),
+      ),
+    );
 
   /**
    * Levar os olhos até a linha que acabou de nascer.
@@ -1191,11 +1459,23 @@ function BlocoDaDemanda({
         <div className={styles.demanda}>
           {/* "Demanda" só quando é demanda. O assunto que a reunião discutiu e
               que ainda não virou card é ASSUNTO — chamá-lo de demanda faria a
-              ata prometer um card que não existe no quadro. */}
+              ata prometer um card que não existe no quadro.
+
+              E "Demanda fora do quadro" quando o item aponta para um card que
+              não está mais lá: chamá-la de assunto contaria a história errada —
+              ela FOI demanda, e a decisão que a reunião tomou sobre ela continua
+              valendo. */}
           <div className={styles.demandaRot}>
-            {card ? "Demanda" : "Assunto"} · {numero}
+            {card ? "Demanda" : foraDoQuadro ? "Demanda fora do quadro" : "Assunto"} ·{" "}
+            {numero}
           </div>
-          <h3>{titulo}</h3>
+          <h3>{titulo || (foraDoQuadro ? "Demanda sem título na ata" : "")}</h3>
+          {foraDoQuadro && (
+            <p className={styles.foraDoQuadro}>
+              A demanda saiu do quadro deste setor — foi para a lixeira, mudou de
+              setor ou foi excluída. O que a reunião decidiu sobre ela fica aqui.
+            </p>
+          )}
           {descricao && <p>{descricao}</p>}
           <div className={styles.rodapeDemanda}>
             {/* A dimensão é CLASSIFICADOR, e vai ao lado — nunca por cima. É a
@@ -1224,8 +1504,10 @@ function BlocoDaDemanda({
               )}
             </button>
             {/* SÓ NO ASSUNTO. A linha que já tem card não vira demanda de novo,
-                e oferecer o botão ali seria oferecer a duplicata. */}
-            {!card && (
+                e oferecer o botão ali seria oferecer a duplicata — nem a que
+                está no quadro, nem a que saiu dele: a segunda já teve card, e
+                abrir outro perderia o vínculo com o que foi para a lixeira. */}
+            {!card && !foraDoQuadro && (
               <button
                 className={styles.virarDemanda}
                 onClick={onPromover}
@@ -1271,6 +1553,7 @@ function BlocoDaDemanda({
             value={decisao}
             placeholder="—"
             rows={alturaDe(decisao)}
+            maxLength={LIMITE_TEXTO_CHARS}
             onChange={(e) => setDecisao(e.target.value)}
             onBlur={() => {
               if (decisao !== item.decisao)
@@ -1287,6 +1570,7 @@ function BlocoDaDemanda({
             value={objetivo}
             placeholder="—"
             rows={alturaDe(objetivo)}
+            maxLength={LIMITE_TEXTO_CHARS}
             onChange={(e) => setObjetivo(e.target.value)}
             onBlur={() => {
               if (objetivo !== item.objetivo)
@@ -1395,6 +1679,9 @@ function TabelaDeTarefas({
   pessoas: SelectOption[];
   onGravar: (muda: (i: ItemDeAta) => ItemDeAta) => void;
 }) {
+  /** A tarefa cuja remoção está esperando o segundo clique. */
+  const [confirmando, setConfirmando] = useState("");
+
   const mudar = (id: string, patch: Partial<TarefaDeAta>) =>
     onGravar((i) => ({
       ...i,
@@ -1478,19 +1765,52 @@ function TabelaDeTarefas({
                     />
                   </td>
                   <td>
-                    <button
-                      className={styles.remover}
-                      onClick={() =>
-                        onGravar((i) => ({
-                          ...i,
-                          tarefas: i.tarefas.filter((x) => x.id !== t.id),
-                        }))
-                      }
-                      title={`Remover a tarefa "${t.texto || "sem texto"}"`}
-                      aria-label="Remover tarefa"
-                    >
-                      <Icon name="trash" size={13} />
-                    </button>
+                    {/* CONFIRMA NA PRÓPRIA LINHA, e não num modal.
+
+                        Um clique apagava a tarefa para o setor inteiro — com
+                        responsável, prazo e observação — sem pergunta e sem
+                        desfazer, num alvo de 26px colado no campo de prazo,
+                        numa tabela de linhas de 30px preenchida com o
+                        cronômetro correndo. Errar a linha vizinha era um
+                        movimento de mouse de distância.
+
+                        Modal seria caro demais para o gesto: a ata inteira
+                        exige um, mas ela é uma por reunião e a tarefa é uma por
+                        minuto. A confirmação inline custa um segundo clique no
+                        lugar onde os olhos já estão. */}
+                    {confirmando === t.id ? (
+                      <span className={styles.confirmaLinha}>
+                        <button
+                          className={styles.confirmaSim}
+                          onClick={() => {
+                            setConfirmando("");
+                            onGravar((i) => ({
+                              ...i,
+                              tarefas: i.tarefas.filter((x) => x.id !== t.id),
+                            }));
+                          }}
+                        >
+                          Remover
+                        </button>
+                        <button
+                          className={styles.confirmaNao}
+                          onClick={() => setConfirmando("")}
+                          aria-label="Manter a tarefa"
+                          autoFocus
+                        >
+                          <Icon name="x" size={12} />
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        className={styles.remover}
+                        onClick={() => setConfirmando(t.id)}
+                        title={`Remover a tarefa "${t.texto || "sem texto"}"`}
+                        aria-label="Remover tarefa"
+                      >
+                        <Icon name="trash" size={13} />
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -1999,16 +2319,29 @@ function ModalDeGerar({
   setor,
   setores,
   reunioes,
-  carregando,
+  fonte,
   onFechar,
   onGerado,
 }: {
   setor: string;
   setores: string[];
   reunioes: Meeting[];
-  carregando: boolean;
+  /**
+   * A FONTE INTEIRA, e não só o `carregando`.
+   *
+   * Recebendo só o `carregando`, o erro virava vazio: `juntarFontes` responde
+   * `carregando: false` quando há erro e `data` fica `undefined`, então uma
+   * falha em `subscribeMeetings` — regra negando um dos setores, rede caída —
+   * produzia o estado vazio afirmando "Nenhuma reunião processada". A pessoa era
+   * mandada gravar de novo um áudio que já existe.
+   */
+  fonte: {
+    data: Meeting[] | undefined;
+    erro: Error | null;
+    tentarDeNovo: () => void;
+  };
   onFechar: () => void;
-  onGerado: (id: string, setorDestino: string) => void;
+  onGerado: (id: string, setorDestino: string, jaExistia: boolean) => void;
 }) {
   const [reuniaoSel, setReuniaoSel] = useState("");
   const [destino, setDestino] = useState(setor);
@@ -2026,6 +2359,9 @@ function ModalDeGerar({
   );
 
   const escolhida = elegiveis.find((r) => r.id === reuniaoSel);
+  // `juntarFontes` derruba "carregando" quando há erro — é ele que garante a
+  // ordem erro → carregando → vazio logo abaixo.
+  const estadoDaFonte = juntarFontes([fonte]);
 
   async function gerar() {
     if (!escolhida) return;
@@ -2045,7 +2381,7 @@ function ModalDeGerar({
       });
       const body = await r.json();
       if (!r.ok) throw new Error(body.error || "Não foi possível gerar a ata.");
-      onGerado(body.id as string, destino);
+      onGerado(body.id as string, destino, body.jaExistia === true);
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Não foi possível gerar a ata.");
       setGerando(false);
@@ -2068,7 +2404,14 @@ function ModalDeGerar({
         <span className={styles.mchip}>{destino}</span>
       </div>
 
-      {carregando ? (
+      {/* O ERRO GANHA DE CARREGANDO E DE VAZIO, nesta ordem — é o que o
+          cabeçalho de `juntarFontes` explica. Antes desta linha, uma falha na
+          assinatura de reuniões caía direto no estado vazio e afirmava que não
+          havia reunião processada, mandando a pessoa gravar de novo um áudio
+          que já existe. */}
+      {estadoDaFonte.erro ? (
+        <ErrorState error={estadoDaFonte.erro} onRetry={fonte.tentarDeNovo} />
+      ) : estadoDaFonte.carregando ? (
         <SkeletonRow rows={3} texto="Procurando reuniões processadas…" />
       ) : elegiveis.length === 0 ? (
         /* "Ainda não respondeu" e "respondeu e está vazio" são telas diferentes
@@ -2144,6 +2487,7 @@ function ModalDeAta({
   users,
   aviso,
   inicial,
+  rotuloAcao,
   onFechar,
   onCriar,
 }: {
@@ -2151,12 +2495,23 @@ function ModalDeAta({
   setor: string;
   users: UserProfile[];
   aviso?: string;
+  /**
+   * O ponto de partida do formulario — e o unico papel que a ata anterior tem
+   * aqui. Os campos de data e horario entraram com o modo de EDICAO do
+   * cabecalho: sem eles, editar a ata de 26/08 abria um formulario com a data de
+   * hoje, e salvar mudava a data da reuniao sem ninguem ter pedido.
+   */
   inicial?: {
     titulo?: string;
+    data?: string;
+    horaInicio?: string;
+    horaFim?: string;
     local?: string;
     facilitador?: string;
     participantes?: string[];
   };
+  /** O que o botão principal diz. Ausente = "Criar". */
+  rotuloAcao?: string;
   onFechar: () => void;
   onCriar: (dados: {
     titulo: string;
@@ -2169,9 +2524,9 @@ function ModalDeAta({
   }) => Promise<void>;
 }) {
   const [nome, setNome] = useState(inicial?.titulo ?? "");
-  const [data, setData] = useState(toISO(startOfDay()));
-  const [hi, setHi] = useState("");
-  const [hf, setHf] = useState("");
+  const [data, setData] = useState(inicial?.data || toISO(startOfDay()));
+  const [hi, setHi] = useState(inicial?.horaInicio ?? "");
+  const [hf, setHf] = useState(inicial?.horaFim ?? "");
   const [local, setLocal] = useState(inicial?.local ?? "");
   const [facil, setFacil] = useState(inicial?.facilitador ?? "");
   const [participantes, setParticipantes] = useState<string[]>(
@@ -2313,7 +2668,7 @@ function ModalDeAta({
             }
           }}
         >
-          {salvando ? "Salvando…" : "Criar"}
+          {salvando ? "Salvando…" : (rotuloAcao ?? "Criar")}
         </button>
       </div>
     </Modal>
