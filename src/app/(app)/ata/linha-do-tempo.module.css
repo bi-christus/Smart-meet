@@ -1,0 +1,730 @@
+/* A linha do tempo das reuniões.
+
+   Folha própria, e não mais 300 linhas em `ata.module.css`: o gráfico tem um
+   vocabulário que não se repete em lugar nenhum da aba (grade, mira, balão,
+   captador), e misturá-lo com a pauta faria as duas telas disputarem nomes
+   curtos como `.linha` e `.ponto`.
+
+   TODA COR VEM DE TOKEN. A série é `--brand` de propósito — o porquê inteiro
+   está no cabeçalho de `ata-linha-do-tempo-core.ts`, e o efeito colateral bom é
+   que o gráfico acompanha o acento escolhido sem uma linha a mais aqui. */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  z-index: 60;
+  animation: ltOverlayEntra 0.24s ease-out backwards;
+}
+
+/* GRANDE de verdade: o gráfico precisa de largura para as datas não se
+   atropelarem, e a tabela tem sete colunas. `min()` para nunca passar da tela
+   em monitor pequeno. */
+.modal {
+  width: min(1180px, 96vw);
+  max-height: 92vh;
+  overflow: auto;
+  background: var(--s1);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 18px 20px 20px;
+  animation: ltModalEntra 0.18s cubic-bezier(0.32, 0.72, 0, 1) backwards;
+}
+.modalDetalhe {
+  width: min(880px, 94vw);
+  max-height: 90vh;
+  overflow: auto;
+  background: var(--s1);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 18px 20px 20px;
+  animation: ltModalEntra 0.18s cubic-bezier(0.32, 0.72, 0, 1) backwards;
+}
+
+/* As mesmas medidas dos outros modais da aba: dois diálogos do mesmo app
+   abrindo com durações diferentes é a coisa que se nota sem saber o que se
+   notou. `backwards` é obrigatório — sem ele o primeiro quadro vale opacidade
+   cheia e o diálogo pisca antes de esmaecer. */
+@keyframes ltOverlayEntra {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes ltModalEntra {
+  from { opacity: 0; transform: translateY(18px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+
+.cabeca {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.chips {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: var(--s2);
+  border: 1px solid var(--line-soft);
+  font-size: 11px;
+  color: var(--tx-2);
+}
+.titulo {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--tx);
+  line-height: 1.25;
+}
+.sub {
+  font-size: 12px;
+  color: var(--tx-3);
+  margin-top: 4px;
+  line-height: 1.5;
+}
+.fechar {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--s2);
+  border: 1px solid var(--line-soft);
+  color: var(--tx-2);
+  cursor: pointer;
+}
+.fechar:hover {
+  color: var(--tx);
+  border-color: var(--brand-line);
+}
+
+.controles {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.busca {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1 1 260px;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  background: var(--s2);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--tx-3);
+}
+.busca:focus-within {
+  border-color: var(--brand-line);
+}
+.busca input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--tx);
+  font-family: inherit;
+  font-size: 12.5px;
+}
+.busca button {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  background: none;
+  color: var(--tx-3);
+  cursor: pointer;
+}
+.busca button:hover {
+  color: var(--tx);
+}
+
+.medidas {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  background: var(--s2);
+  border: 1px solid var(--line-soft);
+  border-radius: 9px;
+}
+.medidaBtn {
+  height: 28px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--tx-2);
+  cursor: pointer;
+}
+.medidaBtn:hover {
+  color: var(--tx);
+}
+.medidaOn {
+  background: var(--brand-soft);
+  color: var(--accent-2);
+  font-weight: 600;
+}
+.vistaBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 9px;
+  background: var(--s2);
+  border: 1px solid var(--line-soft);
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--tx-2);
+  cursor: pointer;
+}
+.vistaBtn:hover {
+  color: var(--tx);
+  border-color: var(--brand-line);
+}
+
+.achado {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  padding: 8px 11px;
+  margin-bottom: 12px;
+  border-radius: 9px;
+  background: var(--s2);
+  border: 1px solid var(--line-soft);
+  font-size: 12px;
+  color: var(--tx-2);
+  line-height: 1.5;
+}
+.achado b {
+  color: var(--tx);
+}
+
+/* ---- o gráfico ---------------------------------------------------------- */
+
+.quadro {
+  background: var(--s2);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-lg);
+  padding: 12px 12px 10px;
+}
+/* Em tela estreita o gráfico ROLA, e não encolhe: encolher levaria as datas do
+   eixo e os números para um tamanho ilegível, e o texto dentro de um `viewBox`
+   escala junto com o desenho. */
+.rolagem {
+  overflow-x: auto;
+}
+.plano {
+  position: relative;
+  min-width: 620px;
+}
+.svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.grade {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.tickY,
+.tickX {
+  fill: var(--tx-3);
+  font-size: 10.5px;
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+}
+.tickY {
+  text-anchor: end;
+}
+
+.area {
+  fill: var(--brand);
+  opacity: 0.12;
+}
+.linha {
+  fill: none;
+  stroke: var(--brand);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+/* Com busca ativa a série inteira recua e só o que casa fica aceso — a forma de
+   ÊNFASE. Apagar de vez esconderia a forma da série, que é o contexto que faz o
+   destaque significar alguma coisa.
+
+   DOIS RECUOS E NÃO UM, porque a linha e a área não partem do mesmo lugar: a
+   área já é uma lavagem de 12%. Uma classe só, com `opacity: .28`, deixava a
+   área APAGADA mais pesada do que a acesa — o cinza da busca chamava mais
+   atenção que o laranja que ele deveria estar cedendo. */
+.linhaOff {
+  stroke: var(--tx-3);
+  opacity: 0.45;
+}
+.areaOff {
+  fill: var(--tx-3);
+  opacity: 0.06;
+}
+.mira {
+  stroke: var(--tx-3);
+  stroke-width: 1;
+  opacity: 0.5;
+}
+
+/* O anel de 2px na cor da superfície é o que mantém o ponto legível onde ele
+   cruza a linha ou encosta noutro. Nunca uma borda de "separação" desenhada com
+   tinta de dado. */
+.ponto {
+  stroke: var(--s2);
+  stroke-width: 2;
+  cursor: pointer;
+}
+.ponto:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 3px;
+  border-radius: 50%;
+}
+.aceso {
+  fill: var(--brand);
+}
+.apagadoPonto {
+  fill: var(--tx-3);
+  opacity: 0.55;
+}
+.rotuloFim {
+  fill: var(--tx-2);
+  font-size: 11.5px;
+  font-weight: 700;
+  font-family: inherit;
+}
+/* O alvo do mouse é o plot inteiro — ver `maisPerto`. */
+.captador {
+  fill: transparent;
+  cursor: pointer;
+}
+
+.rodapeQuadro {
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: var(--tx-3);
+  line-height: 1.5;
+}
+.rodapeQuadro b {
+  color: var(--warn-tx);
+}
+
+/* ---- o balão ------------------------------------------------------------ */
+
+/* O BALÃO NUNCA FICA EM CIMA DO PONTO QUE ELE DESCREVE.
+
+   Centrado no X do ponto, ele tapava exatamente o pico que o mouse estava
+   apontando — e num gráfico o dado é a única coisa que não pode ser coberta.
+   Agora ele sempre vai para o lado OPOSTO ao da metade em que o ponto está, com
+   14px de folga da mira: à esquerda quando o ponto está na direita, e
+   vice-versa. Assim ele também nunca vaza do quadro. */
+.balao {
+  position: absolute;
+  top: 10px;
+  width: 268px;
+  padding: 10px 12px;
+  background: var(--s1);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
+  pointer-events: none;
+  z-index: 2;
+}
+.balaoEsq {
+  transform: translateX(14px);
+}
+.balaoDir {
+  transform: translateX(calc(-100% - 14px));
+}
+.balaoTopo {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 7px;
+}
+.balaoTopo strong {
+  font-size: 12.5px;
+  color: var(--tx);
+  line-height: 1.3;
+}
+.balaoTopo span {
+  flex: none;
+  font-size: 11px;
+  color: var(--tx-3);
+}
+.balaoNums {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 11px;
+  color: var(--tx-3);
+}
+.balaoNums b {
+  color: var(--tx-2);
+}
+/* A medida que o eixo está mostrando acende — sem isso, os três números do
+   balão parecem igualmente responsáveis pela altura do ponto. */
+.numOn b,
+.numOn {
+  color: var(--accent-2);
+}
+.balaoLista {
+  display: grid;
+  gap: 5px;
+  list-style: none;
+}
+.balaoLista li {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--tx-2);
+  line-height: 1.35;
+}
+.balaoLista svg {
+  flex: none;
+  margin-top: 2px;
+  opacity: 0.6;
+}
+.balaoLista span {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.itemCasa {
+  color: var(--accent-2) !important;
+  font-weight: 600;
+}
+.itemCasa svg {
+  opacity: 1;
+}
+.balaoVazio,
+.balaoMais {
+  font-size: 11px;
+  color: var(--tx-3);
+  line-height: 1.4;
+}
+.balaoMais {
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top: 1px solid var(--line-soft);
+}
+
+/* ---- a vista de tabela --------------------------------------------------- */
+
+.tabelaCaixa {
+  overflow-x: auto;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-lg);
+  background: var(--s2);
+}
+.tabela {
+  width: 100%;
+  min-width: 620px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.tabela th {
+  padding: 9px 12px;
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--tx-3);
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.tabela td {
+  padding: 8px 12px;
+  color: var(--tx-2);
+  border-bottom: 1px solid var(--line-soft);
+  vertical-align: middle;
+}
+.tabela tr:last-child td {
+  border-bottom: none;
+}
+.colOn {
+  color: var(--accent-2) !important;
+}
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  width: 78px;
+}
+.linhaApagada td {
+  opacity: 0.45;
+}
+.abrirLinha {
+  padding: 0;
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--tx);
+  text-align: left;
+  cursor: pointer;
+}
+.abrirLinha:hover {
+  color: var(--accent-2);
+  text-decoration: underline;
+}
+
+/* ---- a reunião inteira --------------------------------------------------- */
+
+.fichas {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.ficha {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 6px 11px;
+  border-radius: 9px;
+  background: var(--s2);
+  border: 1px solid var(--line-soft);
+  font-size: 11.5px;
+  color: var(--tx-3);
+}
+.ficha span {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--tx);
+}
+.irParaAta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  margin-left: auto;
+  border-radius: 9px;
+  background: var(--brand-soft);
+  border: 1px solid var(--brand-line);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-2);
+  cursor: pointer;
+}
+.irParaAta:hover {
+  background: color-mix(in srgb, var(--brand) 26%, transparent);
+}
+
+.gente {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  margin-bottom: 14px;
+  border-radius: var(--r-lg);
+  background: var(--s2);
+  border: 1px solid var(--line-soft);
+}
+.genteBloco {
+  display: grid;
+  gap: 6px;
+}
+.genteRot {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--tx-3);
+}
+.pessoas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+.pessoa {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--tx-2);
+}
+.citado {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: var(--s3);
+  font-size: 11.5px;
+  color: var(--tx-2);
+}
+
+.pauta {
+  display: grid;
+  gap: 10px;
+  list-style: none;
+}
+.itemPauta {
+  padding: 12px 14px;
+  border-radius: var(--r-lg);
+  background: var(--s2);
+  border: 1px solid var(--line-soft);
+}
+.itemTopo {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.itemNum {
+  flex: none;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--tx-3);
+  font-variant-numeric: tabular-nums;
+  padding-top: 2px;
+}
+.itemTipo {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--tx-3);
+  margin-bottom: 3px;
+}
+.itemTopo h3 {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--tx);
+  line-height: 1.35;
+}
+.itemCtx {
+  font-size: 12px;
+  color: var(--tx-3);
+  line-height: 1.5;
+  margin-top: 4px;
+}
+.selo {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  height: 21px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--brand-soft);
+  border: 1px solid var(--brand-line);
+  font-size: 10.5px;
+  color: var(--accent-2);
+}
+
+.itemCampos {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 10px;
+}
+.campoRot {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--tx-3);
+  margin-bottom: 4px;
+}
+.itemCampos p {
+  font-size: 12.5px;
+  color: var(--tx-2);
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+/* Campo que a reunião NÃO preencheu diz isso com todas as letras, em vez de um
+   travessão que se confunde com texto curto. */
+.vazio {
+  color: var(--tx-3) !important;
+  font-style: italic;
+}
+
+.tarefas {
+  width: 100%;
+  margin-top: 10px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.tarefas th {
+  padding: 6px 8px;
+  text-align: left;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--tx-3);
+  border-bottom: 1px solid var(--line-soft);
+}
+.tarefas td {
+  padding: 7px 8px;
+  color: var(--tx-2);
+  border-bottom: 1px solid var(--line-soft);
+}
+.tarefas tr:last-child td {
+  border-bottom: none;
+}
+.statusTarefa {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+.pendente {
+  background: var(--s3);
+  color: var(--tx-2);
+}
+.andamento {
+  background: var(--info-bg);
+  color: var(--info-tx);
+}
+.concluida {
+  background: var(--ok-bg);
+  color: var(--ok-tx);
+}

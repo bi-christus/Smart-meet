@@ -76,6 +76,7 @@ import { Modal } from "@/components/modal";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
 import { SkeletonRow } from "@/components/skeleton";
+import { LinhaDoTempo } from "./linha-do-tempo";
 import styles from "./ata.module.css";
 
 /**
@@ -293,6 +294,8 @@ export default function AtaPage() {
   const [editando, setEditando] = useState<ItemDaPauta | null>(null);
   /** A linha que está mudando de reunião — mesma fronteira de `editando`. */
   const [movendo, setMovendo] = useState<ItemDaPauta | null>(null);
+  /** O histórico do setor num eixo só — ver `linha-do-tempo.tsx`. */
+  const [linhaAberta, setLinhaAberta] = useState(false);
 
   const usersMap = useMemo(() => {
     const m: Record<string, UserProfile> = {};
@@ -601,6 +604,40 @@ export default function AtaPage() {
     [usersMap, colunas],
   );
 
+  /**
+   * O nome de um card pelo id — inclusive o que foi para a lixeira.
+   *
+   * `cards` cru e não `cardsVivos`: a linha do tempo é HISTÓRICO. Uma demanda
+   * excluída depois da reunião continua tendo sido discutida naquele dia, e uma
+   * busca por "hortifruti" precisa achar a reunião que decidiu sobre ela mesmo
+   * que o card já não exista mais no quadro.
+   */
+  const tituloDoCard = useMemo(() => {
+    const m = new Map(cards.map((c) => [c.id, c.title]));
+    return (id: string) => m.get(id) ?? "";
+  }, [cards]);
+
+  /**
+   * "D1 · Cadeia de Suprimentos · Estoque" de um item da pauta.
+   *
+   * A ORIGEM MUDA COM O ITEM, e é a mesma regra de `classificacaoDaLinha`: onde
+   * há card, quem responde é o card (dimensão é estado, e estado vem do
+   * quadro); onde não há, o item. Ler sempre do item faria a demanda aparecer
+   * "sem dimensão" na reunião em que ela foi classificada no Kanban.
+   */
+  const classeDoItem = useMemo(() => {
+    const doCard = new Map(cards.map((c) => [c.id, c]));
+    return (item: ItemDeAta) => {
+      const c = item.cardId ? doCard.get(item.cardId) : undefined;
+      const dimId = c ? (c.dimensaoId ?? "") : item.dimensaoId;
+      const subId = c ? (c.subdimensaoId ?? "") : item.subdimensaoId;
+      const d = dims.find((x) => x.id === dimId);
+      if (!d) return "";
+      const s = d.subs.find((x) => x.id === subId);
+      return s ? `${d.nome} · ${s.nome}` : d.nome;
+    };
+  }, [cards, dims]);
+
   /** Nome da dimensão e da subdimensão, para o histórico (que guarda texto). */
   const nomesDaArvore = (dimensaoId: string, subdimensaoId: string) => {
     const d = dims.find((x) => x.id === dimensaoId);
@@ -905,6 +942,16 @@ export default function AtaPage() {
             {emVoo > 0 ? "Salvando…" : `Tudo salvo às ${salvoAs}`}
           </span>
         )}
+        {/* Antes do botão principal, e em cinza: a linha do tempo é para LER o
+            histórico, e gerar ata é o que se vem fazer aqui. Dois botões com o
+            mesmo peso fariam a pessoa escolher entre eles toda vez. */}
+        <button
+          className={styles.historicoBtn}
+          onClick={() => setLinhaAberta(true)}
+          title="Ver todas as reuniões deste setor num eixo de tempo"
+        >
+          <Icon name="trend" size={15} /> Linha do tempo
+        </button>
         <button className={styles.novaBtn} onClick={() => setGerarAberta(true)}>
           <Icon name="reunioes" size={15} /> Gerar da reunião
         </button>
@@ -1377,6 +1424,26 @@ export default function AtaPage() {
           onSalvar={async (escolha) => {
             await classificar(classificando, escolha);
             setClassificando(null);
+          }}
+        />
+      )}
+
+      {linhaAberta && (
+        <LinhaDoTempo
+          setor={setor}
+          atas={atas}
+          tituloDoCard={tituloDoCard}
+          classeDoItem={classeDoItem}
+          nomeDe={nomeDe}
+          usersMap={usersMap}
+          onFechar={() => setLinhaAberta(false)}
+          onAbrirAta={(id) => {
+            // Sair da leitura para a edição: a reunião clicada passa a ser a da
+            // tela de trás, e os dois modais fecham. Deixar o gráfico aberto por
+            // cima da ata que ele acabou de escolher seria pedir mais um clique
+            // para ver o que a pessoa já pediu.
+            setAtaSel(id);
+            setLinhaAberta(false);
           }}
         />
       )}
