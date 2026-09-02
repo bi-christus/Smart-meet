@@ -382,8 +382,22 @@
   font-family: inherit;
   font-size: 12.5px;
 }
+/* O foco é um OUTLINE, e não uma troca de cor de borda.
+
+   As quatro regras que zeravam o outline devolviam só `border-color:
+   var(--brand-line)` no lugar. Medido contra a borda em repouso (`--line`), isso
+   dá 1,60:1 no tema escuro e 1,26:1 no claro — o WCAG 2.4.11 pede 3:1 para o
+   indicador de foco, e na prática ninguém enxerga a diferença. Quem navega esta
+   tela por teclado não sabia em que campo estava.
+
+   `:focus-visible` e não `:focus`: o anel aparece para o teclado e some para o
+   mouse, que é o comportamento que o `select.module.css` já usa. A mudança de
+   borda fica como reforço, nunca como indicador único. */
+.busca:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}
 .busca:focus {
-  outline: none;
   border-color: var(--brand-line);
 }
 .filtro {
@@ -405,6 +419,19 @@
  * comprido — o olho perderia a referência de onde a decisão está escrita, que é
  * a coluna que se lê em sequência descendo a pauta.
  */
+/* CADA FILHO TEM POSIÇÃO DECLARADA, e isso não é preciosismo de CSS.
+
+   Os cinco filhos — demanda, status, decisão, objetivo e o botão de recolher —
+   contavam com a colocação automática do grid. Em tela larga as cinco colunas
+   batiam certo. Abaixo de 1320px o grid virava três colunas e ninguém tinha
+   `grid-column`: o terceiro filho, que é a textarea da DECISÃO — o campo mais
+   importante desta tela —, caía na faixa de 32px reservada ao botão de
+   recolher, espremido num filete ilegível. Em 1280px e 1366px, que são as
+   larguras das máquinas da rede.
+
+   Colocação automática é conveniente enquanto o grid não muda de forma. Quando
+   ele muda em breakpoint, ela deixa de ser conveniência e passa a ser uma
+   aposta sobre a ordem dos filhos no JSX. */
 .blocoTopo {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 150px 250px 250px 32px;
@@ -412,20 +439,75 @@
   padding: 16px;
   align-items: start;
 }
+.demanda {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+}
+.colStatus {
+  grid-column: 2;
+  grid-row: 1;
+}
+.colDecisao {
+  grid-column: 3;
+  grid-row: 1;
+}
+.colObjetivo {
+  grid-column: 4;
+  grid-row: 1;
+}
+.recolher {
+  grid-column: 5;
+  grid-row: 1;
+}
+
+/* Médio: título e status na primeira linha, e os dois campos de texto embaixo,
+   em largura inteira. É o oposto de espremê-los — a decisão é lida em sequência
+   descendo a pauta, e aqui ela ganha a linha para si. */
 @media (max-width: 1320px) {
   .blocoTopo {
     grid-template-columns: minmax(0, 1fr) 150px 32px;
   }
+  .colStatus {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .recolher {
+    grid-column: 3;
+    grid-row: 1;
+  }
+  .colDecisao {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .colObjetivo {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
 }
+
 @media (max-width: 760px) {
   .blocoTopo {
     grid-template-columns: minmax(0, 1fr) 32px;
   }
+  .recolher {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .colStatus {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .colDecisao {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+  .colObjetivo {
+    grid-column: 1 / -1;
+    grid-row: 4;
+  }
 }
 
-.demanda {
-  min-width: 0;
-}
 .demandaRot {
   font-size: 10px;
   font-weight: 700;
@@ -568,8 +650,11 @@
 .campoTexto:hover {
   border-color: var(--line);
 }
+.campoTexto:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}
 .campoTexto:focus {
-  outline: none;
   border-color: var(--brand-line);
   background: var(--s2);
 }
@@ -696,8 +781,11 @@
 .celula:hover {
   border-color: var(--line);
 }
+.celula:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}
 .celula:focus {
-  outline: none;
   border-color: var(--brand-line);
   background: var(--s2);
 }
@@ -821,8 +909,11 @@
   font-family: inherit;
   font-size: 12.5px;
 }
+.input:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}
 .input:focus {
-  outline: none;
   border-color: var(--brand-line);
 }
 .linhaCampos {
@@ -1000,8 +1091,11 @@
   line-height: 1.5;
   resize: vertical;
 }
+.inputArea:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}
 .inputArea:focus {
-  outline: none;
   border-color: var(--brand-line);
 }
 
@@ -1167,4 +1261,41 @@
 .recolherTudo:hover {
   color: var(--tx);
   border-color: var(--brand-line);
+}
+
+/* ---------- a entrada dos modais ---------- */
+
+/* `modal.module.css` segura a SAÍDA para todo mundo e registra no cabeçalho a
+   premissa: "a entrada mora no CSS de quem chama". Esta folha não tinha uma
+   única declaração de `animation` — os modais da Ata apareciam por corte seco e
+   desapareciam com transição, uma assimetria que nenhuma outra tela do app tem
+   e que faz o fechamento parecer mais lento do que é.
+
+   As medidas são as mesmas de `kanban.module.css`, e de propósito: dois modais
+   do mesmo app abrindo com durações diferentes é a coisa que se nota sem saber
+   o que se notou. `backwards` é obrigatório — sem ele o primeiro quadro vale
+   opacidade cheia e o diálogo pisca antes de esmaecer. */
+.modal {
+  animation: ataModalEntra 0.18s cubic-bezier(0.32, 0.72, 0, 1) backwards;
+}
+.overlay {
+  animation: ataOverlayEntra 0.24s ease-out backwards;
+}
+@keyframes ataOverlayEntra {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes ataModalEntra {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }

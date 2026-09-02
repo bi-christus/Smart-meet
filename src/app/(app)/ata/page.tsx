@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { auth } from "@/lib/firebase";
 import { useSetoresDaPessoa } from "@/lib/setores";
@@ -131,14 +131,56 @@ function chaveDaLinha(l: ItemDaPauta): string {
 }
 
 /** A cor de cada estado, na mesma ordem de gravidade da pauta. */
+/**
+ * A cor de cada estado — em TOKEN, e nunca mais em hex.
+ *
+ * Quatro dos cinco eram hex chumbados (`#f5b13d`, `#c084fc`, `#34d399`,
+ * `#8b93a7`), desenhados para o tema escuro. Duas consequências, e as duas
+ * medidas:
+ *
+ *   1. CONTRASTE. O selo pintava `color-mix(in srgb, COR 62%, var(--tx))` sobre
+ *      `color-mix(in srgb, COR 16%, transparent)`. No tema claro isso dava
+ *      3,37:1 em "Em andamento" e 3,42:1 em "Concluída" — abaixo dos 4,5:1 de
+ *      AA. A única que passava era "Atrasada", justamente a única que já usava
+ *      token.
+ *   2. TEMA. O acento Entre Aulas redefine `--ok`, `--warn`, `--danger`,
+ *      `--info` e `--susp` a partir da paleta da cantina. Com hex chumbado, a
+ *      pauta continuaria com o verde e o roxo genéricos no meio de uma tela
+ *      inteira em vinho e terracota.
+ */
 const COR_ESTADO: Record<EstadoNaAta, string> = {
-  atrasada: "var(--danger, #fb7185)",
-  andamento: "#f5b13d",
-  pendente: "#c084fc",
-  concluida: "#34d399",
-  // Cinza, e o único da paleta que não é uma cor de alerta: registro não pede
+  atrasada: "var(--danger)",
+  andamento: "var(--warn)",
+  pendente: "var(--susp)",
+  concluida: "var(--ok)",
+  // Neutro, e o único da paleta que não é uma cor de alerta: registro não pede
   // ação de ninguém. Ele acender igual aos outros ensinaria a ignorar todos.
-  registro: "#8b93a7",
+  registro: "var(--tx-3)",
+};
+
+/**
+ * O par fundo/texto do selo, que o tema já resolveu para cada família.
+ *
+ * Substitui o `color-mix` de 62% sobre `--tx`, que era o que produzia o cinza
+ * claro ilegível no tema claro. Os pares `--*-bg` e `--*-tx` existem em
+ * `globals.css` justamente porque foram escolhidos juntos, tema a tema.
+ */
+const SELO_ESTADO: Record<EstadoNaAta, { bg: string; tx: string }> = {
+  atrasada: { bg: "var(--danger-bg)", tx: "var(--danger-tx)" },
+  andamento: { bg: "var(--warn-bg)", tx: "var(--warn-tx)" },
+  pendente: { bg: "var(--susp-bg)", tx: "var(--susp-tx)" },
+  concluida: { bg: "var(--ok-bg)", tx: "var(--ok-tx)" },
+  // Registro não tem família própria em `globals.css`, e não deveria ter: ele é
+  // a ausência de alerta. Superfície neutra e texto secundário dizem isso sem
+  // inventar um sexto par de tokens que só esta tela usaria.
+  registro: { bg: "var(--s3)", tx: "var(--tx-2)" },
+};
+
+/** O estado da TAREFA lê no mesmo eixo do estado da demanda — e nas mesmas cores. */
+const COR_TAREFA: Record<StatusTarefa, string> = {
+  concluida: "var(--ok)",
+  andamento: "var(--warn)",
+  pendente: "var(--susp)",
 };
 
 export default function AtaPage() {
@@ -1519,13 +1561,13 @@ function BlocoDaDemanda({
           </div>
         </div>
 
-        <div className={styles.coluna}>
+        <div className={`${styles.coluna} ${styles.colStatus}`}>
           <div className={styles.colunaRot}>Status da demanda</div>
           <span
             className={styles.selo}
             style={{
-              background: `color-mix(in srgb, ${COR_ESTADO[estado]} 16%, transparent)`,
-              color: `color-mix(in srgb, ${COR_ESTADO[estado]} 62%, var(--tx))`,
+              background: SELO_ESTADO[estado].bg,
+              color: SELO_ESTADO[estado].tx,
             }}
           >
             {ESTADO_LABEL[estado]}
@@ -1546,7 +1588,7 @@ function BlocoDaDemanda({
           )}
         </div>
 
-        <div className={styles.coluna}>
+        <div className={`${styles.coluna} ${styles.colDecisao}`}>
           <div className={styles.colunaRot}>Decisão registrada</div>
           <textarea
             className={styles.campoTexto}
@@ -1563,7 +1605,7 @@ function BlocoDaDemanda({
           />
         </div>
 
-        <div className={styles.coluna}>
+        <div className={`${styles.coluna} ${styles.colObjetivo}`}>
           <div className={styles.colunaRot}>Objetivo na próxima reunião</div>
           <textarea
             className={styles.campoTexto}
@@ -1745,12 +1787,11 @@ function TabelaDeTarefas({
                       options={STATUS_TAREFA.map((s) => ({
                         value: s,
                         label: STATUS_TAREFA_LABEL[s],
-                        color:
-                          s === "concluida"
-                            ? "#34d399"
-                            : s === "andamento"
-                              ? "#f5b13d"
-                              : "#c084fc",
+                        // Os mesmos tokens do selo da demanda, e não hex: os
+                        // três estados de tarefa são leitura do mesmo eixo que
+                        // "Concluída / Em andamento / Pendente decisão" logo
+                        // acima, e trocar de tema não pode desalinhar os dois.
+                        color: COR_TAREFA[s],
                       }))}
                       onChange={(v) => mudar(t.id, { status: v as StatusTarefa })}
                       ariaLabel="Status da tarefa"
@@ -2534,6 +2575,7 @@ function ModalDeAta({
   );
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const id = useId();
 
   const doSetor = users
     .filter((u) => u.active && (u.sectors ?? []).includes(setor))
@@ -2556,8 +2598,15 @@ function ModalDeAta({
         <span className={styles.mchip}>{setor}</span>
       </div>
       {aviso && <p className={styles.avisoModal}>{aviso}</p>}
-      <label className={styles.rotulo}>Título da reunião</label>
+      {/* O <label> APONTA para o campo. Os cinco inputs deste formulário tinham
+          rótulo visual sem `htmlFor`, sem `aria-label` e sem envolver o campo:
+          para quem usa leitor de tela eram cinco caixas sem nome, e o clique no
+          rótulo não levava o cursor a lugar nenhum. */}
+      <label className={styles.rotulo} htmlFor={`${id}-titulo`}>
+        Título da reunião
+      </label>
       <input
+        id={`${id}-titulo`}
         className={styles.input}
         value={nome}
         onChange={(e) => setNome(e.target.value)}
@@ -2566,8 +2615,11 @@ function ModalDeAta({
       />
       <div className={styles.linhaCampos}>
         <div>
-          <label className={styles.rotulo}>Data</label>
+          <label className={styles.rotulo} htmlFor={`${id}-data`}>
+            Data
+          </label>
           <input
+            id={`${id}-data`}
             type="date"
             className={styles.input}
             value={data}
@@ -2575,8 +2627,11 @@ function ModalDeAta({
           />
         </div>
         <div>
-          <label className={styles.rotulo}>Início</label>
+          <label className={styles.rotulo} htmlFor={`${id}-inicio`}>
+            Início
+          </label>
           <input
+            id={`${id}-inicio`}
             type="time"
             className={styles.input}
             value={hi}
@@ -2584,8 +2639,11 @@ function ModalDeAta({
           />
         </div>
         <div>
-          <label className={styles.rotulo}>Fim</label>
+          <label className={styles.rotulo} htmlFor={`${id}-fim`}>
+            Fim
+          </label>
           <input
+            id={`${id}-fim`}
             type="time"
             className={styles.input}
             value={hf}
@@ -2593,8 +2651,11 @@ function ModalDeAta({
           />
         </div>
       </div>
-      <label className={styles.rotulo}>Local</label>
+      <label className={styles.rotulo} htmlFor={`${id}-local`}>
+        Local
+      </label>
       <input
+        id={`${id}-local`}
         className={styles.input}
         value={local}
         onChange={(e) => setLocal(e.target.value)}
