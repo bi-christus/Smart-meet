@@ -10,6 +10,7 @@ import {
   deleteDoc,
   doc,
   serverTimestamp,
+  writeBatch,
   type WriteBatch,
 } from "firebase/firestore";
 import { db } from "./firebase";
@@ -175,6 +176,37 @@ export function salvarItensNoLote(
   itens: ItemDeAta[],
 ): void {
   batch.update(doc(db, "atas", id), { itens });
+}
+
+/**
+ * O assunto muda de reunião — as DUAS atas no mesmo lote, ou nenhuma.
+ *
+ * É a segunda porta do `writeBatch` neste arquivo, e a razão é a mesma da
+ * primeira (`salvarItensNoLote`): existe um estado intermediário que não pode
+ * ser alcançável. Em duas escritas soltas, a falha da segunda deixa o assunto
+ * NAS DUAS atas (se a remoção falhou) ou em NENHUMA (se a inclusão falhou) — e
+ * o segundo caso apaga silenciosamente a decisão e as tarefas que a reunião
+ * registrou, sem nada na tela para dizer que sumiram.
+ *
+ * O que o lote NÃO resolve, e é o preço conhecido deste modelo (ver o cabeçalho
+ * deste arquivo): os dois arrays são gravados inteiros, a partir do snapshot
+ * que a tela tinha. Se alguém estiver escrevendo na ata de destino no mesmo
+ * instante, a última gravação vence. Numa reunião isso é quase teórico — quem
+ * preenche a ata é o facilitador, um por reunião —, e o conserto, se um dia
+ * fizer falta, é `arrayUnion`/`arrayRemove` por item, não uma subcoleção.
+ *
+ * As regras aprovam sem mudança nenhuma: as duas atas são do MESMO setor (a
+ * régua está em `moverAssunto`), e cada escrita do lote é avaliada sozinha
+ * contra `allow update`, que só cobra o setor imutável e o título não vazio.
+ */
+export async function moverItensEntreAtas(
+  origem: { id: string; itens: ItemDeAta[] },
+  destino: { id: string; itens: ItemDeAta[] },
+): Promise<void> {
+  const batch = writeBatch(db);
+  salvarItensNoLote(batch, origem.id, origem.itens);
+  salvarItensNoLote(batch, destino.id, destino.itens);
+  await batch.commit();
 }
 
 export async function deleteAta(id: string): Promise<void> {

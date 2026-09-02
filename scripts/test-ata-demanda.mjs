@@ -26,6 +26,12 @@
  *    exatamente igual na tela — mesmo nome, mesma caixa — e zeraria a decisão,
  *    o objetivo e as tarefas daquela linha. O prejuízo só apareceria depois,
  *    com a ata já gravada e a reunião acabada.
+ *
+ * 5. A COLISÃO DE ID AO MUDAR DE REUNIÃO. Os ids são sequenciais POR ATA, então
+ *    o item "3" que chega de outra ata encontra um "3" já morando lá. O
+ *    resultado desenha perfeitamente — duas linhas, os dois nomes certos — e só
+ *    quebra quando alguém escreve numa delas e o texto aparece na outra. Por
+ *    isso a ata de destino do teste JÁ TEM um item com o id que vem chegando.
  */
 import {
   classificacaoDaLinha,
@@ -33,6 +39,7 @@ import {
   conferirClassificacao,
   conferirTitulo,
   editarAssunto,
+  moverAssunto,
   semClassificacao,
   vincularCard,
   LIMITE_ASSUNTO_CHARS,
@@ -345,6 +352,110 @@ const comCard = editarAssunto(
 );
 checa("linha que já tem card é recusada", comCard.ok === false);
 checa("e a recusa manda para o Kanban", /Kanban/.test(comCard.motivo));
+
+console.log("\n— o assunto muda de reunião —");
+
+const ORIGEM = {
+  id: "ata-26-08",
+  setor: "Cantinas",
+  itens: [
+    item("1", { assunto: "fica onde está" }),
+    item("2", {
+      assunto: "foi para a reunião errada",
+      contexto: "o contexto veio junto",
+      dimensaoId: "d1",
+      subdimensaoId: "s1",
+      decisao: "combinado com Suprimentos",
+      objetivo: "medir na próxima",
+      proximaReuniao: true,
+      tarefas: [
+        { id: "1", texto: "aplicar o formulário", responsavel: "a@b.c", prazo: "2026-09-10", status: "pendente", observacao: "" },
+        { id: "2", texto: "agendar com o time", responsavel: "", prazo: "", status: "concluida", observacao: "" },
+      ],
+    }),
+  ],
+};
+// O DESTINO JÁ TEM UM ITEM "2". É o caso que derruba tudo se o id não for
+// renumerado: duas linhas com a mesma chave, e a escrita de uma caindo na
+// outra. Ele vem primeiro de propósito.
+const DESTINO = {
+  id: "ata-02-09",
+  setor: "Cantinas",
+  itens: [item("1", { assunto: "ja morava aqui" }), item("2", { assunto: "e este tambem" })],
+};
+
+const movido = moverAssunto(ORIGEM, DESTINO, "2");
+checa("mover passa", movido.ok === true, movido.motivo);
+checa("o assunto sai da origem", movido.valor.origem.length === 1);
+checa("e quem ficou é o outro", movido.valor.origem[0].id === "1");
+checa("o assunto entra no destino", movido.valor.destino.length === 3);
+
+const chegou = movido.ok && movido.valor.destino[2];
+checa(
+  "com id NOVO, que não colide com o que já morava lá",
+  chegou.id === "3",
+  `veio "${chegou.id}"`,
+);
+checa(
+  "e os ids do destino continuam únicos",
+  new Set(movido.valor.destino.map((i) => i.id)).size === 3,
+);
+
+// O item não mudou de natureza, mudou de pasta. Uma versão que remontasse o
+// item desenharia igual na tela do destino e chegaria lá sem a tabela de
+// tarefas — e o prejuízo só apareceria na reunião seguinte.
+checa("o assunto chega inteiro", chegou.assunto === "foi para a reunião errada");
+checa("o contexto vem junto", chegou.contexto === "o contexto veio junto");
+checa("a classificação vem junto", chegou.dimensaoId === "d1" && chegou.subdimensaoId === "s1");
+checa("a decisão vem junto", chegou.decisao === "combinado com Suprimentos");
+checa("o objetivo vem junto", chegou.objetivo === "medir na próxima");
+checa("a marca de próxima reunião vem junto", chegou.proximaReuniao === true);
+checa("as DUAS tarefas vêm juntas", chegou.tarefas.length === 2);
+checa(
+  "com responsável, prazo e status intactos",
+  chegou.tarefas[0].responsavel === "a@b.c" &&
+    chegou.tarefas[0].prazo === "2026-09-10" &&
+    chegou.tarefas[1].status === "concluida",
+);
+checa("nada é acrescentado nem removido na conta geral", movido.valor.origem.length + movido.valor.destino.length === 4);
+checa(
+  "os arrays de entrada não são mutados",
+  ORIGEM.itens.length === 2 && DESTINO.itens.length === 2,
+);
+
+console.log("\n— e o que ele recusa —");
+
+checa(
+  "mover para a MESMA ata é recusado",
+  moverAssunto(ORIGEM, ORIGEM, "2").ok === false,
+);
+checa(
+  "e a recusa diz o que fazer",
+  /reunião diferente/.test(moverAssunto(ORIGEM, ORIGEM, "2").motivo),
+);
+
+// A árvore de dimensões é por setor: o `dimensaoId` do item não aponta para a
+// mesma caixa do outro lado, e a linha chegaria classificada em algo que não
+// existe lá.
+const outroSetor = moverAssunto(ORIGEM, { ...DESTINO, setor: "B.I." }, "2");
+checa("mover para ata de OUTRO setor é recusado", outroSetor.ok === false);
+checa("e a recusa explica a dimensão", /dimensão/.test(outroSetor.motivo));
+
+checa(
+  "item que não existe mais é recusado",
+  moverAssunto(ORIGEM, DESTINO, "99").ok === false,
+);
+
+// A demanda do quadro aparece na pauta de TODA reunião do setor, vinda do
+// Kanban. Mover o item não a moveria — levaria para outro dia a decisão tomada
+// neste, e uma ata que empresta a decisão de outra deixou de ser registro.
+const comCardMovendo = moverAssunto(
+  { ...ORIGEM, itens: [item("5", { cardId: "c9", assunto: "virou demanda" })] },
+  DESTINO,
+  "5",
+);
+checa("linha que tem card é recusada", comCardMovendo.ok === false);
+checa("e a recusa explica que ela já está em toda pauta", /toda reunião/.test(comCardMovendo.motivo));
 
 console.log(
   falhas === 0
