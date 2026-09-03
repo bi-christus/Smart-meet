@@ -9,6 +9,12 @@ import {
   syncGrants,
   type Grant,
 } from "@/lib/server/drive-server";
+import {
+  jaTranscrito,
+  nomeBase,
+  saidaDoArquivo,
+  type TipoDeSaida,
+} from "@/lib/drive-nomes-core";
 import { notifyProcessed } from "@/lib/server/notify";
 import { ingestDemandas } from "@/lib/server/demand-ingest";
 
@@ -42,11 +48,6 @@ export const runtime = "nodejs";
  * lados discordarem, um áudio pode ficar preso para sempre — o motor achando
  * que já terminou e o app achando que não.
  */
-const MARKER = /[\s\-–—]*\[?transcrito\]?\s*$/i;
-
-function jaTranscrito(nomeDoArquivo: string): boolean {
-  return MARKER.test(stripExt(nomeDoArquivo));
-}
 /** Teto de reuniões por execução, para caber no tempo da função. */
 const BATCH_LIMIT = 60;
 
@@ -88,8 +89,7 @@ function mesmosOutputs(guardados: unknown, achados: DriveOutput[]): boolean {
   return a.every((v, i) => v === b[i]);
 }
 
-type OutputKind = "transcricao" | "resumo" | "detalhada" | "didatica";
-type DriveOutput = { kind: OutputKind; name: string; link: string };
+type DriveOutput = { kind: TipoDeSaida; name: string; link: string };
 
 /**
  * Quem recebe acesso aos documentos da reunião.
@@ -113,28 +113,6 @@ function grantsDaReuniao(m: FirebaseFirestore.DocumentData): Grant[] {
   return [...por.values()];
 }
 
-function stripExt(name: string): string {
-  const dot = name.lastIndexOf(".");
-  return dot > 0 ? name.slice(0, dot) : name;
-}
-
-/** Nome-base = nome sem extensão e sem o marcador "Transcrito" do fim. */
-function baseStem(audioName: string): string {
-  // Mesmo MARKER da detecção: se um lado aceitasse "[Transcrito]" e o outro
-  // não, o nome-base sairia com o marcador colado e nenhum Doc casaria.
-  return stripExt(audioName).replace(MARKER, "").trim();
-}
-
-function classify(suffix: string): OutputKind | null {
-  const s = suffix.toLowerCase();
-  if (s.includes("transcri")) return "transcricao"; // Transcrição / Transcrito
-  if (s.includes("detalhad")) return "detalhada"; // Ata detalhada
-  if (s.includes("didatic") || s.includes("didátic")) return "didatica"; // com/sem acento
-  if (s.includes("ponto") || s.includes("importante") || s.includes("resumo"))
-    return "resumo"; // Pontos importantes
-  return null;
-}
-
 /**
  * Arquivos da pasta que compartilham o nome-base do áudio e trazem uma palavra
  * de resultado após um separador " - " (o padrão combinado com o Cowork).
@@ -144,8 +122,7 @@ function collectOutputs(
   stem: string,
   files: { id: string; name: string; mimeType: string; webViewLink?: string }[],
 ): DriveOutput[] {
-  const stemLower = stem.toLowerCase();
-  if (!stemLower) return [];
+  if (!stem) return [];
   const out: DriveOutput[] = [];
   for (const f of files) {
     if (f.id === audioId) continue;
@@ -155,12 +132,11 @@ function collectOutputs(
     // `classify`, mas um futuro "<base> - Resumo.json" casaria e viraria um
     // link quebrado na tela — o app não sabe abrir JSON como Doc.
     if (f.mimeType === "application/json") continue;
-    // Casamos pelo nome CRU: os resultados podem ser Google Docs (sem extensão),
-    // e um `stripExt` cortaria um ponto do próprio nome (ex.: "Reunião 29.07").
-    if (!f.name.toLowerCase().startsWith(stemLower)) continue;
-    const suffix = f.name.slice(stem.length);
-    if (!/^\s*[-–—]\s*/.test(suffix)) continue; // exige separador após o nome-base
-    const kind = classify(suffix);
+    // O casamento por nome e a classificação moram em `drive-nomes-core`, com
+    // teste no `prebuild` — ver o cabeçalho de lá. Casamos pelo nome CRU: os
+    // resultados são Google Docs (sem extensão), e tirar a "extensão" cortaria
+    // um ponto do próprio nome (ex.: "Reunião 29.07").
+    const kind = saidaDoArquivo({ base: stem, nomeDoArquivo: f.name });
     if (!kind) continue;
     out.push({ kind, name: f.name, link: f.webViewLink ?? "" });
   }
@@ -298,7 +274,7 @@ export async function GET(req: Request) {
         const folderId = meta.parents?.[0];
         if (folderId) {
           files = await listFolder(token, folderId);
-          outputs = collectOutputs(meta.id, baseStem(meta.name), files);
+          outputs = collectOutputs(meta.id, nomeBase(meta.name), files);
         }
 
         if (isAguardando) {
@@ -351,7 +327,7 @@ export async function GET(req: Request) {
               meeting: m,
               driveFileId: m.driveFileId as string,
               pastaId: folderId,
-              base: baseStem(meta.name),
+              base: nomeBase(meta.name),
             });
             if (r.estado === "criado") {
               demandas += r.propostas ?? 0;

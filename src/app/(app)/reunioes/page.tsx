@@ -85,14 +85,35 @@ const STATUS_CLASS: Record<MeetingStatus, string> = {
 };
 
 /**
- * O que gerar a partir da transcrição. "Pontos importantes" vem marcado por
- * padrão; as atas são opcionais e podem ser combinadas.
+ * O que sai de cada áudio.
+ *
+ * DOIS SÃO CADEADO e três são escolha, e a diferença é de natureza: o que tem
+ * cadeado é infraestrutura do app — a ata principal, que todo mundo lê, e a
+ * pauta, que a aba Ata CONSOME. As atas detalhada e didática são leitura
+ * opcional, e quem envia decide se precisa delas.
+ *
+ * A pauta aparece aqui mesmo sem ser escolhível, e é de propósito: esta lista
+ * responde "o que vou receber?", e esconder um documento que é sempre gerado
+ * faria a pergunta ser respondida errado. Ela é a única entrada cujo `id` não é
+ * um `OutputKind` — o `smGerar` que viaja para o Cowork lista só o que é
+ * escolha, e a pauta não é.
  */
-const OUTPUT_OPTIONS: { id: OutputKind; label: string; desc: string }[] = [
+type OpcaoDeSaida =
+  | { id: OutputKind; label: string; desc: string; sempre?: false }
+  | { id: DriveOutputKind; label: string; desc: string; sempre: true };
+
+const OUTPUT_OPTIONS: OpcaoDeSaida[] = [
   {
     id: "resumo",
     label: "Pontos importantes",
     desc: "Resumo objetivo: decisões e o essencial da reunião.",
+    sempre: true,
+  },
+  {
+    id: "pauta",
+    label: "Pauta da reunião",
+    desc: "Alimenta a aba Ata: assuntos, decisões, responsáveis e prazos.",
+    sempre: true,
   },
   {
     id: "detalhada",
@@ -110,6 +131,10 @@ const OUTPUT_OPTIONS: { id: OutputKind; label: string; desc: string }[] = [
 const OUTPUT_ICON: Record<DriveOutputKind, string> = {
   transcricao: "chat",
   resumo: "check",
+  // "prancheta" e não "ata": este documento é a pauta de trabalho que a aba Ata
+  // consome, e usar o mesmo ícone das atas o faria parecer uma quarta ata para
+  // ler — que é exatamente o que ele não é.
+  pauta: "prancheta",
   detalhada: "relatorios",
   didatica: "reunioes",
 };
@@ -564,8 +589,8 @@ export default function ReunioesPage() {
               </div>
               <div className={styles.outOptions}>
                 {OUTPUT_OPTIONS.map((o) => {
-                  const locked = o.id === "resumo";
-                  const on = locked || output.includes(o.id);
+                  const locked = o.sempre === true;
+                  const on = locked || output.includes(o.id as OutputKind);
                   const frozen = recording && !locked;
                   return (
                     <button
@@ -573,7 +598,11 @@ export default function ReunioesPage() {
                       type="button"
                       className={`${styles.outOption} ${on ? styles.on : ""} ${locked ? styles.outLocked : ""}`}
                       onClick={() => {
-                        if (!locked && !recording) toggleOutput(o.id);
+                        // `!o.sempre` estreita a união e devolve o `OutputKind`
+                        // — é o que dispensa um cast aqui e faz o compilador
+                        // recusar, no dia em que alguém tentar alternar a pauta,
+                        // um `smGerar` com um valor que o Cowork não conhece.
+                        if (!o.sempre && !recording) toggleOutput(o.id);
                       }}
                       disabled={frozen}
                       aria-pressed={on}
