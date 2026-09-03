@@ -167,3 +167,30 @@
     transition: none;
   }
 }
+/* A COLUNA FIXA DA ESQUERDA — ver `prefixo` em `SelectOption`.
+
+   `flex: 0 0 auto` é o ponto inteiro: quem encolhe é o rótulo, nunca o prefixo.
+   Enquanto a data vinha no fim do rótulo, era ela que as reticências comiam —
+   e a data é justamente o que se vai procurar numa lista de reuniões.
+
+   `tabular-nums` alinha os dígitos entre as linhas, e `min-width` sustenta a
+   coluna quando um dia tem um dígito e o seguinte tem dois ("2 set" e
+   "26 ago"): sem ela os títulos ficariam desalinhados por um caractere. */
+.prefixo {
+  flex: 0 0 auto;
+  min-width: 46px;
+  font-variant-numeric: tabular-nums;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--tx-3);
+}
+/* No gatilho o prefixo é o dado que a pessoa confere de relance com o menu
+   fechado, então ele ganha o contraste do texto normal. Na lista ele é
+   coordenada, e fica secundário para o título poder liderar. */
+.val .prefixo {
+  color: var(--tx-2);
+}
+.option.sel .prefixo,
+.option.active .prefixo {
+  color: var(--tx-2);
+}
