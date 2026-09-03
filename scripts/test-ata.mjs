@@ -240,6 +240,7 @@ checa("pauta vazia não quebra o resumo", resumoDaAta([]).emAberto === 0);
 console.log("\n— o que a próxima reunião herda —");
 
 const herdado = herdarParaProxima({
+  id: "ata-2608",
   itens: [
     {
       cardId: "vai",
@@ -283,6 +284,47 @@ checa("a decisão NÃO vai junto", herdado[0].decisao === "");
 checa("o objetivo vai — ele já foi escrito olhando para a frente", herdado[0].objetivo === "Validar o piloto");
 checa("a tarefa concluída fica para trás", herdado[0].tarefas.length === 1 && herdado[0].tarefas[0].texto === "aberta");
 checa("e a marca de 'próxima' não se propaga sozinha", herdado[0].proximaReuniao === false);
+// A CÓPIA NASCE `herdado`, apontando para a ata de onde veio — é o que permite
+// a pauta nova dizer "isto ficou pendurado da anterior" em vez de desenhar a
+// linha como se o assunto tivesse nascido ali. Sem isto o mesmo assunto era
+// discutido do zero toda semana, que é a queixa que originou esta tela.
+checa(
+  "a linha herdada sabe que é herdada",
+  herdado.every((i) => i.origem === "herdado"),
+  JSON.stringify(herdado.map((i) => i.origem)),
+);
+checa(
+  "e sabe de QUAL reunião veio",
+  herdado.every((i) => i.origemAtaId === "ata-2608"),
+);
+// A origem NÃO é preservada, e é o único campo de que isso é verdade: o item
+// de baixo veio de um assunto lançado à mão, e na reunião nova o que ele é é
+// herança. Preservar diria "lançado à mão" sobre uma linha que ninguém digitou
+// naquela ata.
+const herdadoDeAudio = herdarParaProxima({
+  id: "ata-2608",
+  itens: [
+    {
+      id: "1",
+      cardId: "",
+      assunto: "Estoque",
+      contexto: "",
+      dimensaoId: "",
+      subdimensaoId: "",
+      origem: "reuniao",
+      origemAtaId: "",
+      decisao: "d",
+      objetivo: "o",
+      proximaReuniao: true,
+      tarefas: [],
+    },
+  ],
+});
+checa(
+  "a origem do item NÃO é preservada na herança",
+  herdadoDeAudio[0].origem === "herdado" && herdadoDeAudio[0].origemAtaId === "ata-2608",
+  herdadoDeAudio[0].origem,
+);
 
 console.log("\n— ids de tarefa: nunca reaproveitados —");
 
@@ -474,6 +516,76 @@ const lida = normalizarAta("a1", {
 });
 checa("normalizarAta preserva a quebra na decisão", lida.itens[0].decisao === comQuebra);
 checa("e no objetivo", lida.itens[0].objetivo === comQuebra);
+
+console.log("\n— de onde a linha da pauta veio —");
+
+/**
+ * A PARTE QUE UM SCRIPT DE MIGRAÇÃO TERIA DE FAZER, e que a leitura faz sozinha.
+ *
+ * Nenhum item gravado antes de `origem` existir tem o campo, e as duas
+ * respostas possíveis erram em metade do banco se aplicadas às cegas. Quem
+ * desempata é o `meetingId` da ata, e é isto que este bloco protege: se alguém
+ * trocar a inferência por um padrão fixo, a ata de 26/08 das cantinas — que
+ * nasceu inteira do documento da reunião — passa a se declarar lançada à mão, e
+ * o chip da tela mente sobre uma reunião de verdade.
+ */
+const itemAntigo = { id: "1", cardId: "", assunto: "Estoque", decisao: "Aprovado" };
+
+const daReuniao = normalizarAta("a1", {
+  setor: SETOR,
+  titulo: "Cantinas",
+  meetingId: "m1",
+  itens: [itemAntigo],
+});
+checa(
+  "item antigo em ata COM reunião ligada é do áudio",
+  daReuniao.itens[0].origem === "reuniao",
+  daReuniao.itens[0].origem,
+);
+
+const semReuniao = normalizarAta("a2", {
+  setor: SETOR,
+  titulo: "Cantinas",
+  itens: [itemAntigo],
+});
+checa(
+  "item antigo em ata SEM reunião ligada é lançado à mão",
+  semReuniao.itens[0].origem === "manual",
+  semReuniao.itens[0].origem,
+);
+
+// A origem gravada ganha da inferida — senão o campo não serviria para nada
+// justamente nas atas novas, que são as únicas que o gravam.
+const gravada = normalizarAta("a3", {
+  setor: SETOR,
+  titulo: "Cantinas",
+  meetingId: "m1",
+  itens: [{ ...itemAntigo, origem: "herdado", origemAtaId: "a1" }],
+});
+checa(
+  "a origem gravada ganha da inferida",
+  gravada.itens[0].origem === "herdado" && gravada.itens[0].origemAtaId === "a1",
+);
+
+// Valor fora do conjunto cai no padrão em vez de derrubar a ata — mesma escolha
+// do `status` da tarefa, e pelo mesmo motivo: uma ata que não abre é pior do que
+// uma ata com um chip errado.
+const lixo = normalizarAta("a4", {
+  setor: SETOR,
+  titulo: "Cantinas",
+  itens: [{ ...itemAntigo, origem: "sei-la" }],
+});
+checa("origem inválida cai no padrão", lixo.itens[0].origem === "manual");
+
+// `origemAtaId` só sobrevive no `herdado`. Um id sobrevivente de um "Mover"
+// faria o chip "lançado à mão" carregar link para uma reunião que nada tem com
+// aquela linha.
+const soNoHerdado = normalizarAta("a5", {
+  setor: SETOR,
+  titulo: "Cantinas",
+  itens: [{ ...itemAntigo, origem: "manual", origemAtaId: "a1" }],
+});
+checa("origemAtaId só vale no herdado", soNoHerdado.itens[0].origemAtaId === "");
 
 console.log(falhas === 0 ? "\nata: ok" : `\nata: ${falhas} falha(s)`);
 process.exit(falhas === 0 ? 0 : 1);

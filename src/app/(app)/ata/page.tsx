@@ -33,6 +33,7 @@ import {
 import {
   ESTADOS_NA_ATA,
   ESTADO_LABEL,
+  ORIGEM_LABEL,
   STATUS_TAREFA,
   STATUS_TAREFA_LABEL,
   abrirProxima,
@@ -61,6 +62,7 @@ import {
   type EstadoNaAta,
   type ItemDaPauta,
   type ItemDeAta,
+  type OrigemDoItem,
   type StatusTarefa,
   type TarefaDeAta,
 } from "@/lib/ata";
@@ -637,6 +639,29 @@ export default function AtaPage() {
       return s ? `${d.nome} · ${s.nome}` : d.nome;
     };
   }, [cards, dims]);
+
+  /**
+   * O texto do chip de origem — "do áudio", "lançado à mão", "veio de 26/08".
+   *
+   * O `herdado` é o único que não tem rótulo fixo em `ORIGEM_LABEL`, e é de
+   * propósito: dizer só "veio de outra reunião" não responde a pergunta que se
+   * faz olhando o chip, que é QUAL. A data é resolvida aqui a partir de
+   * `origemAtaId`, e não guardada no item, pela mesma regra que faz o item
+   * guardar `cardId` e não o título do card: nome é cópia, id é referência — a
+   * data de uma reunião se corrige no cabeçalho, e o chip tem de acompanhar.
+   *
+   * ATA APAGADA CAI NO RÓTULO GENÉRICO. A herança continua tendo acontecido, e
+   * a ata é registro: esconder o chip faria a linha passar a parecer lançada
+   * ali. Quem some junto é o link — ver `onAbrirOrigem`.
+   */
+  const rotuloDaOrigem = useMemo(() => {
+    const dataDe = new Map(atas.map((a) => [a.id, a.data]));
+    return (item: ItemDeAta) => {
+      if (item.origem !== "herdado") return ORIGEM_LABEL[item.origem];
+      const data = dataDe.get(item.origemAtaId);
+      return data ? `veio de ${fmtDayMonth(data)}` : ORIGEM_LABEL.herdado;
+    };
+  }, [atas]);
 
   /** Nome da dimensão e da subdimensão, para o histórico (que guarda texto). */
   const nomesDaArvore = (dimensaoId: string, subdimensaoId: string) => {
@@ -1324,6 +1349,15 @@ export default function AtaPage() {
                   /* Sem uma segunda reunião no setor não há para onde mover, e
                      o botão não nasce — ver `onMover`. */
                   onMover={atas.length > 1 ? () => setMovendo(linha) : null}
+                  origemRotulo={rotuloDaOrigem(linha.item)}
+                  /* A ata de origem pode ter sido apagada — aí o chip continua
+                     dizendo que a linha é herdada, mas deixa de ser link. */
+                  onAbrirOrigem={
+                    linha.item.origem === "herdado" &&
+                    atas.some((a) => a.id === linha.item.origemAtaId)
+                      ? () => setAtaSel(linha.item.origemAtaId)
+                      : null
+                  }
                 />
               ))
             )}
@@ -1584,6 +1618,66 @@ function Linha({ rotulo, valor }: { rotulo: string; valor: string }) {
 // ---------------------------------------------------------------------------
 
 /**
+ * De onde este assunto veio — o chip ao lado da numeração.
+ *
+ * POR QUE ELE EXISTE. A pauta desenhava as três procedências iguais, e a
+ * primeira pergunta de quem conduz a reunião é justamente qual é qual: o áudio
+ * trouxe, alguém lançou antes de começar, ou é assunto pendurado da semana
+ * passada. Na reunião de 02/09/2026 as três estavam na mesma ata, sem nada
+ * distinguindo — e as três pedem coisas diferentes de quem lê. O que o áudio
+ * trouxe já é registro do que foi dito; o que alguém lançou à mão ainda espera
+ * ser falado; o herdado espera que se cobre o que ficou combinado.
+ *
+ * É UM CHIP, E NÃO TRÊS LAYOUTS. Desenhar cada origem com moldura, cor e
+ * campos próprios daria uma pauta que parece três telas empilhadas, e a ata é
+ * lida de cima a baixo em voz alta — a leitura é que tem de ser contínua. O que
+ * muda entre as origens é uma informação, então o que muda na tela é um rótulo.
+ *
+ * SEM MOTION, e é a Frequency Gate do AGENTS.md §3 respondendo: é um rótulo
+ * estático numa lista que redesenha a cada tecla digitada em qualquer decisão
+ * da pauta. Animar a entrada dele faria a tela inteira piscar durante a
+ * reunião.
+ *
+ * COR EM TOKEN, e neutra. Os pares `--s3`/`--tx-2` são os mesmos do selo de
+ * `registro` (ver `SELO_ESTADO`), pelo mesmo motivo escrito lá: origem não é
+ * alerta, e um chip aceso ao lado de cada linha ensinaria a ignorar os selos
+ * que são. Hex chumbado está fora de questão — o acento Entre Aulas redefine a
+ * paleta, e o tema claro reprovava em contraste.
+ */
+function OrigemDoAssunto({
+  origem,
+  rotulo,
+  onAbrir,
+}: {
+  origem: OrigemDoItem;
+  rotulo: string;
+  onAbrir: (() => void) | null;
+}) {
+  const icone = origem === "reuniao" ? "mic" : origem === "herdado" ? "calendar" : "edit";
+
+  // O herdado com origem viva é BOTÃO: "veio de 26/08" sem caminho até o 26/08
+  // pede que a pessoa procure a reunião na lista para conferir o que ficou
+  // combinado — e é a conferência que faz o chip valer a pena.
+  if (origem === "herdado" && onAbrir) {
+    return (
+      <button
+        className={`${styles.origemChip} ${styles.origemLink}`}
+        onClick={onAbrir}
+        title="Abrir a reunião de onde este assunto veio"
+      >
+        <Icon name={icone} size={11} /> {rotulo}
+      </button>
+    );
+  }
+
+  return (
+    <span className={styles.origemChip}>
+      <Icon name={icone} size={11} /> {rotulo}
+    </span>
+  );
+}
+
+/**
  * Uma demanda na pauta: o que se decidiu, o que se espera, e o que ficou.
  *
  * DECISÃO E OBJETIVO SÃO EDITADOS NO LUGAR, não num modal. A tela é preenchida
@@ -1605,6 +1699,8 @@ function BlocoDaDemanda({
   onPromover,
   onEditar,
   onMover,
+  origemRotulo,
+  onAbrirOrigem,
 }: {
   linha: ItemDaPauta;
   nomeDe: (email: string) => string;
@@ -1629,6 +1725,24 @@ function BlocoDaDemanda({
    * pior do que botão nenhum — ele ensina a duvidar dos outros.
    */
   onMover: (() => void) | null;
+  /**
+   * O texto do chip de origem — a página o resolve, e não este bloco.
+   *
+   * Quem sabe traduzir `origemAtaId` em "veio de 26/08" é quem tem a lista de
+   * atas do setor, e ela mora na página. Passar o id cru para cá obrigaria o
+   * bloco a receber `atas` inteiro só para procurar uma data — e a lista
+   * redesenha a cada snapshot do Firestore, o que faria toda a pauta remontar.
+   */
+  origemRotulo: string;
+  /**
+   * Ir até a reunião de origem, ou `null` quando não há para onde.
+   *
+   * Nulo pelo mesmo motivo de `onMover`: a ata de origem pode ter sido
+   * apagada. Aí o chip continua dizendo que a linha é herdada — isso é verdade
+   * e é registro — mas deixa de ser botão, porque um link que não leva a lugar
+   * nenhum é pior do que texto.
+   */
+  onAbrirOrigem: (() => void) | null;
 }) {
   const {
     card,
@@ -1736,6 +1850,24 @@ function BlocoDaDemanda({
           <div className={styles.demandaRot}>
             {card ? "Demanda" : foraDoQuadro ? "Demanda fora do quadro" : "Assunto"} ·{" "}
             {numero}
+            {/* O CHIP DE ORIGEM, e ele só aparece no assunto sem card.
+
+                Onde há card, a procedência de que se fala é a do CARD — e ela
+                já é do quadro, respondida por "origem" no histórico dele. Um
+                chip "lançado à mão" ao lado de uma demanda diria uma coisa
+                sobre a linha da ata que quem lê entenderia como sendo sobre a
+                demanda, e as duas têm nascimentos diferentes.
+
+                A linha fora do quadro também não recebe: ela FOI demanda, e o
+                que ela precisa dizer é justamente isso — a frase logo abaixo já
+                faz esse trabalho, e um segundo rótulo ali competiria com ela. */}
+            {!card && !foraDoQuadro && (
+              <OrigemDoAssunto
+                origem={item.origem}
+                rotulo={origemRotulo}
+                onAbrir={onAbrirOrigem}
+              />
+            )}
           </div>
           <h3>{titulo || (foraDoQuadro ? "Demanda sem título na ata" : "")}</h3>
           {foraDoQuadro && (

@@ -175,6 +175,11 @@ export function conferirAssuntoNovo(
       contexto: limparTexto(bruto?.contexto),
       dimensaoId: classe.valor.dimensaoId,
       subdimensaoId: classe.valor.subdimensaoId,
+      // O único caminho do app que produz item `manual`: alguém abriu o
+      // formulário e digitou. É o que a mesclagem com o documento do áudio lê
+      // para saber que aquele texto tem autor humano e não se sobrescreve.
+      origem: "manual",
+      origemAtaId: "",
       decisao: "",
       objetivo: "",
       proximaReuniao: false,
@@ -214,6 +219,10 @@ export function vincularCard(
       contexto: "",
       dimensaoId: "",
       subdimensaoId: "",
+      // Mesmo caso e mesmo motivo de `itemVazio` em `ata-core`: é a linha que
+      // entrou pelo QUADRO, e a tela não desenha chip de origem onde há card.
+      origem: "manual",
+      origemAtaId: "",
       decisao: "",
       objetivo: "",
       proximaReuniao: false,
@@ -368,6 +377,13 @@ export function editarAssunto(
  * O RESTO VAI INTEIRO: assunto, contexto, dimensão, decisão, objetivo,
  * `proximaReuniao` e as tarefas. O item não mudou de natureza, mudou de pasta —
  * e a decisão que a reunião tomou sobre ele continua sendo a mesma decisão.
+ *
+ * A `origem` VAI INTEIRA TAMBÉM, e essa é a que dá vontade de trocar. "Mover"
+ * existe para o assunto lançado na reunião errada — é a correção de um erro de
+ * endereço, e não uma passagem de bastão entre reuniões. Marcar a linha como
+ * `herdado` faria a ata de destino afirmar que aquele assunto veio de outra
+ * reunião, quando o que houve é que ele sempre foi desta e foi digitado na
+ * porta ao lado. Quem quer passar bastão usa "Levar para próxima reunião".
  *
  * TRÊS RECUSAS, e as três são de negócio:
  *
