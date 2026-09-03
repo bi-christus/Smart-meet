@@ -46,6 +46,8 @@ import {
   LIMITE_TAREFA_CHARS,
   LIMITE_TEXTO_CHARS,
   limparTexto,
+  proximoIdDeItem,
+  proximoIdDeTarefa,
   type Ata,
   type DimensaoDaPauta,
   type ItemDeAta,
@@ -349,17 +351,47 @@ function paraTarefa(encaminhamento: string, id: string): TarefaDeAta {
  * reunião discutiu e não resolveu. Gravar o texto em `decisao` faria a ata
  * afirmar que decidiu não decidir, e o assunto desceria para o meio da lista.
  */
+/** Os campos de uma linha de pauta que o documento sabe preencher. */
+export const CAMPOS_MESCLAVEIS = ["decisao", "objetivo", "contexto"] as const;
+export type CampoMesclavel = (typeof CAMPOS_MESCLAVEIS)[number];
+
+/**
+ * O texto que o bloco traz para cada campo — a ÚNICA definição disso.
+ *
+ * `blocoParaItem` e `planejarMesclagem` precisam concordar caractere por
+ * caractere: a segunda decide se um campo seria preenchido comparando este
+ * texto com o que está na ata, e a primeira é quem o grava quando o bloco vira
+ * item novo. Enquanto as duas repetiam as expressões, bastava uma delas trocar
+ * `" · "` por `"; "` para a tela de conferência passar a anunciar preenchimento
+ * de um campo que já estava igual — divergência inventada, em toda linha.
+ *
+ * A escolha de `✗ Sem decisão` virar OBJETIVO, e não decisão, está explicada no
+ * cabeçalho de `blocoParaItem`, e é o eixo da tela: com a decisão vazia o item
+ * acende "Pendente decisão" e sobe para o topo da pauta.
+ */
+function textoDoBloco(bloco: BlocoDoDocumento): Record<CampoMesclavel, string> {
+  return {
+    // Várias decisões no mesmo bloco são várias frases sobre o mesmo assunto —
+    // e o assunto é a linha. Juntar com " · " é o que a tela já faz com dimensão
+    // e subdimensão, e cabe nos 600 de `limparTexto`.
+    decisao: limparTexto(bloco.decisoes.join(" · "), LIMITE_TEXTO_CHARS),
+    objetivo: limparTexto(bloco.semDecisao.join(" · "), LIMITE_TEXTO_CHARS),
+    contexto: limparTexto(bloco.contexto.join(" · ")),
+  };
+}
+
 export function blocoParaItem(
   bloco: BlocoDoDocumento,
   id: string,
   dimensoes: readonly DimensaoDaPauta[],
 ): ItemDeAta {
   const { dimensaoId, subdimensaoId } = classificar(bloco.assunto, dimensoes);
+  const texto = textoDoBloco(bloco);
   return {
     id,
     cardId: "",
     assunto: limparTexto(bloco.assunto, 200),
-    contexto: limparTexto(bloco.contexto.join(" · ")),
+    contexto: texto.contexto,
     dimensaoId,
     subdimensaoId,
     // Esta é a única função do app que produz item `reuniao`: ela é a fronteira
@@ -368,11 +400,8 @@ export function blocoParaItem(
     // aquela decisão foi extraída da gravação, e não digitada por alguém.
     origem: "reuniao",
     origemAtaId: "",
-    // Várias decisões no mesmo bloco são várias frases sobre o mesmo assunto —
-    // e o assunto é a linha. Juntar com " · " é o que a tela já faz com dimensão
-    // e subdimensão, e cabe nos 600 de `limparTexto`.
-    decisao: limparTexto(bloco.decisoes.join(" · "), LIMITE_TEXTO_CHARS),
-    objetivo: limparTexto(bloco.semDecisao.join(" · "), LIMITE_TEXTO_CHARS),
+    decisao: texto.decisao,
+    objetivo: texto.objetivo,
     proximaReuniao: false,
     tarefas: bloco.encaminhamentos.map((e, i) => paraTarefa(e, String(i + 1))),
   };
@@ -442,20 +471,379 @@ export function ligarCards(
   itens: ItemDeAta[],
   cards: readonly { id: string; assunto: string }[],
 ): ItemDeAta[] {
-  const porAssunto = new Map<string, string>();
-  // A numeração do cabeçalho ("1. Método…") sobrevive no `assunto` da proposta e
-  // não no do item, que já a perdeu — então ela sai dos dois lados antes de
-  // comparar.
-  cards.forEach((c) => {
-    const k = chave(String(c.assunto ?? "").replace(/^\d+\.\s*/, ""));
-    if (k && !porAssunto.has(k)) porAssunto.set(k, c.id);
-  });
+  const porAssunto = indiceDeCards(cards);
   const usados = new Set<string>();
   return itens.map((i) => {
     if (i.cardId) return i;
-    const cardId = porAssunto.get(chave(i.assunto));
+    const cardId = porAssunto.get(chaveDeAssunto(i.assunto));
     if (!cardId || usados.has(cardId)) return i;
     usados.add(cardId);
     return { ...i, cardId };
   });
+}
+
+/**
+ * A chave de comparação de um assunto, e ela é a MESMA nos dois lados.
+ *
+ * A numeração do cabeçalho ("1. Método…") sobrevive no `assunto` da proposta que
+ * gerou o card e não no do item, que já a perdeu em `lerPontosImportantes` — e
+ * um bloco cujo cabeçalho volte a chegar numerado tem de casar igual. Tirá-la
+ * dos dois lados é mais barato que confiar em qual dos dois a tem.
+ *
+ * Existe como função porque três lugares fazem esta pergunta — `ligarCards`,
+ * `indiceDeCards` e `planejarMesclagem` —, e um deles esquecer o
+ * `replace` faria o casamento falhar em silêncio: nenhum erro, nenhuma linha
+ * vermelha, só um bloco do áudio virando assunto novo ao lado do assunto que ele
+ * era.
+ */
+function chaveDeAssunto(assunto: unknown): string {
+  return chave(String(assunto ?? "").replace(/^\d+\.\s*/, ""));
+}
+
+/** Card por assunto que o originou. O primeiro ganha, como em `ligarCards`. */
+function indiceDeCards(
+  cards: readonly { id: string; assunto: string }[],
+): Map<string, string> {
+  const porAssunto = new Map<string, string>();
+  cards.forEach((c) => {
+    const k = chaveDeAssunto(c.assunto);
+    if (k && !porAssunto.has(k)) porAssunto.set(k, c.id);
+  });
+  return porAssunto;
+}
+
+// ---------------------------------------------------------------------------
+// Puxar o documento para uma ata que JÁ tem pauta
+// ---------------------------------------------------------------------------
+
+/**
+ * A MESCLAGEM, e por que ela precisou existir separada de `montarAtaDaReuniao`.
+ *
+ * `montarAtaDaReuniao` monta uma ata do zero, e é o certo quando a reunião não
+ * tem ata nenhuma. O que faltava era o caso comum: a reunião JÁ tem ata, feita
+ * antes de o áudio ficar pronto — porque a equipe lança os assuntos que quer
+ * discutir antes de entrar na sala, e porque "Levar para próxima reunião" já
+ * deixou lá o que ficou pendurado da semana passada. Foi exatamente o estado da
+ * ata de 02/09/2026 das Cantinas.
+ *
+ * Sem mesclagem, o único caminho era gerar uma SEGUNDA ata da mesma reunião no
+ * mesmo setor: mesma data, mesmo título na lista, uma com o que as pessoas
+ * lançaram e outra com o que o áudio trouxe, e nenhuma sabendo da outra.
+ *
+ * A REGRA DE OURO É UMA: o que humano escreveu não se sobrescreve, e nada é
+ * removido. Todo o resto deste bloco é consequência dela.
+ *
+ * NADA DE IA, e não é limitação — é a mesma razão do cabeçalho deste arquivo. O
+ * documento já é estruturado por contrato do prompt do Cowork, e o casamento
+ * entre bloco e item é por texto exato. Onde dá para casar por texto exato,
+ * casar por texto exato não erra em silêncio; similaridade erraria, e erraria
+ * com cara de acerto, escrevendo a decisão de um assunto dentro de outro.
+ *
+ * PLANEJAR E APLICAR SÃO DUAS FUNÇÕES, e é o que sustenta a tela de
+ * conferência: quem conduz a reunião vê o que vai entrar, em que linha, e
+ * aprova. Uma função só que gravasse direto pediria confiança cega num
+ * casamento de texto — e a ata é registro, não rascunho.
+ */
+
+/** O que aconteceria com UM bloco do documento. */
+export type ParDeMesclagem = {
+  /**
+   * O índice do bloco em `PontosImportantes.blocos` — a chave do plano.
+   *
+   * É POR ÍNDICE, e não por assunto, porque é ele que o cliente devolve para
+   * dizer o que aprovou. O servidor recomputa o plano do mesmo documento antes
+   * de aplicar (ver `api/ata/gerar`), então o índice aponta para o mesmo bloco
+   * nas duas passadas. Assunto como chave quebraria no caso que o documento
+   * produz sozinho: dois blocos com o mesmo cabeçalho.
+   */
+  bloco: number;
+  /** O cabeçalho do bloco, para a tela poder nomear a linha. */
+  assunto: string;
+  /** O item da ata que este bloco casou, ou `null` quando é assunto novo. */
+  itemId: string | null;
+  /** Como casou, para a tela poder dizer por quê. */
+  casouPor: "card" | "assunto" | null;
+  /** O card do quadro que o assunto deste bloco resolve, quando resolve. */
+  cardId: string;
+  /** Aplicar faria a linha passar a apontar para `cardId` — ver `aplicarMesclagem`. */
+  vinculaCard: boolean;
+  /** Os campos que seriam preenchidos: o documento traz, e a ata não tem. */
+  preenche: CampoMesclavel[];
+  /** As tarefas do documento que entrariam como linhas novas na tabela. */
+  tarefas: TarefaDeAta[];
+  /**
+   * O documento traz texto para um campo que a ata JÁ tem escrito, e diferente.
+   *
+   * NÃO É CONFLITO E NÃO É ERRO, e não é aplicado: o texto humano fica. Vai para
+   * a tela lado a lado porque as duas saídas silenciosas são piores —
+   * sobrescrever apaga o que alguém digitou na reunião, e ignorar sem mostrar
+   * esconde o que a gravação registrou. Quem conduz decide se corrige à mão.
+   */
+  divergencias: { campo: CampoMesclavel; doAudio: string; naAta: string }[];
+  /** A dimensão que o parser achou entraria, porque a linha não tem nenhuma. */
+  classifica: boolean;
+};
+
+/**
+ * O que a mesclagem faria, sem fazer nada.
+ *
+ * ORDEM DO CASAMENTO, e ela é da mais forte para a mais fraca:
+ *
+ *   1. POR CARD. O assunto do bloco resolve um card (pela mesma via de
+ *      `ligarCards`: assunto do bloco × assunto da proposta que gerou o card), e
+ *      existe item na ata apontando para aquele card. É o casamento mais forte
+ *      porque os dois lados apontam para a mesma demanda do quadro — o texto
+ *      pode ter sido reescrito no Kanban e o vínculo continua valendo.
+ *   2. POR ASSUNTO. `chaveDeAssunto` dos dois lados bate. É o caso do assunto
+ *      que alguém lançou à mão antes da reunião com o mesmo nome que o Cowork
+ *      deu ao bloco.
+ *   3. NADA CASOU: o bloco é assunto novo.
+ *
+ * UM ITEM CASA UM BLOCO SÓ, e um bloco casa um item só. O `Set` de usados é o
+ * que garante — é a mesma proteção de `ligarCards`, e aqui ela vale mais: dois
+ * blocos com cabeçalho parecido escreveriam no mesmo item, e o segundo apagaria
+ * o que o primeiro acabou de pôr.
+ *
+ * O ITEM PODE NÃO EXISTIR AINDA e o bloco ainda assim resolver um card. É o caso
+ * que `montarPauta` esconde: a demanda do quadro que ninguém tocou nesta ata é
+ * desenhada a partir de um item FANTASMA, que não está gravado. Sem `cardId` no
+ * plano, o bloco viraria um item novo sem card ao lado da linha da própria
+ * demanda — duas linhas para o mesmo trabalho, na mesma pauta.
+ */
+export function planejarMesclagem(opcoes: {
+  blocos: readonly BlocoDoDocumento[];
+  itens: readonly ItemDeAta[];
+  /** Os cards que esta reunião produziu, com o assunto que os originou. */
+  cards: readonly { id: string; assunto: string }[];
+  dimensoes: readonly DimensaoDaPauta[];
+}): ParDeMesclagem[] {
+  const { blocos, itens, dimensoes } = opcoes;
+  const cardPorAssunto = indiceDeCards(opcoes.cards);
+
+  const itemPorCard = new Map<string, ItemDeAta>();
+  itens.forEach((i) => {
+    if (i.cardId && !itemPorCard.has(i.cardId)) itemPorCard.set(i.cardId, i);
+  });
+  const itemPorAssunto = new Map<string, ItemDeAta>();
+  itens.forEach((i) => {
+    const k = chaveDeAssunto(i.assunto);
+    if (k && !itemPorAssunto.has(k)) itemPorAssunto.set(k, i);
+  });
+
+  const usados = new Set<string>();
+
+  return blocos.map((bloco, indice) => {
+    const k = chaveDeAssunto(bloco.assunto);
+    const cardId = (k && cardPorAssunto.get(k)) || "";
+
+    let alvo: ItemDeAta | undefined;
+    let casouPor: ParDeMesclagem["casouPor"] = null;
+    const porCard = cardId ? itemPorCard.get(cardId) : undefined;
+    if (porCard && !usados.has(porCard.id)) {
+      alvo = porCard;
+      casouPor = "card";
+    } else {
+      const porAssunto = k ? itemPorAssunto.get(k) : undefined;
+      if (porAssunto && !usados.has(porAssunto.id)) {
+        alvo = porAssunto;
+        casouPor = "assunto";
+      }
+    }
+    if (alvo) usados.add(alvo.id);
+
+    const texto = textoDoBloco(bloco);
+    const preenche: CampoMesclavel[] = [];
+    const divergencias: ParDeMesclagem["divergencias"] = [];
+    for (const campo of CAMPOS_MESCLAVEIS) {
+      const doAudio = texto[campo];
+      if (!doAudio) continue;
+      const naAta = alvo ? alvo[campo] : "";
+      // Igual não é divergência nem preenchimento: anunciar qualquer um dos dois
+      // aqui encheria a tela de conferência de linhas que não mudam nada, e uma
+      // lista assim se aprova sem ler.
+      if (naAta === doAudio) continue;
+      if (naAta) divergencias.push({ campo, doAudio, naAta });
+      else preenche.push(campo);
+    }
+
+    const classe = classificar(bloco.assunto, dimensoes);
+    return {
+      bloco: indice,
+      assunto: limparTexto(bloco.assunto, 200),
+      itemId: alvo?.id ?? null,
+      casouPor,
+      cardId,
+      // Vincular é escrita de VÍNCULO, não de texto, e por isso não entra em
+      // `preenche`: quem lê a conferência precisa saber que aquela linha vai
+      // deixar de ser assunto e passar a ler estado do quadro.
+      vinculaCard: !!cardId && !alvo?.cardId,
+      preenche,
+      tarefas: tarefasQueFaltam(bloco, alvo),
+      divergencias,
+      // A classificação HUMANA ganha sempre. O `classificar` é conservador, mas
+      // é léxico: ele acha "Estoque" dentro de "Estoque, recebimento e
+      // conferência" e não sabe que alguém já decidiu, na reunião, que aquilo
+      // mora em outra dimensão.
+      classifica: !!classe.dimensaoId && !alvo?.dimensaoId,
+    };
+  });
+}
+
+/**
+ * Os encaminhamentos do bloco que a tabela do item ainda NÃO tem.
+ *
+ * SEM ISTO A MESCLAGEM NÃO É IDEMPOTENTE, e o defeito é o pior tipo: silencioso
+ * e cumulativo. Os campos de texto se protegem sozinhos — preenchido deixa de
+ * ser vazio, e na segunda passada não há o que preencher. As tarefas não: elas
+ * entram como linhas NOVAS por desenho (a tabela pode estar sendo preenchida por
+ * outra pessoa, e editar linha alheia é pior), então cada clique em "puxar do
+ * áudio" acrescentava a mesma tarefa outra vez. Dois cliques, tabela dobrada; e
+ * o segundo clique é exatamente o gesto de quem não tem certeza se o primeiro
+ * funcionou.
+ *
+ * A COMPARAÇÃO É POR `chave()`, a mesma do casamento de assunto: sem acento e
+ * sem caixa. Comparação literal deixaria passar a tarefa que alguém redigitou
+ * com outra caixa — e o duplicado apareceria justamente na linha em que alguém
+ * já estava trabalhando.
+ *
+ * O que ela NÃO faz é comparar responsável, prazo ou estado: a tarefa do
+ * documento nasce sem nenhum dos três (ver `paraTarefa`), e quem os preencheu
+ * depois foi uma pessoa. Considerar "diferente" a tarefa que ganhou responsável
+ * a traria de volta como linha nova, vazia, ao lado da que está sendo cumprida.
+ */
+function tarefasQueFaltam(
+  bloco: BlocoDoDocumento,
+  alvo: ItemDeAta | undefined,
+): TarefaDeAta[] {
+  const doDocumento = bloco.encaminhamentos.map((e, i) => paraTarefa(e, String(i + 1)));
+  if (!alvo?.tarefas.length) return doDocumento;
+  const jaTem = new Set(alvo.tarefas.map((t) => chave(t.texto)));
+  return doDocumento.filter((t) => {
+    const k = chave(t.texto);
+    // Encaminhamento que virou texto vazio não tem o que acrescentar, e sem esta
+    // guarda o primeiro deles envenenaria o `Set` com "" e barraria os outros.
+    if (!k) return false;
+    if (jaTem.has(k)) return false;
+    // Dois encaminhamentos idênticos no MESMO bloco entram uma vez só. O Cowork
+    // repete o encaminhamento quando ele aparece duas vezes na conversa.
+    jaTem.add(k);
+    return true;
+  });
+}
+
+/** O par tem alguma coisa a fazer? É o que separa a tela vazia da tela cheia. */
+export function mesclagemFazAlgo(par: ParDeMesclagem): boolean {
+  return (
+    par.itemId === null ||
+    par.preenche.length > 0 ||
+    par.tarefas.length > 0 ||
+    par.vinculaCard ||
+    par.classifica
+  );
+}
+
+/**
+ * Aplica o plano — só os blocos aprovados, e nunca por cima de ninguém.
+ *
+ * DEVOLVE O ARRAY INTEIRO de itens, como `vincularCard` e `editarAssunto` e pelo
+ * mesmo motivo: os itens moram dentro do documento da ata e a escrita é sempre
+ * do array completo (cabeçalho de `ata.ts`).
+ *
+ * O QUE ELE NUNCA FAZ, e cada linha aqui é uma decisão:
+ *
+ *   - NUNCA remove item. O item que nenhum bloco casou fica exatamente como
+ *     está: é o assunto que entrou na pauta e sobre o qual a reunião não falou,
+ *     ou falou e o Cowork não separou em bloco. Apagar seria a ata perdendo o
+ *     que alguém lançou — e é justamente para não perder isso que esta função
+ *     existe.
+ *   - NUNCA toca em `assunto`. Foi humano que o escreveu e é o único nome que a
+ *     linha tem. O cabeçalho que o Cowork deu ao bloco é editorial e muda de
+ *     safra em safra do prompt.
+ *   - NUNCA sobrescreve texto. Campo com texto na ata fica; o do documento vira
+ *     divergência no plano, e para na tela.
+ *   - NUNCA edita nem remove tarefa existente. As do documento entram como
+ *     linhas novas, com id acima de todas — a tabela pode estar sendo preenchida
+ *     por outra pessoa na reunião, e `proximoIdDeTarefa` existe para que a linha
+ *     nova não herde em silêncio o lugar de uma apagada.
+ *   - NUNCA troca `origem`. O item que já estava lá continua sendo o que era; só
+ *     o que nasce deste documento é `reuniao`, e quem o marca é `blocoParaItem`.
+ *
+ * O ID DO ITEM NOVO é calculado contra o array ACUMULADO, e não contra o
+ * original. Dois blocos novos na mesma passada pediriam o mesmo
+ * `proximoIdDeItem` do array de entrada, e a segunda linha nasceria com a chave
+ * da primeira — o estado que `idsUnicos` conserta na leitura, e que aqui dá para
+ * simplesmente não criar.
+ */
+export function aplicarMesclagem(opcoes: {
+  itens: readonly ItemDeAta[];
+  blocos: readonly BlocoDoDocumento[];
+  plano: readonly ParDeMesclagem[];
+  /** Os índices de bloco que quem conferiu aprovou. */
+  aprovados: readonly number[];
+  dimensoes: readonly DimensaoDaPauta[];
+}): ItemDeAta[] {
+  const { blocos, plano, dimensoes } = opcoes;
+  const ok = new Set(aprovadosValidos(plano, opcoes.aprovados));
+  let itens: ItemDeAta[] = [...opcoes.itens];
+
+  for (const par of plano) {
+    if (!ok.has(par.bloco)) continue;
+    const bloco = blocos[par.bloco];
+    if (!bloco) continue;
+
+    if (par.itemId === null) {
+      const novo = blocoParaItem(bloco, proximoIdDeItem(itens), dimensoes);
+      // O `cardId` que o bloco resolveu entra junto, e é o que impede a linha
+      // nova de aparecer ao lado da própria demanda que ela nomeia.
+      itens = [...itens, par.cardId ? { ...novo, cardId: par.cardId } : novo];
+      continue;
+    }
+
+    const texto = textoDoBloco(bloco);
+    const classe = classificar(bloco.assunto, dimensoes);
+    itens = itens.map((i) => {
+      if (i.id !== par.itemId) return i;
+      const mudado = { ...i };
+      // Só o que o PLANO prometeu — e o plano é o que a pessoa leu na tela.
+      // Reperguntar aqui "está vazio?" daria um segundo juiz para a mesma
+      // pergunta, e os dois divergiriam no dia em que alguém escrevesse no campo
+      // entre a conferência e o clique de aplicar. Como o servidor recomputa o
+      // plano imediatamente antes de aplicar, o plano é a resposta mais nova que
+      // existe.
+      for (const campo of par.preenche) mudado[campo] = texto[campo];
+      if (par.vinculaCard && par.cardId) mudado.cardId = par.cardId;
+      if (par.classifica) {
+        mudado.dimensaoId = classe.dimensaoId;
+        mudado.subdimensaoId = classe.subdimensaoId;
+      }
+      if (par.tarefas.length) {
+        const tarefas = [...mudado.tarefas];
+        for (const t of par.tarefas) {
+          tarefas.push({ ...t, id: proximoIdDeTarefa(tarefas) });
+        }
+        mudado.tarefas = tarefas;
+      }
+      return mudado;
+    });
+  }
+
+  return itens;
+}
+
+/**
+ * Os índices aprovados que existem no plano E têm o que fazer.
+ *
+ * O array vem do cliente, e é a única coisa desta rota que vem de lá — o plano
+ * inteiro é recomputado no servidor. Um índice fora da faixa é o caso benigno; o
+ * que esta função protege é o outro: aprovar um par que `mesclagemFazAlgo`
+ * reprova gravaria a ata inteira de novo sem mudar um caractere, e cada gravação
+ * dessas é uma chance de sobrescrever o array que outra pessoa está editando na
+ * mesma reunião (é o custo do modelo, escrito no cabeçalho de `ata.ts`).
+ */
+function aprovadosValidos(
+  plano: readonly ParDeMesclagem[],
+  aprovados: readonly number[],
+): number[] {
+  const uteis = new Set(plano.filter(mesclagemFazAlgo).map((p) => p.bloco));
+  return [...new Set(aprovados)].filter((n) => uteis.has(n));
 }

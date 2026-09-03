@@ -1387,3 +1387,152 @@
   color: var(--tx);
   border-color: var(--brand-line);
 }
+
+/* ---------------------------------------------------------------------------
+   A conferência da mesclagem — "Puxar do áudio"
+
+   TRÊS GRUPOS NUMA COLUNA, e não abas nem colunas lado a lado. A lista é lida de
+   cima a baixo uma vez, num momento em que a reunião está esperando: aba esconde
+   metade do que se precisa decidir, e coluna dupla obriga o olho a escolher por
+   onde começar. O terceiro grupo — as divergências — é o que não se pode perder
+   de vista, e ele vem por último de propósito: é informação, não decisão.
+   --------------------------------------------------------------------------- */
+.grupoMescla {
+  margin-top: 14px;
+}
+.grupoMescla h4 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--tx-2);
+}
+/* A contagem numa pastilha: "3" solto ao lado do título se lê como parte dele. */
+.grupoMescla h4 span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--s3);
+  color: var(--tx-2);
+  font-size: 10px;
+  letter-spacing: 0;
+}
+.grupoDica {
+  margin: 4px 0 8px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--tx-3);
+}
+
+/* A LINHA É UM `<label>`: a área de clique é a linha inteira, e o estado
+   marcado/desmarcado é lido por leitor de tela de graça — sem inventar um alvo
+   com `onClick` numa `<div>`. */
+/* `--s2` e não `--s1`: o modal É `--s1`, e uma linha da mesma cor do fundo só se
+   lê pela borda — que no tema claro é `--line-soft` (#edece6) sobre #f8f7f4 e
+   praticamente não existe. Elevar a superfície é o que faz a linha parecer o que
+   ela é: um alvo de clique. */
+.linhaMescla {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 9px;
+  background: var(--s2);
+  cursor: pointer;
+  margin-bottom: 6px;
+}
+.linhaMescla:hover {
+  border-color: var(--brand-line);
+}
+.linhaMescla input {
+  margin-top: 2px;
+  accent-color: var(--brand);
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.linhaMesclaTx {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.linhaMesclaTx strong {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--tx);
+  line-height: 1.4;
+}
+/* POR QUE casou, em itálico e antes do que ele faz: "pela demanda do quadro" é
+   um casamento mais forte que "pelo nome do assunto", e quem confere precisa
+   saber em qual dos dois está confiando antes de ler o resto. */
+.linhaMesclaTx em {
+  font-size: 11px;
+  font-style: italic;
+  color: var(--tx-3);
+}
+.linhaMesclaTx span {
+  font-size: 11px;
+  color: var(--tx-2);
+}
+
+/* A DIVERGÊNCIA NÃO TEM CHECKBOX, e o desenho tem de dizer isso sem uma frase:
+   fundo neutro e recuo diferente da linha marcável logo acima. Se ela parecesse
+   com as outras, alguém procuraria a caixinha que não existe. */
+/* PLANA, e de propósito: a linha marcável acima é elevada (`--s2`, borda
+   inteira, cantos) porque é um alvo de clique. Esta não tem o que aplicar, e
+   desenhá-la igual faria alguém procurar a caixinha que não existe. Barra à
+   esquerda em vez de moldura é o vocabulário de anotação — o mesmo gesto de uma
+   citação. */
+.divergencia {
+  padding: 4px 0 4px 11px;
+  border-left: 2px solid var(--line);
+  margin-bottom: 12px;
+}
+.divergTitulo {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--tx-3);
+  margin-bottom: 6px;
+}
+/* Duas colunas aqui, e só aqui: a comparação é o conteúdo. Empilhado, os dois
+   textos leriam como um parágrafo só, que é o oposto de comparar. Abaixo de
+   520px a coluna dupla deixa de caber e ela empilha — com o rótulo de cada lado
+   sustentando a leitura. */
+.divergPar {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.divergPar > div {
+  min-width: 0;
+}
+.divergPar span {
+  display: block;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--tx-3);
+  margin-bottom: 3px;
+}
+.divergPar p {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--tx-2);
+  overflow-wrap: anywhere;
+}
+@media (max-width: 520px) {
+  .divergPar {
+    grid-template-columns: 1fr;
+  }
+}

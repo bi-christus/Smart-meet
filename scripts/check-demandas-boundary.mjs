@@ -155,6 +155,23 @@ const PROIBIDOS_ATA = [
     padrao: /collection\(\s*["'`]atas["'`]\s*\)\s*\.\s*add\s*\(/,
     motivo: 'grava a ata com add() — a idempotencia volta a ser check-then-add',
   },
+  {
+    // O PLANO DA MESCLAGEM NAO PODE VIR DO CLIENTE.
+    //
+    // A rota tem um modo que puxa os assuntos do documento para uma ata que ja
+    // tem pauta. O que o navegador manda e so a lista de indices aprovados; o
+    // plano — quais blocos casam quais itens, e quais campos seriam preenchidos —
+    // e recomputado aqui dentro, do mesmo documento.
+    //
+    // Aceitar `body.plano` seria aceitar `itens` arbitrarios: o plano diz em que
+    // item escrever e o que escrever nele, e esta rota roda com o Admin SDK, que
+    // IGNORA firestore.rules. Qualquer pessoa autenticada poderia reescrever a
+    // pauta de uma ata inteira passando um plano fabricado — e nada quebraria:
+    // nem teste, nem tipo, nem tela. E o mesmo raciocinio das duas autorizacoes
+    // no cabecalho da rota, aplicado ao corpo do pedido.
+    padrao: /body\.plano|body\[\s*["'`]plano["'`]\s*\]/,
+    motivo: "aceita o plano da mesclagem vindo do cliente — o Admin SDK ignora as regras",
+  },
 ];
 
 /**
@@ -183,6 +200,43 @@ const EXIGIDOS_ATA = [
     padrao: /\brequireUser\s*\(/,
     exigencia: "nao chama requireUser — geraria ata sem saber quem pediu",
     reponha: "volte a abrir o handler com `const caller = await requireUser(req);`",
+  },
+  {
+    // O SETOR DE DESTINO, NO MODO MESCLAGEM, SAI DA ATA — nao do corpo do pedido.
+    //
+    // Criar ata e escolher o setor: o audio sobe pelo setor de quem gravou e o
+    // assunto costuma pertencer a outro (a primeira ata desta tela e isso —
+    // reuniao do B.I., ata das Cantinas). Mesclar nao: o setor ja esta decidido,
+    // e o da ata que vai receber.
+    //
+    // Se `setor` voltar a vir do cliente nos dois modos, a autorizacao 2 passa a
+    // conferir a coisa errada: um `ataId` de outro setor atravessa a checagem
+    // carregando o nome do setor de quem pediu, e a rota escreve na ata alheia
+    // com o Admin SDK, que ignora firestore.rules. Nada quebraria — nem teste,
+    // nem tipo, nem tela. E a mesma classe de defeito que a exigencia logo
+    // abaixo guarda, na porta de ao lado.
+    padrao: /\bata\.setor\b/,
+    exigencia:
+      "nao deriva o setor de destino da ata alvo — a autorizacao 2 passaria a conferir o setor que o cliente mandou",
+    reponha:
+      "no modo mesclagem, leia o setor do documento da ata (`ata.setor`) e cobre a autorizacao 2 " +
+      "contra ele; so o modo de criacao pode aceitar `body.setor`",
+  },
+  {
+    // O PAR DA PROIBICAO DE `body.plano`: proibir a entrada errada nao basta se
+    // a certa puder sumir. `aplicarMesclagem` aceita qualquer plano que lhe
+    // deem, e e assim de proposito — ela e uma funcao pura, testada em
+    // scripts/test-ata-de-reuniao.mjs. Quem garante que o plano e honesto e esta
+    // rota, chamando `planejarMesclagem` sobre o documento e sobre os itens que
+    // ela mesma acabou de ler. Se esta chamada sair, a regra de ouro da
+    // mesclagem — o que humano escreveu nao se sobrescreve — deixa de ter quem
+    // a aplique, sem que nada fique vermelho.
+    padrao: /\bplanejarMesclagem\s*\(/,
+    exigencia:
+      "nao recomputa o plano da mesclagem — passaria a confiar no que o cliente mandou",
+    reponha:
+      "volte a montar o plano na rota com `planejarMesclagem({ blocos, itens, cards, dimensoes })` " +
+      "antes de chamar `aplicarMesclagem`, e use so os indices que o cliente aprovou",
   },
   {
     // Especifico ao `setor` de DESTINO de proposito. O padrao generico
@@ -306,6 +360,23 @@ const REGRAS = [
       "o modulo puro da regua da ata sumiu ou mudou de nome. A obrigatoriedade da dimensao mora " +
       "nele e e testada por scripts/test-ata-demanda.mjs; se ela foi para outro arquivo, aponte " +
       "esta regra e o teste para la — nao apague nenhum dos dois.",
+  },
+  {
+    // O modulo da mesclagem, e ele faltava nesta lista desde antes: `ligarCards`
+    // e `blocoParaItem` sempre moraram aqui. Com `planejarMesclagem` e
+    // `aplicarMesclagem` dentro dele, ele passou a ser o arquivo que decide o
+    // que a ata recebe do documento — e a regra de ouro ("o que humano escreveu
+    // nao se sobrescreve, nada e removido") vive nele. Um `firebase/firestore`
+    // aqui dentro tira o arquivo do alcance de scripts/test-ata-de-reuniao.mjs,
+    // que roda no prebuild contra os documentos reais do Cowork: a suite para de
+    // rodar, o portao do deploy deixa de cobrar a regra, e nada mais reclama.
+    arquivo: "src/lib/ata-de-reuniao-core.ts",
+    proibidos: PROIBIDOS_ATA_CORE,
+    seSumiu:
+      "o modulo puro que le o documento da reuniao e o mescla na ata sumiu ou mudou de nome. " +
+      "A regua da mesclagem mora nele e e testada por scripts/test-ata-de-reuniao.mjs contra " +
+      "os documentos reais do Cowork; se ela foi para outro arquivo, aponte esta regra e o " +
+      "teste para la — nao apague nenhum dos dois.",
   },
   {
     arquivo: "src/lib/ata-gerar-core.ts",

@@ -1,10 +1,30 @@
 /**
- * A ata de uma reunião que já foi processada.
+ * A ata de uma reunião que já foi processada — criada, ou mesclada na que existe.
  *
- * O cliente manda `meetingId` e o setor de destino; o servidor lê o documento
- * "Pontos importantes" no Drive, extrai a pauta com `ata-de-reuniao-core` e
- * grava a ata. Nada de IA: a estrutura já está no documento — o porquê inteiro
- * está no cabeçalho daquele módulo.
+ * O servidor lê o documento "Pontos importantes" no Drive e trabalha com
+ * `ata-de-reuniao-core`. Nada de IA: a estrutura já está no documento — o porquê
+ * inteiro está no cabeçalho daquele módulo.
+ *
+ * TRÊS MODOS, e o que os distingue é a presença de `ataId`:
+ *
+ *   1. `{ meetingId, setor }` — CRIA a ata. É o caminho original, e nada nele
+ *      mudou.
+ *   2. `{ meetingId, ataId, preview: true }` — devolve o PLANO da mesclagem e
+ *      não escreve nada. É o que a tela de conferência lê.
+ *   3. `{ meetingId, ataId, aprovados: number[] }` — recomputa o plano e aplica
+ *      só os blocos aprovados, em transação.
+ *
+ * POR QUE OS MODOS 2 E 3 EXISTEM. A ata de uma reunião semanal nasce ANTES de o
+ * áudio ficar pronto: a equipe lança os assuntos que quer discutir, e "Levar
+ * para próxima reunião" já deixou lá o que ficou pendurado. Com só o modo 1, a
+ * única saída era criar uma SEGUNDA ata da mesma reunião no mesmo setor — mesma
+ * data, mesmo título na lista, uma com o que as pessoas lançaram e outra com o
+ * que o áudio trouxe, e nenhuma sabendo da outra. Foi o estado da ata de
+ * 02/09/2026 das Cantinas.
+ *
+ * O PLANO É RECOMPUTADO AQUI, SEMPRE. Do cliente vem só a lista de índices
+ * aprovados. Aceitar o plano montado lá seria aceitar `itens` arbitrários numa
+ * rota que roda com o Admin SDK — ver o parágrafo das autorizações logo abaixo.
  *
  * ⚠️ NÃO recebe fileId do cliente, pela mesma razão de `api/drive/doc`: aceitar
  * um id arbitrário transformaria esta rota num proxy de leitura do Drive
@@ -24,6 +44,11 @@
  *      cantinas correu no setor B.I. e a ata dela pertence a Cantinas. Checar
  *      só a primeira deixaria qualquer gestor plantar ata em setor alheio.
  *
+ * NO MODO MESCLAGEM o setor de destino NÃO vem do cliente: ele é lido da ata
+ * alvo, e a autorização 2 é cobrada contra ele. Com `setor` vindo do corpo do
+ * pedido, um `ataId` de outro setor passaria pela checagem carregando o nome do
+ * setor de quem pediu — a porta exata que a autorização 2 existe para fechar.
+ *
  * ESTA ROTA NÃO CRIA CARD, e nunca vai criar. Um card só nasce por decisão
  * humana em `api/demandas/decidir`.
  */
@@ -36,11 +61,14 @@ import {
   requireUser,
 } from "@/lib/server/drive-server";
 import {
+  aplicarMesclagem,
+  lerPontosImportantes,
   ligarCards,
   montarAtaDaReuniao,
+  planejarMesclagem,
   type ReuniaoDaAta,
 } from "@/lib/ata-de-reuniao-core";
-import type { DimensaoDaPauta } from "@/lib/ata-core";
+import { normalizarAta, type DimensaoDaPauta } from "@/lib/ata-core";
 // As tres regras desta rota moram num modulo puro, com teste — ver o cabecalho
 // de `ata-gerar-core.ts`.
 import { ehJaExiste, idDaAta, paraQuemPediu } from "@/lib/ata-gerar-core";
@@ -62,10 +90,24 @@ export async function POST(req: Request) {
     const caller = await requireUser(req);
     const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
     const meetingId = limpo(body.meetingId, 200);
-    const setor = limpo(body.setor, 80);
+    const ataId = limpo(body.ataId, 200);
+    const preview = body.preview === true;
+    /**
+     * A ÚNICA COISA QUE VEM DO CLIENTE NO MODO MESCLAGEM.
+     *
+     * O plano inteiro é recomputado aqui dentro, do mesmo documento — ver
+     * `mesclar`. Aceitar o plano montado no cliente seria aceitar `itens`
+     * arbitrários numa rota que roda com o Admin SDK, e o Admin SDK IGNORA
+     * `firestore.rules`: aqui a checagem em TypeScript não é a primeira
+     * barreira, é a única. É a lição que o cabeçalho deste arquivo já registra.
+     */
+    const aprovados = Array.isArray(body.aprovados)
+      ? (body.aprovados as unknown[]).filter(
+          (n): n is number => typeof n === "number" && Number.isInteger(n),
+        )
+      : null;
 
     if (!meetingId) throw new HttpError(400, "Reunião não informada.");
-    if (!setor) throw new HttpError(400, "Setor de destino não informado.");
 
     const db = adminDb();
     const snap = await db.collection("meetings").doc(meetingId).get();
@@ -80,6 +122,26 @@ export async function POST(req: Request) {
       dono ||
       (caller.role === "gestor" && caller.sectors.includes(setorDaReuniao));
     if (!podeLer) throw new HttpError(403, "Você não tem acesso a esta reunião.");
+
+    /**
+     * O SETOR DE DESTINO — e no modo mesclagem ele NÃO vem do cliente.
+     *
+     * Criar ata é escolher o setor: o áudio sobe pelo setor de quem gravou e o
+     * assunto costuma pertencer a outro (a primeira ata desta tela é isso —
+     * reunião do B.I., ata das Cantinas). Mesclar é diferente: o setor já está
+     * decidido, ele é o da ata que vai receber. Derivá-lo do documento em vez de
+     * confiar no corpo do pedido fecha a porta que a autorização 2 existe para
+     * fechar — com `setor` vindo do cliente, um `ataId` de outro setor passaria
+     * pela checagem carregando o nome do setor de quem pediu.
+     */
+    const ataSnap = ataId ? await db.collection("atas").doc(ataId).get() : null;
+    if (ataId && !ataSnap?.exists) throw new HttpError(404, "Ata não encontrada.");
+    const ata = ataSnap?.exists ? normalizarAta(ataSnap.id, ataSnap.data()) : null;
+    if (ataId && !ata) {
+      throw new HttpError(422, "Esta ata está num estado que não dá para ler.");
+    }
+    const setor = ata ? ata.setor : limpo(body.setor, 80);
+    if (!setor) throw new HttpError(400, "Setor de destino não informado.");
 
     // ---- autorização 2: escrever no setor de destino ----
     if (caller.role !== "admin" && !caller.sectors.includes(setor)) {
@@ -117,14 +179,24 @@ export async function POST(req: Request) {
      * O campo único da consulta segue de propósito: somar `setor` exigiria um
      * índice composto novo, e o filtro em memória custa nada — uma reunião gera
      * uma ata, duas no limite.
+     *
+     * NADA DISSO VALE NO MODO MESCLAGEM, e é por isso que ele está dentro do
+     * `if`. A idempotência daqui protege contra criar a segunda ata da mesma
+     * reunião; quem já disse em qual ata quer mesclar não está criando nada, e
+     * uma ata que já tenha `meetingId` é precisamente o caso de puxar o áudio de
+     * novo depois de mais alguém ter escrito na pauta. A idempotência de lá é de
+     * outra natureza e está em `planejarMesclagem`: por construção, o plano da
+     * segunda passada não acha nada para fazer.
      */
-    const jaExiste = await db
-      .collection("atas")
-      .where("meetingId", "==", meetingId)
-      .get();
-    const mesma = jaExiste.docs.find((d) => d.data().setor === setor);
-    if (mesma) {
-      return NextResponse.json({ id: mesma.id, jaExistia: true });
+    if (!ata) {
+      const jaExiste = await db
+        .collection("atas")
+        .where("meetingId", "==", meetingId)
+        .get();
+      const mesma = jaExiste.docs.find((d) => d.data().setor === setor);
+      if (mesma) {
+        return NextResponse.json({ id: mesma.id, jaExistia: true });
+      }
     }
 
     // ---- o documento ----
@@ -164,6 +236,98 @@ export async function POST(req: Request) {
       };
     });
 
+    const cards = await cardsDaReuniao(db, setor, meetingId);
+
+    /**
+     * ---- modo mesclagem: puxar o documento para uma ata que já tem pauta ----
+     *
+     * O CASO QUE FALTAVA, e que criava ata duplicada. A ata de uma reunião
+     * semanal nasce ANTES do áudio ficar pronto: a equipe lança os assuntos que
+     * quer discutir, e "Levar para próxima reunião" já deixou lá o que ficou
+     * pendurado da semana passada. Depois o áudio processa. Sem este braço, o
+     * único caminho era o de cima — que cria uma SEGUNDA ata da mesma reunião no
+     * mesmo setor, mesma data, mesmo título na lista, uma com o que as pessoas
+     * lançaram e outra com o que o áudio trouxe.
+     *
+     * `preview` NÃO ESCREVE NADA. É o que sustenta a tela de conferência: quem
+     * conduz a reunião vê o que vai entrar, em que linha, e aprova. Sem ela, a
+     * mesclagem pediria confiança cega num casamento de texto — e a ata é
+     * registro, não rascunho.
+     */
+    if (ata) {
+      const doc = lerPontosImportantes(markdown);
+
+      if (preview || aprovados === null) {
+        return NextResponse.json({
+          id: ata.id,
+          plano: planejarMesclagem({
+            blocos: doc.blocos,
+            itens: ata.itens,
+            cards,
+            dimensoes,
+          }),
+          citados: doc.citados,
+        });
+      }
+
+      /**
+       * A GRAVAÇÃO É EM TRANSAÇÃO, e o plano é recomputado DENTRO dela.
+       *
+       * Os itens moram num array dentro do documento, e a escrita é do array
+       * inteiro (cabeçalho de `ata.ts`) — quem gravar por último vence. Entre a
+       * conferência e o clique de aplicar cabe uma reunião inteira de alguém
+       * escrevendo decisão na outra ponta, e sem a transação essa escrita seria
+       * apagada por um plano montado sobre uma leitura velha.
+       *
+       * Recomputar o plano com os itens frescos também é o que mantém a régua de
+       * ouro válida no instante da escrita: um campo que alguém acabou de
+       * preencher deixa de estar vazio, e o documento não o sobrescreve. Os
+       * índices aprovados continuam apontando para os mesmos blocos — eles vêm
+       * do documento, que não mudou.
+       */
+      const ref = db.collection("atas").doc(ata.id);
+      const resultado = await db.runTransaction(async (tx) => {
+        const fresco = await tx.get(ref);
+        if (!fresco.exists) throw new HttpError(404, "Ata não encontrada.");
+        const agora = normalizarAta(fresco.id, fresco.data());
+        if (!agora) {
+          throw new HttpError(422, "Esta ata está num estado que não dá para ler.");
+        }
+        const plano = planejarMesclagem({
+          blocos: doc.blocos,
+          itens: agora.itens,
+          cards,
+          dimensoes,
+        });
+        const itens = aplicarMesclagem({
+          itens: agora.itens,
+          blocos: doc.blocos,
+          plano,
+          aprovados,
+          dimensoes,
+        });
+        /**
+         * `citados` VAI JUNTO, e é a única coisa do cabeçalho que vai.
+         *
+         * São os nomes que a gravação citou, e a ata feita à mão antes da reunião
+         * não tem nenhum — é informação que só o documento tem. União e nunca
+         * substituição: quem já estava lá foi posto por alguém.
+         *
+         * Horário, local e facilitador NÃO vão, pelo mesmo motivo escrito em
+         * `montarAtaDaReuniao`: o documento fala deles em prosa ("início por
+         * volta de 17h33"), e ler prosa como se fosse campo é o jeito mais
+         * rápido de encher uma ata de dado errado com cara de dado certo. Título
+         * e data também não: numa ata que já existe, os dois foram digitados por
+         * quem esteve lá.
+         */
+        const citados = [...new Set([...agora.citados, ...doc.citados])];
+        tx.update(ref, { itens, citados, meetingId });
+        return { entraram: itens.length - agora.itens.length, citados: citados.length };
+      });
+
+      return NextResponse.json({ id: ata.id, mesclou: true, ...resultado });
+    }
+
     const reuniao: ReuniaoDaAta = {
       id: meetingId,
       title: String(m.title ?? ""),
@@ -176,13 +340,13 @@ export async function POST(req: Request) {
       createdBy: String(m.createdBy ?? ""),
     };
 
-    const ata = montarAtaDaReuniao({ markdown, reuniao, setor, dimensoes });
-    ata.itens = ligarCards(ata.itens, await cardsDaReuniao(db, setor, meetingId));
+    const nova = montarAtaDaReuniao({ markdown, reuniao, setor, dimensoes });
+    nova.itens = ligarCards(nova.itens, cards);
 
     const ref = db.collection("atas").doc(idDaAta(meetingId, setor));
     try {
       await ref.create({
-        ...ata,
+        ...nova,
         createdAt: new Date(),
         createdBy: caller.email,
       });
