@@ -171,3 +171,14 @@
     transition: none;
   }
 }
+/* Mesma coluna fixa do `<Select>`, e pelo mesmo motivo — ver `prefixo` em
+   `SelectOption`. Aqui ela também entra na busca: é o que a pessoa lê, logo é o
+   que ela digita. */
+.prefixo {
+  flex: 0 0 auto;
+  min-width: 46px;
+  font-variant-numeric: tabular-nums;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--tx-3);
+}

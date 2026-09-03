@@ -66,7 +66,14 @@ export function Combobox({
     // e-mail está procurando a mesma pessoa que quem digita o nome, e uma
     // busca que acha por um e não pelo outro parece quebrada.
     const hits = options.filter(
-      (o) => chave(o.label).includes(q) || (!!o.hint && chave(o.hint).includes(q)),
+      (o) =>
+        chave(o.label).includes(q) ||
+        (!!o.hint && chave(o.hint).includes(q)) ||
+        // O PREFIXO ENTRA NA BUSCA junto com o resto, e pelo mesmo motivo do
+        // `hint`: ele é o que a pessoa LÊ para escolher, então é o que ela vai
+        // digitar. Numa lista de reuniões o prefixo é a data — uma busca que
+        // mostra "26 ago" e não acha por "ago" parece quebrada.
+        (!!o.prefixo && chave(o.prefixo).includes(q)),
     );
     // Quem começa com o que foi digitado vem antes de quem só contém: digitar
     // "ma" tem de oferecer "Marketing" antes de "Comercial". `sort` é estável,
@@ -278,6 +285,7 @@ export function Combobox({
                 {o.color && (
                   <span className={styles.dot} style={{ background: o.color }} />
                 )}
+                {o.prefixo && <span className={styles.prefixo}>{o.prefixo}</span>}
                 <span className={styles.optTexto}>
                   <span className={styles.optLabel}>{o.label}</span>
                   {o.hint && <span className={styles.optHint}>{o.hint}</span>}

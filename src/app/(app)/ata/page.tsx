@@ -73,7 +73,7 @@ import {
   type ParDeMesclagem,
 } from "@/lib/ata-de-reuniao-core";
 import { subscribeMeetings, type Meeting } from "@/lib/meetings";
-import { ehFimDeSemanaISO, fmtDayMonth, startOfDay, toISO } from "@/lib/datas";
+import { ehFimDeSemanaISO, fmtDayMonth, relDay, startOfDay, toISO } from "@/lib/datas";
 import { juntarFontes } from "@/lib/async-data-core";
 import { useAsyncData } from "@/lib/use-async-data";
 import { Icon } from "@/components/icons";
@@ -152,6 +152,33 @@ function chaveDaLinha(l: ItemDaPauta): string {
  */
 function rotuloDaAta(a: Pick<Ata, "titulo" | "data">): string {
   return a.data ? `${a.titulo} · ${fmtDayMonth(a.data)}` : a.titulo;
+}
+
+/**
+ * A reunião como OPÇÃO de lista — a data numa coluna, o título na outra.
+ *
+ * POR QUE NÃO É `rotuloDaAta`. O rótulo junta título e data numa string só, com
+ * a data no fim; a lista corta o excedente com reticências, e o que ela cortava
+ * era exatamente a data: "Acompanhamento de Demandas · 2 s…". Numa lista de
+ * reuniões a data é o identificador — ninguém abre aquele menu para descobrir o
+ * título, abre para achar o dia. O dado que identifica não pode ser o primeiro a
+ * sumir.
+ *
+ * A data vai no `prefixo`, que é coluna fixa e não encolhe (ver `SelectOption`);
+ * quem cede espaço passa a ser o título, que é o que a pessoa usa para
+ * confirmar, não para escolher. De quebra as datas se alinham entre as linhas, e
+ * a lista fica varrível de cima a baixo.
+ *
+ * "sem data" e não vazio: a ata sem data existe (nasce assim em "Abrir próxima
+ * reunião" enquanto ninguém marcou o dia), e uma coluna em branco no meio das
+ * outras se lê como falha de carregamento.
+ */
+function opcaoDeAta(a: Pick<Ata, "id" | "titulo" | "data">): SelectOption {
+  return {
+    value: a.id,
+    label: a.titulo,
+    prefixo: a.data ? fmtDayMonth(a.data) : "sem data",
+  };
 }
 
 /** A cor de cada estado, na mesma ordem de gravidade da pauta. */
@@ -1164,14 +1191,24 @@ export default function AtaPage() {
                 <span>Reunião</span>
                 <Select
                   value={ata.id}
-                  options={atas.map(
-                    (a): SelectOption => ({ value: a.id, label: rotuloDaAta(a) }),
-                  )}
+                  options={atas.map(opcaoDeAta)}
                   onChange={setAtaSel}
                   ariaLabel="Reunião"
                 />
               </div>
-              <Linha rotulo="Data" valor={ata.data ? fmtDayMonth(ata.data) : "—"} />
+              {/* O RELATIVO AO LADO DA DATA, e é aqui que ele cabe.
+                  "9 set" não diz sozinho se a reunião já aconteceu — e essa é a
+                  primeira coisa que se quer saber ao abrir uma ata. Na lista
+                  suspensa não havia espaço para ele sem espremer o título; aqui
+                  há, e a informação fica a um olhar de distância da escolha. */}
+              <Linha
+                rotulo="Data"
+                valor={
+                  ata.data
+                    ? `${fmtDayMonth(ata.data)} · ${relDay(ata.data, new Date())}`
+                    : "—"
+                }
+              />
               <Linha
                 rotulo="Horário"
                 valor={
@@ -3011,9 +3048,7 @@ function ModalDeLevar({
       <label className={styles.rotulo}>Para qual reunião</label>
       <Combobox
         value={destino}
-        options={destinos.map(
-          (a): SelectOption => ({ value: a.id, label: rotuloDaAta(a) }),
-        )}
+        options={destinos.map(opcaoDeAta)}
         onChange={setDestino}
         placeholder="Escolha a reunião…"
         ariaLabel="Reunião de destino"
@@ -3116,9 +3151,7 @@ function ModalDeMover({
       <label className={styles.rotulo}>Para qual reunião</label>
       <Combobox
         value={destino}
-        options={destinos.map(
-          (a): SelectOption => ({ value: a.id, label: rotuloDaAta(a) }),
-        )}
+        options={destinos.map(opcaoDeAta)}
         onChange={setDestino}
         placeholder="Escolha a reunião…"
         ariaLabel="Reunião de destino"

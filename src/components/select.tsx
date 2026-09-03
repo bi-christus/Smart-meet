@@ -16,6 +16,20 @@ export type SelectOption = {
    * escolha é escolha no escuro; nome único com e-mail embaixo é ruído.
    */
   hint?: string;
+  /**
+   * O que vem ANTES do rótulo e nunca é cortado.
+   *
+   * `label` encolhe com reticências (`.optLabel`), e isso é certo para o nome —
+   * mas errado para o dado que identifica a linha. Numa lista de reuniões o
+   * identificador é a DATA, e enquanto ela vinha grudada no fim do rótulo era
+   * exatamente ela que o truncamento comia: "Acompanhamento de Demandas · 2 s…"
+   * não diz de que dia é a reunião, que é a única coisa que se foi ali procurar.
+   *
+   * O prefixo é uma coluna fixa: não encolhe, alinha entre as linhas, e o que
+   * cede espaço é o rótulo. Use-o para o que a pessoa usa para ESCOLHER, e
+   * deixe no rótulo o que ela usa para confirmar.
+   */
+  prefixo?: string;
 };
 
 export function Select({
@@ -229,6 +243,9 @@ export function Select({
             />
           )}
           <span className={selected ? "" : styles.ph}>
+            {selected?.prefixo && (
+              <span className={styles.prefixo}>{selected.prefixo}</span>
+            )}
             {selected ? selected.label : placeholder}
           </span>
         </span>
@@ -276,6 +293,7 @@ export function Select({
               {o.color && (
                 <span className={styles.dot} style={{ background: o.color }} />
               )}
+              {o.prefixo && <span className={styles.prefixo}>{o.prefixo}</span>}
               <span className={styles.optLabel}>{o.label}</span>
               {o.value === value && (
                 <svg
