@@ -46,6 +46,7 @@ import {
   deleteAta,
   editarAssunto,
   montarPauta,
+  levarAssunto,
   moverAssunto,
   moverItensEntreAtas,
   proximoIdDeItem,
@@ -251,6 +252,7 @@ export default function AtaPage() {
   const [ataSel, setAtaSel] = useState("");
   const [gerarAberta, setGerarAberta] = useState(false);
   const [puxarAberta, setPuxarAberta] = useState(false);
+  const [levando, setLevando] = useState<ItemDaPauta | null>(null);
   const [proximaAberta, setProximaAberta] = useState(false);
   const [cabecalhoAberto, setCabecalhoAberto] = useState(false);
   const [apagando, setApagando] = useState(false);
@@ -750,6 +752,71 @@ export default function AtaPage() {
     const destino = atas.find((a) => a.id === destinoId);
     if (!destino) throw new Error("Escolha a reunião de destino.");
     const conferido = moverAssunto(ata, destino, linha.item.id);
+    if (!conferido.ok) throw new Error(conferido.motivo);
+    await escrever(() =>
+      moverItensEntreAtas(
+        { id: ata.id, itens: conferido.valor.origem },
+        { id: destino.id, itens: conferido.valor.destino },
+      ),
+    );
+    return destino;
+  }
+
+  /**
+   * As reuniões deste setor que ainda vão acontecer — os destinos do "Levar".
+   *
+   * `> ata.data` e não `>= `: duas atas no mesmo dia existem (a semanal e uma
+   * extraordinária), mas levar um assunto para a reunião do mesmo dia não é
+   * levar para a próxima, e oferecer as duas faria a escolha parecer arbitrária.
+   * Quem precisa disso está corrigindo um lançamento, e o botão para isso é
+   * "Mover".
+   *
+   * Ordem CRESCENTE, ao contrário da lista da tela (que é a mais recente
+   * primeiro): aqui a resposta certa é quase sempre a reunião mais próxima, e ela
+   * tem de ser a primeira da lista.
+   */
+  const ataId = ata?.id ?? "";
+  const ataData = ata?.data ?? "";
+  const proximas = useMemo(
+    () =>
+      atas
+        .filter((a) => a.id !== ataId && !!a.data && !!ataData && a.data > ataData)
+        .sort((a, b) => a.data.localeCompare(b.data)),
+    // Os dois campos são extraídos ANTES do memo, e não lidos de `ata` dentro
+    // dele: com `ata?.id` na lista de dependências, o React Compiler infere
+    // `ata` inteiro, discorda do que está escrito e desiste de otimizar o
+    // componente — reclamando no lint. Extrair primeiro faz o corpo e a lista
+    // falarem da mesma coisa, e mantém a precisão (a lista não se remonta a cada
+    // tecla digitada numa decisão da pauta).
+    [atas, ataId, ataData],
+  );
+
+  /**
+   * O assunto é LEVADO para uma reunião que já existe — as duas atas num lote.
+   *
+   * O QUE ISTO CONSERTA. "Levar para próxima reunião" só acendia um interruptor,
+   * e o interruptor era colhido em um lugar só: "Abrir a próxima reunião", que
+   * apenas CRIA ata. Quando a próxima já existia, o botão não fazia nada — e não
+   * é figura de linguagem. Na reunião de 02/09/2026 quem conduzia abriu a ata de
+   * 26/08, discutiu os assuntos passados e marcou vários; os flags ficaram lá
+   * sem ter para onde ir, porque colhê-los criaria uma quarta ata duplicando a
+   * de 09/09. Sem erro, sem aviso.
+   *
+   * A RÉGUA MORA EM `levarAssunto`, inclusive a renumeração do id no destino e o
+   * fantasma da linha que ninguém tocou. A escrita atômica é a mesma de "Mover"
+   * (`moverItensEntreAtas`), e o porquê está lá: em duas escritas soltas, a
+   * falha da segunda deixa o assunto marcado na origem e ausente no destino, sem
+   * nada na tela dizendo qual das duas aconteceu.
+   *
+   * DEVOLVE A ATA DE DESTINO porque quem chama precisa dizer para onde foi. Ao
+   * contrário de "Mover", a linha NÃO some desta pauta — então o aviso não é
+   * "para onde sumiu", é a confirmação de que o bastão foi passado.
+   */
+  async function levar(linha: ItemDaPauta, destinoId: string) {
+    if (!ata) throw new Error("Nenhuma ata aberta.");
+    const destino = atas.find((a) => a.id === destinoId);
+    if (!destino) throw new Error("Escolha a reunião de destino.");
+    const conferido = levarAssunto(ata, destino, linha.item);
     if (!conferido.ok) throw new Error(conferido.motivo);
     await escrever(() =>
       moverItensEntreAtas(
@@ -1383,6 +1450,8 @@ export default function AtaPage() {
                       ? () => setAtaSel(linha.item.origemAtaId)
                       : null
                   }
+                  temProxima={proximas.length > 0}
+                  onLevar={() => setLevando(linha)}
                 />
               ))
             )}
@@ -1503,6 +1572,22 @@ export default function AtaPage() {
             // para ver o que a pessoa já pediu.
             setAtaSel(id);
             setLinhaAberta(false);
+          }}
+        />
+      )}
+
+      {levando && ata && (
+        <ModalDeLevar
+          setor={setor}
+          linha={levando}
+          destinos={proximas}
+          onFechar={() => setLevando(null)}
+          onLevar={async (destinoId) => {
+            const destino = await levar(levando, destinoId);
+            setLevando(null);
+            setAviso(
+              `"${levando.titulo}" foi levado para ${rotuloDaAta(destino)}. Ele continua nesta ata, com a decisão de hoje.`,
+            );
           }}
         />
       )}
@@ -1747,6 +1832,8 @@ function BlocoDaDemanda({
   onMover,
   origemRotulo,
   onAbrirOrigem,
+  temProxima,
+  onLevar,
 }: {
   linha: ItemDaPauta;
   nomeDe: (email: string) => string;
@@ -1789,6 +1876,17 @@ function BlocoDaDemanda({
    * nenhum é pior do que texto.
    */
   onAbrirOrigem: (() => void) | null;
+  /**
+   * Existe reunião futura neste setor?
+   *
+   * Quem sabe é a página, que tem a lista de atas — o mesmo raciocínio de
+   * `onMover`. Vem como booleano e não como lista porque o bloco não escolhe o
+   * destino: ele só precisa saber se o clique abre uma escolha ou acende um
+   * interruptor.
+   */
+  temProxima: boolean;
+  /** Abrir o seletor de destino. Só é chamado quando `temProxima`. */
+  onLevar: () => void;
 }) {
   const {
     card,
@@ -2058,15 +2156,41 @@ function BlocoDaDemanda({
             }}
             aria-label={`Objetivo na próxima reunião para ${titulo}`}
           />
+          {/* DOIS COMPORTAMENTOS, e quem decide qual é a EXISTÊNCIA de uma
+              reunião futura no setor — não uma preferência.
+
+              Com reunião futura, o botão abre o seletor e a cópia acontece na
+              hora: é o caso que estava quebrado, porque o flag só era colhido
+              por "Abrir a próxima reunião", que apenas cria ata. Sem reunião
+              futura, ele continua sendo o interruptor de antes, colhido na hora
+              de abrir a próxima — e esse caminho é o certo para quando a próxima
+              ainda não foi marcada.
+
+              O rótulo muda junto, porque as duas coisas são diferentes: "Levar
+              para…" abre uma escolha, "Vai para a próxima" é um estado. */}
           <button
             className={`${styles.levar} ${item.proximaReuniao ? styles.levarOn : ""}`}
             onClick={() =>
-              onGravar((i) => ({ ...i, proximaReuniao: !i.proximaReuniao }))
+              temProxima
+                ? onLevar()
+                : onGravar((i) => ({ ...i, proximaReuniao: !i.proximaReuniao }))
             }
-            aria-pressed={item.proximaReuniao}
+            aria-pressed={temProxima ? undefined : item.proximaReuniao}
+            title={
+              temProxima
+                ? "Copiar este assunto para a pauta de uma reunião futura"
+                : "Marcar para a próxima ata que for aberta"
+            }
           >
-            <Icon name={item.proximaReuniao ? "check" : "calendar"} size={13} />
-            {item.proximaReuniao ? "Vai para a próxima" : "Levar para próxima reunião"}
+            <Icon
+              name={!temProxima && item.proximaReuniao ? "check" : "calendar"}
+              size={13}
+            />
+            {temProxima
+              ? "Levar para outra reunião"
+              : item.proximaReuniao
+                ? "Vai para a próxima"
+                : "Levar para próxima reunião"}
           </button>
         </div>
 
@@ -2809,6 +2933,124 @@ function ModalDeClassificar({
     </Modal>
   );
 }
+
+/**
+ * "Levar para outra reunião" — o bastão passado para uma pauta que já existe.
+ *
+ * IRMÃO DE `ModalDeMover`, e a semelhança é o risco: os dois escolhem uma ata do
+ * setor numa lista igual. O que os separa está escrito na frase de aviso, e ela
+ * é a parte mais importante desta tela — "a linha CONTINUA nesta ata" é o
+ * oposto do que "Mover" faz, e quem confundir os dois perde a decisão de hoje
+ * numa reunião que ainda não aconteceu.
+ *
+ * A LISTA SÓ TEM REUNIÃO FUTURA, e vem da mais próxima para a mais distante.
+ * `levarAssunto` recusa destino anterior, mas oferecer o que vai ser recusado é
+ * desenhar um caminho para o erro — e a recusa aqui chegaria depois do clique,
+ * quando a pessoa já decidiu.
+ *
+ * `<Combobox>` e não `<Select>`, pelo mesmo motivo de "Mover": a lista de
+ * reuniões de um setor só cresce.
+ */
+function ModalDeLevar({
+  setor,
+  linha,
+  destinos,
+  onFechar,
+  onLevar,
+}: {
+  setor: string;
+  linha: ItemDaPauta;
+  /** Só as reuniões FUTURAS do setor — ver `proximas` na página. */
+  destinos: Ata[];
+  onFechar: () => void;
+  onLevar: (destinoId: string) => Promise<void>;
+}) {
+  // A mais próxima já vem escolhida: ela é a resposta em quase todo caso, e
+  // `destinos` chega ordenada por data crescente justamente para isso. Trocar é
+  // um clique; escolher do zero, dois.
+  const [destino, setDestino] = useState(destinos[0]?.id ?? "");
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  // Só as ABERTAS vão junto, e dizer o número é o que faz a frase valer: quem
+  // tem seis tarefas na linha precisa saber que duas ficam para trás.
+  const abertas = linha.item.tarefas.filter((t) => t.status !== "concluida").length;
+  const feitas = linha.item.tarefas.length - abertas;
+
+  return (
+    <Modal
+      onClose={onFechar}
+      podeFechar={() => !salvando}
+      ariaLabel="Levar o assunto para outra reunião"
+      overlayClassName={styles.overlay}
+      className={styles.modal}
+      width={480}
+    >
+      <div className={styles.mhead}>
+        <span className={styles.mchip}>
+          <Icon name="calendar" size={12} /> Levar assunto
+        </span>
+        <span className={styles.mchip}>{setor}</span>
+      </div>
+      <h2 className={styles.mtitulo}>{linha.titulo}</h2>
+      <p className={styles.avisoModal}>
+        {/* A PRIMEIRA FRASE É A QUE SEPARA ESTE MODAL DO "MOVER". Ela vem antes
+            de tudo de propósito: é o mal-entendido que custa caro. */}
+        <strong>A linha continua nesta ata</strong>, com a decisão de hoje. Uma
+        cópia entra na pauta da reunião escolhida com o objetivo
+        {abertas === 0
+          ? ""
+          : abertas === 1
+            ? " e a tarefa que continua aberta"
+            : ` e as ${abertas} tarefas que continuam abertas`}
+        , e sem a decisão — ela é desta reunião.
+        {feitas > 0 &&
+          ` ${feitas === 1 ? "A tarefa já concluída fica" : `As ${feitas} tarefas já concluídas ficam`} para trás.`}
+      </p>
+
+      <label className={styles.rotulo}>Para qual reunião</label>
+      <Combobox
+        value={destino}
+        options={destinos.map(
+          (a): SelectOption => ({ value: a.id, label: rotuloDaAta(a) }),
+        )}
+        onChange={setDestino}
+        placeholder="Escolha a reunião…"
+        ariaLabel="Reunião de destino"
+        vazioTexto="Nenhuma reunião futura deste setor com esse nome."
+      />
+
+      {erro && <p className={styles.erroModal}>{erro}</p>}
+      <div className={styles.macoes}>
+        <button className={styles.btnGhost} onClick={onFechar} disabled={salvando}>
+          Cancelar
+        </button>
+        <button
+          className={styles.btnPrim}
+          disabled={salvando || !destino}
+          onClick={async () => {
+            setSalvando(true);
+            setErro(null);
+            try {
+              await onLevar(destino);
+            } catch (e) {
+              // O ERRO SOBE PARA CÁ e não para a tarja do topo: o modal continua
+              // aberto, e as quatro recusas de `levarAssunto` são todas
+              // acionáveis aqui — trocar o destino resolve três delas.
+              setErro(
+                e instanceof Error ? e.message : "Não foi possível levar o assunto.",
+              );
+              setSalvando(false);
+            }
+          }}
+        >
+          {salvando ? "Levando…" : "Levar para a reunião"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 /**
  * "Mover" — o assunto lançado na reunião errada muda de ata.
  *
