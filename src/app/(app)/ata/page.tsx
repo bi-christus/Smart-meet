@@ -66,6 +66,11 @@ import {
   type StatusTarefa,
   type TarefaDeAta,
 } from "@/lib/ata";
+import {
+  mesclagemFazAlgo,
+  type CampoMesclavel,
+  type ParDeMesclagem,
+} from "@/lib/ata-de-reuniao-core";
 import { subscribeMeetings, type Meeting } from "@/lib/meetings";
 import { ehFimDeSemanaISO, fmtDayMonth, startOfDay, toISO } from "@/lib/datas";
 import { juntarFontes } from "@/lib/async-data-core";
@@ -245,6 +250,7 @@ export default function AtaPage() {
 
   const [ataSel, setAtaSel] = useState("");
   const [gerarAberta, setGerarAberta] = useState(false);
+  const [puxarAberta, setPuxarAberta] = useState(false);
   const [proximaAberta, setProximaAberta] = useState(false);
   const [cabecalhoAberto, setCabecalhoAberto] = useState(false);
   const [apagando, setApagando] = useState(false);
@@ -1197,6 +1203,25 @@ export default function AtaPage() {
             </section>
 
             <div className={styles.lateralAcoes}>
+              {/* "PUXAR DO ÁUDIO" só aparece na ata que ainda não tem reunião
+                  ligada, e essa condição é a função inteira. A ata que nasceu de
+                  "Gerar da reunião" já veio do documento; a que nasceu de "Abrir
+                  a próxima reunião" tem `meetingId` nulo, e é ela que fica
+                  esperando o áudio processar. Oferecer o botão nas duas faria a
+                  primeira mostrar um modal que só sabe dizer "já está tudo aqui".
+
+                  Fica na lateral, junto de "Abrir próxima reunião", porque as
+                  duas são ações sobre a ATA inteira — o lápis do painel ao lado
+                  edita o cabeçalho, que é outra coisa. */}
+              {!ata.meetingId && (
+                <button
+                  className={styles.acaoSec}
+                  onClick={() => setPuxarAberta(true)}
+                  title="Trazer os assuntos do documento que o processamento do áudio gerou"
+                >
+                  <Icon name="mic" size={14} /> Puxar do áudio
+                </button>
+              )}
               <button
                 className={styles.acaoSec}
                 onClick={() => setProximaAberta(true)}
@@ -1478,6 +1503,27 @@ export default function AtaPage() {
             // para ver o que a pessoa já pediu.
             setAtaSel(id);
             setLinhaAberta(false);
+          }}
+        />
+      )}
+
+      {puxarAberta && ata && (
+        <ModalDePuxar
+          ata={ata}
+          reunioes={reunioes}
+          fonte={fReunioes}
+          onFechar={() => setPuxarAberta(false)}
+          onMesclado={(entraram) => {
+            setPuxarAberta(false);
+            // Os filtros saem do caminho, como em `criarAssunto`: acrescentar
+            // linhas e elas não aparecerem porque um filtro de dez minutos atrás
+            // continua ligado seria o mesmo que o botão não ter funcionado.
+            limparFiltros();
+            setAviso(
+              entraram > 0
+                ? `${entraram} assunto(s) novo(s) do áudio entraram na pauta. O que já estava escrito na ata não foi tocado.`
+                : "Os assuntos do áudio foram somados à pauta. O que já estava escrito na ata não foi tocado.",
+            );
           }}
         />
       )}
@@ -2869,6 +2915,366 @@ function ModalDeMover({
 
 // ---------------------------------------------------------------------------
 // O formulário de ata — serve para criar e para abrir a próxima
+
+// ---------------------------------------------------------------------------
+
+/** O nome de cada campo mesclável na tela — em prosa, não no nome do campo. */
+const CAMPO_LABEL: Record<CampoMesclavel, string> = {
+  decisao: "decisão",
+  objetivo: "objetivo",
+  contexto: "contexto",
+};
+
+/**
+ * "Puxar do áudio" — o documento da reunião entrando numa ata que JÁ tem pauta.
+ *
+ * POR QUE ELE EXISTE, e por que não bastava "Gerar da reunião". A ata de uma
+ * reunião semanal nasce ANTES de o áudio ficar pronto: a equipe lança os
+ * assuntos que quer discutir, e "Levar para próxima reunião" já deixou lá o que
+ * ficou pendurado. Depois o áudio processa. "Gerar da reunião" só sabe CRIAR, e
+ * criar naquele momento produz uma segunda ata da mesma reunião no mesmo setor —
+ * mesma data, mesmo título na lista, uma com o que as pessoas lançaram e outra
+ * com o que o áudio trouxe. Foi o estado da ata de 02/09/2026 das Cantinas.
+ *
+ * A CONFERÊNCIA NÃO É ENFEITE, é o que torna a mesclagem aceitável num registro.
+ * O casamento entre bloco do documento e linha da pauta é por texto exato, e
+ * texto exato acerta ou não acerta — mas quem responde pela ata é quem conduziu
+ * a reunião, e ela vê o que vai entrar, em que linha, e por quê. Aplicar direto
+ * pediria confiança cega numa comparação de strings.
+ *
+ * TRÊS GRUPOS, e o terceiro é o que mais importa:
+ *
+ *   1. ASSUNTOS NOVOS — blocos que não casaram nada. Marcados por padrão.
+ *   2. ASSUNTOS QUE CASARAM — com a linha que casaram e o que seria preenchido.
+ *      Marcados por padrão.
+ *   3. DIVERGÊNCIAS — o áudio trouxe texto para um campo que já tem texto
+ *      humano, e diferente. SEM checkbox: não há o que aplicar, o texto humano
+ *      fica. Está aqui porque as duas alternativas silenciosas são piores —
+ *      sobrescrever apaga o que alguém digitou na reunião, e omitir esconde o
+ *      que a gravação registrou. Quem conduz decide se corrige à mão.
+ *
+ * O PLANO VEM DO SERVIDOR E VOLTA COMO ÍNDICES. O que este modal manda de volta
+ * é só a lista de blocos aprovados; a rota recomputa o plano do mesmo documento
+ * antes de aplicar. O porquê está no cabeçalho de `api/ata/gerar`: ela roda com
+ * o Admin SDK, que ignora `firestore.rules`.
+ */
+function ModalDePuxar({
+  ata,
+  reunioes,
+  fonte,
+  onFechar,
+  onMesclado,
+}: {
+  ata: Ata;
+  reunioes: Meeting[];
+  /** A fonte inteira, e não só o `carregando` — mesmo motivo de `ModalDeGerar`. */
+  fonte: {
+    data: Meeting[] | undefined;
+    erro: Error | null;
+    tentarDeNovo: () => void;
+  };
+  onFechar: () => void;
+  onMesclado: (entraram: number) => void;
+}) {
+  const [reuniaoSel, setReuniaoSel] = useState("");
+  const [plano, setPlano] = useState<ParDeMesclagem[] | null>(null);
+  const [marcados, setMarcados] = useState<Set<number>>(new Set());
+  const [lendo, setLendo] = useState(false);
+  const [aplicando, setAplicando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  const elegiveis = useMemo(
+    () =>
+      reunioes.filter(
+        (r) =>
+          r.status === "processado" &&
+          (r.driveOutputs ?? []).some((o) => o.kind === "resumo"),
+      ),
+    [reunioes],
+  );
+  const estadoDaFonte = juntarFontes([fonte]);
+
+  async function pedir(corpo: Record<string, unknown>) {
+    const user = auth.currentUser;
+    if (!user) throw new Error("Sessão expirada. Entre novamente.");
+    const r = await fetch("/api/ata/gerar", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${await user.getIdToken()}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ ataId: ata.id, ...corpo }),
+    });
+    const body = await r.json();
+    if (!r.ok) throw new Error(body.error || "Não foi possível ler o documento.");
+    return body as { plano?: ParDeMesclagem[]; entraram?: number };
+  }
+
+  async function conferir(meetingId: string) {
+    setReuniaoSel(meetingId);
+    setPlano(null);
+    setErro(null);
+    if (!meetingId) return;
+    setLendo(true);
+    try {
+      const body = await pedir({ meetingId, preview: true });
+      const p = body.plano ?? [];
+      setPlano(p);
+      // TUDO MARCADO POR PADRÃO, e é a escolha certa aqui: o caminho comum é
+      // querer o documento inteiro na ata, e desmarcar o que não se quer é mais
+      // raro do que marcar o que se quer. Nada disso aplica sozinho — o clique
+      // final continua sendo o que grava.
+      setMarcados(new Set(p.filter(mesclagemFazAlgo).map((x) => x.bloco)));
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Não foi possível ler o documento.");
+    } finally {
+      setLendo(false);
+    }
+  }
+
+  async function aplicar() {
+    setAplicando(true);
+    setErro(null);
+    try {
+      const body = await pedir({ meetingId: reuniaoSel, aprovados: [...marcados] });
+      onMesclado(body.entraram ?? 0);
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Não foi possível puxar do áudio.");
+      setAplicando(false);
+    }
+  }
+
+  const alternar = (bloco: number) =>
+    setMarcados((cur) => {
+      const n = new Set(cur);
+      if (n.has(bloco)) n.delete(bloco);
+      else n.add(bloco);
+      return n;
+    });
+
+  const acoes = plano?.filter(mesclagemFazAlgo) ?? [];
+  const novos = acoes.filter((p) => p.itemId === null);
+  const casaram = acoes.filter((p) => p.itemId !== null);
+  const divergentes = plano?.filter((p) => p.divergencias.length > 0) ?? [];
+  /** O nome da linha da pauta que o par vai tocar — o assunto, ou a demanda. */
+  const linhaDe = (p: ParDeMesclagem) => {
+    const item = ata.itens.find((i) => i.id === p.itemId);
+    return item?.assunto || (p.cardId ? "a demanda do quadro" : "linha sem nome");
+  };
+
+  /** O que o par faria, em prosa, para caber numa linha da lista. */
+  const oQueFaz = (p: ParDeMesclagem) => {
+    const partes: string[] = [];
+    if (p.preenche.length) {
+      partes.push(`preenche ${p.preenche.map((c) => CAMPO_LABEL[c]).join(", ")}`);
+    }
+    if (p.tarefas.length) {
+      partes.push(p.tarefas.length === 1 ? "1 tarefa nova" : `${p.tarefas.length} tarefas novas`);
+    }
+    if (p.vinculaCard) partes.push("liga à demanda do quadro");
+    if (p.classifica) partes.push("classifica na dimensão");
+    return partes.join(" · ");
+  };
+
+  return (
+    <Modal
+      onClose={onFechar}
+      podeFechar={() => !aplicando}
+      ariaLabel="Puxar os assuntos do áudio"
+      overlayClassName={styles.overlay}
+      className={styles.modal}
+      width={640}
+    >
+      <div className={styles.mhead}>
+        <span className={styles.mchip}>
+          <Icon name="mic" size={12} /> Puxar os assuntos do áudio
+        </span>
+        <span className={styles.mchip}>{rotuloDaAta(ata)}</span>
+      </div>
+
+      {/* O ERRO GANHA DE CARREGANDO E DE VAZIO, nesta ordem — é o que o cabeçalho
+          de `juntarFontes` explica, e o mesmo cuidado de `ModalDeGerar`: sem
+          isso, uma falha na assinatura de reuniões cai no estado vazio e afirma
+          que não há reunião processada, mandando a pessoa gravar de novo um
+          áudio que já existe. */}
+      {estadoDaFonte.erro ? (
+        <ErrorState error={estadoDaFonte.erro} onRetry={fonte.tentarDeNovo} />
+      ) : estadoDaFonte.carregando ? (
+        <SkeletonRow rows={3} texto="Procurando reuniões processadas…" />
+      ) : elegiveis.length === 0 ? (
+        <EmptyState
+          icon="reunioes"
+          title="Nenhuma reunião processada"
+          description="Os assuntos saem dos pontos importantes que o processamento gera. Envie o áudio em Reuniões e volte quando ele estiver processado."
+        />
+      ) : (
+        <>
+          <label className={styles.rotulo}>Reunião gravada</label>
+          <Select
+            value={reuniaoSel}
+            options={[
+              { value: "", label: "Escolha a reunião…" },
+              ...elegiveis.map(
+                (r): SelectOption => ({
+                  value: r.id,
+                  label: `${r.title} · ${r.date ? fmtDayMonth(r.date) : "sem data"} · ${r.sector}`,
+                }),
+              ),
+            ]}
+            onChange={conferir}
+            ariaLabel="Reunião gravada"
+          />
+
+          {/* Ler o Doc no Drive passa de 400 ms com folga (AGENTS.md §3). */}
+          {lendo && <SkeletonRow rows={4} texto="Lendo os pontos importantes…" />}
+
+          {plano && !acoes.length && !divergentes.length && (
+            /* "Ainda não respondeu" e "respondeu e está vazio" são telas
+               diferentes, e este é o segundo caso — e ele é uma boa notícia, não
+               um erro: quem clica duas vezes por não ter certeza se o primeiro
+               clique funcionou precisa ler isto, e não um modal em branco. */
+            <EmptyState
+              icon="check"
+              title="Este áudio já está todo nesta ata"
+              description="Nenhum assunto novo e nada a preencher: o documento desta reunião já foi puxado para cá."
+            />
+          )}
+
+          {!!novos.length && (
+            <section className={styles.grupoMescla}>
+              <h4>
+                Assuntos novos <span>{novos.length}</span>
+              </h4>
+              <p className={styles.grupoDica}>
+                O áudio falou deles e a pauta não os tem. Entram como linhas novas.
+              </p>
+              {novos.map((p) => (
+                <LinhaDeMescla
+                  key={p.bloco}
+                  marcado={marcados.has(p.bloco)}
+                  onAlternar={() => alternar(p.bloco)}
+                  titulo={p.assunto}
+                  detalhe={oQueFaz(p) || "só o assunto"}
+                />
+              ))}
+            </section>
+          )}
+
+          {!!casaram.length && (
+            <section className={styles.grupoMescla}>
+              <h4>
+                Assuntos que a pauta já tem <span>{casaram.length}</span>
+              </h4>
+              <p className={styles.grupoDica}>
+                Só o que está em branco é preenchido. O que alguém escreveu fica
+                como está.
+              </p>
+              {casaram.map((p) => (
+                <LinhaDeMescla
+                  key={p.bloco}
+                  marcado={marcados.has(p.bloco)}
+                  onAlternar={() => alternar(p.bloco)}
+                  titulo={p.assunto}
+                  detalhe={oQueFaz(p)}
+                  /* POR QUE casou, e não só que casou: "pela demanda do quadro"
+                     é um casamento mais forte que "pelo nome do assunto", e quem
+                     confere precisa saber em qual dos dois está confiando. */
+                  casou={
+                    p.casouPor === "card"
+                      ? "pela demanda do quadro"
+                      : `pelo nome — ${linhaDe(p)}`
+                  }
+                />
+              ))}
+            </section>
+          )}
+
+          {!!divergentes.length && (
+            <section className={styles.grupoMescla}>
+              <h4>
+                O áudio diz outra coisa <span>{divergentes.length}</span>
+              </h4>
+              <p className={styles.grupoDica}>
+                Nada disto é aplicado: o texto da ata fica. Está aqui para você
+                comparar e corrigir à mão se quiser.
+              </p>
+              {divergentes.map((p) =>
+                p.divergencias.map((d) => (
+                  <div key={`${p.bloco}-${d.campo}`} className={styles.divergencia}>
+                    <div className={styles.divergTitulo}>
+                      {p.assunto} · {CAMPO_LABEL[d.campo]}
+                    </div>
+                    <div className={styles.divergPar}>
+                      <div>
+                        <span>na ata</span>
+                        <p>{d.naAta}</p>
+                      </div>
+                      <div>
+                        <span>no áudio</span>
+                        <p>{d.doAudio}</p>
+                      </div>
+                    </div>
+                  </div>
+                )),
+              )}
+            </section>
+          )}
+
+          {erro && <p className={styles.erroModal}>{erro}</p>}
+        </>
+      )}
+
+      <div className={styles.macoes}>
+        <button className={styles.btnGhost} onClick={onFechar} disabled={aplicando}>
+          Cancelar
+        </button>
+        <button
+          className={styles.btnPrim}
+          onClick={aplicar}
+          disabled={aplicando || lendo || !marcados.size}
+        >
+          {aplicando
+            ? "Puxando…"
+            : marcados.size
+              ? `Puxar ${marcados.size} para a ata`
+              : "Puxar para a ata"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/**
+ * Uma linha da conferência: o que entra, e onde.
+ *
+ * `<label>` em volta do checkbox, e não um `onClick` na `<div>`: a área de
+ * clique passa a ser a linha inteira sem inventar um alvo que leitor de tela
+ * nenhum entende, e o estado marcado/desmarcado é lido de graça.
+ */
+function LinhaDeMescla({
+  marcado,
+  onAlternar,
+  titulo,
+  detalhe,
+  casou,
+}: {
+  marcado: boolean;
+  onAlternar: () => void;
+  titulo: string;
+  detalhe: string;
+  casou?: string;
+}) {
+  return (
+    <label className={styles.linhaMescla}>
+      <input type="checkbox" checked={marcado} onChange={onAlternar} />
+      <span className={styles.linhaMesclaTx}>
+        <strong>{titulo}</strong>
+        {casou && <em>{casou}</em>}
+        {detalhe && <span>{detalhe}</span>}
+      </span>
+    </label>
+  );
+}
 // ---------------------------------------------------------------------------
 
 /**

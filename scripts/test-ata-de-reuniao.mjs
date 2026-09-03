@@ -22,10 +22,13 @@
  * Quando o prompt do Cowork mudar, é aqui que se descobre.
  */
 import {
+  aplicarMesclagem,
   blocoParaItem,
   lerPontosImportantes,
   ligarCards,
+  mesclagemFazAlgo,
   montarAtaDaReuniao,
+  planejarMesclagem,
 } from "../src/lib/ata-de-reuniao-core.ts";
 import { estadoNaAta, montarPauta, resumoDaAta } from "../src/lib/ata-core.ts";
 
@@ -390,6 +393,363 @@ checa(
     const i = blocoParaItem(r.blocos[0], "1", DIMS);
     return i.decisao === "" && i.tarefas.length === 0 && i.contexto.includes("nada de especial");
   })(),
+);
+
+
+console.log("\n— puxar o documento para uma ata que já tem pauta —");
+
+/**
+ * O CENÁRIO É O REAL, e é ele que dá valor a este bloco: a ata de 02/09/2026 das
+ * Cantinas, com assuntos lançados à mão antes da reunião, um assunto já ligado a
+ * card, e o documento do áudio chegando depois. Antes desta frente o único
+ * caminho era gerar uma segunda ata da mesma reunião no mesmo setor.
+ *
+ * O documento é o `CANTINAS` deste arquivo — o mesmo que o Cowork produziu de
+ * verdade. Os seis blocos dele, na ordem:
+ *
+ *   0 Método da reunião e das atas          1 decisão · 2 encaminhamentos
+ *   1 Estoque, recebimento e conferência    1 decisão · 1 encaminhamento
+ *   2 Sistema Connect e totens              1 decisão · 1 encaminhamento
+ *   3 Engenharia de cardápio e precificação 2 decisões
+ *   4 Outros pontos                         só contexto
+ *   5 Em aberto                             só contexto
+ */
+const itemDaAta = (id, extra = {}) => ({
+  id,
+  cardId: "",
+  assunto: "",
+  contexto: "",
+  dimensaoId: "",
+  subdimensaoId: "",
+  origem: "manual",
+  origemAtaId: "",
+  decisao: "",
+  objetivo: "",
+  proximaReuniao: false,
+  tarefas: [],
+  ...extra,
+});
+
+// O card que a mesma reunião já produziu, com o assunto que o originou — a
+// numeração sobrevive no assunto da proposta, e é por isso que ela sai dos dois
+// lados antes de comparar (ver `chaveDeAssunto`).
+const CARDS_DA_REUNIAO = [{ id: "c1", assunto: "1. Método da reunião e das atas" }];
+
+const ITENS_ANTES = [
+  // Casa o bloco 0 POR CARD: o assunto do item está vazio (a linha entrou pelo
+  // quadro), e o texto não teria como casar. É o casamento mais forte.
+  itemDaAta("1", { cardId: "c1" }),
+  // Casa o bloco 2 por assunto, e está esperando decisão: é o caso de quem
+  // lançou o assunto antes da reunião para não esquecer de falar dele.
+  itemDaAta("2", { assunto: "Sistema Connect e totens" }),
+  // Casa o bloco 3 por assunto, e JÁ TEM decisão escrita por alguém, diferente
+  // da do documento. É a divergência.
+  itemDaAta("3", {
+    assunto: "Engenharia de cardápio e precificação",
+    decisao: "ficou combinado revisar só o almoço executivo",
+    dimensaoId: "d3",
+    subdimensaoId: "2",
+    tarefas: [
+      { id: "5", texto: "levantar o custo por prato", responsavel: "a@b.c", prazo: "", status: "andamento", observacao: "" },
+    ],
+  }),
+  // Não casa bloco nenhum: a reunião não falou disso, ou o Cowork não separou em
+  // bloco. Tem de sobreviver inteiro — é o que esta frente existe para garantir.
+  itemDaAta("4", { assunto: "Reforma da cantina do bloco C", decisao: "aguardando orçamento" }),
+];
+
+const plano = planejarMesclagem({
+  blocos: doc.blocos,
+  itens: ITENS_ANTES,
+  cards: CARDS_DA_REUNIAO,
+  dimensoes: DIMS,
+});
+
+checa("um par por bloco do documento", plano.length === doc.blocos.length, plano.length);
+checa(
+  "o bloco 0 casa POR CARD, mesmo com o assunto do item vazio",
+  plano[0].itemId === "1" && plano[0].casouPor === "card",
+  `${plano[0].itemId}/${plano[0].casouPor}`,
+);
+checa(
+  "o bloco 2 casa POR ASSUNTO",
+  plano[2].itemId === "2" && plano[2].casouPor === "assunto",
+  `${plano[2].itemId}/${plano[2].casouPor}`,
+);
+checa(
+  "o bloco 1 não casa nada e é assunto novo",
+  plano[1].itemId === null && plano[1].casouPor === null,
+);
+checa(
+  "e o assunto novo já vem classificado pelo nome — 'Estoque' está no cabeçalho",
+  plano[1].classifica === true,
+);
+
+// O CAMPO VAZIO É PREENCHIDO, o campo escrito NÃO É. É a regra de ouro inteira,
+// e ela é a razão de a mesclagem existir separada de `montarAtaDaReuniao`.
+checa(
+  "campo vazio entra na lista do que será preenchido",
+  plano[2].preenche.includes("decisao") && plano[2].preenche.includes("contexto"),
+  plano[2].preenche.join(","),
+);
+checa(
+  "campo com texto humano NÃO é preenchido",
+  !plano[3].preenche.includes("decisao"),
+  plano[3].preenche.join(","),
+);
+checa(
+  "ele vira divergência, com os dois textos lado a lado",
+  plano[3].divergencias.length === 1 &&
+    plano[3].divergencias[0].campo === "decisao" &&
+    plano[3].divergencias[0].naAta === "ficou combinado revisar só o almoço executivo" &&
+    plano[3].divergencias[0].doAudio.length > 0,
+  JSON.stringify(plano[3].divergencias),
+);
+// A classificação humana ganha sempre: o `classificar` é léxico e não sabe que
+// alguém já decidiu, na reunião, onde aquilo mora.
+checa(
+  "a dimensão que alguém escolheu NÃO é trocada",
+  plano[3].classifica === false,
+);
+
+// Um bloco casa um item só, e um item casa um bloco só. Dois blocos com
+// cabeçalho parecido escreveriam no mesmo item, e o segundo apagaria o primeiro.
+const casados = plano.map((p) => p.itemId).filter(Boolean);
+checa(
+  "nenhum item é casado por dois blocos",
+  new Set(casados).size === casados.length,
+  casados.join(","),
+);
+checa("o item que ninguém casou não aparece no plano", !casados.includes("4"));
+
+// ---- aplicar ----
+
+const TODOS = plano.filter(mesclagemFazAlgo).map((p) => p.bloco);
+const depois = aplicarMesclagem({
+  itens: ITENS_ANTES,
+  blocos: doc.blocos,
+  plano,
+  aprovados: TODOS,
+  dimensoes: DIMS,
+});
+
+// NADA É REMOVIDO. É o que a ata de 02/09 exigia: os assuntos lançados antes da
+// reunião não podem sumir porque o áudio não falou deles.
+checa(
+  "todo item que já estava lá continua lá",
+  ITENS_ANTES.every((a) => depois.some((d) => d.id === a.id)),
+);
+const intocado = depois.find((i) => i.id === "4");
+checa(
+  "o item que nenhum bloco casou fica IDÊNTICO",
+  intocado.assunto === "Reforma da cantina do bloco C" &&
+    intocado.decisao === "aguardando orçamento" &&
+    intocado.tarefas.length === 0,
+);
+
+const connect = depois.find((i) => i.id === "2");
+checa("o campo vazio foi preenchido pelo documento", connect.decisao.length > 0);
+checa(
+  "o assunto NUNCA é tocado — o nome é de quem escreveu",
+  connect.assunto === "Sistema Connect e totens",
+);
+checa("a tarefa do documento entrou", connect.tarefas.length === 1);
+checa(
+  "e ela entra sem responsável e sem prazo, como em toda a casa",
+  connect.tarefas[0].responsavel === "" && connect.tarefas[0].prazo === "",
+);
+
+const cardapio = depois.find((i) => i.id === "3");
+checa(
+  "o texto humano sobreviveu à mesclagem",
+  cardapio.decisao === "ficou combinado revisar só o almoço executivo",
+);
+checa(
+  "a dimensão humana sobreviveu",
+  cardapio.dimensaoId === "d3" && cardapio.subdimensaoId === "2",
+);
+checa(
+  "a tarefa que já existia não foi editada nem removida",
+  cardapio.tarefas.length === 1 &&
+    cardapio.tarefas[0].id === "5" &&
+    cardapio.tarefas[0].responsavel === "a@b.c",
+);
+
+// Os blocos 1, 4 e 5 não casaram nada: três linhas novas.
+const novos = depois.filter((i) => !ITENS_ANTES.some((a) => a.id === i.id));
+checa("os blocos sem par viraram itens novos", novos.length === 3, novos.length);
+checa(
+  "e nascem marcados como vindos do áudio",
+  novos.every((i) => i.origem === "reuniao"),
+);
+// Dois itens novos na mesma passada pediriam o mesmo `proximoIdDeItem` do array
+// de entrada, e o segundo nasceria com a chave do primeiro — duas linhas com a
+// mesma `key` do React, e a escrita de uma caindo na outra.
+checa(
+  "os ids dos itens novos são únicos entre si e com os antigos",
+  new Set(depois.map((i) => i.id)).size === depois.length,
+  depois.map((i) => i.id).join(","),
+);
+const estoque = novos.find((i) => i.assunto === "Estoque, recebimento e conferência");
+checa(
+  "o item novo chega classificado pelo casamento léxico do cabeçalho",
+  estoque.dimensaoId === "d1" && estoque.subdimensaoId === "1",
+  `${estoque.dimensaoId}/${estoque.subdimensaoId}`,
+);
+
+// IDEMPOTÊNCIA POR CONSTRUÇÃO, e não por trava. Rodar de novo sobre a ata já
+// mesclada não acha nada para fazer: é o que faz o botão poder ser clicado duas
+// vezes sem duplicar a pauta.
+const denovo = planejarMesclagem({
+  blocos: doc.blocos,
+  itens: depois,
+  cards: CARDS_DA_REUNIAO,
+  dimensoes: DIMS,
+});
+checa(
+  "rodar de novo sobre a ata já mesclada não tem o que fazer",
+  denovo.every((p) => !mesclagemFazAlgo(p)),
+  JSON.stringify(denovo.filter(mesclagemFazAlgo).map((p) => p.assunto)),
+);
+const terceira = aplicarMesclagem({
+  itens: depois,
+  blocos: doc.blocos,
+  plano: denovo,
+  aprovados: denovo.map((p) => p.bloco),
+  dimensoes: DIMS,
+});
+checa(
+  "e aplicar de novo não muda um caractere",
+  JSON.stringify(terceira) === JSON.stringify(depois),
+);
+
+// ---- só o que foi aprovado ----
+
+const soUm = aplicarMesclagem({
+  itens: ITENS_ANTES,
+  blocos: doc.blocos,
+  plano,
+  aprovados: [2],
+  dimensoes: DIMS,
+});
+checa(
+  "aprovar um par só aplica um par só",
+  soUm.length === ITENS_ANTES.length && soUm.find((i) => i.id === "2").decisao.length > 0,
+);
+checa(
+  "e o par não aprovado não entra",
+  soUm.find((i) => i.id === "2").decisao.length > 0 &&
+    !soUm.some((i) => i.assunto === "Estoque, recebimento e conferência"),
+);
+// Índice que não existe no plano, ou par que não faz nada, é descartado em vez
+// de gravar a ata inteira de novo sem mudar nada — cada gravação dessas é uma
+// chance de sobrescrever o array que outra pessoa está editando.
+const nada = aplicarMesclagem({
+  itens: ITENS_ANTES,
+  blocos: doc.blocos,
+  plano,
+  aprovados: [99, -1, 3],
+  dimensoes: DIMS,
+});
+checa(
+  "índice fora do plano é ignorado",
+  JSON.stringify(nada.map((i) => i.id)) === JSON.stringify(ITENS_ANTES.map((i) => i.id)),
+);
+// O bloco 3 só tinha divergência — nada a aplicar. Aprová-lo não muda nada.
+checa(
+  "aprovar um par que só tem divergência não muda nada",
+  nada.find((i) => i.id === "3").decisao === "ficou combinado revisar só o almoço executivo",
+);
+
+// ---- o card que o bloco resolve, sem item ainda ----
+
+/**
+ * O CASO QUE `montarPauta` ESCONDE. A demanda do quadro que ninguém tocou nesta
+ * ata é desenhada a partir de um item FANTASMA, que não está gravado. Se o bloco
+ * que a nomeia virasse item novo SEM card, a pauta passaria a mostrar duas
+ * linhas para o mesmo trabalho: a da demanda, vinda do Kanban, e a do assunto.
+ */
+const semItemAinda = planejarMesclagem({
+  blocos: doc.blocos,
+  itens: [],
+  cards: CARDS_DA_REUNIAO,
+  dimensoes: DIMS,
+});
+checa(
+  "sem item, o bloco continua resolvendo o card",
+  semItemAinda[0].cardId === "c1" && semItemAinda[0].itemId === null,
+  `${semItemAinda[0].cardId}/${semItemAinda[0].itemId}`,
+);
+checa("e a tela é avisada de que vai vincular", semItemAinda[0].vinculaCard === true);
+const comVinculo = aplicarMesclagem({
+  itens: [],
+  blocos: doc.blocos,
+  plano: semItemAinda,
+  aprovados: semItemAinda.map((p) => p.bloco),
+  dimensoes: DIMS,
+});
+checa(
+  "o item novo nasce JÁ apontando para o card",
+  comVinculo[0].cardId === "c1",
+  comVinculo[0].cardId,
+);
+
+
+/**
+ * A TAREFA QUE JÁ ESTÁ LÁ NÃO VOLTA — e este é o teste que o defeito pediu.
+ *
+ * Os campos de texto se protegem sozinhos: preenchido deixa de ser vazio. As
+ * tarefas não, porque entram como linhas NOVAS por desenho. Sem esta régua, cada
+ * clique em "puxar do áudio" dobrava a tabela — e o segundo clique é exatamente
+ * o gesto de quem não tem certeza se o primeiro funcionou.
+ */
+const jaTemATarefa = planejarMesclagem({
+  blocos: doc.blocos,
+  itens: [
+    itemDaAta("1", {
+      assunto: "Sistema Connect e totens",
+      decisao: "já decidido",
+      // O contexto é o que o bloco 2 traz, já aplicado numa passada anterior
+      // (`connect` acima). Sem ele o par ainda teria "contexto" a preencher, e
+      // o teste mediria a coisa errada.
+      contexto: connect.contexto,
+      // O texto exato que `paraTarefa` produz para o encaminhamento do bloco 2,
+      // com a caixa trocada: a comparação é por `chave()`, sem acento e sem
+      // caixa, porque quem redigitou a tarefa não redigitou igual.
+      tarefas: [
+        {
+          id: "1",
+          texto: plano[2].tarefas[0].texto.toUpperCase(),
+          responsavel: "a@b.c",
+          prazo: "2026-09-10",
+          status: "andamento",
+          observacao: "",
+        },
+      ],
+    }),
+  ],
+  cards: [],
+  dimensoes: DIMS,
+});
+checa(
+  "a tarefa que a tabela já tem NÃO é proposta de novo",
+  jaTemATarefa[2].tarefas.length === 0,
+  JSON.stringify(jaTemATarefa[2].tarefas.map((t) => t.texto)),
+);
+// Responsável e prazo foram preenchidos por uma pessoa depois; considerá-la
+// "diferente" a traria de volta como linha nova e vazia, ao lado da que está
+// sendo cumprida.
+checa(
+  "e o responsável e o prazo que alguém preencheu não a fazem parecer outra",
+  !mesclagemFazAlgo(jaTemATarefa[2]),
+  JSON.stringify(jaTemATarefa[2]),
+);
+// A decisão diferente continua sendo mostrada como divergência: ela não é o que
+// este teste mede, mas é o que impede a régua de tarefa de virar um jeito de
+// calar o resto do par.
+checa(
+  "e a divergência de decisão continua aparecendo",
+  jaTemATarefa[2].divergencias.some((d) => d.campo === "decisao"),
 );
 
 console.log(
