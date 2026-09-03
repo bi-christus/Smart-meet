@@ -45,6 +45,8 @@
 import {
   LIMITE_TAREFA_CHARS,
   LIMITE_TEXTO_CHARS,
+  chaveDeAssunto,
+  chaveDeTexto,
   limparTexto,
   proximoIdDeItem,
   proximoIdDeTarefa,
@@ -259,14 +261,6 @@ export function lerPontosImportantes(markdown: string): PontosImportantes {
 // Do bloco para o item
 // ---------------------------------------------------------------------------
 
-/** Sem caixa e sem acento — a mesma comparação de `semear-cantinas.mjs`. */
-function chave(s: string): string {
-  return String(s ?? "")
-    .normalize("NFD")
-    .replace(/\p{M}/gu, "")
-    .trim()
-    .toLowerCase();
-}
 
 /**
  * A dimensão do assunto, por casamento léxico com a árvore do setor.
@@ -287,11 +281,11 @@ function classificar(
   assunto: string,
   dimensoes: readonly DimensaoDaPauta[],
 ): { dimensaoId: string; subdimensaoId: string } {
-  const alvo = chave(assunto);
+  const alvo = chaveDeTexto(assunto);
   let achado = { dimensaoId: "", subdimensaoId: "", tamanho: 0 };
   for (const d of dimensoes) {
     for (const s of d.subs) {
-      const nome = chave(s.nome);
+      const nome = chaveDeTexto(s.nome);
       if (!nome || nome.length <= achado.tamanho) continue;
       // `\b` não funciona com acento já removido? Funciona: `chave` remove os
       // diacríticos, então sobra a-z, e a fronteira de palavra vale.
@@ -480,24 +474,6 @@ export function ligarCards(
     usados.add(cardId);
     return { ...i, cardId };
   });
-}
-
-/**
- * A chave de comparação de um assunto, e ela é a MESMA nos dois lados.
- *
- * A numeração do cabeçalho ("1. Método…") sobrevive no `assunto` da proposta que
- * gerou o card e não no do item, que já a perdeu em `lerPontosImportantes` — e
- * um bloco cujo cabeçalho volte a chegar numerado tem de casar igual. Tirá-la
- * dos dois lados é mais barato que confiar em qual dos dois a tem.
- *
- * Existe como função porque três lugares fazem esta pergunta — `ligarCards`,
- * `indiceDeCards` e `planejarMesclagem` —, e um deles esquecer o
- * `replace` faria o casamento falhar em silêncio: nenhum erro, nenhuma linha
- * vermelha, só um bloco do áudio virando assunto novo ao lado do assunto que ele
- * era.
- */
-function chaveDeAssunto(assunto: unknown): string {
-  return chave(String(assunto ?? "").replace(/^\d+\.\s*/, ""));
 }
 
 /** Card por assunto que o originou. O primeiro ganha, como em `ligarCards`. */
@@ -701,7 +677,7 @@ export function planejarMesclagem(opcoes: {
  * o segundo clique é exatamente o gesto de quem não tem certeza se o primeiro
  * funcionou.
  *
- * A COMPARAÇÃO É POR `chave()`, a mesma do casamento de assunto: sem acento e
+ * A COMPARAÇÃO É POR `chaveDeTexto`, a mesma do casamento de assunto: sem acento
  * sem caixa. Comparação literal deixaria passar a tarefa que alguém redigitou
  * com outra caixa — e o duplicado apareceria justamente na linha em que alguém
  * já estava trabalhando.
@@ -717,9 +693,9 @@ function tarefasQueFaltam(
 ): TarefaDeAta[] {
   const doDocumento = bloco.encaminhamentos.map((e, i) => paraTarefa(e, String(i + 1)));
   if (!alvo?.tarefas.length) return doDocumento;
-  const jaTem = new Set(alvo.tarefas.map((t) => chave(t.texto)));
+  const jaTem = new Set(alvo.tarefas.map((t) => chaveDeTexto(t.texto)));
   return doDocumento.filter((t) => {
-    const k = chave(t.texto);
+    const k = chaveDeTexto(t.texto);
     // Encaminhamento que virou texto vazio não tem o que acrescentar, e sem esta
     // guarda o primeiro deles envenenaria o `Set` com "" e barraria os outros.
     if (!k) return false;

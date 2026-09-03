@@ -62,7 +62,7 @@
  */
 
 import type { DimensaoDaPauta, ItemDaPauta, ItemDeAta } from "./ata-core.ts";
-import { limparTexto, proximoIdDeItem } from "./ata-core.ts";
+import { chaveDeAssunto, limparTexto, proximoIdDeItem } from "./ata-core.ts";
 
 /** Quanto cabe no assunto de um item — o mesmo teto que `normalizarItem` aplica. */
 export const LIMITE_ASSUNTO_CHARS = 200;
@@ -440,6 +440,174 @@ export function moverAssunto(
         ...destino.itens,
         { ...item, id: proximoIdDeItem(destino.itens) },
       ],
+    },
+  };
+}
+
+/** O recorte de ata que `moverAssunto` e `levarAssunto` precisam. */
+export type AtaEmMovimento = {
+  id: string;
+  setor: string;
+  /** `aaaa-mm-dd` — só `levarAssunto` a usa, para não levar para trás no tempo. */
+  data: string;
+  itens: readonly ItemDeAta[];
+};
+
+/**
+ * "Levar para próxima reunião" quando a próxima JÁ EXISTE.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * O QUE ESTAVA QUEBRADO, e é o defeito mais silencioso desta aba até aqui
+ *
+ * O botão só acendia um interruptor: `item.proximaReuniao = true`, e nada
+ * acontecia. O flag era colhido em UM lugar — "Abrir a próxima reunião" —, e
+ * aquele caminho só sabe CRIAR ata.
+ *
+ * Quando a próxima reunião já existe, o botão não fazia nada. Não é figura de
+ * linguagem: o setor Cantinas tinha ata de 26/08, 02/09 e 09/09; durante a
+ * reunião de 02/09 quem conduzia abriu a ata de 26/08, discutiu os assuntos
+ * passados e clicou em "Levar para próxima reunião" em vários deles. Os flags
+ * ficaram acesos no 26/08 sem ter para onde ir — colhê-los exigiria criar uma
+ * QUARTA ata, duplicando a de 09/09. Sem erro na tela, sem aviso: o botão
+ * acendia, e pronto.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * LEVAR NÃO É MOVER, e a diferença é o que este arquivo guarda
+ *
+ * As duas funções vivem lado a lado de propósito, porque dividem as réguas e
+ * porque a semelhança é enganosa:
+ *
+ *                     `moverAssunto`          `levarAssunto`
+ *   origem            perde o item            MANTÉM o item
+ *   decisão           vai junto               FICA na origem, vazia no destino
+ *   objetivo          vai junto               vai junto
+ *   tarefas           todas                   só as não concluídas
+ *   linha com card    recusa                  ACEITA
+ *   origem/origemAtaId preserva               "herdado" / id da origem
+ *
+ * "Mover" conserta um endereço errado: o assunto sempre foi daquela reunião e
+ * foi digitado na porta ao lado. "Levar" passa bastão: a reunião decidiu que
+ * aquilo volta a ser falado. As três primeiras linhas da tabela são a régua que
+ * `herdarParaProxima` já aplica, e o porquê está no cabeçalho dela — a decisão é
+ * daquela reunião, e repeti-la faria a ata nova nascer afirmando o que outra
+ * decidiu; tarefa concluída que reaparece é a linha que todo mundo aprende a
+ * pular.
+ *
+ * ACEITAR LINHA COM CARD é a decisão nova, e é o caso mais comum do botão:
+ * "esta demanda continua na pauta da semana que vem". `moverAssunto` recusa card
+ * porque mover não moveria a demanda — ela vem do Kanban e aparece na pauta de
+ * toda reunião do setor. Levar não pretende mover nada: pretende registrar o que
+ * se espera dela na próxima, e é o `objetivo` copiado que carrega isso. Como
+ * `montarPauta` indexa um item por card, o item que chega vira A linha daquela
+ * demanda no destino — não uma segunda.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * O ITEM PODE SER FANTASMA, e é o caso que exige atenção
+ *
+ * A linha da pauta que ninguém tocou é desenhada a partir de um item que
+ * `montarPauta` inventa na hora (`itemVazio`), com `id` igual ao `cardId` e sem
+ * estar gravado. Levar essa linha significa criar o item de verdade na origem —
+ * daí o item vir por parâmetro em vez de ser procurado por id. É o mesmo
+ * segundo braço de `vincularCard`, e pelo mesmo motivo: sem ele a função
+ * devolveria os arrays intocados e o clique não faria nada, em silêncio, que é
+ * exatamente o defeito que ela vem consertar.
+ */
+export function levarAssunto(
+  origem: AtaEmMovimento,
+  destino: AtaEmMovimento,
+  item: ItemDeAta,
+): Conferido<{ origem: ItemDeAta[]; destino: ItemDeAta[] }> {
+  if (origem.id === destino.id) {
+    return { ok: false, motivo: "Escolha uma reunião diferente desta." };
+  }
+  if (origem.setor !== destino.setor) {
+    return {
+      ok: false,
+      motivo:
+        "As duas reuniões precisam ser do mesmo setor: a dimensão do assunto só existe na árvore do setor dele.",
+    };
+  }
+  /**
+   * PARA TRÁS NO TEMPO NÃO É LEVAR, é reescrever uma reunião que já aconteceu.
+   *
+   * A recusa é de negócio, e é a única das quatro que `moverAssunto` não tem —
+   * porque mover para trás é justamente o conserto que ele existe para fazer
+   * ("lancei na reunião de hoje o que era da semana passada"). Aqui o gesto
+   * significa "volte a falar disto", e uma ata anterior não vai voltar a
+   * acontecer. Sem esta recusa, o objetivo apareceria na pauta de uma reunião
+   * encerrada, cobrando de todo mundo uma coisa que ninguém mais vai ler.
+   *
+   * Data vazia passa: a ata sem data ainda não foi marcada, e é destino legítimo.
+   */
+  if (origem.data && destino.data && destino.data < origem.data) {
+    return {
+      ok: false,
+      motivo:
+        "Essa reunião é anterior a esta. Para corrigir onde o assunto foi lançado, use \"Mover\".",
+    };
+  }
+
+  /**
+   * JÁ ESTÁ LÁ, e por dois caminhos: o card e o nome.
+   *
+   * Sem esta conferência, dois cliques criam duas linhas iguais na pauta do
+   * destino — e o segundo clique é o gesto de quem não tem certeza se o primeiro
+   * funcionou. Recusar em vez de preencher o que falta é a escolha honesta: o
+   * item de lá pode ter objetivo escrito por alguém, e sobrescrevê-lo violaria a
+   * mesma régua que vale na mesclagem com o documento do áudio.
+   */
+  const chaveDoItem = chaveDeAssunto(item.assunto);
+  const jaEstaLa = destino.itens.some(
+    (i) =>
+      (item.cardId && i.cardId === item.cardId) ||
+      (!!chaveDoItem && chaveDeAssunto(i.assunto) === chaveDoItem),
+  );
+  if (jaEstaLa) {
+    return {
+      ok: false,
+      motivo:
+        "Este assunto já está na pauta daquela reunião. Abra-a para escrever o que se espera dele.",
+    };
+  }
+
+  /**
+   * A CÓPIA, e cada campo dela é uma decisão já tomada em `herdarParaProxima`.
+   *
+   * O `id` é novo, calculado contra os itens do DESTINO: os ids são sequenciais
+   * por ata, e o item que chega encontraria um homônimo do outro lado — duas
+   * linhas com a mesma `key` do React, e a escrita de uma caindo na outra.
+   */
+  const copia: ItemDeAta = {
+    ...item,
+    id: proximoIdDeItem(destino.itens),
+    decisao: "",
+    proximaReuniao: false,
+    origem: "herdado",
+    origemAtaId: origem.id,
+    tarefas: item.tarefas.filter((t) => t.status !== "concluida"),
+  };
+
+  /**
+   * A ORIGEM MANTÉM O ITEM, com a marca acesa — é o que distingue levar de mover.
+   *
+   * A marca fica por duas razões. Ela é o registro de que a reunião decidiu
+   * levar aquilo adiante, que é informação da ata daquele dia; e é ela que
+   * "Abrir a próxima reunião" continua colhendo, para o caso em que a próxima
+   * ainda não existe. Os dois caminhos convivem, e é de propósito: um serve à
+   * reunião já marcada, o outro à que ainda vai ser.
+   */
+  const marcado = { ...item, proximaReuniao: true };
+  const existeNaOrigem = origem.itens.some((i) => i.id === item.id);
+  return {
+    ok: true,
+    valor: {
+      origem: existeNaOrigem
+        ? origem.itens.map((i) => (i.id === item.id ? marcado : i))
+        : // O FANTASMA VIRA ITEM DE VERDADE. O `id` dele é o `cardId`, que não
+          // serve como id de item gravado: ele colidiria com o próximo item novo
+          // que herdasse aquele card. Mesma renumeração de `vincularCard`.
+          [...origem.itens, { ...marcado, id: proximoIdDeItem(origem.itens) }],
+      destino: [...destino.itens, copia],
     },
   };
 }

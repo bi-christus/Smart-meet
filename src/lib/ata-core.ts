@@ -250,6 +250,40 @@ export function limparParagrafo(bruto: unknown, teto = LIMITE_TEXTO_CHARS): stri
 }
 
 /**
+ * A chave de comparação de um texto: sem acento, sem caixa, sem sobra.
+ *
+ * MORA AQUI, e não em quem a usa, porque três módulos fazem a mesma pergunta e
+ * ela tem de ter uma resposta só. `ata-de-reuniao-core` casa bloco do documento
+ * com item da pauta; `ata-demanda-core` pergunta se o assunto já está na pauta da
+ * reunião de destino. Se as duas normalizassem por conta própria, bastaria uma
+ * delas parar de tirar o acento para o casamento falhar em silêncio — nenhum
+ * erro, nenhuma linha vermelha, só um assunto duplicado numa pauta.
+ *
+ * É a mesma normalização de `semear-cantinas.mjs` e do `varrer-mencoes` do
+ * Cowork, e pelo mesmo motivo: onde dá para casar por texto exato, casar por
+ * texto exato não erra em silêncio.
+ */
+export function chaveDeTexto(bruto: unknown): string {
+  return String(bruto ?? "")
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .trim()
+    .toLowerCase();
+}
+
+/**
+ * O mesmo, para ASSUNTO — a numeração do cabeçalho sai antes.
+ *
+ * "1. Método da reunião" e "Método da reunião" são o mesmo assunto: a numeração
+ * é da leitura em voz alta ("vamos ao três"), sobrevive no `assunto` da proposta
+ * que gerou um card, e não sobrevive no do item (`lerPontosImportantes` já a
+ * tira). Tirá-la dos dois lados é mais barato do que confiar em qual deles a tem.
+ */
+export function chaveDeAssunto(bruto: unknown): string {
+  return chaveDeTexto(String(bruto ?? "").replace(/^\d+\.\s*/, ""));
+}
+
+/**
  * O próximo id de tarefa — sempre MAIOR que todos, nunca um buraco reaproveitado.
  *
  * Mesma regra e mesmo motivo de `proximoIdDeSub` em `dimensoes-core`: id

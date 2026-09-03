@@ -36,6 +36,7 @@
 import {
   classificacaoDaLinha,
   conferirAssuntoNovo,
+  levarAssunto,
   conferirClassificacao,
   conferirTitulo,
   editarAssunto,
@@ -483,6 +484,205 @@ const comCardMovendo = moverAssunto(
 );
 checa("linha que tem card é recusada", comCardMovendo.ok === false);
 checa("e a recusa explica que ela já está em toda pauta", /toda reunião/.test(comCardMovendo.motivo));
+
+
+console.log("\n— levar o assunto para uma reunião que já existe —");
+
+/**
+ * O CENÁRIO É O REAL, e é o defeito que este bloco protege: o setor Cantinas
+ * tinha ata de 26/08, 02/09 e 09/09. Durante a reunião de 02/09 quem conduzia
+ * abriu a de 26/08, discutiu os assuntos passados e clicou em "Levar para
+ * próxima reunião" em vários deles. Os flags ficaram acesos sem ter para onde ir
+ * — colhê-los exigiria criar uma quarta ata, duplicando a de 09/09. Sem erro na
+ * tela e sem aviso: o botão acendia, e pronto.
+ *
+ * LEVAR NÃO É MOVER, e a diferença é o que os `checa` abaixo cobram linha por
+ * linha: a origem MANTÉM o item, a decisão FICA nela, e a linha com card é
+ * aceita (mover a recusa).
+ */
+const L_ORIGEM = {
+  id: "ata-26-08",
+  setor: "Cantinas",
+  data: "2026-08-26",
+  itens: [
+    item("1", { assunto: "fica sozinho" }),
+    item("2", {
+      assunto: "Sistema Connect e totens",
+      contexto: "totem custa cerca de R$ 5.800",
+      dimensaoId: "d1",
+      subdimensaoId: "s1",
+      origem: "reuniao",
+      decisao: "separar sistema de totem",
+      objetivo: "trazer a proposta revisada",
+      tarefas: [
+        { id: "1", texto: "pedir nova proposta", responsavel: "a@b.c", prazo: "2026-09-01", status: "pendente", observacao: "" },
+        { id: "2", texto: "conferir o contrato antigo", responsavel: "", prazo: "", status: "concluida", observacao: "" },
+      ],
+    }),
+  ],
+};
+// O destino já tem um item "2": é o caso que derruba tudo se o id não for
+// renumerado — duas linhas com a mesma chave, e a escrita de uma caindo na outra.
+const L_DESTINO = {
+  id: "ata-09-09",
+  setor: "Cantinas",
+  data: "2026-09-09",
+  itens: [item("1", { assunto: "ja morava aqui" }), item("2", { assunto: "e este tambem" })],
+};
+
+const lv_levado = levarAssunto(L_ORIGEM, L_DESTINO, L_ORIGEM.itens[1]);
+checa("levar passa", lv_levado.ok === true, lv_levado.motivo);
+
+// A DIFERENÇA COM "MOVER", cobrada campo por campo.
+checa(
+  "a ORIGEM mantém o item — levar não é mover",
+  lv_levado.valor.origem.length === 2 &&
+    lv_levado.valor.origem.some((i) => i.assunto === "Sistema Connect e totens"),
+);
+checa(
+  "e ele fica marcado como levado, que é o registro da decisão de hoje",
+  lv_levado.valor.origem.find((i) => i.id === "2").proximaReuniao === true,
+);
+checa(
+  "a decisão FICA na origem",
+  lv_levado.valor.origem.find((i) => i.id === "2").decisao === "separar sistema de totem",
+);
+
+const lv_levadoChegou = lv_levado.valor.destino[2];
+checa("a cópia entra no destino", lv_levado.valor.destino.length === 3);
+checa(
+  "com id NOVO, que não colide com o que já morava lá",
+  lv_levadoChegou.id === "3",
+  `veio "${lv_levadoChegou.id}"`,
+);
+checa(
+  "e os ids do destino continuam únicos",
+  new Set(lv_levado.valor.destino.map((i) => i.id)).size === 3,
+);
+// A decisão é DAQUELA reunião. Repeti-la faria a ata nova nascer afirmando que
+// decidiu o que outra decidiu.
+checa("a decisão NÃO vai junto", lv_levadoChegou.decisao === "");
+checa(
+  "o objetivo vai — ele já foi escrito olhando para a frente",
+  lv_levadoChegou.objetivo === "trazer a proposta revisada",
+);
+checa(
+  "assunto, contexto e dimensão vão junto",
+  lv_levadoChegou.assunto === "Sistema Connect e totens" &&
+    lv_levadoChegou.contexto === "totem custa cerca de R$ 5.800" &&
+    lv_levadoChegou.dimensaoId === "d1",
+);
+checa(
+  "só a tarefa aberta vai; a concluída fica para trás",
+  lv_levadoChegou.tarefas.length === 1 && lv_levadoChegou.tarefas[0].texto === "pedir nova proposta",
+);
+checa(
+  "e a tarefa que vai leva o responsável e o prazo que já tinha",
+  lv_levadoChegou.tarefas[0].responsavel === "a@b.c" && lv_levadoChegou.tarefas[0].prazo === "2026-09-01",
+);
+checa("a marca de 'próxima' não se propaga para a cópia", lv_levadoChegou.proximaReuniao === false);
+// A origem NÃO é preservada, e é o único campo de que isso é verdade: o item
+// nasceu de um bloco do áudio de 26/08, e na reunião de 09/09 o que ele é é
+// herança — áudio nenhum daquela reunião o trouxe.
+checa(
+  "a cópia sabe que é herdada, e de qual reunião",
+  lv_levadoChegou.origem === "herdado" && lv_levadoChegou.origemAtaId === "ata-26-08",
+  `${lv_levadoChegou.origem}/${lv_levadoChegou.origemAtaId}`,
+);
+
+// LINHA COM CARD É ACEITA — e é o caso mais comum do botão: "esta demanda
+// continua na pauta da semana que vem". `moverAssunto` recusa card porque mover
+// não moveria a demanda; levar não pretende mover nada, e como `montarPauta`
+// indexa um item por card, a cópia vira A linha daquela demanda no destino.
+const lv_comCard = levarAssunto(
+  { ...L_ORIGEM, itens: [item("5", { cardId: "c9", objetivo: "medir o piloto" })] },
+  L_DESTINO,
+  item("5", { cardId: "c9", objetivo: "medir o piloto" }),
+);
+checa("a linha COM card é aceita", lv_comCard.ok === true, lv_comCard.motivo);
+checa(
+  "e a cópia dela leva o card, para não virar uma segunda linha da mesma demanda",
+  lv_comCard.ok && lv_comCard.valor.destino[2].cardId === "c9",
+);
+
+// O FANTASMA: a linha que ninguém tocou não está gravada em `itens`, e o `id`
+// dela é o `cardId`. Sem o segundo braço, a função devolveria os arrays
+// intocados e o clique não faria nada — em silêncio, que é o defeito que ela vem
+// consertar.
+const lv_fantasma = levarAssunto(
+  { ...L_ORIGEM, itens: [] },
+  L_DESTINO,
+  item("c9", { cardId: "c9", objetivo: "medir o piloto" }),
+);
+checa("o item fantasma é materializado na origem", lv_fantasma.valor.origem.length === 1);
+checa(
+  "com a marca acesa e id de item, nunca o cardId",
+  lv_fantasma.valor.origem[0].proximaReuniao === true &&
+    lv_fantasma.valor.origem[0].id === "1" &&
+    lv_fantasma.valor.origem[0].cardId === "c9",
+  lv_fantasma.valor.origem[0].id,
+);
+
+// ---- as quatro recusas, e as quatro são de negócio ----
+
+checa(
+  "a mesma ata é recusada",
+  levarAssunto(L_ORIGEM, L_ORIGEM, L_ORIGEM.itens[1]).ok === false,
+);
+checa(
+  "setor diferente é recusado — a dimensão só existe na árvore do setor dele",
+  levarAssunto(L_ORIGEM, { ...L_DESTINO, setor: "B.I." }, L_ORIGEM.itens[1]).ok === false,
+);
+// Para trás no tempo não é levar, é reescrever uma reunião que já aconteceu — e é
+// a única recusa que `moverAssunto` não tem, porque mover para trás é justamente
+// o conserto que ele existe para fazer.
+const lv_paraTras = levarAssunto(
+  L_ORIGEM,
+  { ...L_DESTINO, id: "ata-19-08", data: "2026-08-19" },
+  L_ORIGEM.itens[1],
+);
+checa("reunião anterior é recusada", lv_paraTras.ok === false);
+checa(
+  'e a recusa aponta o "Mover", que é o botão para esse caso',
+  /Mover/.test(lv_paraTras.motivo),
+  lv_paraTras.motivo,
+);
+// Ata sem data ainda não foi marcada, e é destino legítimo.
+checa(
+  "destino sem data passa — a reunião ainda não foi marcada",
+  levarAssunto(L_ORIGEM, { ...L_DESTINO, data: "" }, L_ORIGEM.itens[1]).ok === true,
+);
+
+// JÁ ESTÁ LÁ, pelos dois caminhos. Sem isto, dois cliques criam duas linhas
+// iguais na pauta do destino — e o segundo clique é o gesto de quem não tem
+// certeza se o primeiro funcionou.
+const lv_jaPeloNome = levarAssunto(
+  L_ORIGEM,
+  {
+    ...L_DESTINO,
+    // Caixa e acento diferentes: a comparação é por `chaveDeAssunto`.
+    itens: [item("1", { assunto: "SISTEMA CONNECT E TOTENS" })],
+  },
+  L_ORIGEM.itens[1],
+);
+checa("assunto que já está no destino é recusado, mesmo com outra caixa", lv_jaPeloNome.ok === false);
+const lv_jaPeloCard = levarAssunto(
+  { ...L_ORIGEM, itens: [item("5", { cardId: "c9" })] },
+  { ...L_DESTINO, itens: [item("7", { cardId: "c9", assunto: "outro nome" })] },
+  item("5", { cardId: "c9" }),
+);
+checa("demanda que já está no destino é recusada pelo card", lv_jaPeloCard.ok === false);
+// Assunto vazio (a linha que entrou pelo quadro e nunca foi tocada) não pode
+// casar com outro assunto vazio: sem a guarda do `!!chaveDoItem`, a primeira
+// linha muda do destino barraria todas as demais.
+checa(
+  "assunto vazio não casa com assunto vazio",
+  levarAssunto(
+    { ...L_ORIGEM, itens: [item("5", { cardId: "c9", assunto: "" })] },
+    { ...L_DESTINO, itens: [item("7", { cardId: "c8", assunto: "" })] },
+    item("5", { cardId: "c9", assunto: "" }),
+  ).ok === true,
+);
 
 console.log(
   falhas === 0
