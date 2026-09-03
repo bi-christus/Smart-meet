@@ -27,6 +27,15 @@ export type OutputKind = "resumo" | "detalhada" | "didatica";
 export type DriveOutputKind =
   | "transcricao"
   | "resumo"
+  /**
+   * O documento que a aba Ata CONSOME — gerado sempre, como a transcrição e os
+   * pontos importantes, e ao contrário das atas, que são opcionais.
+   *
+   * Ele não está em `OutputKind` de propósito: `OutputKind` é o que a pessoa
+   * ESCOLHE gerar na tela de envio, e este não é escolha. Pô-lo lá abriria a
+   * possibilidade de alguém desmarcá-lo e a aba Ata ficar sem fonte.
+   */
+  | "pauta"
   | "detalhada"
   | "didatica";
 export type DriveOutput = { kind: DriveOutputKind; name: string; link: string };
@@ -34,6 +43,7 @@ export type DriveOutput = { kind: DriveOutputKind; name: string; link: string };
 export const DRIVE_OUTPUT_LABEL: Record<DriveOutputKind, string> = {
   transcricao: "Transcrição",
   resumo: "Pontos importantes",
+  pauta: "Pauta da reunião",
   detalhada: "Ata detalhada",
   didatica: "Ata didática",
 };

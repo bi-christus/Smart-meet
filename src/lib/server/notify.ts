@@ -16,20 +16,44 @@ import {
   type MailAttachment,
 } from "./mailer";
 import { exportDoc, DOCX_MIME } from "./drive-server";
+import type { TipoDeSaida } from "../drive-nomes-core";
 
-export type OutputKind = "transcricao" | "resumo" | "detalhada" | "didatica";
+/**
+ * Os tipos vêm de `drive-nomes-core`, e não são redeclarados aqui.
+ *
+ * Eram uma segunda lista, escrita à mão, e a segunda lista é a que ninguém
+ * lembra de atualizar: um tipo novo entrava no sync, o e-mail continuava
+ * compilando, e o documento simplesmente não aparecia no aviso — sem erro, sem
+ * aviso, sem nada. O `Record<TipoDeSaida, string>` de `LABEL` agora obriga o
+ * compilador a cobrar o rótulo de todo tipo novo.
+ */
+export type OutputKind = TipoDeSaida;
 export type DriveOutput = { kind: OutputKind; name: string; link: string };
 export type DriveFile = { id: string; name: string; mimeType: string };
 
 const LABEL: Record<OutputKind, string> = {
   transcricao: "Transcrição",
   resumo: "Pontos importantes",
+  pauta: "Pauta da reunião",
   detalhada: "Ata detalhada",
   didatica: "Ata didática",
 };
 
-/** Ordem de leitura: a ata principal primeiro, a transcrição por último. */
-const ORDER: OutputKind[] = ["resumo", "detalhada", "didatica", "transcricao"];
+/**
+ * Ordem de leitura: a ata principal primeiro, a transcrição por último.
+ *
+ * A pauta vem depois dos pontos importantes: quem abre o e-mail quer LER o que
+ * foi decidido, e a pauta não é para ler — ela é o documento que a aba Ata
+ * consome. Ela vai no aviso porque quem recebe precisa poder conferir o que
+ * alimentou a pauta, não porque seja a leitura principal.
+ */
+const ORDER: OutputKind[] = [
+  "resumo",
+  "pauta",
+  "detalhada",
+  "didatica",
+  "transcricao",
+];
 
 const MIME_GDOC = "application/vnd.google-apps.document";
 

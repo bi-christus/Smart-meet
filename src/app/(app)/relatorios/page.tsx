@@ -57,6 +57,9 @@ const SEM_PROPOSTAS: Proposta[] = [];
 const OUTPUT_ICON: Record<DriveOutputKind, string> = {
   transcricao: "chat",
   resumo: "check",
+  // Mesmo ícone da tela de Reuniões, e pelo mesmo motivo: a pauta é documento de
+  // trabalho, não uma quarta ata para ler.
+  pauta: "prancheta",
   detalhada: "relatorios",
   didatica: "reunioes",
 };

@@ -21,7 +21,13 @@ import {
 
 export const runtime = "nodejs";
 
-const KINDS = ["transcricao", "resumo", "detalhada", "didatica"] as const;
+const KINDS = [
+  "transcricao",
+  "resumo",
+  "pauta",
+  "detalhada",
+  "didatica",
+] as const;
 type Kind = (typeof KINDS)[number];
 
 /** O id do arquivo dentro de um link do Docs. */

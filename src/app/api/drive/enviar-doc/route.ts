@@ -25,7 +25,13 @@ import { DRIVE_OUTPUT_LABEL } from "@/lib/meetings";
 
 export const runtime = "nodejs";
 
-const KINDS = ["transcricao", "resumo", "detalhada", "didatica"] as const;
+const KINDS = [
+  "transcricao",
+  "resumo",
+  "pauta",
+  "detalhada",
+  "didatica",
+] as const;
 type Kind = (typeof KINDS)[number];
 
 /** Teto de destinatários por envio. Compartilhar não é lista de transmissão. */
