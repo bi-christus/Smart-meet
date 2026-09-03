@@ -508,13 +508,64 @@
   }
 }
 
+/* Flex, e não a linha de texto de antes: o chip de origem entra aqui ao lado da
+   numeração, e `vertical-align` num `<button>` de 10px dentro de texto em caixa
+   alta desalinha por um pixel que se vê em toda linha da pauta. `wrap` porque
+   "ASSUNTO · 01" mais "VEIO DE 26/08" não cabe na coluna no celular. */
 .demandaRot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.7px;
   text-transform: uppercase;
   color: var(--tx-3);
   margin-bottom: 5px;
+}
+/* O CHIP DE ORIGEM — "do áudio", "lançado à mão", "veio de 26/08".
+
+   NEUTRO DE PROPÓSITO: `--s3`/`--tx-2` são os mesmos tokens do selo de
+   `registro`, e pelo mesmo motivo escrito lá em `SELO_ESTADO`. Origem não é
+   alerta; um chip aceso em toda linha da pauta ensinaria a ignorar os selos que
+   de fato pedem alguém. Token e nunca hex — o acento Entre Aulas redefine a
+   paleta, e o tema claro reprovava em contraste os hex que havia aqui antes.
+
+   Sem `transition` e sem transform: pela Frequency Gate do AGENTS.md §3 este é
+   um rótulo estático numa lista que redesenha a cada tecla digitada em qualquer
+   decisão da pauta. */
+.origemChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--s3);
+  border: 1px solid var(--line-soft);
+  color: var(--tx-2);
+  font-family: inherit;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+.origemChip svg {
+  opacity: 0.7;
+}
+/* Só o herdado com ata de origem viva é botão — ver `OrigemDoAssunto`. A cor de
+   borda no hover é a única resposta ao mouse, e é a mesma de `.area`: a pauta
+   inteira já usa esse gesto para dizer "isto é clicável". */
+.origemLink {
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s;
+}
+.origemLink:hover {
+  color: var(--tx);
+  border-color: var(--brand-line);
+}
+.origemLink:hover svg {
+  opacity: 1;
 }
 .demanda h3 {
   font-size: 14.5px;

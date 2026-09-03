@@ -209,6 +209,15 @@ console.log("\n— do bloco para o item —");
 const itemMetodo = blocoParaItem(doc.blocos[0], "1", DIMS);
 checa("o assunto vira o assunto do item", itemMetodo.assunto === "Método da reunião e das atas");
 checa("o item nasce sem card — a ata não cria demanda", itemMetodo.cardId === "");
+// Esta é a única função do app que produz item `reuniao`, e o chip da tela sai
+// daqui. Se ela parar de marcar, a pauta volta a desenhar igual o que o áudio
+// trouxe e o que alguém digitou — e a mesclagem perde o único jeito que tem de
+// saber qual texto tem autor humano e não pode ser sobrescrito.
+checa(
+  "e nasce marcado como vindo do áudio",
+  itemMetodo.origem === "reuniao" && itemMetodo.origemAtaId === "",
+  itemMetodo.origem,
+);
 checa("cada → virou uma tarefa pendente", itemMetodo.tarefas.length === 2 && itemMetodo.tarefas[0].status === "pendente");
 // Prazo e responsável derivam de número e de nome próprio, que é o que a
 // transcrição erra — e o erro chega com cara de acerto. O texto guarda os dois.

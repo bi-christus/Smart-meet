@@ -362,6 +362,12 @@ export function blocoParaItem(
     contexto: limparTexto(bloco.contexto.join(" · ")),
     dimensaoId,
     subdimensaoId,
+    // Esta é a única função do app que produz item `reuniao`: ela é a fronteira
+    // entre o documento que o Cowork redigiu e a pauta. O chip que a tela
+    // desenha a partir daqui é o que permite a quem conduz a reunião saber que
+    // aquela decisão foi extraída da gravação, e não digitada por alguém.
+    origem: "reuniao",
+    origemAtaId: "",
     // Várias decisões no mesmo bloco são várias frases sobre o mesmo assunto —
     // e o assunto é a linha. Juntar com " · " é o que a tela já faz com dimensão
     // e subdimensão, e cabe nos 600 de `limparTexto`.

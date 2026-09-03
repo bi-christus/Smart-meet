@@ -74,6 +74,8 @@ const item = (id, extra = {}) => ({
   contexto: "",
   dimensaoId: "",
   subdimensaoId: "",
+  origem: "manual",
+  origemAtaId: "",
   decisao: "",
   objetivo: "",
   proximaReuniao: false,
@@ -170,6 +172,13 @@ checa("nasce SEM card — a fronteira de demandas", nasceu.valor.cardId === "");
 checa("o texto chega aparado", nasceu.valor.assunto === "Padrão de recebimento");
 checa("a classificação chega junto", nasceu.valor.dimensaoId === "d1");
 checa("nasce sem decisão e sem tarefa", !nasceu.valor.decisao && nasceu.valor.tarefas.length === 0);
+// O único caminho do app que produz item `manual`. É o que a mesclagem com o
+// documento do áudio lê para saber que aquele texto tem autor humano.
+checa(
+  "nasce marcado como lançado à mão",
+  nasceu.valor.origem === "manual" && nasceu.valor.origemAtaId === "",
+  nasceu.valor.origem,
+);
 
 console.log("\n— o vínculo com o card recém-criado —");
 
@@ -389,6 +398,24 @@ checa("mover passa", movido.ok === true, movido.motivo);
 checa("o assunto sai da origem", movido.valor.origem.length === 1);
 checa("e quem ficou é o outro", movido.valor.origem[0].id === "1");
 checa("o assunto entra no destino", movido.valor.destino.length === 3);
+
+// A ORIGEM VAI INTEIRA, e essa é a que dá vontade de trocar. "Mover" corrige um
+// erro de endereço: o assunto sempre foi desta reunião e foi digitado na porta
+// ao lado. Marcá-lo `herdado` faria a ata de destino afirmar que ele veio de
+// outra reunião — e quem quer passar bastão usa "Levar para próxima reunião".
+const doAudioMovido = moverAssunto(
+  {
+    ...ORIGEM,
+    itens: [item("2", { origem: "reuniao" })],
+  },
+  DESTINO,
+  "2",
+);
+checa(
+  "a origem do item movido é PRESERVADA",
+  doAudioMovido.ok && doAudioMovido.valor.destino[2].origem === "reuniao",
+  doAudioMovido.ok ? doAudioMovido.valor.destino[2].origem : doAudioMovido.motivo,
+);
 
 const chegou = movido.ok && movido.valor.destino[2];
 checa(

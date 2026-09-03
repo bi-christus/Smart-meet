@@ -78,6 +78,34 @@ export type TarefaDeAta = {
 };
 
 /**
+ * A procedência de uma linha da pauta — ver o campo `origem` de `ItemDeAta`.
+ *
+ * A ordem do array é a que a tela usa para agrupar e para o filtro, e ela é a
+ * do fluxo da reunião: o que a gravação trouxe, o que se lançou à mão, e o que
+ * veio pendurado de outra reunião.
+ */
+export const ORIGENS_DO_ITEM = ["reuniao", "manual", "herdado"] as const;
+export type OrigemDoItem = (typeof ORIGENS_DO_ITEM)[number];
+
+/**
+ * O rótulo do chip, e ele fala do PASSADO da linha, não do formato dela.
+ *
+ * "do áudio" e não "gerado pela IA": quem transcreve e redige é o Cowork, fora
+ * deste repositório, e o que a ata recebe é um documento estruturado — chamar
+ * aquilo de IA na tela prometeria um julgamento que o parser não faz (ver o
+ * cabeçalho de `ata-de-reuniao-core.ts`).
+ *
+ * O `herdado` não está aqui: o rótulo dele carrega a reunião de origem
+ * ("veio de 26/08") e por isso é montado na tela, que é quem sabe resolver
+ * `origemAtaId` em data.
+ */
+export const ORIGEM_LABEL: Record<OrigemDoItem, string> = {
+  reuniao: "do áudio",
+  manual: "lançado à mão",
+  herdado: "veio de outra reunião",
+};
+
+/**
  * O que a reunião registrou sobre UM assunto.
  *
  * Quando o assunto já é demanda, guarda-se `cardId` e mais nada do card:
@@ -117,6 +145,34 @@ export type ItemDeAta = {
    */
   dimensaoId: string;
   subdimensaoId: string;
+  /**
+   * De onde esta linha da pauta veio — e as três são coisas diferentes.
+   *
+   * A pauta desenhava tudo igual, e isso escondia a pergunta que quem conduz a
+   * reunião faz primeiro: "isto o áudio trouxe, alguém lançou antes, ou é
+   * assunto que ficou pendurado da semana passada?". Sem a resposta, o mesmo
+   * bloco de tela ora era registro do que foi dito, ora era pauta que alguém
+   * combinou de trazer — e a reunião de 02/09/2026 teve as três origens na
+   * mesma ata, sem nada distinguindo.
+   *
+   * Ela também é o que permite a mesclagem com o documento do áudio saber o que
+   * pode preencher: o que humano escreveu não se sobrescreve.
+   *
+   *   - `reuniao`  — saiu de um bloco de "Pontos importantes" (`blocoParaItem`)
+   *   - `manual`   — alguém digitou em "Novo assunto" (`conferirAssuntoNovo`)
+   *   - `herdado`  — foi copiado de outra reunião (`herdarParaProxima`)
+   */
+  origem: OrigemDoItem;
+  /**
+   * Só no `herdado`: a ata de onde o assunto foi copiado. Vazio nos outros.
+   *
+   * GUARDA ID, e não o título nem a data da reunião de origem — mesma regra de
+   * `tags-ref.ts` e do `cardId` acima: nome é cópia, id é referência. A reunião
+   * de origem pode ser renomeada ou ter a data corrigida, e o chip da tela tem
+   * de continuar dizendo a verdade. Quem resolve o rótulo é a tela, que já lê a
+   * lista de atas do setor.
+   */
+  origemAtaId: string;
   /** O que ficou decidido. Vazio = a demanda foi discutida e nada se decidiu. */
   decisao: string;
   /** O que se espera ter na próxima reunião. */
@@ -257,7 +313,18 @@ function normalizarTarefa(bruto: unknown, i: number): TarefaDeAta | null {
   };
 }
 
-function normalizarItem(bruto: unknown): ItemDeAta | null {
+/**
+ * @param origemPadrao O que assumir quando o item não traz `origem` gravada.
+ *   NÃO é um valor fixo, e não pode ser: nenhuma ata gravada antes desta versão
+ *   tem o campo, e a de 26/08 nasceu inteira do documento da reunião — um
+ *   padrão `"manual"` cravado a marcaria toda como lançada à mão, que é
+ *   afirmação errada sobre uma reunião de verdade. Quem decide é `normalizarAta`
+ *   pela presença de `meetingId`, e o porquê está lá.
+ */
+function normalizarItem(
+  bruto: unknown,
+  origemPadrao: OrigemDoItem,
+): ItemDeAta | null {
   if (!bruto || typeof bruto !== "object") return null;
   const b = bruto as Record<string, unknown>;
   const cardId = typeof b.cardId === "string" ? b.cardId : "";
@@ -287,6 +354,16 @@ function normalizarItem(bruto: unknown): ItemDeAta | null {
     contexto: limparTexto(b.contexto),
     dimensaoId: typeof b.dimensaoId === "string" ? b.dimensaoId : "",
     subdimensaoId: typeof b.subdimensaoId === "string" ? b.subdimensaoId : "",
+    origem: ORIGENS_DO_ITEM.includes(b.origem as OrigemDoItem)
+      ? (b.origem as OrigemDoItem)
+      : origemPadrao,
+    // Só o `herdado` guarda de onde veio. Num item de outra origem o campo é
+    // ruído — e um `origemAtaId` sobrevivente de um "Mover" faria o chip
+    // "lançado à mão" carregar um link para uma reunião que nada tem com ele.
+    origemAtaId:
+      b.origem === "herdado" && typeof b.origemAtaId === "string"
+        ? b.origemAtaId
+        : "",
     // Os dois únicos campos de parágrafo da ata — ver `limparParagrafo`.
     decisao: limparParagrafo(b.decisao),
     objetivo: limparParagrafo(b.objetivo),
@@ -309,6 +386,27 @@ export function normalizarAta(id: string, bruto: unknown): Ata | null {
   const b = bruto as Record<string, unknown>;
   const setor = typeof b.setor === "string" ? b.setor : "";
   if (!setor) return null;
+  const meetingId = typeof b.meetingId === "string" && b.meetingId ? b.meetingId : null;
+  /**
+   * A ORIGEM PADRÃO SAI DA ATA, e é o que dispensa script de migração.
+   *
+   * Nenhum item gravado antes desta versão tem `origem`, e as duas respostas
+   * possíveis erram em metade do banco se aplicadas às cegas. O `meetingId`
+   * desempata sem adivinhar nada:
+   *
+   *   - ata COM `meetingId` nasceu por `api/ata/gerar`, e todo item dela veio
+   *     de um bloco de "Pontos importantes" — a rota é o único caminho para uma
+   *     ata com reunião ligada, e ela monta a pauta inteira do documento;
+   *   - ata SEM `meetingId` nasceu por "Abrir a próxima reunião", e o que ela
+   *     tem foi digitado por alguém ou herdado da anterior. `manual` é a
+   *     resposta honesta: nada no documento gravado distingue os dois, e chamar
+   *     de `herdado` sem `origemAtaId` daria um chip que promete um link e não
+   *     tem para onde levar.
+   *
+   * Vale só para o que já estava lá. Daqui para a frente cada caminho grava a
+   * sua — ver a tabela no cabeçalho de `origem`.
+   */
+  const origemPadrao: OrigemDoItem = meetingId ? "reuniao" : "manual";
   return {
     id,
     setor,
@@ -324,10 +422,12 @@ export function normalizarAta(id: string, bruto: unknown): Ata | null {
     citados: Array.isArray(b.citados)
       ? [...new Set(b.citados.filter((c): c is string => typeof c === "string" && !!c))]
       : [],
-    meetingId: typeof b.meetingId === "string" && b.meetingId ? b.meetingId : null,
+    meetingId,
     itens: idsUnicos(
       Array.isArray(b.itens)
-        ? b.itens.map((x) => normalizarItem(x)).filter((x): x is ItemDeAta => !!x)
+        ? b.itens
+            .map((x) => normalizarItem(x, origemPadrao))
+            .filter((x): x is ItemDeAta => !!x)
         : [],
     ),
     createdBy: typeof b.createdBy === "string" ? b.createdBy : undefined,
@@ -515,6 +615,12 @@ function itemVazio(cardId: string): ItemDeAta {
     contexto: "",
     dimensaoId: "",
     subdimensaoId: "",
+    // A demanda que entrou na pauta pelo QUADRO, e não pela reunião: ninguém a
+    // digitou aqui e nenhum bloco do áudio a trouxe. `manual` é o mais próximo
+    // da verdade, e é inofensivo — a tela não desenha chip em linha com card,
+    // porque lá a procedência de que se fala é a do card.
+    origem: "manual",
+    origemAtaId: "",
     decisao: "",
     objetivo: "",
     proximaReuniao: false,
@@ -702,8 +808,14 @@ export function resumoDaAta(pauta: readonly ItemDaPauta[]): ResumoDaAta {
  * As tarefas concluídas ficam para trás; as abertas seguem. Uma tarefa feita
  * que reaparece na reunião seguinte é a linha que todo mundo aprende a pular, e
  * depois de duas semanas ninguém lê mais a tabela.
+ *
+ * A CÓPIA NASCE `herdado`, apontando para a ata de onde veio. É o que faz a
+ * pauta da reunião nova conseguir dizer "isto ficou pendurado da anterior" em
+ * vez de desenhar a linha como se o assunto tivesse nascido ali — que era o
+ * estado antes de `origem` existir, e é o que fazia o mesmo assunto ser
+ * discutido de novo do zero.
  */
-export function herdarParaProxima(ata: Pick<Ata, "itens">): ItemDeAta[] {
+export function herdarParaProxima(ata: Pick<Ata, "id" | "itens">): ItemDeAta[] {
   return ata.itens
     .filter((i) => i.proximaReuniao)
     .map((i) => ({
@@ -716,6 +828,12 @@ export function herdarParaProxima(ata: Pick<Ata, "itens">): ItemDeAta[] {
       contexto: i.contexto,
       dimensaoId: i.dimensaoId,
       subdimensaoId: i.subdimensaoId,
+      // A origem NÃO é preservada, e é o único campo de que isso é verdade: o
+      // que esta linha é, na reunião nova, é herança — venha ela de um bloco do
+      // áudio da reunião passada ou de alguém que a digitou lá. Preservar diria
+      // "do áudio" sobre uma linha que áudio nenhum desta reunião trouxe.
+      origem: "herdado" as const,
+      origemAtaId: ata.id,
       decisao: "",
       objetivo: i.objetivo,
       proximaReuniao: false,
