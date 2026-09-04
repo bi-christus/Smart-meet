@@ -1929,6 +1929,37 @@
   color: var(--tx-3);
   flex: none;
 }
+/**
+ * A LISTA DE CHIPS TEM TETO, e rola por dentro quando passa dele.
+ *
+ * Sem isto o quadro sumia da tela. `.page` tem altura fixa e `overflow: hidden`
+ * (topo desta folha); `.tagbar` e `.board` são irmãos no mesmo flex-column, e
+ * o `.board` é quem tem `flex: 1` — ou seja, ele cede TODA a altura que a barra
+ * tomar, até zero. Abrir o "+N" num setor de setenta tags empurrava as colunas
+ * inteiras para fora da janela, e não havia como voltar a vê-las a não ser
+ * fechando a barra: a página esconde o transbordo, então nem rolar dava.
+ *
+ * O TETO VALE SEMPRE, e não só com a barra aberta — que era a suspeita óbvia e
+ * é só metade. `tagsVisiveis` (page.tsx) deixa passar do corte de `VISIVEIS`
+ * toda tag MARCADA, de propósito: chip marcado que some é filtro ativo e
+ * invisível. Quem marca quinze tags derruba o quadro com a barra fechada, pelo
+ * mesmo caminho. Um teto condicional consertaria o gesto que se percebe e
+ * deixaria de pé o que se percebe menos.
+ *
+ * `max()` porque `22vh` sozinho vira duas linhas numa janela baixa — e três
+ * linhas de chip é o mínimo para a barra continuar sendo uma barra. Numa tela
+ * de 1080 dá sete linhas, que é mais do que o catálogo de qualquer setor usa
+ * no dia a dia.
+ *
+ * O teto fica em `.tagChips`, e não na `.tagbar`: os controles de modo e o
+ * "Limpar tags" moram fora dele e precisam continuar alcançáveis sem rolar
+ * nada. Botão de sair do filtro escondido dentro do filtro é a única coisa
+ * pior do que o filtro.
+ *
+ * Barra de rolagem fina, a de `.collist` e não a do `.board`: a do quadro
+ * anuncia que há mais coluna à direita e precisa ser vista; esta só precisa
+ * dizer onde a lista está.
+ */
 .tagChips {
   display: flex;
   align-items: center;
@@ -1936,6 +1967,28 @@
   flex-wrap: wrap;
   flex: 1;
   min-width: 0;
+  max-height: max(90px, 22vh);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--s3) transparent;
+}
+.tagChips::-webkit-scrollbar {
+  width: 8px;
+}
+.tagChips::-webkit-scrollbar-track {
+  background: transparent;
+}
+.tagChips::-webkit-scrollbar-thumb {
+  background: var(--s3);
+  border-radius: 999px;
+  /* A borda transparente afina o polegar sem mudar a área de arraste dele: o
+     alvo continua com 8px, e o traço aparece com 4. */
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.tagChips:hover::-webkit-scrollbar-thumb {
+  background: var(--line);
+  background-clip: content-box;
 }
 .tagFiltro {
   display: inline-flex;
