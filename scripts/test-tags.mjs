@@ -25,6 +25,9 @@ import {
   normalizarTag,
   parecidas,
   semAcento,
+  VOCABULARIO_MIN_USO,
+  VOCABULARIO_TETO,
+  vocabularioDeTags,
 } from "../src/lib/tags-core.ts";
 
 let falhas = 0;
@@ -255,6 +258,106 @@ checa(
     return ids(quadro) === antes;
   })(),
 );
+
+console.log("\n— o vocabulário que viaja para quem gera tag de fora —");
+
+const quadroDeDois = [
+  // Cantinas: "estoque" é a língua da casa; o resto é tag de uso único.
+  { setor: "Cantinas", tags: ["Estoque", "orcamento-freezer-2026"] },
+  { setor: "Cantinas", tags: ["estoque", "compras"] },
+  { setor: "Cantinas", tags: ["Estoque"] },
+  { setor: "Cantinas", tags: ["compras", "reforma-do-balcao-bloco-c"] },
+  // B.I.: "estoque" NÃO existe aqui, e é isso que o teste do vazamento prova.
+  { setor: "B.I.", tags: ["Power BI"] },
+  { setor: "B.I.", tags: ["power bi", "dashboard"] },
+  { setor: "B.I.", tags: ["dashboard"] },
+  // Sem setor: existe no banco, não pertence a língua nenhuma.
+  { setor: "", tags: ["orfa"] },
+];
+
+const vocab = vocabularioDeTags(quadroDeDois);
+const nomes = (setor) => (vocab[setor] ?? []).map((t) => t.tag).join(",");
+
+checa(
+  "separa por setor: a língua de um quadro não é a do outro",
+  Object.keys(vocab).sort().join(",") === "B.I.,Cantinas",
+  Object.keys(vocab).join(","),
+);
+checa(
+  "a tag de UM card só fica de fora — ela não liga nada",
+  !nomes("Cantinas").includes("orcamento-freezer-2026") &&
+    !nomes("Cantinas").includes("reforma-do-balcao-bloco-c"),
+  nomes("Cantinas"),
+);
+checa(
+  "sobra o que o setor repete, do mais usado para o menos",
+  nomes("Cantinas") === "Estoque,compras",
+  nomes("Cantinas"),
+);
+checa(
+  "a grafia que viaja é a MAIS USADA, não a primeira encontrada",
+  nomes("Cantinas").startsWith("Estoque"),
+  nomes("Cantinas"),
+);
+checa(
+  "tag de um setor não vaza para o outro",
+  !nomes("B.I.").includes("Estoque") && !nomes("Cantinas").includes("Power BI"),
+  `${nomes("B.I.")} | ${nomes("Cantinas")}`,
+);
+checa(
+  "card sem setor não inventa um setor de nome vazio",
+  !Object.prototype.hasOwnProperty.call(vocab, ""),
+  Object.keys(vocab).join(","),
+);
+checa(
+  "setor que só tem tag de uso único some, em vez de entrar vazio",
+  !Object.prototype.hasOwnProperty.call(
+    vocabularioDeTags([{ setor: "Zelador", tags: ["so-esta"] }]),
+    "Zelador",
+  ),
+);
+checa(
+  "a mãe da hierarquia entra mesmo com as filhas de uso único",
+  (() => {
+    const v = vocabularioDeTags([
+      { setor: "Infra", tags: ["rede/wifi-bloco-a"] },
+      { setor: "Infra", tags: ["rede/switch-do-lab"] },
+    ]);
+    const t = (v["Infra"] ?? []).map((x) => x.tag);
+    // `rede` conta 2 (as duas filhas) e sobrevive; cada filha conta 1 e sai.
+    return t.length === 1 && t[0] === "rede";
+  })(),
+);
+checa(
+  "o teto corta a cauda, e corta pelo fim (o menos usado)",
+  (() => {
+    // `t0` aparece em 2 cards, `t29` em 31: a ordem por uso é conhecida.
+    const cards = [];
+    for (let i = 0; i < 30; i++)
+      for (let k = 0; k < i + 2; k++) cards.push({ setor: "X", tags: [`t${i}`] });
+    const v = vocabularioDeTags(cards, { teto: 5 });
+    return (
+      v["X"].length === 5 &&
+      v["X"][0].tag === "t29" &&
+      v["X"][4].tag === "t25"
+    );
+  })(),
+);
+checa(
+  "o mínimo de uso é configurável — a regra é do chamador, não do módulo",
+  (() => {
+    const v = vocabularioDeTags(quadroDeDois, { minUso: 1 });
+    return nomes2(v, "Cantinas").includes("orcamento-freezer-2026");
+  })(),
+);
+checa(
+  "os padrões estão declarados e são os que a Issue pediu",
+  VOCABULARIO_MIN_USO === 2 && VOCABULARIO_TETO === 60,
+);
+
+function nomes2(v, setor) {
+  return (v[setor] ?? []).map((t) => t.tag).join(",");
+}
 
 console.log(falhas === 0 ? "\ntags: ok" : `\ntags: ${falhas} falha(s)`);
 process.exit(falhas === 0 ? 0 : 1);
