@@ -70,6 +70,14 @@ export const LIMITE_TOTAL_EMBED = 6000;
  * ficam com o par excluir/restaurar, que é o que mais assusta quem vê passar.
  * Editar é cinza de propósito: é o evento mais frequente e o que menos precisa
  * puxar o olho.
+ *
+ * Os três da conclusão reaproveitam essa mesma gramática, e de propósito: o
+ * pedido é âmbar — ele é uma pergunta em aberto, e âmbar é a cor de "aguardando"
+ * no quadro; a aprovação é o MESMO verde da restauração, porque as duas são a
+ * boa notícia da lista; a recusa é âmbar escuro, e não vermelho, porque
+ * vermelho no canal já quer dizer "a demanda saiu do quadro" e recusar não tira
+ * demanda nenhuma de lugar. Duas coisas diferentes com a mesma cor é o único
+ * jeito de a barra lateral passar a não informar nada.
  */
 export const COR_POR_ACAO: Record<Acao, number> = {
   criada: 0xff6a2b,
@@ -77,6 +85,9 @@ export const COR_POR_ACAO: Record<Acao, number> = {
   movida: 0x4c8bf5,
   excluida: 0xd64545,
   restaurada: 0x3fa66b,
+  "conclusao-pedida": 0xf5b13d,
+  "conclusao-aprovada": 0x3fa66b,
+  "conclusao-recusada": 0xb07a1e,
 };
 
 /** O recorte do card que o aviso enxerga — tudo já resolvido para texto. */

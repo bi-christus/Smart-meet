@@ -62,6 +62,18 @@ export type { CardLink };
 // Aqui só passa a escrita.
 import { aplicarIcone } from "./icones-core.ts";
 
+// Mesmo motivo, e mesma reexportação das colunas e da lixeira: quem decide se o
+// gesto vira pedido, para onde a aprovação manda a demanda e o que cada
+// transição grava é módulo puro com teste. Aqui só passam as três escritas.
+import {
+  patchDeAprovacao,
+  patchDePedido,
+  patchDeRecusa,
+  pedidoDoCard,
+  type PedidoDeConclusao,
+} from "./conclusao-core.ts";
+export type { PedidoDeConclusao };
+
 // Prioridade e tipo saíram daqui pelo mesmo motivo das colunas e da lixeira: o
 // SERVIDOR precisa deles. A rota do aviso no Discord monta a mensagem lendo
 // `/cards` pelo Admin SDK, e não pode importar este arquivo — ele traz o SDK do
@@ -219,6 +231,22 @@ export type Card = {
   deletedAt?: number | null;
   /** E-mail de quem mandou para a lixeira. `null` depois de restaurada. */
   deletedBy?: string | null;
+  /**
+   * O pedido de conclusão em aberto. Ausente ou `null` = nenhum.
+   *
+   * O operador não conclui direto: ele pede, e gestor ou admin revisam. A regra
+   * inteira — quem pede, quando o gesto vira pedido, e o que cada uma das três
+   * transições grava — mora em `conclusao-core.ts`, que é puro e testado. Aqui
+   * só passa o campo.
+   *
+   * Campo do card, e não coleção nova, pelo mesmo motivo dos `links` logo acima:
+   * é no máximo um por demanda, o quadro já assina `/cards` por setor, e uma
+   * coleção separada custaria regra própria e uma segunda assinatura por setor
+   * para mostrar um selo. Além disso, ele PRECISA estar no card: o destaque no
+   * topo da coluna é uma reordenação da lista que o quadro já tem em mãos, e
+   * com o pedido fora do card ela dependeria de duas fontes chegarem juntas.
+   */
+  conclusaoPedida?: PedidoDeConclusao | null;
 };
 
 export type CardInput = {
@@ -736,6 +764,100 @@ export async function moveCard(
   });
   await batch.commit();
   avisarDiscord(id, eventoId);
+}
+
+// ---------------------------------------------------------------------------
+// Pedido de conclusão — as três transições
+// ---------------------------------------------------------------------------
+
+/**
+ * As três passam por aqui, e não por `updateCard`, por uma razão só: o VERBO.
+ *
+ * `updateCard` grava a ação "editada" e uma lista de mudanças de campo. Pedir,
+ * aprovar e recusar não são edição de campo — o que interessa na timeline é
+ * quem pediu, quem decidiu e quando, e nenhum par "de → para" conta isso. Passar
+ * por `updateCard` produziria três linhas dizendo "editou a demanda" sobre um
+ * campo que a timeline nem rastreia, ou seja, três linhas vazias.
+ *
+ * O que elas herdam de `updateCard` é o que importa: lote único com o evento
+ * dentro, incremento do contador no MESMO update do card, e o aviso no Discord
+ * depois do commit. Ver os comentários de lá — eles valem inteiros aqui.
+ */
+async function gravarConclusao(
+  id: string,
+  patch: Partial<Omit<Card, "id">>,
+  ctx: ContextoHistorico,
+  acao: Acao,
+): Promise<void> {
+  const batch = writeBatch(db);
+  // Sem mudanças de campo: os três verbos valem por si, e é `registraSemMudancas`
+  // (`historico-core`) quem garante que o evento nasce assim mesmo. Um verbo
+  // esquecido lá faria a ação acontecer sem deixar rastro.
+  const eventoId = anexarEvento(batch, id, ctx, acao, []);
+  batch.update(
+    doc(db, "cards", id),
+    eventoId ? { ...patch, histCount: increment(1) } : patch,
+  );
+  await batch.commit();
+  avisarDiscord(id, eventoId);
+}
+
+/**
+ * O operador pede que a demanda seja dada por concluída.
+ *
+ * `por` é quem está pedindo, e as regras do Firestore exigem que bata com o
+ * token — ninguém pede em nome de outro, mesmo princípio de `createdBy` e do
+ * `deletedBy` da lixeira.
+ *
+ * O card NÃO se move. É a diferença inteira entre isto e `moveCard`: a demanda
+ * fica onde está, com um pedido pendurado, até alguém revisar.
+ */
+export async function pedirConclusao(
+  id: string,
+  por: string,
+  colunaAlvo: string,
+  ctx: ContextoHistorico,
+): Promise<void> {
+  await gravarConclusao(
+    id,
+    patchDePedido(por, colunaAlvo, Date.now()),
+    ctx,
+    "conclusao-pedida",
+  );
+}
+
+/**
+ * O gestor aprova: a demanda vai para a etapa que o pedido apontou.
+ *
+ * Recebe o CARD, e não o id, porque o destino está gravado no pedido dele — e
+ * ler o pedido aqui, em vez de receber a coluna por parâmetro, é o que impede
+ * quem chama de aprovar para uma coluna que ninguém pediu.
+ *
+ * Pedido ilegível (campo pela metade, documento mexido à mão) não vira escrita
+ * nenhuma: `pedidoDoCard` devolve `null` e a função sai. Aprovar um pedido que
+ * não dá para ler mandaria a demanda para uma coluna de id vazio, ou seja, para
+ * fora do quadro.
+ */
+export async function aprovarConclusao(
+  card: Pick<Card, "id" | "conclusaoPedida">,
+  ctx: ContextoHistorico,
+): Promise<void> {
+  const pedido = pedidoDoCard(card);
+  if (!pedido) return;
+  await gravarConclusao(
+    card.id,
+    patchDeAprovacao(pedido, Date.now()),
+    ctx,
+    "conclusao-aprovada",
+  );
+}
+
+/** O gestor recusa: o pedido sai, a demanda fica exatamente onde estava. */
+export async function recusarConclusao(
+  id: string,
+  ctx: ContextoHistorico,
+): Promise<void> {
+  await gravarConclusao(id, patchDeRecusa(), ctx, "conclusao-recusada");
 }
 
 // ---------------------------------------------------------------------------

@@ -100,7 +100,15 @@ export type Acao =
   | "editada"
   | "movida"
   | "excluida"
-  | "restaurada";
+  | "restaurada"
+  // Os três da revisão de conclusão. Existem separados de "movida" porque
+  // respondem a outra pergunta: a timeline precisa contar que ALGUÉM PEDIU e
+  // que OUTRO ALGUÉM decidiu — dois autores, dois momentos. Uma aprovação
+  // registrada como "movida" diria que o gestor arrastou o card, e apagaria de
+  // vez o rastro de quem terminou o trabalho.
+  | "conclusao-pedida"
+  | "conclusao-aprovada"
+  | "conclusao-recusada";
 
 export const ACAO_ROTULO: Record<Acao, string> = {
   criada: "abriu a demanda",
@@ -108,6 +116,9 @@ export const ACAO_ROTULO: Record<Acao, string> = {
   movida: "arrastou o card",
   excluida: "mandou para a lixeira",
   restaurada: "trouxe de volta da lixeira",
+  "conclusao-pedida": "pediu a conclusão",
+  "conclusao-aprovada": "aprovou a conclusão",
+  "conclusao-recusada": "recusou a conclusão",
 };
 
 /**
@@ -126,7 +137,22 @@ export const ACAO_ROTULO: Record<Acao, string> = {
  * tudo funciona, e o registro simplesmente não existe.
  */
 export function registraSemMudancas(acao: Acao): boolean {
-  return acao === "criada" || acao === "excluida" || acao === "restaurada";
+  return (
+    acao === "criada" ||
+    acao === "excluida" ||
+    acao === "restaurada" ||
+    // Os três da conclusão entram aqui pelo mesmo motivo dos de cima: o VERBO é
+    // o fato inteiro. Pedir a conclusão não muda campo nenhum que a timeline
+    // saiba contar — o `conclusaoPedida` não é rastreado, e nem deveria ser: um
+    // par "de vazio para {por: fulano, em: …}" seria o mesmo verbo escrito de
+    // novo, em JSON. Recusar é ainda mais claro: ela não muda NADA no card
+    // além de tirar o pedido, então sem esta linha a recusa aconteceria sem
+    // deixar rastro — e a recusa é exatamente o que alguém vai querer explicar
+    // depois.
+    acao === "conclusao-pedida" ||
+    acao === "conclusao-aprovada" ||
+    acao === "conclusao-recusada"
+  );
 }
 
 export type Evento = {

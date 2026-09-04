@@ -686,6 +686,44 @@ service cloud.firestore {
         return !mudou(['deletedBy']) || quem == null || souEu(quem);
       }
 
+      // O PEDIDO DE CONCLUSAO. O operador nao conclui a demanda: ele pede, e
+      // gestor ou admin revisam. Duas coisas precisam ser verdade, e nenhuma
+      // delas custa leitura de documento.
+      //
+      // 1. Quem PEDE e quem esta escrevendo. Mesmo principio de `createdBy` e do
+      //    `deletedBy` logo acima: ninguem pede em nome de outro. Sem isto, um
+      //    pedido poderia nascer assinado por quem nunca o fez, e a fila da
+      //    daily passaria a cobrar a pessoa errada.
+      //
+      // 2. TIRAR o pedido e decidir sobre ele — aprovar ou recusar — e isso e
+      //    ato de gestor. E a linha que impede o operador de dar a volta: pedir
+      //    e, no segundo seguinte, limpar o proprio pedido movendo o card.
+      //
+      // O `!mudou(...)` na frente da primeira nao e folga, e o caso comum, e o
+      // motivo e o mesmo de `deletedByEhDoToken`: num update,
+      // `request.resource.data` e o documento RESULTANTE, nao o patch. Um card
+      // com pedido pendente carrega `conclusaoPedida` em toda escrita seguinte —
+      // sem a guarda, qualquer edicao de uma demanda que OUTRA pessoa pediu para
+      // concluir passaria a ser negada.
+      //
+      // ATE ONDE ISTO VAI, dito na cara: estas regras garantem que o pedido nao
+      // e forjado e que ninguem aprova o proprio. Elas NAO impedem mover o card
+      // para a coluna de conclusao por fora — saber que uma coluna e a de
+      // conclusao depende da lista ORDENADA de /columns do setor
+      // (`colunasEntregues`, em `kanban-columns.ts`), e regra nao consulta
+      // colecao. Denormalizar essa lista num doc por setor custaria mante-la em
+      // dia a cada rename e cada reordenacao, e sincronia que apodrece calada
+      // tranca gente para fora do proprio quadro. O portao do gesto e a tela; o
+      // portao do registro e este. Ver o cabecalho de `conclusao-core.ts`.
+      function pedidoEhDoToken() {
+        let p = request.resource.data.get('conclusaoPedida', null);
+        return !mudou(['conclusaoPedida']) || p == null || souEu(p.get('por', ''));
+      }
+      function tirandoOPedido() {
+        return mudou(['conclusaoPedida'])
+               && request.resource.data.get('conclusaoPedida', null) == null;
+      }
+
       allow read: if podeNoSetor(cur('sector'));
 
       allow create: if podeNoSetor(novo('sector'))
@@ -706,12 +744,19 @@ service cloud.firestore {
       // As comparações que não custam acesso a documento vêm primeiro de
       // propósito: um update recusado por mexer no setor é recusado sem ler
       // nada do banco.
+      // O encadeamento de ternarios mantem o que a versao anterior conquistou:
+      // UMA leitura do cadastro em qualquer ramo. Um `&&` entre as condicoes
+      // avaliaria as duas e faria a edicao comum do operador — o update mais
+      // frequente do app — passar a custar duas idas ao banco.
       allow update: if novo('sector') == cur('sector')
                     && novo('createdBy').lower() == cur('createdBy').lower()
                     && deletedByEhDoToken()
+                    && pedidoEhDoToken()
                     && (mudou(['deletedAt', 'deletedBy'])
                         ? gestorNoSetor(cur('sector'))
-                        : podeNoSetor(cur('sector')));
+                        : tirandoOPedido()
+                          ? gestorNoSetor(cur('sector'))
+                          : podeNoSetor(cur('sector')));
 
       // Apagar de vez continua sendo ação de gestor, e só no próprio setor.
       // O expurgo da lixeira roda no servidor (`api/demandas/expurgar`, Admin
@@ -761,13 +806,23 @@ service cloud.firestore {
       // deixar rastro, senão a demanda some do quadro sem nada responder quem a
       // tirou de lá. A lista é fechada de propósito — verbo que a tela não sabe
       // rotular vira linha muda no histórico (ver `ACAO_ROTULO`).
+      //
+      // ⚠️ VERBO NOVO EM `Acao` (`historico-core.ts`) TEM DE ENTRAR AQUI, e o
+      // modo de falha não parece com o que é: o evento e a escrita do card andam
+      // no MESMO lote (`kanban.ts`), então a regra negar o evento derruba o lote
+      // inteiro — a ação simplesmente não acontece, e a mensagem que chega na
+      // tela fala de permissão, não de verbo. Foi o que os três de conclusão
+      // teriam feito com a demanda inteira ao pedir a revisão.
       allow create: if podeNoSetor(novo('sector'))
                     && souEu(novo('autor'))
                     && request.resource.data.em == request.time
                     && request.resource.data.keys()
                          .hasOnly(['sector', 'autor', 'em', 'acao', 'mudancas'])
                     && novo('acao') in ['criada', 'editada', 'movida',
-                                        'excluida', 'restaurada']
+                                        'excluida', 'restaurada',
+                                        'conclusao-pedida',
+                                        'conclusao-aprovada',
+                                        'conclusao-recusada']
                     // O card e o primeiro evento nascem no MESMO lote, e o pai
                     // ainda não existe para o `get()` — daí o primeiro braço.
                     // Depois disso, o setor do evento tem de ser o do card: é

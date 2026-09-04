@@ -330,3 +330,95 @@
     transition: none;
   }
 }
+
+/* ---------- pedido de conclusão ---------- */
+
+/**
+ * A demanda que espera revisão se distingue do quadro pela BORDA, não pelo
+ * fundo.
+ *
+ * Fundo âmbar num card competiria com os selos de prazo e de tipo, que já usam
+ * fundo colorido — e o card ficaria com três cores discutindo entre si. A borda
+ * é a única superfície que ainda estava livre, e é a que continua legível com o
+ * card apagado pelo destaque de tag.
+ *
+ * ÂMBAR e não verde: o pedido é uma pergunta em aberto, não uma entrega. Verde
+ * aqui diria "concluído" para quem passa o olho — que é exatamente a leitura
+ * errada, e a que esta frente inteira existe para impedir.
+ */
+.pedindo {
+  border-color: var(--warn);
+  background: linear-gradient(
+    to bottom,
+    var(--warn-bg) 0,
+    transparent 44px
+  ),
+  var(--s2);
+}
+.pedindo:hover {
+  border-color: var(--warn);
+}
+
+.kPedido {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.kPedidoRot {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: var(--warn-tx);
+}
+/* O nome de quem pediu não é rótulo: caixa normal, peso normal, e cortado se
+   não couber. Em versalete ele competiria com o próprio aviso. */
+.kPedidoPor {
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--tx-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kPedidoAcoes {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+}
+.kPedidoBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  background: var(--s1);
+  border-radius: 999px;
+  color: var(--tx-2);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  /* 0.12s e só a cor. Estes dois botões são de decisão, e decisão de gestor na
+     daily acontece em série — cinco cards seguidos. Qualquer coisa que se mova
+     aqui vira lentidão percebida. */
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.kPedidoBtn:hover {
+  border-color: var(--tx-3);
+  color: var(--tx);
+}
+.kPedidoSim:hover {
+  border-color: var(--ok);
+  background: var(--ok-bg);
+  color: var(--ok-tx);
+}

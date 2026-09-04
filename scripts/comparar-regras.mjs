@@ -118,6 +118,11 @@ const NA_LIXEIRA = {
   deletedAt: 1786000000000,
   deletedBy: "gestor@px.com.br",
 };
+/** Card com pedido de conclusao em aberto, feito pelo operador. */
+const COM_PEDIDO = {
+  ...CARD,
+  conclusaoPedida: { por: "op@px.com.br", em: 1786000000000, colunaAlvo: "concluido" },
+};
 
 // --- foto de perfil ---------------------------------------------------------
 // O teto da regra e 16407 CARACTERES, que sao os 12288 bytes de imagem de
@@ -211,6 +216,51 @@ for (const quem of Object.keys(PESSOAS)) {
   });
   caso(quem, "apagar card", "delete", C, CARD, null);
 
+  // --- pedido de conclusao -------------------------------------------------
+  // O eixo inteiro: quem pede, quem decide, e as duas voltas por fora.
+  caso(quem, "pedir conclusao", "update", C, CARD, {
+    ...CARD,
+    conclusaoPedida: {
+      por: PESSOAS[quem].email,
+      em: 1786000000000,
+      colunaAlvo: "concluido",
+    },
+  });
+  // Assinar o pedido com o nome de outro. Ninguem pede em nome de ninguem —
+  // nem o admin, pelo mesmo motivo do `deletedBy`.
+  caso(quem, "forjar pedido de conclusao de outra pessoa", "update", C, CARD, {
+    ...CARD,
+    conclusaoPedida: {
+      por: "gestor@px.com.br",
+      em: 1786000000000,
+      colunaAlvo: "concluido",
+    },
+  });
+  // Aprovar: o pedido sai e o card vai para a coluna que ele apontava.
+  caso(quem, "aprovar conclusao", "update", C, COM_PEDIDO, {
+    ...CARD,
+    columnId: "concluido",
+    conclusaoPedida: null,
+  });
+  // Recusar: o pedido sai e o card fica onde estava.
+  caso(quem, "recusar conclusao", "update", C, COM_PEDIDO, {
+    ...CARD,
+    conclusaoPedida: null,
+  });
+  // A volta por fora que a regra existe para fechar: limpar o proprio pedido
+  // sem ser gestor. Se isto passar para o operador, a revisao virou enfeite.
+  caso(quem, "limpar o pedido sem mover o card", "update", C, COM_PEDIDO, {
+    ...COM_PEDIDO,
+    conclusaoPedida: null,
+  });
+  // A outra: editar um card que OUTRA pessoa pediu para concluir. Tem de
+  // continuar passando para todo mundo do setor — o documento resultante
+  // carrega o pedido alheio, e uma leitura ingenua o confundiria com forja.
+  caso(quem, "editar card com pedido de OUTRO em aberto", "update", C, COM_PEDIDO, {
+    ...COM_PEDIDO,
+    title: "Outro titulo",
+  });
+
   const H = doc("cards/c1/historico/e1");
   const ev = (acao) => ({
     sector: "B.I.",
@@ -221,6 +271,14 @@ for (const quem of Object.keys(PESSOAS)) {
   });
   caso(quem, "evento 'editada'", "create", H, null, ev("editada"), CARD_PAI);
   caso(quem, "evento 'excluida'", "create", H, null, ev("excluida"), CARD_PAI);
+  // Os tres verbos novos. Sem eles na lista fechada da regra, o evento e negado
+  // — e como ele anda no MESMO lote da escrita do card, o que morre e a acao
+  // inteira, com uma mensagem falando de permissao.
+  caso(quem, "evento 'conclusao-pedida'", "create", H, null, ev("conclusao-pedida"), CARD_PAI);
+  caso(quem, "evento 'conclusao-aprovada'", "create", H, null, ev("conclusao-aprovada"), CARD_PAI);
+  caso(quem, "evento 'conclusao-recusada'", "create", H, null, ev("conclusao-recusada"), CARD_PAI);
+  // A lista continua FECHADA: verbo que a tela nao sabe rotular vira linha muda.
+  caso(quem, "evento de verbo inventado", "create", H, null, ev("concluida"), CARD_PAI);
   caso(quem, "apagar evento", "delete", H, { sector: "B.I." }, null);
 
   const U = doc("users/alguem@px.com.br");

@@ -19,6 +19,9 @@ import {
   restaurarDaLixeira,
   moverParaLixeira,
   moveCard,
+  pedirConclusao,
+  aprovarConclusao,
+  recusarConclusao,
   subscribeColumns,
   seedDefaultColumns,
   addColumn,
@@ -41,6 +44,12 @@ import {
   filtrarPorTags,
   type ModoDeTags,
 } from "@/lib/tags-core";
+import {
+  comPedidosNoTopo,
+  contarPedidos,
+  podeConcluirDireto,
+  precisaPedirConclusao,
+} from "@/lib/conclusao-core.ts";
 import { rotuloDoMes, separarConcluidas } from "@/lib/concluidas-core";
 import { startOfDay } from "@/lib/datas";
 import { carregarHistorico } from "@/lib/historico";
@@ -250,6 +259,18 @@ export default function KanbanPage() {
   const [dragCardId, setDragCardId] = useState<string | null>(null);
   /** O card solto na lixeira, esperando a confirmação. */
   const [descartando, setDescartando] = useState<Card | null>(null);
+  /**
+   * O card que o operador arrastou para a conclusão, esperando a confirmação.
+   *
+   * A COLUNA VIAJA JUNTO, e não é redescoberta na hora de confirmar: o setor
+   * pode ter mais de uma etapa de conclusão, e o gesto escolheu UMA delas. Sem
+   * guardá-la, confirmar teria de adivinhar — e adivinharia a última do quadro,
+   * que não é necessariamente a que a pessoa apontou.
+   */
+  const [pedindoConclusao, setPedindoConclusao] = useState<{
+    card: Card;
+    colunaAlvo: string;
+  } | null>(null);
   /** O ponteiro está sobre o alvo da lixeira, com um card na mão. */
   const [sobreLixeira, setSobreLixeira] = useState(false);
   const [dragColId, setDragColId] = useState<string | null>(null);
@@ -580,6 +601,16 @@ export default function KanbanPage() {
   // Preso a uma const aqui embaixo do guarda: `onColDrop` é declaração de
   // função, e o estreitamento de `profile` não atravessa até lá dentro.
   const autorAtual = profile.email;
+  const papelAtual = profile.role;
+  /**
+   * Quem conclui sem pedir.
+   *
+   * Separado de `canManage` de propósito, mesmo respondendo igual para todo
+   * mundo hoje: "administra o quadro" e "conclui sozinho" são perguntas
+   * diferentes, e reaproveitar uma pela outra faz a mudança de uma virar
+   * mudança silenciosa da outra. Ver a prop `concluiDireto` do `CardModal`.
+   */
+  const concluiDireto = podeConcluirDireto(papelAtual);
 
   if (sectors.length === 0) {
     return (
@@ -593,7 +624,26 @@ export default function KanbanPage() {
   function onColDrop(col: ColumnDoc) {
     if (dragCardId) {
       const c = cards.find((x) => x.id === dragCardId);
-      if (c && c.columnId !== col.colId)
+      if (
+        c &&
+        c.columnId !== col.colId &&
+        precisaPedirConclusao({
+          papel: papelAtual,
+          colunaAtual: c.columnId,
+          colunaDestino: col.colId,
+          entregues,
+        })
+      ) {
+        /**
+         * O ARRASTO NÃO ACONTECE — ele vira pergunta.
+         *
+         * O card fica onde estava até a pessoa confirmar, e é de propósito:
+         * mover primeiro e perguntar depois faria o quadro mentir por um
+         * segundo, e um "cancelar" teria de desfazer uma escrita que já foi
+         * para o banco e para o Discord de todo mundo.
+         */
+        setPedindoConclusao({ card: c, colunaAlvo: col.colId });
+      } else if (c && c.columnId !== col.colId)
         moveCard(dragCardId, col.colId, {
           ctx: { autor: autorAtual, sector },
           // Pelo mesmo `diffCard` da edição: arrastar e trocar a etapa no modal
@@ -693,6 +743,29 @@ export default function KanbanPage() {
           >
             Limpar filtro
           </button>
+        )}
+
+        {/**
+         * QUANTAS ESPERAM REVISÃO — a primeira pergunta da daily.
+         *
+         * Só para quem decide: para o operador, o número seria a contagem de
+         * pedidos que ele não pode atender. E só quando há algum — um "0
+         * aguardando conclusão" fixo na barra é ruído permanente para dizer
+         * que não há nada a dizer.
+         *
+         * Não é filtro, e não vira um: os pedidos já sobem para o topo das
+         * colunas em que estão, e um filtro que os isolasse tiraria justamente
+         * o contexto que a revisão precisa — em que etapa a demanda estava
+         * quando alguém a deu por pronta.
+         */}
+        {canManage && contarPedidos(cardsVivos) > 0 && (
+          <span className={styles.pedidosChip} role="status">
+            <Icon name="clock" size={13} />
+            {contarPedidos(cardsVivos)}{" "}
+            {contarPedidos(cardsVivos) === 1
+              ? "aguarda conclusão"
+              : "aguardam conclusão"}
+          </span>
         )}
 
         {/* Empurrados para a direita: nem a lixeira nem o relatório são
@@ -939,7 +1012,23 @@ export default function KanbanPage() {
           const { recentes, antigas } = cortavel
             ? separarConcluidas(doQuadro, agora)
             : { recentes: doQuadro, antigas: [] };
-          const colCards = aberta ? doQuadro : recentes;
+          /**
+           * OS PEDIDOS SOBEM PARA O TOPO, e só para quem revisa.
+           *
+           * O objetivo declarado desta frente é que a demanda pendente de
+           * conclusão seja revisada na daily e não passe batido. Para o gestor,
+           * ela tem de estar onde o olho cai primeiro; para o operador que
+           * pediu, subi-la seria reordenar o quadro dele por causa de uma
+           * decisão que não é dele — e no dia em que quatro colegas pedissem, o
+           * quadro inteiro dele estaria reordenado por outras pessoas.
+           *
+           * DEPOIS do corte do mês, não antes: um pedido feito sobre uma
+           * demanda concluída em março não pode ressuscitá-la para dentro da
+           * vista do mês corrente. `comPedidosNoTopo` reordena o que já está na
+           * tela; ela não escolhe o que entra nela.
+           */
+          const naOrdem = aberta ? doQuadro : recentes;
+          const colCards = canManage ? comPedidosNoTopo(naOrdem) : naOrdem;
           return (
             <div
               key={col.id}
@@ -1056,9 +1145,36 @@ export default function KanbanPage() {
                         setOverCol(null);
                       }}
                       apagado={apagarSemTag && !cardTemTag(c, tagsF, modoTags)}
+                      pedidoPor={
+                        c.conclusaoPedida?.por
+                          ? (usersMap[c.conclusaoPedida.por]?.name ??
+                            c.conclusaoPedida.por)
+                          : undefined
+                      }
                       onClick={() => setEdit({ mode: "edit", card: c })}
                       onHistorico={() => setHistCard(c)}
                       onPerfil={setPerfilDe}
+                      /* As duas só existem para quem decide. O card usa a
+                         presença delas para saber se desenha os botões — ver o
+                         comentário das props em `demanda-card.tsx`. */
+                      onAprovarConclusao={
+                        canManage
+                          ? () =>
+                              void aprovarConclusao(c, {
+                                autor: autorAtual,
+                                sector,
+                              }).catch(console.error)
+                          : undefined
+                      }
+                      onRecusarConclusao={
+                        canManage
+                          ? () =>
+                              void recusarConclusao(c.id, {
+                                autor: autorAtual,
+                                sector,
+                              }).catch(console.error)
+                          : undefined
+                      }
                     />
                   ))
                 )}
@@ -1126,6 +1242,8 @@ export default function KanbanPage() {
           sector={sector}
           columns={displayCols}
           canManage={canManage}
+          concluiDireto={concluiDireto}
+          entregues={entregues}
           actorEmail={profile.email}
           activeUsers={activeUsers}
           usersMap={usersMap}
@@ -1210,6 +1328,35 @@ export default function KanbanPage() {
               ctx: { autor: autorAtual, sector: descartando.sector },
             });
             setDescartando(null);
+          }}
+        />
+      )}
+
+      {/**
+       * O pop-up do arrasto do operador.
+       *
+       * Diálogo, e não um aviso passageiro: a resposta muda o que acontece, e
+       * quem arrastou está esperando um efeito. Um toast dizendo "você não pode
+       * concluir" deixaria o gesto sem desfecho e ensinaria a não arrastar mais
+       * para lá — inclusive quando a intenção certa era pedir.
+       */}
+      {pedindoConclusao && (
+        <ConfirmaPedidoConclusao
+          card={pedindoConclusao.card}
+          sector={sector}
+          etapa={
+            displayCols.find((c) => c.colId === pedindoConclusao.colunaAlvo)
+              ?.title ?? pedindoConclusao.colunaAlvo
+          }
+          onCancelar={() => setPedindoConclusao(null)}
+          onConfirmar={async () => {
+            await pedirConclusao(
+              pedindoConclusao.card.id,
+              autorAtual,
+              pedindoConclusao.colunaAlvo,
+              { autor: autorAtual, sector },
+            );
+            setPedindoConclusao(null);
           }}
         />
       )}
@@ -1514,6 +1661,97 @@ function ConfirmaLixeira({
             disabled={indo}
           >
             {indo ? "Movendo…" : "Mover para a lixeira"}
+          </button>
+        </div>
+      </div>
+      {erro && <div className={styles.err}>{erro}</div>}
+    </Modal>
+  );
+}
+
+/**
+ * O pop-up de quem arrastou para a conclusão sem poder concluir.
+ *
+ * A PERGUNTA É AFIRMATIVA, e não uma negativa. "Você não tem permissão para
+ * concluir" seria verdade e seria inútil: quem arrastou queria terminar a
+ * demanda, e a resposta certa não é uma parede, é o caminho. Por isso o título
+ * diz o que dá para fazer, e o botão principal é o pedido.
+ *
+ * Escrito ao lado do `ConfirmaLixeira` e com a mesma estrutura de propósito: os
+ * dois nascem do mesmo gesto (soltar um card num alvo que decide algo), e o
+ * segundo diálogo do quadro não pode parecer de outro app.
+ */
+function ConfirmaPedidoConclusao({
+  card,
+  sector,
+  etapa,
+  onCancelar,
+  onConfirmar,
+}: {
+  card: Card;
+  sector: string;
+  /** Título da etapa, não o `colId`: é o nome que a pessoa acabou de mirar. */
+  etapa: string;
+  onCancelar: () => void;
+  onConfirmar: () => Promise<void>;
+}) {
+  const [indo, setIndo] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  async function confirmar() {
+    setErro(null);
+    setIndo(true);
+    try {
+      await onConfirmar();
+    } catch (e) {
+      console.error("[pedir conclusão]", e);
+      setErro(
+        "Não foi possível registrar o pedido. A demanda continua onde estava.",
+      );
+      setIndo(false);
+    }
+  }
+
+  return (
+    <Modal
+      onClose={onCancelar}
+      /* Fechar no meio da escrita deixaria a tela sem dizer como terminou. */
+      podeFechar={() => !indo}
+      ariaLabel="Solicitar conclusão da demanda"
+      overlayClassName={styles.overlay}
+      className={styles.modal}
+      width={440}
+    >
+      <div className={styles.mhead}>
+        <span className={styles.mchip}>
+          <Icon name="check" size={12} /> Conclusão
+        </span>
+        <span className={styles.mchip}>{sector}</span>
+      </div>
+      <div className={styles.histTitulo}>{card.title}</div>
+      <div className={styles.confirmaBloco}>
+        <div className={styles.confirmaTexto}>
+          <strong>Solicitar a conclusão desta demanda?</strong> Ela fica onde
+          está até um gestor revisar. Aprovado o pedido, ela vai para{" "}
+          <strong>{etapa}</strong>.
+        </div>
+        <div className={styles.confirmaAcoes}>
+          <button
+            type="button"
+            className={styles.btnGhost}
+            onClick={onCancelar}
+            disabled={indo}
+            autoFocus
+          >
+            Agora não
+          </button>
+          <button
+            type="button"
+            className={styles.btnConfirma}
+            onClick={() => void confirmar()}
+            disabled={indo}
+          >
+            {indo ? "Enviando…" : "Solicitar conclusão"}
           </button>
         </div>
       </div>
