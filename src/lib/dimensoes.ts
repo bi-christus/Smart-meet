@@ -46,6 +46,8 @@ export {
   estaAtrasada,
   filtrarArvore,
   montarArvore,
+  montarArvorePorTag,
+  demandasDaArvore,
   nomeExistente,
   ordenarDimensoes,
   type CardDaArvore,

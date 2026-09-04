@@ -35,8 +35,11 @@ import {
   corDaDimensao,
   estadoDoNo,
   estaAtrasada,
+  ID_SEM_TAG,
+  demandasDaArvore,
   filtrarArvore,
   montarArvore,
+  montarArvorePorTag,
   nomeExistente,
   normalizarDimensao,
   ordenarDimensoes,
@@ -354,6 +357,194 @@ if (bloco) {
     bloco[0],
   );
 }
+
+// ---------------------------------------------------------------------------
+// O eixo por TAG
+// ---------------------------------------------------------------------------
+//
+// O que estes testes protegem, e que olhar a tela não pega: a CONTAGEM. No eixo
+// por dimensão cada demanda mora num lugar só; no eixo por tag ela aparece em
+// todos os galhos das suas tags, de propósito. A linha que separa "aparece duas
+// vezes" (certo, é o ponto do eixo) de "é contada duas vezes" (errado, e o
+// número fica inflado para sempre sem ninguém desconfiar) é fina, e é só isto
+// que a segura.
+
+console.log("\n— a árvore agrupada por tag —");
+
+const ENT_VAZIO = {};
+const porTag = (cards) => montarArvorePorTag({ cards, entregues: ENT_VAZIO });
+const cardT = (id, tags, extra = {}) => ({
+  id,
+  sector: "Cantinas",
+  columnId: "andamento",
+  title: `Demanda ${id}`,
+  tags,
+  ...extra,
+});
+const nomes = (nos) => nos.map((n) => n.nome).join(",");
+
+{
+  const a = porTag([
+    cardT("1", ["estoque"]),
+    cardT("2", ["estoque", "compras"]),
+    cardT("3", ["compras"]),
+    cardT("4", []),
+  ]);
+  checa(
+    "os galhos saem do mais cheio para o mais vazio, e o 'Sem tag' fica por último",
+    nomes(a) === "compras,estoque,Sem tag" || nomes(a) === "estoque,compras,Sem tag",
+    nomes(a),
+  );
+  checa("o 'Sem tag' é sempre o último", a[a.length - 1].id === ID_SEM_TAG);
+  checa(
+    "a demanda com DUAS tags aparece nos dois galhos — é o ponto do eixo",
+    a.filter((n) => cardsDoNo(n).some((c) => c.id === "2")).length === 2,
+  );
+  checa(
+    "quem não tem tag nenhuma cai no 'Sem tag', nunca some",
+    cardsDoNo(a[a.length - 1]).map((c) => c.id).join(",") === "4",
+  );
+  checa(
+    "toda demanda do setor está na árvore, uma vez só",
+    demandasDaArvore(a).length === 4,
+    String(demandasDaArvore(a).length),
+  );
+}
+
+{
+  const a = porTag([
+    cardT("1", ["Cantinas/Estoque"]),
+    cardT("2", ["cantinas/frios"]),
+    cardT("3", ["Cantinas"]),
+  ]);
+  const mae = a.find((n) => n.id === "tag:cantinas");
+  checa("a barra vira hierarquia: a mãe existe", !!mae);
+  checa(
+    "e as filhas penduram nela, no nível 2",
+    mae.filhos.length === 2 && mae.filhos.every((f) => f.nivel === 2),
+    String(mae.filhos.length),
+  );
+  checa(
+    "a filha herda a COR da mãe — cores diferentes desmanchariam a família",
+    mae.filhos.every((f) => f.cor === mae.cor),
+  );
+  checa(
+    "a mãe conta as filhas junto com as suas",
+    mae.metricas.total === 3,
+    String(mae.metricas.total),
+  );
+  checa(
+    "a demanda marcada só com a mãe fica NA mãe, não numa filha inventada",
+    mae.cards.map((c) => c.id).join(",") === "3",
+  );
+  checa(
+    "nenhum galho carrega o selo de projeto/rotina: ele é conceito de subdimensão",
+    achatar(a).every((n) => n.tipo === null),
+  );
+}
+
+checa(
+  "mãe e filha no MESMO card não contam duas vezes",
+  (() => {
+    const a = porTag([cardT("1", ["cantinas", "cantinas/estoque"])]);
+    const mae = a.find((n) => n.id === "tag:cantinas");
+    // A tag ancestral é ignorada: a filha já pendura a demanda debaixo da mãe.
+    return mae.metricas.total === 1 && mae.cards.length === 0;
+  })(),
+);
+checa(
+  "duas filhas irmãs do mesmo card não contam duas vezes na mãe",
+  (() => {
+    const a = porTag([cardT("1", ["cantinas/estoque", "cantinas/frios"])]);
+    const mae = a.find((n) => n.id === "tag:cantinas");
+    return mae.filhos.length === 2 && mae.metricas.total === 1;
+  })(),
+);
+checa(
+  "tag de TRÊS níveis dobra no segundo, e não cria um terceiro recuo",
+  (() => {
+    const a = porTag([cardT("1", ["cantinas/estoque/frios"])]);
+    const mae = a.find((n) => n.id === "tag:cantinas");
+    return (
+      mae.filhos.length === 1 &&
+      mae.filhos[0].id === "tag:cantinas/estoque" &&
+      mae.filhos[0].filhos.length === 0
+    );
+  })(),
+);
+checa(
+  "duas tags do card que dobram no MESMO galho contam uma vez",
+  (() => {
+    const a = porTag([cardT("1", ["cantinas/estoque/frios", "cantinas/estoque/secos"])]);
+    return a[0].metricas.total === 1;
+  })(),
+);
+checa(
+  "duas grafias da mesma tag são UM galho, com a grafia mais usada",
+  (() => {
+    const a = porTag([
+      cardT("1", ["Estoque"]),
+      cardT("2", ["estoque"]),
+      cardT("3", ["Estoque"]),
+    ]);
+    return a.length === 1 && a[0].nome === "Estoque" && a[0].metricas.total === 3;
+  })(),
+);
+checa(
+  "tag sem letra nenhuma não vira galho — o card cai no 'Sem tag'",
+  (() => {
+    const a = porTag([cardT("1", ["###"])]);
+    return a.length === 1 && a[0].id === ID_SEM_TAG;
+  })(),
+);
+checa(
+  "quadro sem tag nenhuma devolve só o 'Sem tag'",
+  (() => {
+    const a = porTag([cardT("1", null), cardT("2", [])]);
+    return a.length === 1 && a[0].id === ID_SEM_TAG && a[0].metricas.total === 2;
+  })(),
+);
+checa("quadro sem demanda devolve árvore vazia", porTag([]).length === 0);
+checa(
+  "a busca da tela funciona no eixo novo sem código novo",
+  (() => {
+    const a = porTag([cardT("1", ["estoque"]), cardT("2", ["compras"])]);
+    const r = filtrarArvore(a, "estoque");
+    return r.length === 1 && r[0].nome === "estoque";
+  })(),
+);
+checa(
+  "e `acharNo` acha o galho pelo id, como no eixo antigo",
+  (() => {
+    const a = porTag([cardT("1", ["cantinas/estoque"])]);
+    return acharNo(a, "tag:cantinas/estoque")?.nome === "estoque";
+  })(),
+);
+checa(
+  "o atraso é medido pela MESMA regra do resto do app",
+  (() => {
+    const a = montarArvorePorTag({
+      cards: [cardT("1", ["estoque"], { due: "2020-01-01" })],
+      entregues: ENT_VAZIO,
+      agora: Date.parse("2026-09-04T12:00:00Z"),
+    });
+    return a[0].metricas.atrasadas === 1 && a[0].estado === "atrasado";
+  })(),
+);
+checa(
+  "no eixo por DIMENSÃO a deduplicação não mudou nada",
+  (() => {
+    const a = montarArvore({
+      dims: [{ id: "d1", setor: "Cantinas", nome: "Operação", ordem: 0, subs: [] }],
+      cards: [
+        { id: "1", sector: "Cantinas", columnId: "a", dimensaoId: "d1" },
+        { id: "2", sector: "Cantinas", columnId: "a" },
+      ],
+      entregues: ENT_VAZIO,
+    });
+    return demandasDaArvore(a).length === 2;
+  })(),
+);
 
 console.log(falhas === 0 ? "\ndimensoes: ok" : `\ndimensoes: ${falhas} falha(s)`);
 process.exit(falhas === 0 ? 0 : 1);

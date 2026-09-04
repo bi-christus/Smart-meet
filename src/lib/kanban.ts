@@ -52,6 +52,15 @@ import { resolverTags, type TagRef } from "./tags-ref";
 export { resolverTags };
 export type { TagRef };
 
+// A cor da tag MUDOU DE CASA para `tags-core`, e este arquivo passa a
+// reexportá-la — como já faz com as colunas, a lixeira e os rótulos de demanda.
+// Não é arrumação: a árvore de Dimensões precisa dela para pintar os galhos do
+// eixo por tag, e `dimensoes-core` é um módulo PURO que não pode importar este
+// aqui (ele traz o SDK do cliente na primeira linha). Nenhuma tela precisa trocar
+// de import.
+import { TAG_COLORS, tagColor } from "./tags-core.ts";
+export { TAG_COLORS, tagColor };
+
 // Idem para os links: normalizar URL, reconhecer serviço e escolher cor não
 // dependem do banco. Reexportado daqui porque quem monta o card lê um módulo só.
 import type { CardLink } from "./links-core";
@@ -111,22 +120,6 @@ export type Comment = {
   editedAt?: number;
 };
 
-/** Paleta de tags (cor estável por nome). */
-export const TAG_COLORS = [
-  "#54b8ff",
-  "#34d399",
-  "#f5b13d",
-  "#c084fc",
-  "#fb7185",
-  "#ff6a2b",
-  "#2b7fff",
-  "#5fe0b0",
-];
-export function tagColor(tag: string): string {
-  let h = 0;
-  for (let i = 0; i < tag.length; i++) h = (h * 31 + tag.charCodeAt(i)) >>> 0;
-  return TAG_COLORS[h % TAG_COLORS.length];
-}
 
 export type Card = {
   id: string;

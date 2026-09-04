@@ -645,3 +645,54 @@
     animation: none !important;
   }
 }
+
+/**
+ * O controle do eixo da árvore.
+ *
+ * Mesmo desenho do par "Destacar / Filtrar" da barra de tags do Kanban: são a
+ * mesma coisa — dois estados exclusivos de uma vista — e desenhá-los diferente
+ * faria a pessoa aprender dois controles para um conceito só.
+ *
+ * O rótulo "agrupar por" fica FORA dos botões. Sem ele, "Dimensão | Tag" ao
+ * lado de uma busca lê como filtro, e a pessoa clicaria esperando ver menos
+ * coisa em vez de a mesma coisa reorganizada.
+ */
+.eixo {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px;
+  background: var(--s1);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  flex: none;
+}
+.eixoRot {
+  padding: 0 6px 0 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--tx-3);
+}
+.eixoBtn {
+  height: 26px;
+  padding: 0 11px;
+  border: none;
+  background: none;
+  border-radius: 7px;
+  color: var(--tx-2);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.eixoBtn:hover {
+  color: var(--tx);
+}
+.eixoOn,
+.eixoOn:hover {
+  background: var(--brand);
+  color: #fff;
+}

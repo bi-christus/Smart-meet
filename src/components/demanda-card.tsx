@@ -48,6 +48,7 @@ export function DemandaCard({
   dragging,
   apagado,
   pedidoPor,
+  dimensao,
   fusao,
   onDragStart,
   onDragEnd,
@@ -94,6 +95,15 @@ export function DemandaCard({
    * serve: é melhor do que "pedido por" seguido de nada.
    */
   pedidoPor?: string;
+  /**
+   * Onde esta demanda mora na árvore de dimensões, em texto.
+   *
+   * Só a aba Dimensões passa, e só quando a árvore está agrupada por TAG — no
+   * eixo por dimensão o galho já diz isso, e repetir a mesma palavra em todos os
+   * cards de um galho é gastar a linha mais visível do card para não informar
+   * nada. Quem decide é quem monta a lista; o card só desenha o que recebe.
+   */
+  dimensao?: string;
   /**
    * O papel deste card no gesto de fusão que está em curso. Ausente = nenhum.
    *
@@ -374,6 +384,14 @@ export function DemandaCard({
           title={`Solicitante: ${requester}${requesterSector ? ` · ${requesterSector}` : ""}`}
         >
           por {requester}
+        </div>
+      )}
+      {/* Abaixo do solicitante e acima das tags: as três linhas respondem
+          "quem pediu", "onde isto mora" e "do que isto trata", nessa ordem. */}
+      {dimensao && (
+        <div className={styles.kDimensao} title={`Dimensão: ${dimensao}`}>
+          <Icon name="dimensoes" size={11} />
+          {dimensao}
         </div>
       )}
       {tags.length > 0 && (
