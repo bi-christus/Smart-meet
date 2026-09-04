@@ -23,11 +23,22 @@ import {
 // que é o mesmo que o quadro lê. Duas leituras do campo seriam duas definições
 // de pedido válido, e elas divergiriam no primeiro documento pela metade.
 import { colunaDeConclusao, temPedido } from "@/lib/conclusao-core.ts";
+// A conta de quem pode mover, para onde, e o que a mudança arrasta junto mora
+// num core puro com teste — não neste arquivo. Aqui só passa a escrita e o que
+// se mostra antes dela.
+import {
+  destinosPossiveis,
+  planoDaMudanca,
+  type ColunaSimples,
+  type PessoaQueMove,
+} from "@/lib/mover-setor-core.ts";
 import {
   createCard,
   updateCard,
   moverParaLixeira,
+  moverDeSetor,
   pedirConclusao,
+  subscribeColumnsForSectors,
   addComment,
   editComment,
   removeComment,
@@ -248,6 +259,8 @@ export function CardModal({
   canManage,
   concluiDireto,
   entregues,
+  pessoa,
+  setoresDaPessoa,
   actorEmail,
   activeUsers,
   usersMap,
@@ -281,6 +294,24 @@ export function CardModal({
    * coluna, senão passariam a existir duas respostas para a mesma pergunta.
    */
   entregues: ReadonlySet<string>;
+  /**
+   * Quem está mexendo — papel e setores. Só para a mudança de setor.
+   *
+   * O modal já recebia `actorEmail`, que basta para assinar o que se grava; a
+   * mudança de setor precisa de mais, porque a pergunta dela não é "quem é
+   * você?" e sim "você enxerga os dois lados deste movimento?".
+   */
+  pessoa: PessoaQueMove;
+  /**
+   * Os setores que a pessoa enxerga — para admin, o cadastro inteiro.
+   *
+   * É a mesma lista que a barra de setores do quadro desenha
+   * (`useSetoresDaPessoa`), e é dela que saem os destinos possíveis. Oferecer um
+   * destino fora dela seria oferecer um erro: a regra do Firestore recusaria a
+   * escrita, e o que chegaria na tela é "sem permissão" sobre uma opção que a
+   * própria tela apresentou.
+   */
+  setoresDaPessoa: string[];
   actorEmail: string;
   activeUsers: UserProfile[];
   usersMap: Record<string, UserProfile>;
@@ -445,7 +476,79 @@ export function CardModal({
   const [excluindo, setExcluindo] = useState(false);
   /** O pedido de conclusão em curso, para o botão não ser clicado duas vezes. */
   const [pedindo, setPedindo] = useState(false);
+  /** O painel de mudança de setor, aberto, e o destino escolhido nele. */
+  const [movendo, setMovendo] = useState(false);
+  const [destino, setDestino] = useState("");
+  const [transferindo, setTransferindo] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  /** Para onde esta demanda pode ir, na conta do core. */
+  const destinos = card
+    ? destinosPossiveis(pessoa, card.sector, setoresDaPessoa)
+    : [];
+
+  /**
+   * As etapas do setor de destino, assinadas só quando há um destino escolhido.
+   *
+   * `undefined` é "ainda não respondeu" e `[]` é "respondeu e está vazio" — os
+   * dois estados que AGENTS.md §3 manda separar, e aqui a diferença muda o que
+   * a tela diz: com `undefined` ela espera, com `[]` ela explica que aquele
+   * quadro ainda não tem etapa nenhuma. Um `[]` inicial faria o resumo afirmar
+   * "vai para a entrada" antes de saber qual é a entrada.
+   */
+  const [colsLidas, setColsLidas] = useState<{
+    setor: string;
+    cols: ColunaSimples[];
+  } | null>(null);
+  useEffect(() => {
+    if (!destino) return;
+    return subscribeColumnsForSectors(
+      [destino],
+      (cols) =>
+        setColsLidas({
+          setor: destino,
+          cols: cols.map((c) => ({ colId: c.colId, title: c.title })),
+        }),
+      (e) => console.error("[colunas do destino]", e),
+    );
+  }, [destino]);
+  /**
+   * O setor viaja JUNTO da resposta, e a comparação acontece no render.
+   *
+   * A forma óbvia — zerar o estado dentro do efeito ao trocar de destino — é um
+   * `setState` síncrono em efeito, que causa render em cascata e que o lint
+   * deste projeto reprova com razão. Guardando de quem é a resposta, trocar de
+   * destino faz a lista velha deixar de casar no mesmo render em que a troca
+   * acontece: nunca há um quadro exibindo as etapas do setor errado.
+   */
+  const colsDestino =
+    colsLidas && colsLidas.setor === destino ? colsLidas.cols : undefined;
+
+  const plano =
+    card && destino && colsDestino?.length
+      ? planoDaMudanca({
+          pessoa,
+          card,
+          tituloDaColunaAtual:
+            columns.find((c) => c.colId === card.columnId)?.title ?? "",
+          destino,
+          colsDestino,
+          setoresDoResponsavel: card.assignee
+            ? (usersMap[card.assignee]?.sectors ?? null)
+            : null,
+          /**
+           * ZERO, e não `Date.now()`, porque isto é a PRÉVIA.
+           *
+           * O `agora` só alimenta `enteredAt` e `order`, que a prévia não
+           * mostra — ela responde "para que etapa vai, e o que se perde". Ler o
+           * relógio durante o render é impureza (o lint reprova, e com razão:
+           * dois renders do mesmo estado dariam resultados diferentes). A hora
+           * de verdade é lida em `mover()`, no instante da escrita, que é o
+           * único momento em que ela significa alguma coisa.
+           */
+          agora: 0,
+        })
+      : null;
 
   /**
    * Para onde o botão "Solicitar conclusão" aponta, e se já há um pedido.
@@ -1270,6 +1373,65 @@ export function CardModal({
         ),
       );
       setPedindo(false);
+    }
+  }
+
+  /**
+   * Grava a mudança de setor.
+   *
+   * O plano é recalculado AQUI, e não reaproveitado do render, por causa da
+   * hora: `planoDaMudanca` recebe `agora`, e o valor do render é de quando a
+   * pessoa abriu o painel — que pode ter sido minutos atrás. `enteredAt` e
+   * `order` sairiam do passado, e o card chegaria no destino já parecendo
+   * antigo.
+   */
+  async function mover() {
+    if (!card || !destino || !colsDestino?.length) return;
+    const p = planoDaMudanca({
+      pessoa,
+      card,
+      tituloDaColunaAtual:
+        columns.find((c) => c.colId === card.columnId)?.title ?? "",
+      destino,
+      colsDestino,
+      setoresDoResponsavel: card.assignee
+        ? (usersMap[card.assignee]?.sectors ?? null)
+        : null,
+      agora: Date.now(),
+    });
+    if (!p) return;
+    setErr(null);
+    setTransferindo(true);
+    try {
+      await moverDeSetor(card.id, p.patch, {
+        // O evento fica no setor de ORIGEM — a regra exige que ele bata com o
+        // setor do card PAI, e dentro deste lote o pai ainda é o antigo. Ver o
+        // comentário de `moverDeSetor`.
+        ctx: { autor: actorEmail, sector: card.sector },
+        mudancas: [
+          { campo: "setor", de: card.sector, para: p.destino },
+          ...(card.columnId !== p.coluna.colId
+            ? [
+                {
+                  campo: "coluna" as const,
+                  de: columns.find((c) => c.colId === card.columnId)?.title ?? null,
+                  para: p.coluna.title,
+                },
+              ]
+            : []),
+        ],
+      });
+      onClose();
+    } catch (e) {
+      console.error("[mover de setor]", codigoDe(e), e);
+      setErr(
+        fraseDeFalha(
+          "Não foi possível mudar a demanda de setor.",
+          e,
+          navigator.onLine,
+        ),
+      );
+      setTransferindo(false);
     }
   }
 
@@ -2163,6 +2325,105 @@ export function CardModal({
         </div>
       )}
 
+      {/**
+       * MOVER DE SETOR — o painel, e por que ele mostra o plano antes.
+       *
+       * Mover é a mudança mais radical que uma demanda sofre neste app: troca de
+       * quadro, de etapa e de classificação de uma vez. Os dois modos de falha
+       * são silenciosos (etapa que não existe no destino, dimensão de outro
+       * setor), e é por isso que o que vai acontecer está escrito aqui, com o
+       * nome da etapa de chegada, antes de qualquer escrita.
+       */}
+      {movendo && (
+        <div className={styles.confirmaBloco}>
+          <div className={styles.confirmaTexto}>
+            <strong>Levar esta demanda para outro setor?</strong> Ela sai do
+            quadro de {sector} e passa a ser do setor escolhido. Solicitante,
+            setor solicitante e responsável continuam os mesmos.
+          </div>
+          <div className={styles.field}>
+            <label className={styles.label}>Setor de destino</label>
+            <Select
+              value={destino}
+              options={[
+                { value: "", label: "Escolha o setor…" },
+                ...destinos.map((s) => ({ value: s, label: s })),
+              ]}
+              onChange={setDestino}
+              ariaLabel="Setor de destino"
+            />
+          </div>
+          {/* O esqueleto espera as colunas do destino chegarem. Um resumo
+              montado sobre lista vazia diria "vai para a entrada" sobre um
+              quadro que ainda não respondeu — e "vai para a entrada" é
+              justamente o que se diz quando a etapa não existe lá. */}
+          {destino && !colsDestino && (
+            <div className={styles.confirmaTexto}>
+              Lendo as etapas de {destino}…
+            </div>
+          )}
+          {plano && (
+            <ul className={styles.planoMudanca}>
+              <li>
+                Vai para a etapa <strong>{plano.coluna.title}</strong>
+                {plano.coluna.por === "entrada" &&
+                  " — a etapa atual não existe lá, então ela chega na entrada do quadro"}
+                {plano.coluna.por === "mesmo-nome" &&
+                  " — casada pelo nome, porque os dois setores criaram essa etapa separadamente"}
+                .
+              </li>
+              {plano.limpaClassificacao && (
+                <li>
+                  A classificação de dimensão é <strong>apagada</strong>: a
+                  árvore é cadastro de cada setor, e o galho de {sector} não
+                  existe em {plano.destino}.
+                </li>
+              )}
+              {plano.responsavelForaDoDestino && (
+                <li>
+                  O responsável atual <strong>não participa de {plano.destino}</strong>.
+                  Ele continua na demanda — troque depois, se for o caso.
+                </li>
+              )}
+              {plano.cancelaPedidoDeConclusao && (
+                <li>
+                  O pedido de conclusão em aberto é{" "}
+                  <strong>cancelado</strong>: ele apontava para uma etapa de{" "}
+                  {sector}.
+                </li>
+              )}
+            </ul>
+          )}
+          {destino && colsDestino && colsDestino.length === 0 && (
+            <div className={styles.confirmaTexto}>
+              O quadro de {destino} ainda não tem etapa nenhuma. Abra o Kanban
+              desse setor uma vez para as etapas serem criadas, e volte aqui.
+            </div>
+          )}
+          <div className={styles.confirmaAcoes}>
+            <button
+              type="button"
+              className={styles.btnGhost}
+              onClick={() => {
+                setMovendo(false);
+                setDestino("");
+              }}
+              disabled={transferindo}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              className={styles.btnConfirma}
+              onClick={() => void mover()}
+              disabled={!plano || transferindo}
+            >
+              {transferindo ? "Movendo…" : "Mover a demanda"}
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className={styles.mactions}>
         {/* Escondido de quem a regra do Firestore recusaria. Ele aparecia para
             operador, que clicava e levava um "Não foi possível remover." sem
@@ -2188,9 +2449,25 @@ export function CardModal({
          * o quadro tem alguma etapa de conclusão para onde apontar. Faltando
          * qualquer uma, o botão não aparece — em vez de aparecer e falhar.
          */}
+        {/* Só aparece se houver para onde ir. Sem outro setor no cadastro, o
+            botão só produziria uma lista vazia — e a regra do Firestore
+            recusaria de todo jeito. */}
+        {!isNew && !confirmandoExclusao && !movendo && destinos.length > 0 && (
+          <button
+            className={styles.btnGhost}
+            onClick={() => {
+              setErr(null);
+              setMovendo(true);
+            }}
+            disabled={saving || posting || excluindo}
+          >
+            <Icon name="dimensoes" size={15} /> Mover de setor
+          </button>
+        )}
         {!isNew &&
           !concluiDireto &&
           !confirmandoExclusao &&
+          !movendo &&
           !jaPediuConclusao &&
           alvoDaConclusao && (
             <button

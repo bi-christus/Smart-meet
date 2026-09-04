@@ -48,7 +48,11 @@ export type CampoRastreado =
   | "links"
   | "checklist"
   | "dimensao"
-  | "subdimensao";
+  | "subdimensao"
+  // O setor entra na lista porque, sem ele, a mudança mais radical que uma
+  // demanda sofre seria a única que a timeline não saberia contar: a linha
+  // diria "mudou a demanda de setor" e não diria de onde para onde.
+  | "setor";
 
 export const CAMPO_ROTULO: Record<CampoRastreado, string> = {
   titulo: "Título",
@@ -61,6 +65,7 @@ export const CAMPO_ROTULO: Record<CampoRastreado, string> = {
   inicio: "Início",
   prioridade: "Prioridade",
   tipo: "Tipo",
+  setor: "Setor",
   tags: "Tags",
   links: "Links",
   checklist: "Checklist",
@@ -108,7 +113,12 @@ export type Acao =
   // vez o rastro de quem terminou o trabalho.
   | "conclusao-pedida"
   | "conclusao-aprovada"
-  | "conclusao-recusada";
+  | "conclusao-recusada"
+  // A demanda mudou de quadro. Verbo próprio, e não "editada", porque é a
+  // mudança que mais muda a demanda — e é a única capaz de fazer a timeline
+  // parecer que começa no meio, para quem só tem o setor de destino. A linha
+  // dela é o que explica a lacuna a quem vier depois.
+  | "transferida";
 
 export const ACAO_ROTULO: Record<Acao, string> = {
   criada: "abriu a demanda",
@@ -119,6 +129,7 @@ export const ACAO_ROTULO: Record<Acao, string> = {
   "conclusao-pedida": "pediu a conclusão",
   "conclusao-aprovada": "aprovou a conclusão",
   "conclusao-recusada": "recusou a conclusão",
+  transferida: "mudou a demanda de setor",
 };
 
 /**

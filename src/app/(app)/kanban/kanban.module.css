@@ -2235,3 +2235,27 @@
   opacity: 0.55;
   cursor: default;
 }
+
+/**
+ * O resumo do que a mudança de setor vai fazer.
+ *
+ * Lista, e não um parágrafo: são de um a quatro fatos independentes (a etapa de
+ * chegada, a classificação apagada, o responsável de fora, o pedido cancelado),
+ * e em prosa corrida eles viram uma frase longa que se lê na diagonal. Aqui cada
+ * um ocupa a própria linha e o que não se aplica àquela demanda simplesmente
+ * não aparece.
+ */
+.planoMudanca {
+  margin: 10px 0 0;
+  padding: 0 0 0 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--tx-2);
+}
+.planoMudanca strong {
+  color: var(--tx);
+  font-weight: 600;
+}

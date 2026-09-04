@@ -116,16 +116,37 @@ export function anexarEvento(
  */
 export async function carregarHistorico(
   cardId: string,
-  sector: string,
+  /**
+   * Os setores em que os eventos deste card podem estar — o atual primeiro.
+   *
+   * Era um `string` até a demanda poder mudar de setor. Quem monta a lista é
+   * `setoresDoHistorico` (`mover-setor-core.ts`), a partir do próprio card;
+   * para a demanda que nunca mudou de setor — a maioria absoluta — ela devolve
+   * um só, e a consulta é exatamente a de sempre.
+   */
+  setores: readonly string[],
 ): Promise<Evento[]> {
+  const alvos = [...new Set(setores.filter(Boolean))].slice(0, 30);
+  if (alvos.length === 0) return [];
   const snap = await getDocs(
     query(
       refHistorico(cardId),
-      // O filtro por setor não é refinamento de resultado — todo evento deste
-      // card tem o mesmo setor. Ele existe porque a REGRA de leitura é escopada
-      // por setor, e uma consulta do Firestore só passa numa regra dessas se
-      // carregar a restrição correspondente. Mesmo contrato de /cards.
-      where("sector", "==", sector),
+      // O filtro por setor não é refinamento de resultado — ele existe porque a
+      // REGRA de leitura é escopada por setor, e uma consulta do Firestore só
+      // passa numa regra dessas se carregar a restrição correspondente. Mesmo
+      // contrato de /cards.
+      //
+      // `in` e não `==` porque a demanda pode ter mudado de setor, e os eventos
+      // guardam o setor de quando aconteceram — evento gravado não se reescreve
+      // (`allow update: if false`, na regra da subcoleção). O `in` é lido pelas
+      // regras como a disjunção das igualdades, então ele passa exatamente
+      // quando a pessoa tem TODOS os setores da lista; quem tem só o de destino
+      // recebe a recusa da consulta inteira, e não uma metade silenciosa. É o
+      // comportamento certo: meia timeline sem aviso é pior do que um erro que
+      // a tela sabe mostrar.
+      //
+      // Teto de 30 no `in` — por isso `MAX_SETORES_ANTERIORES` existe.
+      where("sector", "in", alvos),
       orderBy("em", "desc"),
       limit(LIMITE_HISTORICO),
     ),
