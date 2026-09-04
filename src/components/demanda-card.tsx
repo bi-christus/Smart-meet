@@ -48,13 +48,16 @@ export function DemandaCard({
   dragging,
   apagado,
   pedidoPor,
+  fusao,
   onDragStart,
   onDragEnd,
   onClick,
+  onContextMenu,
   onHistorico,
   onPerfil,
   onAprovarConclusao,
   onRecusarConclusao,
+  onSoltarFusao,
 }: {
   card: Card;
   /**
@@ -91,9 +94,26 @@ export function DemandaCard({
    * serve: é melhor do que "pedido por" seguido de nada.
    */
   pedidoPor?: string;
+  /**
+   * O papel deste card no gesto de fusão que está em curso. Ausente = nenhum.
+   *
+   * `origem` é o card que foi escolhido para fundir; `alvo` e `recusado` são os
+   * outros dois estados que todo card do quadro assume enquanto o gesto dura.
+   *
+   * A RECUSA VEM COM MOTIVO, e ela é desenhada ANTES de qualquer soltura. Num
+   * gesto de arrastar, recusa sem aviso é indistinguível de mira errada: a
+   * pessoa tenta de novo, e da terceira vez desconfia do arrasto inteiro.
+   *
+   * O card não conhece a regra da fusão — ele recebe o veredito. É a mesma
+   * divisão de `dragging` e `apagado`, e é o que permite a árvore de Dimensões
+   * usar este componente sem herdar o conceito de fusão junto.
+   */
+  fusao?: { papel: "origem" | "alvo" | "recusado"; motivo?: string };
   onDragStart?: (e: React.DragEvent) => void;
   onDragEnd?: () => void;
   onClick: () => void;
+  /** Abre o menu do card. Ausente = clique com o direito segue o do navegador. */
+  onContextMenu?: (e: React.MouseEvent) => void;
   onHistorico?: () => void;
   /** Recebe a pessoa, e não o e-mail: quem já tem o perfil na mão é o card. */
   onPerfil?: (pessoa: UserProfile) => void;
@@ -113,6 +133,14 @@ export function DemandaCard({
    */
   onAprovarConclusao?: () => void;
   onRecusarConclusao?: () => void;
+  /**
+   * Este card aceita a soltura da fusão em curso.
+   *
+   * Presente = ele vira alvo de soltura; ausente = a soltura atravessa para a
+   * coluna atrás dele, como sempre foi. Quem decide é o quadro, pelo veredito da
+   * regra — o card não sabe com quem pode fundir.
+   */
+  onSoltarFusao?: () => void;
 }) {
   const di = dueInfo(card.due, entregue);
   const startShort = card.startDate ? fmtShort(parseDue(card.startDate)) : "";
@@ -158,12 +186,70 @@ export function DemandaCard({
 
   return (
     <div
-      className={`${styles.kcard} ${dragging ? styles.drag : ""} ${arrastavel ? "" : styles.semArraste} ${apagado ? styles.apagado : ""} ${pedido ? styles.pedindo : ""}`}
+      className={`${styles.kcard} ${dragging ? styles.drag : ""} ${arrastavel ? "" : styles.semArraste} ${apagado ? styles.apagado : ""} ${pedido ? styles.pedindo : ""} ${fusao ? styles["fusao_" + fusao.papel] : ""}`}
       draggable={arrastavel}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       onClick={onClick}
+      onContextMenu={onContextMenu}
+      /**
+       * O ALVO DA SOLTURA É O CARD, e o `stopPropagation` é o que faz isso ser
+       * verdade. Sem ele, o `onDrop` da COLUNA atrás recebe o mesmo evento e a
+       * fusão vira uma movimentação comum — o card muda de etapa e o diálogo
+       * nunca abre. `preventDefault` no `dragOver` é o que permite a soltura
+       * acontecer: o padrão do HTML é recusar, e a recusa é silenciosa.
+       */
+      onDragOver={
+        onSoltarFusao
+          ? (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              e.dataTransfer.dropEffect = "link";
+            }
+          : undefined
+      }
+      onDrop={
+        onSoltarFusao
+          ? (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onSoltarFusao();
+            }
+          : undefined
+      }
+      /* O motivo da recusa também no `title`: a faixa mostra o texto curto, e
+         quem quiser a frase inteira pousa o ponteiro. */
+      title={fusao?.motivo}
     >
+      {/* A faixa da fusão fica ACIMA da do pedido de conclusão: enquanto o
+          gesto dura, a pergunta "posso soltar aqui?" precede qualquer outra
+          coisa que o card tenha a dizer. */}
+      {fusao && (
+        <div className={styles.kFusao}>
+          {fusao.papel === "origem" && (
+            <>
+              <Icon name="link" size={12} /> Fundindo esta — solte sobre outra
+            </>
+          )}
+          {fusao.papel === "alvo" && (
+            <>
+              <Icon name="check" size={12} /> Solte aqui para fundir
+            </>
+          )}
+          {fusao.papel === "recusado" && (
+            <>
+              <Icon name="x" size={12} />
+              {/* O motivo mora num filho próprio porque `text-overflow` não
+                  age sobre um container flex: no pai, a frase era cortada no
+                  meio da palavra e SEM as reticências, o que lê como texto
+                  quebrado em vez de texto abreviado. */}
+              <span className={styles.kFusaoMotivo}>
+                {fusao.motivo ?? "Não dá para fundir"}
+              </span>
+            </>
+          )}
+        </div>
+      )}
       {/**
        * A FAIXA DO PEDIDO fica no topo do card, acima de tudo.
        *

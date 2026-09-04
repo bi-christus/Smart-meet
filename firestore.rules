@@ -844,7 +844,8 @@ service cloud.firestore {
                                         'conclusao-pedida',
                                         'conclusao-aprovada',
                                         'conclusao-recusada',
-                                        'transferida']
+                                        'transferida',
+                                        'fundida', 'absorvida']
                     // O card e o primeiro evento nascem no MESMO lote, e o pai
                     // ainda não existe para o `get()` — daí o primeiro braço.
                     // Depois disso, o setor do evento tem de ser o do card: é

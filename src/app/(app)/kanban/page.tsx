@@ -19,6 +19,9 @@ import {
   restaurarDaLixeira,
   moverParaLixeira,
   moveCard,
+  fundirCards,
+  DEMAND_TYPE_LABEL,
+  PRIORITY_LABEL,
   pedirConclusao,
   aprovarConclusao,
   recusarConclusao,
@@ -53,6 +56,16 @@ import {
 // Por onde a demanda passou — o histórico de uma transferida está espalhado
 // pelos setores por onde ela andou, e a consulta precisa saber quais são.
 import { setoresDoHistorico } from "@/lib/mover-setor-core.ts";
+// A regra de quem funde com quem — e o motivo em português da recusa — mora num
+// core puro com teste. O quadro pergunta; ele não decide.
+import {
+  CAMPO_DA_FUSAO_ROTULO,
+  camposEmConflito,
+  escolhasIniciais,
+  podemFundir,
+  resultadoDaFusao,
+  type CampoEscolhivel,
+} from "@/lib/fusao-core.ts";
 import { rotuloDoMes, separarConcluidas } from "@/lib/concluidas-core";
 import { startOfDay } from "@/lib/datas";
 import { carregarHistorico } from "@/lib/historico";
@@ -274,6 +287,23 @@ export default function KanbanPage() {
     card: Card;
     colunaAlvo: string;
   } | null>(null);
+  /** O menu do card, aberto com o botão direito, e onde ele foi aberto. */
+  const [menu, setMenu] = useState<{ card: Card; x: number; y: number } | null>(
+    null,
+  );
+  /**
+   * A demanda escolhida para fundir, esperando o alvo.
+   *
+   * Enquanto ela existe, o quadro inteiro muda de estado: os cards passam a
+   * dizer se aceitam ou recusam a fusão, e por quê. É por isso que ela é estado
+   * da PÁGINA e não do card — a pergunta é sobre o par, e nenhum card sozinho
+   * consegue respondê-la.
+   */
+  const [fundindoDe, setFundindoDe] = useState<Card | null>(null);
+  /** O par escolhido, esperando a configuração do resultado. */
+  const [fusao, setFusao] = useState<{ vencedor: Card; perdido: Card } | null>(
+    null,
+  );
   /** O ponteiro está sobre o alvo da lixeira, com um card na mão. */
   const [sobreLixeira, setSobreLixeira] = useState(false);
   const [dragColId, setDragColId] = useState<string | null>(null);
@@ -284,6 +314,38 @@ export default function KanbanPage() {
   useEffect(() => {
     if (sectors.length && !sectors.includes(sector)) setSector(sectors[0]);
   }, [sectors, sector]);
+
+  /**
+   * As saídas do menu do card e do modo de fusão.
+   *
+   * ESCAPE DESFAZ OS DOIS, e é a única saída do modo de fusão que não exige
+   * mira: o gesto toma o quadro inteiro, e quem entrou nele sem querer precisa
+   * de uma tecla, não de um alvo. O clique fora e a rolagem fecham só o menu —
+   * o modo de fusão sobrevive à rolagem de propósito, porque arrastar entre
+   * colunas distantes exige rolar no meio do caminho.
+   *
+   * O efeito só existe enquanto há algo para fechar: sem isto seriam três
+   * escutas globais penduradas no quadro o tempo inteiro, para nada.
+   */
+  useEffect(() => {
+    if (!menu && !fundindoDe) return;
+    const naTecla = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setMenu(null);
+      setFundindoDe(null);
+    };
+    const foraDoMenu = () => setMenu(null);
+    window.addEventListener("keydown", naTecla);
+    window.addEventListener("mousedown", foraDoMenu);
+    // `true` = fase de captura: a rolagem que importa é a das colunas e a do
+    // quadro, que não borbulham para a janela.
+    window.addEventListener("scroll", foraDoMenu, true);
+    return () => {
+      window.removeEventListener("keydown", naTecla);
+      window.removeEventListener("mousedown", foraDoMenu);
+      window.removeEventListener("scroll", foraDoMenu, true);
+    };
+  }, [menu, fundindoDe]);
 
   /**
    * O que sobrou da chave por setor que o quadro tinha.
@@ -615,6 +677,24 @@ export default function KanbanPage() {
    */
   const concluiDireto = podeConcluirDireto(papelAtual);
 
+  /**
+   * O papel de um card no gesto de fusão em curso — ou nada, fora dele.
+   *
+   * Chamada por card, e é de propósito que ela não seja memoizada: `podemFundir`
+   * é uma dúzia de comparações de string, e ela só roda enquanto `fundindoDe`
+   * existe — ou seja, durante os poucos segundos de um gesto, e nunca no quadro
+   * em repouso. Um `useMemo` sobre a lista inteira custaria uma recomputação a
+   * cada snapshot do Firestore para servir um estado que quase nunca está ligado.
+   */
+  function fusaoDoCard(
+    c: Card,
+  ): { papel: "origem" | "alvo" | "recusado"; motivo?: string } | undefined {
+    if (!fundindoDe) return undefined;
+    if (c.id === fundindoDe.id) return { papel: "origem" };
+    const v = podemFundir(c, fundindoDe);
+    return v.ok ? { papel: "alvo" } : { papel: "recusado", motivo: v.motivo };
+  }
+
   if (sectors.length === 0) {
     return (
       <div className={styles.noSector}>
@@ -625,6 +705,22 @@ export default function KanbanPage() {
   }
 
   function onColDrop(col: ColumnDoc) {
+    /**
+     * EM MODO DE FUSÃO, soltar numa coluna não faz nada — e não cancela o modo.
+     *
+     * Não move porque quem está fundindo não pediu para mover, e uma escrita
+     * inesperada é o pior desfecho possível de uma mira errada. Não cancela
+     * porque a mira errada é justamente o caso comum: os cards têm 290px de
+     * largura e o alvo é outro card, não a coluna. Cancelar obrigaria a
+     * recomeçar pelo botão direito a cada tentativa; assim a segunda tentativa é
+     * só arrastar de novo, e a faixa do card de origem continua dizendo o que
+     * fazer. Quem quiser sair usa Escape.
+     */
+    if (fundindoDe) {
+      setDragCardId(null);
+      setOverCol(null);
+      return;
+    }
     if (dragCardId) {
       const c = cards.find((x) => x.id === dragCardId);
       if (
@@ -1147,6 +1243,17 @@ export default function KanbanPage() {
                         setDragCardId(null);
                         setOverCol(null);
                       }}
+                      onSoltarFusao={
+                        fusaoDoCard(c)?.papel === "alvo"
+                          ? () => {
+                              if (!fundindoDe) return;
+                              setFusao({ vencedor: c, perdido: fundindoDe });
+                              setFundindoDe(null);
+                              setDragCardId(null);
+                              setOverCol(null);
+                            }
+                          : undefined
+                      }
                       apagado={apagarSemTag && !cardTemTag(c, tagsF, modoTags)}
                       pedidoPor={
                         c.conclusaoPedida?.por
@@ -1154,7 +1261,27 @@ export default function KanbanPage() {
                             c.conclusaoPedida.por)
                           : undefined
                       }
-                      onClick={() => setEdit({ mode: "edit", card: c })}
+                      fusao={fusaoDoCard(c)}
+                      onClick={() => {
+                        // Em modo de fusão, o clique ESCOLHE o alvo. É o
+                        // caminho de quem prefere dois cliques a um arrasto —
+                        // e, num quadro que rola em duas direções, arrastar
+                        // entre colunas distantes é exatamente onde o arrasto
+                        // falha.
+                        const alvo = fusaoDoCard(c);
+                        if (alvo?.papel === "alvo" && fundindoDe) {
+                          setFusao({ vencedor: c, perdido: fundindoDe });
+                          setFundindoDe(null);
+                          return;
+                        }
+                        if (fundindoDe) return;
+                        setEdit({ mode: "edit", card: c });
+                      }}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        setFundindoDe(null);
+                        setMenu({ card: c, x: e.clientX, y: e.clientY });
+                      }}
                       onHistorico={() => setHistCard(c)}
                       onPerfil={setPerfilDe}
                       /* As duas só existem para quem decide. O card usa a
@@ -1363,6 +1490,70 @@ export default function KanbanPage() {
             );
             setPedindoConclusao(null);
           }}
+        />
+      )}
+
+      {/**
+       * O MENU DO CARD — a porta da fusão, e a primeira do quadro.
+       *
+       * Posicionado onde o clique aconteceu, e virado para dentro quando ele
+       * acontece perto da borda: um menu que nasce metade fora da janela é um
+       * menu cujo último item ninguém alcança. `position: fixed` porque as
+       * coordenadas do evento são da JANELA, não do documento — dentro do
+       * quadro, que rola nos dois eixos, qualquer outra referência erra.
+       */}
+      {menu && (
+        <div
+          className={styles.cardMenu}
+          style={{
+            left: Math.min(menu.x, window.innerWidth - 240),
+            top: Math.min(menu.y, window.innerHeight - 120),
+          }}
+          role="menu"
+          /* Sem isto o `mousedown` global fecharia o menu antes de o clique no
+             item chegar — o menu piscaria e nada aconteceria. */
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div className={styles.cardMenuTitulo}>{menu.card.title}</div>
+          <button
+            type="button"
+            className={styles.cardMenuItem}
+            role="menuitem"
+            onClick={() => {
+              setFundindoDe(menu.card);
+              setMenu(null);
+            }}
+          >
+            <Icon name="link" size={14} />
+            <span>
+              Fundir com outra demanda
+              <small>Arraste esta sobre a outra, ou clique nela</small>
+            </span>
+          </button>
+        </div>
+      )}
+
+      {/**
+       * A configuração da fusão.
+       *
+       * O par já está escolhido quando este diálogo abre — o que falta é decidir
+       * o que fica de cada campo em que as duas discordam.
+       */}
+      {fusao && (
+        <FusaoModal
+          /* A ORDEM entra na chave, e não só os ids: trocar os lados precisa
+             remontar, senão as escolhas já feitas passam a valer para o card
+             errado. Ver o comentário de `escolhas`, lá dentro. */
+          key={`${fusao.vencedor.id}>${fusao.perdido.id}`}
+          vencedor={fusao.vencedor}
+          perdido={fusao.perdido}
+          sector={sector}
+          columns={displayCols}
+          actorEmail={autorAtual}
+          onFechar={() => setFusao(null)}
+          onTrocarLados={() =>
+            setFusao({ vencedor: fusao.perdido, perdido: fusao.vencedor })
+          }
         />
       )}
 
@@ -1774,6 +1965,225 @@ function ConfirmaPedidoConclusao({
             {indo ? "Enviando…" : "Solicitar conclusão"}
           </button>
         </div>
+      </div>
+      {erro && <div className={styles.err}>{erro}</div>}
+    </Modal>
+  );
+}
+
+/**
+ * A configuração da fusão: o que fica de cada campo em que as duas discordam.
+ *
+ * SÓ OS CAMPOS EM CONFLITO viram pergunta. Campo em que as duas concordam não
+ * tem duas respostas, e perguntar sobre ele é como se ensina a clicar em "ok"
+ * sem ler — a partir daí a tela inteira deixa de ser lida, inclusive as
+ * perguntas que importavam.
+ *
+ * O QUE NÃO APARECE AQUI é tudo que é acúmulo: checklist, comentários, links,
+ * tags e proveniência entram por união, sem perguntar. Oferecer a alguém a
+ * chance de descartar o comentário de outra pessoa numa tela de arrumação é uma
+ * decisão que ninguém pediu para tomar, e a resposta certa é sempre "todos".
+ */
+function FusaoModal({
+  vencedor,
+  perdido,
+  sector,
+  columns,
+  actorEmail,
+  onFechar,
+  onTrocarLados,
+}: {
+  vencedor: Card;
+  perdido: Card;
+  sector: string;
+  columns: ColumnDoc[];
+  actorEmail: string;
+  onFechar: () => void;
+  onTrocarLados: () => void;
+}) {
+  /**
+   * As escolhas nascem do par, e o par nunca muda debaixo delas.
+   *
+   * Trocar os lados remonta este componente inteiro — o `key` de quem o
+   * renderiza carrega a ORDEM do par, não só os ids. É a solução certa aqui, e
+   * não um atalho: as escolhas são "de que lado fica cada campo", então elas
+   * deixam de significar a mesma coisa no instante em que os lados trocam.
+   * Mantê-las vivas faria o diálogo guardar decisões sobre um arranjo que já não
+   * existe, e ninguém repararia — os botões continuariam marcados, só que no
+   * card errado.
+   */
+  const [escolhas, setEscolhas] = useState(() =>
+    escolhasIniciais(vencedor, perdido),
+  );
+  const [fundindo, setFundindo] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  const conflitos = camposEmConflito(vencedor, perdido);
+  const tituloCol = (colId: string) =>
+    columns.find((c) => c.colId === colId)?.title ?? colId;
+
+  /** Como cada campo se lê na coluna de escolha. */
+  function valorDe(c: Card, campo: CampoEscolhivel): string {
+    switch (campo) {
+      case "title":
+        return c.title || "—";
+      case "description":
+        return c.description?.trim() || "— sem descrição —";
+      case "columnId":
+        return tituloCol(c.columnId);
+      case "type":
+        return c.type ? (DEMAND_TYPE_LABEL[c.type] ?? c.type) : "—";
+      case "priority":
+        return c.priority ? (PRIORITY_LABEL[c.priority] ?? c.priority) : "—";
+      case "startDate":
+        return c.startDate || "—";
+      case "due":
+        return c.due || "—";
+      case "dimensao":
+        // O id, e não o nome: a árvore do setor não está carregada aqui, e
+        // buscá-la para uma linha de diálogo custaria uma assinatura inteira.
+        // Quem funde duas demandas da mesma dimensão não vê esta linha; quem vê
+        // está escolhendo entre duas classificações que ele mesmo definiu.
+        return c.dimensaoId ? `${c.dimensaoId}${c.subdimensaoId ? ` › ${c.subdimensaoId}` : ""}` : "sem classificação";
+    }
+  }
+
+  async function confirmar() {
+    setErro(null);
+    setFundindo(true);
+    try {
+      const r = resultadoDaFusao({
+        vencedor,
+        perdido,
+        escolhas,
+        por: actorEmail,
+        agora: Date.now(),
+      });
+      await fundirCards({
+        vencedorId: vencedor.id,
+        perdidoId: perdido.id,
+        tituloVencedor: String(r.patchVencedor.title ?? vencedor.title),
+        tituloPerdido: perdido.title,
+        patchVencedor: r.patchVencedor,
+        patchPerdido: r.patchPerdido,
+        ctx: { autor: actorEmail, sector },
+      });
+      onFechar();
+    } catch (e) {
+      console.error("[fundir demandas]", codigoDe(e), e);
+      setErro(
+        fraseDeFalha(
+          "Não foi possível fundir as duas demandas.",
+          e,
+          navigator.onLine,
+        ),
+      );
+      setFundindo(false);
+    }
+  }
+
+  return (
+    <Modal
+      onClose={onFechar}
+      podeFechar={() => !fundindo}
+      ariaLabel="Fundir duas demandas"
+      overlayClassName={styles.overlay}
+      className={styles.modal}
+      width={620}
+    >
+      <div className={styles.mhead}>
+        <span className={styles.mchip}>
+          <Icon name="link" size={12} /> Fusão
+        </span>
+        <span className={styles.mchip}>{sector}</span>
+      </div>
+
+      <div className={styles.fusaoCabeca}>
+        <div className={styles.fusaoLado}>
+          <span className={styles.fusaoRot}>fica</span>
+          <strong>{vencedor.title}</strong>
+        </div>
+        <button
+          type="button"
+          className={styles.fusaoTrocar}
+          onClick={onTrocarLados}
+          disabled={fundindo}
+          title="Trocar qual das duas continua no quadro"
+        >
+          ⇄ trocar
+        </button>
+        <div className={styles.fusaoLado}>
+          <span className={styles.fusaoRot}>vai para a lixeira</span>
+          <strong>{perdido.title}</strong>
+        </div>
+      </div>
+
+      <div className={styles.confirmaTexto}>
+        Tudo que se acumula — checklist, comentários, links, tags e as reuniões
+        de origem — entra na demanda que fica, sem repetir. A outra vai para a
+        lixeira inteira, de onde dá para trazer de volta.
+      </div>
+
+      {conflitos.length === 0 ? (
+        <div className={styles.confirmaTexto}>
+          As duas concordam em todos os campos, então não há nada a escolher.
+        </div>
+      ) : (
+        <div className={styles.fusaoCampos}>
+          {conflitos.map((campo) => (
+            <div key={campo} className={styles.fusaoCampo}>
+              <div className={styles.fusaoCampoRot}>
+                {CAMPO_DA_FUSAO_ROTULO[campo]}
+              </div>
+              <div className={styles.fusaoOpcoes}>
+                {(campo === "description"
+                  ? (["vencedor", "perdido", "juntar"] as const)
+                  : (["vencedor", "perdido"] as const)
+                ).map((lado) => {
+                  const marcado =
+                    campo === "description"
+                      ? escolhas.description === lado
+                      : escolhas[campo] === lado;
+                  return (
+                    <button
+                      key={lado}
+                      type="button"
+                      className={`${styles.fusaoOpcao} ${marcado ? styles.fusaoOpcaoOn : ""}`}
+                      aria-pressed={marcado}
+                      disabled={fundindo}
+                      onClick={() =>
+                        setEscolhas((e) => ({ ...e, [campo]: lado }))
+                      }
+                    >
+                      {lado === "juntar"
+                        ? "Juntar as duas"
+                        : valorDe(lado === "vencedor" ? vencedor : perdido, campo)}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className={styles.confirmaAcoes}>
+        <button
+          type="button"
+          className={styles.btnGhost}
+          onClick={onFechar}
+          disabled={fundindo}
+        >
+          Cancelar
+        </button>
+        <button
+          type="button"
+          className={styles.btnConfirma}
+          onClick={() => void confirmar()}
+          disabled={fundindo}
+        >
+          {fundindo ? "Fundindo…" : "Fundir as duas"}
+        </button>
       </div>
       {erro && <div className={styles.err}>{erro}</div>}
     </Modal>

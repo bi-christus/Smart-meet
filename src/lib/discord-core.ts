@@ -93,6 +93,11 @@ export const COR_POR_ACAO: Record<Acao, number> = {
   // não é boa nem má notícia — e ela chega num canal que talvez não estivesse
   // acompanhando aquela demanda até agora.
   transferida: 0x9085e9,
+  // O mesmo roxo da transferência, e pelo mesmo motivo: mudança de identidade
+  // da demanda, não de andamento. A absorvida herda a cor da exclusão porque é
+  // o que aconteceu com ela — ela saiu do quadro.
+  fundida: 0x9085e9,
+  absorvida: 0xd64545,
 };
 
 /** O recorte do card que o aviso enxerga — tudo já resolvido para texto. */

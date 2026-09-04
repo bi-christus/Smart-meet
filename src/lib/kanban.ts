@@ -878,6 +878,69 @@ export async function recusarConclusao(
 }
 
 // ---------------------------------------------------------------------------
+// Fusão de duas demandas
+// ---------------------------------------------------------------------------
+
+/**
+ * Funde duas demandas: o conteúdo vai para uma, a outra vai para a lixeira.
+ *
+ * UM LOTE SÓ, com as quatro escritas. AGENTS.md §4 já manda escrita e registro
+ * andarem juntos, e aqui isso é mais forte do que de costume: uma fusão pela
+ * metade deixa o conteúdo duplicado no vencedor E o original vivo no quadro —
+ * ou seja, PIORA exatamente o problema que ela veio resolver, e a segunda
+ * tentativa duplicaria de novo.
+ *
+ * O CARD QUE PERDE VAI PARA A LIXEIRA, não é apagado. Nada é removido de lá: o
+ * que foi para o vencedor foi copiado. É isso que faz uma fusão errada ser
+ * desfeita restaurando um card íntegro, em vez de reconstruído de memória.
+ *
+ * OS DOIS EVENTOS APONTAM UM PARA O OUTRO, pelo TÍTULO e não pelo id. A timeline
+ * é lida por gente, e um id de vinte caracteres não responde "fundiu com o
+ * quê?"; o título responde. O id do outro card não se perde — ele está no
+ * documento que foi para a lixeira, com o histórico dele pendurado embaixo.
+ *
+ * ORÇAMENTO DAS REGRAS: são duas escritas em `/cards` e duas na subcoleção
+ * `historico`, num lote de quatro operações. O teto do Firestore é de 20 acessos
+ * a documento por lote, e cada uma destas custa uma leitura do cadastro — folga
+ * larga. Foi um lote de 400 deleções que estourou aquele teto uma vez (ver o
+ * rodapé de `historico.ts`); quatro não chega perto.
+ */
+export async function fundirCards(args: {
+  vencedorId: string;
+  perdidoId: string;
+  /** Títulos como ficam DEPOIS da fusão — é o que os dois eventos citam. */
+  tituloVencedor: string;
+  tituloPerdido: string;
+  patchVencedor: Record<string, unknown>;
+  patchPerdido: Record<string, unknown>;
+  ctx: ContextoHistorico;
+}): Promise<void> {
+  const batch = writeBatch(db);
+
+  const eventoVencedor = anexarEvento(batch, args.vencedorId, args.ctx, "fundida", [
+    { campo: "fusao", de: args.tituloPerdido, para: null },
+  ]);
+  const eventoPerdido = anexarEvento(batch, args.perdidoId, args.ctx, "absorvida", [
+    { campo: "fusao", de: null, para: args.tituloVencedor },
+  ]);
+
+  batch.update(doc(db, "cards", args.vencedorId), {
+    ...args.patchVencedor,
+    ...(eventoVencedor ? { histCount: increment(1) } : {}),
+  });
+  batch.update(doc(db, "cards", args.perdidoId), {
+    ...args.patchPerdido,
+    ...(eventoPerdido ? { histCount: increment(1) } : {}),
+  });
+
+  await batch.commit();
+  // Só o vencedor é anunciado. O aviso do perdido diria ao canal que uma demanda
+  // foi excluída, sem dizer que ela virou parte de outra — e quem lesse o canal
+  // entenderia o contrário do que aconteceu.
+  avisarDiscord(args.vencedorId, eventoVencedor);
+}
+
+// ---------------------------------------------------------------------------
 // Mudança de setor
 // ---------------------------------------------------------------------------
 
