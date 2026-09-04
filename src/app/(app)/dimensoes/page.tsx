@@ -55,8 +55,10 @@ import {
   achatar,
   acharNo,
   cardsDoNo,
+  demandasDaArvore,
   filtrarArvore,
   montarArvore,
+  montarArvorePorTag,
   subscribeDimensoes,
   type Dimensao,
   type NoDaArvore,
@@ -80,6 +82,9 @@ const SEM_DIMS: Dimensao[] = [];
 const SEM_SOLICITANTES: Solicitante[] = [];
 const SEM_REQ_SETORES: SolicitanteSetor[] = [];
 const NADA_A_FECHAR = () => undefined;
+
+/** Por qual eixo a árvore agrupa as demandas. */
+type Eixo = "dimensao" | "tag";
 
 export default function DimensoesPage() {
   const { profile } = useAuth();
@@ -193,15 +198,65 @@ export default function DimensoesPage() {
     [sector, entregues],
   );
 
+  /**
+   * Por qual eixo a árvore está agrupada.
+   *
+   * PRESO AO SETOR, como o filtro de tags e o de responsável do Kanban: trocar
+   * de setor não pode carregar o eixo de outro quadro. Um setor sem tag nenhuma
+   * herdando o eixo "tag" do anterior abriria numa árvore de um galho só,
+   * chamado "Sem tag", e a pessoa concluiria que a aba quebrou.
+   */
+  const [eixoSel, setEixoSel] = useState<{ sector: string; eixo: Eixo }>({
+    sector: "",
+    eixo: "dimensao",
+  });
+  const eixo: Eixo = eixoSel.sector === sector ? eixoSel.eixo : "dimensao";
+
+  /**
+   * O quadro tem tag para agrupar?
+   *
+   * O botão do eixo só existe quando sim. Sem isto ele levaria a uma árvore com
+   * um galho único chamado "Sem tag" — que é uma tela sem resposta, e pior: uma
+   * tela que parece quebrada. Espera a resposta chegar antes de decidir
+   * (`fCards.data` é `undefined` enquanto carrega), pelo mesmo motivo de sempre
+   * nesta aba: `[]` cedo demais é uma afirmação falsa.
+   */
+  const temTag = (fCards.data ?? []).some((c) => (c.tags ?? []).length > 0);
+
   const arvore = useMemo(
     () =>
-      montarArvore({
-        dims,
-        cards,
-        entregues: entreguesPorSetorDaTela,
-      }),
-    [dims, cards, entreguesPorSetorDaTela],
+      eixo === "tag"
+        ? montarArvorePorTag({ cards, entregues: entreguesPorSetorDaTela })
+        : montarArvore({
+            dims,
+            cards,
+            entregues: entreguesPorSetorDaTela,
+          }),
+    [eixo, dims, cards, entreguesPorSetorDaTela],
   );
+
+  /**
+   * De que dimensão é cada demanda, em texto — só o eixo por tag usa.
+   *
+   * No eixo por dimensão o galho JÁ diz isso, e repeti-lo no card seria escrever
+   * a mesma palavra em todos os cards de um galho. No eixo por tag o galho passa
+   * a dizer outra coisa, e a classificação — que é a organização do setor —
+   * sumiria da tela se não voltasse como selo.
+   */
+  const dimensaoDoCard = useMemo(() => {
+    const mapa = new Map<string, string>();
+    if (eixo !== "tag") return mapa;
+    const porId = new Map(dims.map((d) => [d.id, d]));
+    for (const c of cards) {
+      const d = c.dimensaoId ? porId.get(c.dimensaoId) : undefined;
+      if (!d) continue;
+      const sub = c.subdimensaoId
+        ? d.subs.find((s) => s.id === c.subdimensaoId)
+        : undefined;
+      mapa.set(c.id, sub ? `${d.nome} › ${sub.nome}` : d.nome);
+    }
+    return mapa;
+  }, [eixo, dims, cards]);
 
   const [busca, setBusca] = useState("");
   const visivel = useMemo(() => filtrarArvore(arvore, busca), [arvore, busca]);
@@ -247,7 +302,10 @@ export default function DimensoesPage() {
   );
 
   const canManage = profile?.role === "admin" || profile?.role === "gestor";
-  const totalSubs = arvore.reduce((a, n) => a + n.filhos.length, 0);
+  const totalSubs = arvore.reduce(
+    (a: number, n: NoDaArvore) => a + n.filhos.length,
+    0,
+  );
 
   /** O primeiro clique materializa o padrão; daí em diante é o `Set` que manda. */
   function alternar(no: NoDaArvore) {
@@ -287,9 +345,9 @@ export default function DimensoesPage() {
         <div className={styles.headMain}>
           <h1>Dimensões</h1>
           <p>
-            As demandas do setor organizadas pela estrutura dele: dimensão,
-            subdimensão e o que está andando dentro de cada uma — inclusive
-            quando não há nada andando.
+            {eixo === "tag"
+              ? "As mesmas demandas agrupadas pelas tags: o que atravessa a estrutura do setor e aparece em mais de uma dimensão."
+              : "As demandas do setor organizadas pela estrutura dele: dimensão, subdimensão e o que está andando dentro de cada uma — inclusive quando não há nada andando."}
           </p>
         </div>
       </div>
@@ -306,6 +364,42 @@ export default function DimensoesPage() {
             </button>
           ))}
         </div>
+        {/**
+         * O EIXO DA ÁRVORE — e o motivo de ele só aparecer quando há tag.
+         *
+         * Sem tag nenhuma no quadro, o eixo por tag desenha um galho único
+         * chamado "Sem tag" e mais nada: uma tela sem resposta, que parece
+         * quebrada. Um botão que só leva a isso é pior do que botão nenhum.
+         *
+         * Espera a resposta chegar antes de decidir — `temTag` é falso enquanto
+         * o quadro carrega, e o botão aparece junto com os dados. Um controle
+         * que pisca na tela porque a lista chegou é o mesmo defeito do falso
+         * vazio, em forma de botão.
+         */}
+        {temTag && (
+          <div
+            className={styles.eixo}
+            role="group"
+            aria-label="Como agrupar a árvore"
+          >
+            <span className={styles.eixoRot}>agrupar por</span>
+            {(["dimensao", "tag"] as const).map((e) => (
+              <button
+                key={e}
+                className={`${styles.eixoBtn} ${e === eixo ? styles.eixoOn : ""}`}
+                onClick={() => setEixoSel({ sector, eixo: e })}
+                aria-pressed={e === eixo}
+                title={
+                  e === "dimensao"
+                    ? "A estrutura do setor: dimensão e subdimensão"
+                    : "O que atravessa a estrutura: a mesma tag em galhos diferentes"
+                }
+              >
+                {e === "dimensao" ? "Dimensão" : "Tag"}
+              </button>
+            ))}
+          </div>
+        )}
         <div className={styles.busca}>
           <Icon name="search" size={14} />
           <input
@@ -402,6 +496,7 @@ export default function DimensoesPage() {
                   entregues={entregues}
                   cores={coresDasColunas}
                   porId={porId}
+                  dimensaoDoCard={dimensaoDoCard}
                   onAlternar={alternar}
                   onSelecionar={setSelecionado}
                   onAbrirDemanda={abrirDemanda}
@@ -469,6 +564,7 @@ function Ramo({
   entregues,
   cores,
   porId,
+  dimensaoDoCard,
   onAlternar,
   onSelecionar,
   onAbrirDemanda,
@@ -482,6 +578,14 @@ function Ramo({
   entregues: Set<string>;
   cores: Record<string, string>;
   porId: Map<string, Card>;
+  /**
+   * Onde cada demanda mora na árvore de dimensões, em texto.
+   *
+   * Vazio no eixo por dimensão, e é assim que tem de ser: lá o GALHO já diz
+   * isso, e repeti-lo no card escreveria a mesma palavra em todos os cards do
+   * galho.
+   */
+  dimensaoDoCard: Map<string, string>;
   onAlternar: (no: NoDaArvore) => void;
   onSelecionar: (id: string) => void;
   onAbrirDemanda: (id: string) => void;
@@ -568,6 +672,7 @@ function Ramo({
               entregues={entregues}
               cores={cores}
               porId={porId}
+              dimensaoDoCard={dimensaoDoCard}
               onAlternar={onAlternar}
               onSelecionar={onSelecionar}
               onAbrirDemanda={onAbrirDemanda}
@@ -588,6 +693,7 @@ function Ramo({
                     assignee={card.assignee ? usersMap[card.assignee] : undefined}
                     requester={card.requester ?? undefined}
                     requesterSector={card.requesterSector ?? undefined}
+                    dimensao={dimensaoDoCard.get(card.id)}
                     onClick={() => onAbrirDemanda(card.id)}
                   />
                 );
@@ -701,7 +807,11 @@ function Painel({
   onAbrirDemanda: (id: string) => void;
 }) {
   const cards = useMemo(
-    () => (no ? cardsDoNo(no) : arvore.flatMap(cardsDoNo)),
+    // `demandasDaArvore` e não `flatMap(cardsDoNo)`: no eixo por tag a mesma
+    // demanda está em vários galhos de propósito, e somar as listas a contaria
+    // uma vez por tag. O total do painel diria que o setor tem mais trabalho do
+    // que tem — e ninguém teria como desconfiar do número.
+    () => (no ? cardsDoNo(no) : demandasDaArvore(arvore)),
     [no, arvore],
   );
 

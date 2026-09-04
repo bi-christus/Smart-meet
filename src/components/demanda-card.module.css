@@ -498,3 +498,25 @@
 .fusao_alvo .kFusao {
   color: var(--ok-tx);
 }
+
+/**
+ * A dimensão da demanda, quando o galho em volta não a diz.
+ *
+ * Discreta de propósito: ela é contexto, não conteúdo. No eixo por tag a
+ * pergunta que o card responde continua sendo "o que é esta demanda"; a
+ * dimensão só evita que a organização do setor desapareça da tela ao trocar de
+ * eixo. Do tamanho e da cor do "por Fulano" logo acima, porque as duas fazem o
+ * mesmo trabalho.
+ */
+.kDimensao {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--tx-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

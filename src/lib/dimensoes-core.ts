@@ -40,6 +40,12 @@ import { ehEntrega, type EntreguePorSetor } from "./entregas-core.ts";
 // sobre a mesma demanda.
 import { estaAtrasada, inicioDoDia } from "./prazo-core.ts";
 
+// O eixo por tag reaproveita a régua de tag do quadro inteiro — mesma
+// normalização, mesma chave, mesma hierarquia pela barra. Escrever uma segunda
+// aqui faria a árvore discordar da barra de filtros do Kanban sobre o que é uma
+// tag, e as duas continuariam parecendo certas.
+import { chaveDeTag, normalizarTag, tagColor } from "./tags-core.ts";
+
 export type { EntreguePorSetor };
 export { estaAtrasada, inicioDoDia };
 
@@ -246,6 +252,8 @@ export type CardDaArvore = {
   enteredAt?: number;
   dimensaoId?: string | null;
   subdimensaoId?: string | null;
+  /** Só o eixo por tag lê — ver `montarArvorePorTag`. */
+  tags?: string[] | null;
 };
 
 /**
@@ -542,6 +550,202 @@ export function montarArvore(opcoes: {
   return nos;
 }
 
+// ---------------------------------------------------------------------------
+// O eixo por TAG
+// ---------------------------------------------------------------------------
+
+export const ID_SEM_TAG = "sem-tag";
+export const NOME_SEM_TAG = "Sem tag";
+const COR_SEM_TAG = "#78776f";
+
+/**
+ * A mesma árvore, agrupada por TAG em vez de por dimensão.
+ *
+ * POR QUE UM SEGUNDO EIXO. A árvore por dimensão responde "como o setor se
+ * organiza"; ela não responde "o que atravessa a organização". Uma demanda de
+ * estoque aparece em Operação, outra em Compras e uma terceira em Pessoas, e no
+ * eixo antigo elas ficam em três galhos distantes — não há tela em que se veja
+ * que são a mesma frente de trabalho.
+ *
+ * DEVOLVE O MESMO TIPO, `NoDaArvore[]`, e isso é o ponto inteiro. A página, os
+ * selos, o painel lateral, `achatar`, `acharNo`, `cardsDoNo` e `filtrarArvore`
+ * continuam funcionando sem saber que existe um segundo eixo. Um tipo próprio
+ * duplicaria a tela.
+ *
+ * A HIERARQUIA JÁ EXISTE, e é a barra: `cantinas/estoque` é filha de
+ * `cantinas` (ver `tags-core`). Ela casa com os dois níveis da árvore sem
+ * estrutura nova — mãe vira nível 1, filha vira nível 2.
+ *
+ * TAG DE TRÊS NÍVEIS É DOBRADA NO SEGUNDO. `cantinas/estoque/frios` entra em
+ * `cantinas › estoque`, e o terceiro nível some da árvore (o nome inteiro
+ * continua no card). A alternativa era um terceiro nível de recuo só para o eixo
+ * novo, e a tela foi desenhada para dois — ver o cabeçalho da página.
+ *
+ * A DEMANDA APARECE EM TODOS OS GALHOS DE SUAS TAGS, e isso quebra uma
+ * suposição do eixo antigo, onde cada card morava num lugar só. É de propósito:
+ * é a pergunta que o eixo veio responder. O que NÃO pode acontecer é ela ser
+ * CONTADA duas vezes, e é por isso que as métricas de um galho medem o conjunto
+ * deduplicado do subgalho (ver `cardsDoNo`) em vez de somar as dos filhos, como
+ * `montarArvore` faz.
+ *
+ * A MÃE NÃO CONTA DUAS VEZES a demanda marcada com `cantinas` E
+ * `cantinas/estoque`: a tag ancestral é ignorada quando o próprio card já tem
+ * uma descendente dela. É a mesma regra de `catalogoDeTags`, e pelo mesmo
+ * motivo — um galho que diz "3" e abre com 11 contradiz o próprio número.
+ *
+ * O NÓ "SEM TAG" VEM POR ÚLTIMO e é o mais importante da tela: é onde está o que
+ * ninguém categorizou. Mesmo papel do "Sem classificação" do eixo antigo.
+ */
+export function montarArvorePorTag(opcoes: {
+  cards: readonly CardDaArvore[];
+  entregues: EntreguePorSetor;
+  agora?: number;
+}): NoDaArvore[] {
+  const { cards, entregues } = opcoes;
+  const hoje = opcoes.agora ?? Date.now();
+
+  /** chave do galho → grafias vistas (para escolher a mais usada) e cards. */
+  type Galho = { grafias: Map<string, number>; cards: CardDaArvore[] };
+  const galhos = new Map<string, Galho>();
+  const semTag: CardDaArvore[] = [];
+
+  const por = (chave: string): Galho => {
+    const g = galhos.get(chave) ?? { grafias: new Map(), cards: [] };
+    galhos.set(chave, g);
+    return g;
+  };
+
+  for (const c of cards) {
+    const daCard = (c.tags ?? [])
+      .map((t) => {
+        const tag = normalizarTag(t);
+        return { tag, chave: chaveDeTag(tag) };
+      })
+      .filter((x) => !!x.chave);
+
+    if (daCard.length === 0) {
+      semTag.push(c);
+      continue;
+    }
+
+    const chaves = daCard.map((x) => x.chave);
+    const jaContadas = new Set<string>();
+
+    for (const { tag, chave } of daCard) {
+      // Ancestral de outra tag do MESMO card não abre galho próprio: a
+      // descendente já pendura a demanda debaixo dela.
+      if (chaves.some((o) => o !== chave && o.startsWith(`${chave}/`))) continue;
+
+      const partes = chave.split("/");
+      const partesDoTexto = tag.split("/");
+      const chaveDoGalho = partes.slice(0, 2).join("/");
+      // Duas tags do card que dobram no mesmo galho (`a/b/c` e `a/b/d`) contam
+      // uma vez só.
+      if (jaContadas.has(chaveDoGalho)) continue;
+      jaContadas.add(chaveDoGalho);
+
+      // A mãe é registrada mesmo sem card próprio: é ela que dá o galho de
+      // nível 1 em que a filha vai pendurar.
+      const mae = por(partes[0]);
+      mae.grafias.set(
+        partesDoTexto[0],
+        (mae.grafias.get(partesDoTexto[0]) ?? 0) + 1,
+      );
+
+      if (partes.length === 1) {
+        mae.cards.push(c);
+      } else {
+        const filha = por(chaveDoGalho);
+        const nomeDaFilha = partesDoTexto[1] ?? partes[1];
+        filha.grafias.set(nomeDaFilha, (filha.grafias.get(nomeDaFilha) ?? 0) + 1);
+        filha.cards.push(c);
+      }
+    }
+  }
+
+  // A grafia que sobrevive é a MAIS USADA, e o empate desempata pelo nome — a
+  // mesma escolha de `catalogoDeTags`, para o galho aqui e o chip lá se
+  // chamarem igual.
+  const nomeDe = (chave: string, g: Galho): string => {
+    if (g.grafias.size === 0) return chave;
+    return [...g.grafias.entries()].sort(
+      (a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "pt-BR"),
+    )[0][0];
+  };
+
+  const raizes = [...galhos.keys()].filter((k) => !k.includes("/"));
+
+  const nos: NoDaArvore[] = raizes
+    .map((raiz) => {
+      const g = galhos.get(raiz) as Galho;
+      const nome = nomeDe(raiz, g);
+      const cor = tagColor(nome);
+
+      const filhos: NoDaArvore[] = [...galhos.keys()]
+        .filter((k) => k.startsWith(`${raiz}/`))
+        .sort((a, b) => a.localeCompare(b, "pt-BR"))
+        .map((k) => {
+          const f = galhos.get(k) as Galho;
+          const m = medir(f.cards, entregues, hoje);
+          return {
+            id: `tag:${k}`,
+            nome: nomeDe(k.split("/")[1], f),
+            nivel: 2 as const,
+            // A filha herda a cor da mãe: cores diferentes dentro da mesma
+            // família desmanchariam visualmente a hierarquia que a barra criou.
+            cor,
+            // Projeto/rotina é conceito de subdimensão e não existe aqui. A tela
+            // não desenha o selo quando ele é `null`.
+            tipo: null,
+            cards: f.cards,
+            filhos: [],
+            metricas: m,
+            estado: estadoDoNo(m),
+          };
+        });
+
+      const no: NoDaArvore = {
+        id: `tag:${raiz}`,
+        nome,
+        nivel: 1,
+        cor,
+        tipo: null,
+        cards: g.cards,
+        filhos,
+        metricas: METRICAS_VAZIAS,
+        estado: "vazio",
+      };
+      // Medido sobre o subgalho DEDUPLICADO, e não somando os filhos: uma
+      // demanda em duas filhas irmãs contaria duas vezes na mãe.
+      const m = medir(cardsDoNo(no), entregues, hoje);
+      return { ...no, metricas: m, estado: estadoDoNo(m) };
+    })
+    // Do galho mais cheio para o mais vazio, e o empate pelo nome. É a ordem do
+    // catálogo de tags do quadro, e a que responde primeiro "no que este setor
+    // está trabalhando".
+    .sort(
+      (a, b) =>
+        b.metricas.total - a.metricas.total || a.nome.localeCompare(b.nome, "pt-BR"),
+    );
+
+  if (semTag.length > 0) {
+    const m = medir(semTag, entregues, hoje);
+    nos.push({
+      id: ID_SEM_TAG,
+      nome: NOME_SEM_TAG,
+      nivel: 1,
+      cor: COR_SEM_TAG,
+      tipo: null,
+      cards: semTag,
+      filhos: [],
+      metricas: m,
+      estado: estadoDoNo(m),
+    });
+  }
+
+  return nos;
+}
+
 /** Todo nó da árvore, achatado — o que a busca e o painel varrem. */
 export function achatar(nos: readonly NoDaArvore[]): NoDaArvore[] {
   return nos.flatMap((n) => [n, ...achatar(n.filhos)]);
@@ -560,9 +764,33 @@ export function acharNo(
   return undefined;
 }
 
-/** As demandas de um nó, incluindo as dos filhos. */
+/**
+ * As demandas de um nó, incluindo as dos filhos, SEM REPETIR.
+ *
+ * A deduplicação por id não fazia falta enquanto só existia o eixo por
+ * dimensão: lá cada demanda mora em exatamente um nó. No eixo por TAG ela é
+ * obrigatória — uma demanda marcada com `cantinas/estoque` e `cantinas/frios`
+ * está em dois galhos irmãos, e sem isto o painel da mãe a contaria duas vezes.
+ *
+ * No eixo antigo o custo é um `Set` sobre uma lista sem repetição nenhuma, e o
+ * resultado é idêntico ao de antes.
+ */
 export function cardsDoNo(no: NoDaArvore): CardDaArvore[] {
-  return [...no.cards, ...no.filhos.flatMap(cardsDoNo)];
+  return semRepetir([...no.cards, ...no.filhos.flatMap(cardsDoNo)]);
+}
+
+/** Toda demanda da árvore, uma vez só. É o "setor inteiro" do painel. */
+export function demandasDaArvore(nos: readonly NoDaArvore[]): CardDaArvore[] {
+  return semRepetir(nos.flatMap(cardsDoNo));
+}
+
+function semRepetir(cards: readonly CardDaArvore[]): CardDaArvore[] {
+  const vistos = new Set<string>();
+  return cards.filter((c) => {
+    if (vistos.has(c.id)) return false;
+    vistos.add(c.id);
+    return true;
+  });
 }
 
 /**

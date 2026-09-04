@@ -463,3 +463,36 @@ export function vocabularioDeTags(
   }
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// A cor da tag
+// ---------------------------------------------------------------------------
+
+/**
+ * Paleta de tags — cor estável por nome.
+ *
+ * VEIO DE `kanban.ts` e mora aqui agora, porque a árvore de Dimensões precisa
+ * dela para pintar os galhos do eixo por tag e `dimensoes-core` é puro: ele não
+ * consegue importar `kanban.ts`, que traz o SDK do cliente junto. `kanban.ts`
+ * reexporta, então nenhuma tela precisou trocar de import.
+ *
+ * A cor sai do NOME e não de um campo escolhido: tag não tem cadastro, nasce
+ * digitada, e uma cor guardada em algum lugar seria mais um estado para manter
+ * em dia a cada grafia nova.
+ */
+export const TAG_COLORS = [
+  "#54b8ff",
+  "#34d399",
+  "#f5b13d",
+  "#c084fc",
+  "#fb7185",
+  "#ff6a2b",
+  "#2b7fff",
+  "#5fe0b0",
+];
+
+export function tagColor(tag: string): string {
+  let h = 0;
+  for (let i = 0; i < tag.length; i++) h = (h * 31 + tag.charCodeAt(i)) >>> 0;
+  return TAG_COLORS[h % TAG_COLORS.length];
+}
