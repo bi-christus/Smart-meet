@@ -99,6 +99,14 @@ const PESSOAS = {
     email: "op2@px.com.br",
     perfil: { role: "operador", active: true, sectors: ["RH"] },
   },
+  // Existe so para a mudanca de setor: e o unico perfil nao-admin capaz de
+  // mover uma demanda, porque e o unico que enxerga os DOIS lados do
+  // movimento. Sem ele, o caso positivo da regra nova nao teria quem o
+  // exercesse, e o teste provaria so as recusas.
+  "operador dos dois setores": {
+    email: "op3@px.com.br",
+    perfil: { role: "operador", active: true, sectors: ["B.I.", "RH"] },
+  },
   desativado: {
     email: "ex@px.com.br",
     perfil: { role: "gestor", active: false, sectors: ["B.I."] },
@@ -259,6 +267,54 @@ for (const quem of Object.keys(PESSOAS)) {
   caso(quem, "editar card com pedido de OUTRO em aberto", "update", C, COM_PEDIDO, {
     ...COM_PEDIDO,
     title: "Outro titulo",
+  });
+
+  // --- mudanca de setor ----------------------------------------------------
+  // `operador do setor` e `gestor do setor` tem so B.I.; `admin` atravessa
+  // tudo. Entao "para setor que a pessoa TAMBEM tem" so passa para admin e
+  // super admin, e e exatamente esse o recorte que a regra existe para fazer.
+  caso(quem, "mover para setor que a pessoa NAO tem", "update", C, CARD, {
+    ...CARD,
+    sector: "Zeladoria",
+    columnId: "backlog",
+    dimensaoId: null,
+    subdimensaoId: null,
+    conclusaoPedida: null,
+  });
+  // O caso POSITIVO: o card sai de B.I. e vai para RH. Passa so para quem tem
+  // os dois — hoje, o admin, o super admin e o "operador dos dois setores".
+  caso(quem, "mover de B.I. para RH", "update", C, CARD, {
+    ...CARD,
+    sector: "RH",
+    columnId: "backlog",
+    dimensaoId: null,
+    subdimensaoId: null,
+    conclusaoPedida: null,
+  });
+  // Cancelar o pedido de conclusao alheio DENTRO da mudanca de setor. Passa
+  // para quem pode mover, e nao exige gestor: o pedido apontava para uma coluna
+  // do quadro de origem e nao sobrevive a viagem de jeito nenhum.
+  caso(quem, "mover de setor cancelando o pedido de conclusao", "update", C, COM_PEDIDO, {
+    ...CARD,
+    sector: "RH",
+    columnId: "backlog",
+    conclusaoPedida: null,
+  });
+  // O contrabando que a ordem dos ramos existe para fechar: mandar para a
+  // lixeira DENTRO da mesma escrita que muda o setor. Se isto passar para
+  // operador, o ramo da lixeira — que exige gestor — deixou de ser avaliado.
+  caso(quem, "mover de setor E mandar para a lixeira na mesma escrita", "update", C, CARD, {
+    ...CARD,
+    sector: "Zeladoria",
+    deletedAt: 1786000000000,
+    deletedBy: PESSOAS[quem].email,
+  });
+  // A outra volta: restaurar da lixeira mudando o setor de saida.
+  caso(quem, "restaurar da lixeira mudando de setor", "update", C, NA_LIXEIRA, {
+    ...CARD,
+    sector: "Zeladoria",
+    deletedAt: null,
+    deletedBy: null,
   });
 
   const H = doc("cards/c1/historico/e1");

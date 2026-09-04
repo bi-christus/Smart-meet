@@ -88,6 +88,11 @@ export const COR_POR_ACAO: Record<Acao, number> = {
   "conclusao-pedida": 0xf5b13d,
   "conclusao-aprovada": 0x3fa66b,
   "conclusao-recusada": 0xb07a1e,
+  // Roxo, que é uma cor que ainda não estava em uso aqui. A demanda mudar de
+  // quadro é um fato de outra natureza que todos os de cima — não é andamento,
+  // não é boa nem má notícia — e ela chega num canal que talvez não estivesse
+  // acompanhando aquela demanda até agora.
+  transferida: 0x9085e9,
 };
 
 /** O recorte do card que o aviso enxerga — tudo já resolvido para texto. */

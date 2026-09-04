@@ -729,8 +729,27 @@ service cloud.firestore {
       allow create: if podeNoSetor(novo('sector'))
                     && souEu(novo('createdBy'));
 
-      // `sector` e `createdBy` imutáveis: trocar o setor por update seria a
-      // porta dos fundos para escrever em quadro alheio.
+      // `createdBy` imutável, e `sector` mutável SOB CONDIÇÃO.
+      //
+      // O `sector` era imutável, e o motivo escrito aqui era: "trocar o setor
+      // por update seria a porta dos fundos para escrever em quadro alheio". O
+      // motivo continua de pé — o que mudou é que agora existe um jeito de
+      // fechá-lo sem fechar a porta inteira: exigir os DOIS setores, o de saída
+      // e o de chegada. Quem move precisa poder ver os dois lados do movimento;
+      // sem isso, mover seria exatamente escrever num quadro que a pessoa não
+      // enxerga.
+      //
+      // A ORDEM DOS RAMOS É A REGRA, e o primeiro deles é o que impede o
+      // contrabando: a ida para a lixeira é examinada ANTES da troca de setor e
+      // exige o setor parado. Sem isso, um operador mandaria a demanda para a
+      // lixeira dentro da mesma escrita que a muda de setor — e o ramo da
+      // lixeira, que exige gestor, nunca seria avaliado.
+      //
+      // O ramo da troca é o único que paga DOIS `podeNoSetor`. Ele é raro
+      // (corrigir o setor de uma demanda acontece uma vez por semana no
+      // projeto inteiro); os outros três continuam pagando uma leitura só, e a
+      // edição comum — o update mais frequente do app — continua sendo o último
+      // ramo, alcançado por três comparações que não leem documento nenhum.
       //
       // O ternário no fim é o que decide QUEM pode: update que mexe em
       // `deletedAt` ou `deletedBy` é ida para a lixeira ou volta dela, e exige
@@ -744,19 +763,21 @@ service cloud.firestore {
       // As comparações que não custam acesso a documento vêm primeiro de
       // propósito: um update recusado por mexer no setor é recusado sem ler
       // nada do banco.
-      // O encadeamento de ternarios mantem o que a versao anterior conquistou:
-      // UMA leitura do cadastro em qualquer ramo. Um `&&` entre as condicoes
-      // avaliaria as duas e faria a edicao comum do operador — o update mais
-      // frequente do app — passar a custar duas idas ao banco.
-      allow update: if novo('sector') == cur('sector')
-                    && novo('createdBy').lower() == cur('createdBy').lower()
+      function trocandoDeSetor() {
+        return novo('sector') != cur('sector');
+      }
+
+      allow update: if novo('createdBy').lower() == cur('createdBy').lower()
                     && deletedByEhDoToken()
                     && pedidoEhDoToken()
                     && (mudou(['deletedAt', 'deletedBy'])
-                        ? gestorNoSetor(cur('sector'))
-                        : tirandoOPedido()
-                          ? gestorNoSetor(cur('sector'))
-                          : podeNoSetor(cur('sector')));
+                        ? (!trocandoDeSetor() && gestorNoSetor(cur('sector')))
+                        : trocandoDeSetor()
+                          ? (podeNoSetor(cur('sector'))
+                             && podeNoSetor(novo('sector')))
+                          : tirandoOPedido()
+                            ? gestorNoSetor(cur('sector'))
+                            : podeNoSetor(cur('sector')));
 
       // Apagar de vez continua sendo ação de gestor, e só no próprio setor.
       // O expurgo da lixeira roda no servidor (`api/demandas/expurgar`, Admin
@@ -822,7 +843,8 @@ service cloud.firestore {
                                         'excluida', 'restaurada',
                                         'conclusao-pedida',
                                         'conclusao-aprovada',
-                                        'conclusao-recusada']
+                                        'conclusao-recusada',
+                                        'transferida']
                     // O card e o primeiro evento nascem no MESMO lote, e o pai
                     // ainda não existe para o `get()` — daí o primeiro braço.
                     // Depois disso, o setor do evento tem de ser o do card: é

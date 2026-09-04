@@ -439,6 +439,8 @@ export default function DimensoesPage() {
           canManage={canManage}
           concluiDireto={podeConcluirDireto(profile.role)}
           entregues={entregues}
+          pessoa={profile}
+          setoresDaPessoa={sectors}
           actorEmail={profile.email}
           activeUsers={activeUsers}
           usersMap={usersMap}

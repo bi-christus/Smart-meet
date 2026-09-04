@@ -247,6 +247,23 @@ export type Card = {
    * com o pedido fora do card ela dependeria de duas fontes chegarem juntas.
    */
   conclusaoPedida?: PedidoDeConclusao | null;
+  /**
+   * Por quais setores esta demanda já passou. Ausente = nasceu e ficou onde
+   * está, que é a maioria absoluta.
+   *
+   * NÃO É NOSTALGIA: é o que mantém o histórico legível depois de uma
+   * transferência. Cada evento grava o setor do card no momento em que
+   * aconteceu, e a consulta do histórico é escopada por setor porque a REGRA do
+   * Firestore é (ver `historico.ts` e `firestore.rules`). Sem esta lista, a
+   * timeline de uma demanda transferida começaria no dia da transferência — os
+   * eventos anteriores continuariam gravados e simplesmente escapariam da
+   * consulta, sem erro nenhum na tela.
+   *
+   * Reescrever o setor dos eventos antigos seria a alternativa óbvia, e ela é
+   * impossível de propósito: `allow update: if false` na subcoleção. Evento
+   * gravado não se reescreve.
+   */
+  setoresAnteriores?: string[];
 };
 
 export type CardInput = {
@@ -858,6 +875,51 @@ export async function recusarConclusao(
   ctx: ContextoHistorico,
 ): Promise<void> {
   await gravarConclusao(id, patchDeRecusa(), ctx, "conclusao-recusada");
+}
+
+// ---------------------------------------------------------------------------
+// Mudança de setor
+// ---------------------------------------------------------------------------
+
+/**
+ * Leva a demanda para o quadro de outro setor.
+ *
+ * O QUE VAI JUNTO não se decide aqui: quem calcula é `planoDaMudanca`
+ * (`mover-setor-core.ts`), que é puro e testado, e a tela MOSTRA o plano antes
+ * de chamar isto. Aqui só passa a escrita.
+ *
+ * O EVENTO É GRAVADO NO SETOR DE ORIGEM, e esta é a linha que merece a
+ * explicação. A regra de criação do histórico exige que o `sector` do evento
+ * bata com o do card pai — e, dentro deste lote, o card pai ainda é o antigo:
+ * as regras avaliam a criação do evento contra o documento como ele está
+ * gravado, não contra o que o mesmo lote vai gravar nele. Escrever o evento já
+ * com o setor de destino faria a regra recusá-lo, e o lote inteiro cairia
+ * junto — a transferência simplesmente não aconteceria, com uma mensagem
+ * falando de permissão.
+ *
+ * O efeito colateral disso é justamente o que `setoresAnteriores` resolve: a
+ * linha da transferência fica no setor de origem, junto com todo o resto da
+ * timeline, e a consulta do histórico passa a procurar nos dois.
+ */
+export async function moverDeSetor(
+  id: string,
+  patch: Partial<Omit<Card, "id">>,
+  registro: { ctx: ContextoHistorico; mudancas: Mudanca[] },
+): Promise<void> {
+  const batch = writeBatch(db);
+  const eventoId = anexarEvento(
+    batch,
+    id,
+    registro.ctx,
+    "transferida",
+    registro.mudancas,
+  );
+  batch.update(
+    doc(db, "cards", id),
+    eventoId ? { ...patch, histCount: increment(1) } : patch,
+  );
+  await batch.commit();
+  avisarDiscord(id, eventoId);
 }
 
 // ---------------------------------------------------------------------------

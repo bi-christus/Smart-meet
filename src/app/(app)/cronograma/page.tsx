@@ -1230,6 +1230,8 @@ export default function CronogramaPage() {
           entregues={
             entreguesPorSetor[demandaAberta.sector] ?? SEM_ENTREGUES
           }
+          pessoa={profile}
+          setoresDaPessoa={sectors}
           actorEmail={profile.email}
           activeUsers={activeUsers}
           usersMap={usersMap}

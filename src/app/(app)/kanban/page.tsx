@@ -50,6 +50,9 @@ import {
   podeConcluirDireto,
   precisaPedirConclusao,
 } from "@/lib/conclusao-core.ts";
+// Por onde a demanda passou — o histórico de uma transferida está espalhado
+// pelos setores por onde ela andou, e a consulta precisa saber quais são.
+import { setoresDoHistorico } from "@/lib/mover-setor-core.ts";
 import { rotuloDoMes, separarConcluidas } from "@/lib/concluidas-core";
 import { startOfDay } from "@/lib/datas";
 import { carregarHistorico } from "@/lib/historico";
@@ -1244,6 +1247,8 @@ export default function KanbanPage() {
           canManage={canManage}
           concluiDireto={concluiDireto}
           entregues={entregues}
+          pessoa={profile}
+          setoresDaPessoa={sectors}
           actorEmail={profile.email}
           activeUsers={activeUsers}
           usersMap={usersMap}
@@ -1398,11 +1403,26 @@ function HistoricoModal({
   const [eventos, setEventos] = useState<Evento[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
 
+  /**
+   * Em quais setores procurar os eventos desta demanda.
+   *
+   * Quase sempre um só — o do card. Passa de um quando a demanda já mudou de
+   * setor: os eventos guardam o setor de quando aconteceram, e evento gravado
+   * não se reescreve (`allow update: if false`, na regra da subcoleção). Sem
+   * procurar nos anteriores, a timeline de uma demanda transferida começaria no
+   * dia da transferência, sem erro nenhum na tela.
+   *
+   * Memoizado sobre o `card` inteiro porque é dele que a lista sai, e a
+   * identidade dele é estável enquanto o modal está aberto — ele é o estado que
+   * o quadro fixou ao abrir, não um objeto recriado a cada snapshot.
+   */
+  const setores = useMemo(() => setoresDoHistorico(card), [card]);
+
   useEffect(() => {
     // A trava existe porque a resposta pode chegar depois de o modal fechar —
     // e `setState` num componente desmontado é um vazamento silencioso.
     let vivo = true;
-    carregarHistorico(card.id, sector)
+    carregarHistorico(card.id, setores)
       .then((e) => {
         if (vivo) setEventos(e);
       })
@@ -1413,7 +1433,7 @@ function HistoricoModal({
     return () => {
       vivo = false;
     };
-  }, [card.id, sector]);
+  }, [card.id, setores]);
 
   return (
     <Modal
