@@ -12,6 +12,14 @@
  * 3. A resposta é podada: título, tags, tipo, coluna e setor. Descrição,
  *    comentários e checklist ficam de fora — servem para casar assunto, não
  *    para reconstruir o conteúdo do quadro fora do app.
+ *
+ * A resposta tem DUAS metades, e elas respondem a perguntas diferentes.
+ * `cards` responde "isto já existe?", card a card, e é o que evita a proposta
+ * duplicada. `vocabulario` responde "como este setor CHAMA as coisas?", e é o
+ * que evita a tag inventada. A segunda não dá para deduzir da primeira: são mil
+ * e quinhentas listas de tag, e quem lê esta resposta é um modelo de linguagem,
+ * que não agrega — amostra. Enquanto só existia `cards`, toda demanda nascia
+ * com uma tag nova e o catálogo virou uma fileira de entradas contando "1".
  */
 import { NextResponse } from "next/server";
 import { createHash, timingSafeEqual } from "node:crypto";
@@ -19,6 +27,12 @@ import { HttpError, adminDb } from "@/lib/server/drive-server";
 // Módulo PURO: `kanban.ts` traz o SDK do cliente junto e uma rota não consegue
 // importá-lo. A definição de "está na lixeira" mora num lugar só, e é esta.
 import { viva } from "@/lib/lixeira-core";
+// Mesmo motivo, e a mesma direção da seta: a conta de "quais tags este setor
+// realmente usa" é regra pura, tem teste em `scripts/test-tags.mjs`, e é a
+// MESMA que desenha a barra de tags do quadro. Recalculá-la aqui à mão faria a
+// resposta desta rota divergir do que o operador vê na tela — e ninguém
+// perceberia, porque as duas continuariam parecendo certas.
+import { vocabularioDeTags } from "@/lib/tags-core";
 
 export const runtime = "nodejs";
 
@@ -55,8 +69,11 @@ export async function GET(req: Request) {
     //
     // Peneira ANTES do `slice`: cortar primeiro faria as excluídas gastarem
     // vagas do teto e sumirem demandas vivas do fim da lista.
-    const cards = snap.docs
-      .filter((d) => viva(d.data() as { deletedAt?: number | null }))
+    const vivos = snap.docs.filter((d) =>
+      viva(d.data() as { deletedAt?: number | null }),
+    );
+
+    const cards = vivos
       .slice(0, MAX_CARDS)
       .map((d) => {
         const c = d.data();
@@ -82,11 +99,37 @@ export async function GET(req: Request) {
       .digest("hex")
       .slice(0, 16);
 
+    /**
+     * O VOCABULÁRIO sai do quadro INTEIRO, e não da lista podada acima.
+     *
+     * Ele é justamente o resumo que existe para dispensar a leitura card a
+     * card: uma tag que o setor usa toda semana pode estar só em demandas que
+     * caíram fora do teto de `MAX_CARDS`, e ela é o que mais importa oferecer.
+     * `truncado` já avisa que `cards` foi cortado; cortar o vocabulário junto
+     * seria esconder a parte que não precisava ser cortada.
+     *
+     * POR QUE ELE EXISTE. Sem isto, saber que "estoque" é a palavra das
+     * Cantinas exigiria agregar as tags de mil e quinhentos cards — e quem lê
+     * esta resposta é um modelo de linguagem, que não agrega, amostra. O
+     * resultado era uma tag nova inventada por demanda: um catálogo em que toda
+     * entrada aparece uma vez, e tag que aparece uma vez não liga nada a nada.
+     */
+    const vocabulario = vocabularioDeTags(
+      vivos.map((d) => {
+        const c = d.data();
+        return {
+          setor: (c.sector as string) ?? "",
+          tags: Array.isArray(c.tags) ? (c.tags as string[]) : [],
+        };
+      }),
+    );
+
     return NextResponse.json({
       geradoEm: new Date().toISOString(),
       hash,
       totalCards: cards.length,
       truncado: snap.size > MAX_CARDS,
+      vocabulario,
       cards,
     });
   } catch (e) {

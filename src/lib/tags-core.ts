@@ -387,3 +387,79 @@ export function cardTemTag(
 ): boolean {
   return filtrarPorTags([card], marcadas, modo).length > 0;
 }
+
+// ---------------------------------------------------------------------------
+// Vocabulário — o catálogo como LÍNGUA, para quem escreve tag de fora do app
+// ---------------------------------------------------------------------------
+
+/**
+ * O mínimo que o vocabulário precisa enxergar de um card.
+ *
+ * `setor` e não `sector`: este módulo é puro e não conhece o `Card` do
+ * Firestore — quem chama monta a forma. A rota do Cowork já traduz o campo para
+ * português na resposta dela, e é ela quem chama.
+ */
+export type CardDoVocabulario = CardComTags & { setor?: string | null };
+
+/**
+ * Quantos cards uma tag precisa ter para entrar no vocabulário.
+ *
+ * DOIS, e este número é a Issue inteira. Tag que aparece em um card só não liga
+ * coisa nenhuma a coisa nenhuma — e ligar demandas é a única razão de a tag
+ * existir aqui. Oferecê-la de volta a quem gera tag nova é ensinar o erro a se
+ * repetir: a IA vê "orcamento-antivirus-2026" no vocabulário, conclui que é
+ * assim que se nomeia tag neste setor, e inventa a próxima no mesmo molde.
+ */
+export const VOCABULARIO_MIN_USO = 2;
+
+/** Quantas tags por setor viajam. O vocabulário vai dentro de um prompt. */
+export const VOCABULARIO_TETO = 60;
+
+/**
+ * A língua de tags de cada setor: o que ele repete, e com que grafia.
+ *
+ * POR SETOR, e nunca junto. A tag é o vocabulário de UM quadro — "estoque"
+ * quer dizer uma coisa nas Cantinas e outra na Infra, e uma lista única
+ * convidaria quem gera a proposta a marcar a demanda da cantina com a palavra
+ * que a T.I. usa. O resultado seria pior do que tag inventada: seria tag
+ * inventada com cara de tag legítima.
+ *
+ * FORA DO VOCABULÁRIO NÃO É "PROIBIDO". Quem lê isto continua podendo escrever
+ * tag nova — o teto de quantas é assunto do prompt, não deste módulo. O que a
+ * peneira faz é decidir o que se OFERECE, e oferecer é o gesto que empurra.
+ *
+ * Ordenado por uso, que é a ordem em que `catalogoDeTags` já devolve: a tag que
+ * o setor repete toda semana é a que tem de ser lida primeiro por quem só vai
+ * ler as dez primeiras.
+ */
+export function vocabularioDeTags(
+  cards: readonly CardDoVocabulario[],
+  opcoes?: { minUso?: number; teto?: number },
+): Record<string, TagDoQuadro[]> {
+  const minUso = opcoes?.minUso ?? VOCABULARIO_MIN_USO;
+  const teto = opcoes?.teto ?? VOCABULARIO_TETO;
+
+  const porSetor = new Map<string, CardDoVocabulario[]>();
+  for (const c of cards) {
+    const setor = String(c.setor ?? "").trim();
+    // Card sem setor não pertence a língua nenhuma. Ele existe (documento
+    // editado à mão, importação antiga), e juntá-lo num balde "" criaria um
+    // setor fantasma no meio da resposta.
+    if (!setor) continue;
+    const lista = porSetor.get(setor);
+    if (lista) lista.push(c);
+    else porSetor.set(setor, [c]);
+  }
+
+  const out: Record<string, TagDoQuadro[]> = {};
+  for (const [setor, doSetor] of porSetor) {
+    const vocab = catalogoDeTags(doSetor)
+      .filter((t) => t.n >= minUso)
+      .slice(0, teto);
+    // Setor cujas tags são todas de uso único não entra com uma lista vazia: a
+    // chave presente e vazia lê como "este setor não usa tag", e o que ela quer
+    // dizer é o contrário — ele usa, e usa tudo errado.
+    if (vocab.length > 0) out[setor] = vocab;
+  }
+  return out;
+}
