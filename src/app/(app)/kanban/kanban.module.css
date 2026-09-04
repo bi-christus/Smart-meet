@@ -1281,7 +1281,8 @@
   .comment,
   .modal,
   .overlay,
-  .tagChip {
+  .tagChip,
+  .cardMenu {
     animation: none !important;
   }
   .checkFill,
@@ -2258,4 +2259,194 @@
 .planoMudanca strong {
   color: var(--tx);
   font-weight: 600;
+}
+
+/* ---------- menu do card, e o diálogo da fusão ---------- */
+
+/**
+ * O menu do botão direito.
+ *
+ * `position: fixed` porque as coordenadas do clique são da JANELA: o quadro rola
+ * nos dois eixos, e qualquer outra referência erraria o lugar em quadros
+ * rolados. O `z-index` fica acima do cabeçalho pelo mesmo motivo que o modal —
+ * um menu que abre atrás do cabeçalho é um menu cortado.
+ *
+ * Anima 0.1s na entrada e nada na saída. Ele nasce debaixo do ponteiro, que já
+ * está no lugar certo: a animação aqui não orienta ninguém, só confirma que o
+ * clique pegou. Acima disso viraria espera.
+ */
+.cardMenu {
+  position: fixed;
+  z-index: 60;
+  min-width: 232px;
+  padding: 6px;
+  background: var(--s1);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.45);
+  animation: menuIn 0.1s both cubic-bezier(0.32, 0.72, 0, 1);
+}
+@keyframes menuIn {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.cardMenuTitulo {
+  padding: 6px 9px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--tx-3);
+  border-bottom: 1px solid var(--line-soft);
+  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cardMenuItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  width: 100%;
+  padding: 8px 9px;
+  border: none;
+  background: none;
+  border-radius: 7px;
+  color: var(--tx);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.cardMenuItem:hover {
+  background: var(--s3);
+}
+.cardMenuItem small {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--tx-3);
+}
+
+/* O par da fusão: quem fica à esquerda, quem sai à direita, e o botão que
+   troca os dois no meio. A ordem da leitura é a ordem do que acontece. */
+.fusaoCabeca {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  margin: 12px 0 4px;
+}
+.fusaoLado {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  background: var(--s1);
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  font-size: 13px;
+}
+.fusaoLado strong {
+  display: block;
+  margin-top: 3px;
+  color: var(--tx);
+  font-weight: 600;
+  line-height: 1.35;
+}
+.fusaoRot {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--tx-3);
+}
+.fusaoTrocar {
+  align-self: center;
+  flex: none;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  background: var(--s1);
+  border-radius: 999px;
+  color: var(--tx-2);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.12s, color 0.12s;
+}
+.fusaoTrocar:hover {
+  border-color: var(--brand-line);
+  color: var(--tx);
+}
+.fusaoTrocar:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.fusaoCampos {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 14px 0 4px;
+}
+.fusaoCampo {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.fusaoCampoRot {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--tx-3);
+}
+/* Grade e não linha: os dois valores de um campo podem ser textos longos (é o
+   caso do título e da descrição), e lado a lado numa linha flexível um deles
+   ficaria com 40px enquanto o outro toma a largura toda. */
+.fusaoOpcoes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+}
+.fusaoOpcao {
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  background: var(--s1);
+  border-radius: 9px;
+  color: var(--tx-2);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+  /* Três linhas de teto: descrição inteira dentro de um botão de escolha
+     empurraria o resto do diálogo para fora da tela. O texto completo continua
+     na demanda. */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+.fusaoOpcao:hover {
+  border-color: var(--tx-3);
+  color: var(--tx);
+}
+.fusaoOpcaoOn,
+.fusaoOpcaoOn:hover {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+  color: var(--tx);
+}
+.fusaoOpcao:disabled {
+  opacity: 0.6;
+  cursor: default;
 }

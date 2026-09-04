@@ -333,6 +333,9 @@ for (const quem of Object.keys(PESSOAS)) {
   caso(quem, "evento 'conclusao-pedida'", "create", H, null, ev("conclusao-pedida"), CARD_PAI);
   caso(quem, "evento 'conclusao-aprovada'", "create", H, null, ev("conclusao-aprovada"), CARD_PAI);
   caso(quem, "evento 'conclusao-recusada'", "create", H, null, ev("conclusao-recusada"), CARD_PAI);
+  caso(quem, "evento 'transferida'", "create", H, null, ev("transferida"), CARD_PAI);
+  caso(quem, "evento 'fundida'", "create", H, null, ev("fundida"), CARD_PAI);
+  caso(quem, "evento 'absorvida'", "create", H, null, ev("absorvida"), CARD_PAI);
   // A lista continua FECHADA: verbo que a tela nao sabe rotular vira linha muda.
   caso(quem, "evento de verbo inventado", "create", H, null, ev("concluida"), CARD_PAI);
   caso(quem, "apagar evento", "delete", H, { sector: "B.I." }, null);

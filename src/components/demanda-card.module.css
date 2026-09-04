@@ -422,3 +422,79 @@
   background: var(--ok-bg);
   color: var(--ok-tx);
 }
+
+/* ---------- fusão ---------- */
+
+/**
+ * Os três estados que todo card do quadro assume enquanto uma fusão está em
+ * curso — e a razão de eles serem TRÊS, e não dois.
+ *
+ * "Pode" e "não pode" bastariam se a recusa fosse rara. Ela não é: a regra da
+ * fusão exige o mesmo solicitante, o mesmo setor solicitante e o mesmo
+ * responsável, então na maioria dos quadros a maior parte dos cards recusa. Um
+ * quadro em que quase tudo fica apagado sem explicação lê como quadro quebrado.
+ * Por isso o recusado não some — ele diz o motivo, curto, na própria faixa.
+ *
+ * O TRACEJADO é do card de origem, e é o mesmo tracejado de `.drag`: ele está
+ * saindo do lugar. O alvo é sólido e verde, porque o que ele diz é "solte".
+ */
+.fusao_origem {
+  border-color: var(--brand);
+  border-style: dashed;
+  box-shadow: 0 0 0 1px var(--brand-line);
+}
+.fusao_alvo {
+  border-color: var(--ok);
+  box-shadow: 0 0 0 1px var(--ok);
+}
+.fusao_alvo:hover {
+  border-color: var(--ok);
+}
+/* Apagado, mas LEGÍVEL: o motivo tem de ser lido. `opacity` mais baixa
+   economizaria contraste que a frase precisa. */
+.fusao_recusado {
+  opacity: 0.55;
+}
+
+.kFusao {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 8px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: var(--tx-3);
+  max-width: 100%;
+  min-width: 0;
+}
+/**
+ * A frase da recusa — o único texto desta faixa que passa de três palavras.
+ *
+ * NÃO É VERSALETE, e é a única parte da faixa que não é: as outras duas são
+ * rótulos de estado ("solte aqui"), esta é uma frase que alguém precisa LER
+ * para entender por que aquele card não aceita. Caixa alta custa velocidade de
+ * leitura exatamente onde ela importa.
+ *
+ * Corta com reticências em vez de embrulhar: um motivo longo em duas linhas
+ * mudaria a altura de todo card recusado do quadro ao mesmo tempo — e num
+ * quadro em que a maioria recusa, isso é o quadro inteiro pulando. A frase
+ * inteira fica no `title`.
+ */
+.kFusaoMotivo {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 600;
+  font-size: 11px;
+}
+.fusao_origem .kFusao {
+  color: var(--brand);
+}
+.fusao_alvo .kFusao {
+  color: var(--ok-tx);
+}
