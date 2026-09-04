@@ -776,12 +776,17 @@ export default function KanbanPage() {
        * cima do trabalho de todo dia.
        *
        * A LISTA É CORTADA em `VISIVEIS`. O catálogo de um quadro de dois anos
-       * passa de setenta entradas, e setenta chips empurram o quadro para fora
-       * da tela — que é o mesmo defeito que o painel de tags do Obsidian
-       * resolve com um painel rolável. Aqui a saída é mostrar as mais usadas
-       * (que é a ordem do catálogo) e abrir o resto a pedido. As marcadas
+       * passa de setenta entradas, e mostrar as mais usadas (que é a ordem do
+       * catálogo) deixa a barra caber numa linha no caso comum. As marcadas
        * entram sempre, mesmo fora do corte: chip marcado que some é filtro
        * ativo e invisível.
+       *
+       * O CORTE NÃO É O QUE PROTEGE O QUADRO — quem protege é o teto de altura
+       * de `.tagChips`, na folha. Enquanto o corte era a única defesa, abrir o
+       * "+N" empurrava as colunas inteiras para fora da janela, e marcar quinze
+       * tags fazia o mesmo com a barra fechada, porque a marcada fura o corte
+       * por decisão. É o painel rolável do Obsidian, e o motivo inteiro está
+       * escrito em cima da classe.
        */}
       {tagsDoQuadro.length > 0 && (
         <div className={styles.tagbar}>
