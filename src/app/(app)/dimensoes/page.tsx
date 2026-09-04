@@ -62,6 +62,7 @@ import {
   type NoDaArvore,
 } from "@/lib/dimensoes";
 import { dueInfo, estaAtrasada } from "@/lib/prazo-core.ts";
+import { podeConcluirDireto } from "@/lib/conclusao-core.ts";
 import { Icon } from "@/components/icons";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
@@ -436,6 +437,8 @@ export default function DimensoesPage() {
           sector={sector}
           columns={displayCols}
           canManage={canManage}
+          concluiDireto={podeConcluirDireto(profile.role)}
+          entregues={entregues}
           actorEmail={profile.email}
           activeUsers={activeUsers}
           usersMap={usersMap}

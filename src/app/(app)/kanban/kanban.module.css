@@ -2181,3 +2181,57 @@
   color: var(--tx);
   border-color: var(--brand-line);
 }
+
+/* ---------- pedido de conclusão ---------- */
+
+/**
+ * O contador da barra de filtros: quantas demandas esperam revisão.
+ *
+ * Tem a mesma altura e o mesmo raio dos botões ao lado, e NÃO tem borda de
+ * botão nem cursor de clique — ele é status, não ação. Um chip que parece
+ * clicável e não faz nada é a promessa mais barata de quebrar numa barra em que
+ * todo o resto clica.
+ *
+ * Âmbar pelo mesmo motivo da faixa do card (ver `demanda-card.module.css`): é a
+ * cor de "aguardando" no quadro, e o pedido é uma pergunta em aberto. Verde
+ * diria "entregue", que é a leitura que esta frente existe para impedir.
+ */
+.pedidosChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: var(--warn-bg);
+  color: var(--warn-tx);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  flex: none;
+}
+
+/* O botão que confirma algo que NÃO é perigoso.
+   `.btnConfirmaPerigo` é vermelho porque confirma o irreversível; pedir a
+   conclusão é o oposto disso — é o caminho que a tela está oferecendo, e pintá-lo
+   de alarme ensinaria a hesitar no gesto certo. */
+.btnConfirma {
+  height: 34px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 8px;
+  background: var(--brand);
+  color: #fff;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btnConfirma:hover {
+  background: var(--brand-hover);
+}
+.btnConfirma:disabled {
+  opacity: 0.55;
+  cursor: default;
+}

@@ -18,6 +18,7 @@ import {
   type ColumnDoc,
   type KanbanColumn,
 } from "@/lib/kanban";
+import { podeConcluirDireto } from "@/lib/conclusao-core.ts";
 import {
   subscribeSolicitantes,
   subscribeSolicitanteSetores,
@@ -114,6 +115,8 @@ const SEM_COLS: ColumnDoc[] = [];
 const SEM_USERS: UserProfile[] = [];
 const SEM_SOLICITANTES: Solicitante[] = [];
 const SEM_SETORES: SolicitanteSetor[] = [];
+/** Idem: `new Set()` no corpo recria a cada render e invalida os memos. */
+const SEM_ENTREGUES: ReadonlySet<string> = new Set();
 
 /** Assinatura que nem chegou a abrir: não há nada para fechar depois. */
 const NADA_A_FECHAR = () => undefined;
@@ -1217,6 +1220,15 @@ export default function CronogramaPage() {
           canManage={
             (profile.role === "admin" || profile.role === "gestor") &&
             sectors.includes(demandaAberta.sector)
+          }
+          /* Sem o `sectors.includes` do `canManage` ao lado: aquele existe
+             porque administrar quadro alheio não é o mesmo que administrar o
+             seu, e a regra do Firestore recusaria. Concluir não tem esse
+             recorte — quem conclui, conclui em qualquer setor que enxergue, e
+             o modal do cronograma só abre demanda que a pessoa enxerga. */
+          concluiDireto={podeConcluirDireto(profile.role)}
+          entregues={
+            entreguesPorSetor[demandaAberta.sector] ?? SEM_ENTREGUES
           }
           actorEmail={profile.email}
           activeUsers={activeUsers}

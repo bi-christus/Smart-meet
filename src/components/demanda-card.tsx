@@ -14,6 +14,7 @@ import {
   type DemandType,
   type Priority,
 } from "@/lib/kanban";
+import { pedidoDoCard } from "@/lib/conclusao-core.ts";
 import type { UserProfile } from "@/lib/users";
 import styles from "./demanda-card.module.css";
 
@@ -46,11 +47,14 @@ export function DemandaCard({
   requesterSector,
   dragging,
   apagado,
+  pedidoPor,
   onDragStart,
   onDragEnd,
   onClick,
   onHistorico,
   onPerfil,
+  onAprovarConclusao,
+  onRecusarConclusao,
 }: {
   card: Card;
   /**
@@ -78,12 +82,37 @@ export function DemandaCard({
    * quer justamente mover um card que não a tem para perto dos que têm.
    */
   apagado?: boolean;
+  /**
+   * Como se chama quem pediu a conclusão. Só o nome, já resolvido.
+   *
+   * O card não sabe traduzir e-mail em nome — quem tem o cadastro em mãos é a
+   * tela, e é ela que já faz isso para o responsável. Ausente com pedido em
+   * aberto é caso real (pessoa que saiu do cadastro), e aí o e-mail do pedido
+   * serve: é melhor do que "pedido por" seguido de nada.
+   */
+  pedidoPor?: string;
   onDragStart?: (e: React.DragEvent) => void;
   onDragEnd?: () => void;
   onClick: () => void;
   onHistorico?: () => void;
   /** Recebe a pessoa, e não o e-mail: quem já tem o perfil na mão é o card. */
   onPerfil?: (pessoa: UserProfile) => void;
+  /**
+   * Aprovar e recusar o pedido de conclusão.
+   *
+   * OPCIONAIS, e a presença delas é o que decide se o card mostra a faixa de
+   * revisão — mesmo princípio de `onDragStart` e `onHistorico` logo acima. Quem
+   * passa é o quadro, e só quando quem está olhando pode decidir (gestor ou
+   * admin). Uma prop `podeRevisar` obrigaria quem chama a acertar duas coisas
+   * que são a mesma, e a primeira vez que elas discordassem o card mostraria
+   * dois botões que não fazem nada.
+   *
+   * O SELO do pedido não depende delas: ele aparece para todo mundo, inclusive
+   * para quem pediu. Pedido invisível para quem pediu é o mesmo que pedido
+   * perdido — a pessoa pede de novo, e o gestor vê dois.
+   */
+  onAprovarConclusao?: () => void;
+  onRecusarConclusao?: () => void;
 }) {
   const di = dueInfo(card.due, entregue);
   const startShort = card.startDate ? fmtShort(parseDue(card.startDate)) : "";
@@ -115,14 +144,80 @@ export function DemandaCard({
 
   const arrastavel = !!onDragStart;
 
+  /**
+   * O pedido de conclusão em aberto, se houver.
+   *
+   * Lido aqui dentro, e não recebido pronto: é campo do card que o componente já
+   * tem em mãos, e a leitura tolerante (`pedidoDoCard`) é a mesma do quadro
+   * inteiro. Recebê-lo por prop faria a árvore de Dimensões — que usa o mesmo
+   * card — ter de descobrir sozinha como se lê o campo, e é assim que duas telas
+   * passam a discordar sobre o que é um pedido válido.
+   */
+  const pedido = pedidoDoCard(card);
+  const podeRevisar = !!pedido && !!onAprovarConclusao && !!onRecusarConclusao;
+
   return (
     <div
-      className={`${styles.kcard} ${dragging ? styles.drag : ""} ${arrastavel ? "" : styles.semArraste} ${apagado ? styles.apagado : ""}`}
+      className={`${styles.kcard} ${dragging ? styles.drag : ""} ${arrastavel ? "" : styles.semArraste} ${apagado ? styles.apagado : ""} ${pedido ? styles.pedindo : ""}`}
       draggable={arrastavel}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       onClick={onClick}
     >
+      {/**
+       * A FAIXA DO PEDIDO fica no topo do card, acima de tudo.
+       *
+       * É o primeiro lugar em que o olho cai, e a pergunta que ela responde
+       * ("isto está esperando alguém?") precede todas as outras que o card
+       * responde. Embaixo, junto do prazo e do checklist, ela viraria mais um
+       * selo numa fileira de selos — e o objetivo declarado desta frente é que a
+       * demanda pendente NÃO passe batido na daily.
+       *
+       * `stopPropagation` nos dois botões: o card inteiro abre a demanda ao
+       * clique, e aprovar sem querer abrir o modal por cima seria o gesto certo
+       * seguido de uma tela que ninguém pediu.
+       */}
+      {pedido && (
+        <div className={styles.kPedido}>
+          <span className={styles.kPedidoRot}>
+            <Icon name="clock" size={12} />
+            Conclusão pedida
+            {(pedidoPor || pedido.por) && (
+              <span className={styles.kPedidoPor}>
+                por {pedidoPor || pedido.por}
+              </span>
+            )}
+          </span>
+          {podeRevisar && (
+            <span className={styles.kPedidoAcoes}>
+              <button
+                type="button"
+                className={`${styles.kPedidoBtn} ${styles.kPedidoSim}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAprovarConclusao?.();
+                }}
+                title="Aprovar: a demanda vai para a etapa de conclusão"
+              >
+                <Icon name="check" size={12} />
+                Aprovar
+              </button>
+              <button
+                type="button"
+                className={styles.kPedidoBtn}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRecusarConclusao?.();
+                }}
+                title="Recusar: o pedido sai e a demanda fica onde está"
+              >
+                <Icon name="x" size={12} />
+                Recusar
+              </button>
+            </span>
+          )}
+        </div>
+      )}
       <div className={styles.ktop}>
         {knownType && (
           <span

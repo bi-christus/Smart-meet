@@ -19,10 +19,15 @@ import {
   type Solicitante,
   type SolicitanteSetor,
 } from "@/lib/solicitantes";
+// A regra de "para onde aponta o pedido" e "já existe um?" mora no core puro,
+// que é o mesmo que o quadro lê. Duas leituras do campo seriam duas definições
+// de pedido válido, e elas divergiriam no primeiro documento pela metade.
+import { colunaDeConclusao, temPedido } from "@/lib/conclusao-core.ts";
 import {
   createCard,
   updateCard,
   moverParaLixeira,
+  pedirConclusao,
   addComment,
   editComment,
   removeComment,
@@ -241,6 +246,8 @@ export function CardModal({
   sector,
   columns,
   canManage,
+  concluiDireto,
+  entregues,
   actorEmail,
   activeUsers,
   usersMap,
@@ -256,6 +263,24 @@ export function CardModal({
   columns: ColumnDoc[];
   /** Quem manda a demanda para a lixeira. A regra do Firestore nega o resto. */
   canManage: boolean;
+  /**
+   * Quem dá a demanda por concluída sem pedir a ninguém.
+   *
+   * PROP SEPARADA de `canManage`, e não a mesma reaproveitada, embora hoje as
+   * duas respondam igual para todo mundo. São perguntas diferentes —
+   * "administra o quadro?" e "conclui sozinho?" — e no dia em que uma delas
+   * mudar, reaproveitar teria mudado a outra junto, em silêncio, num lugar que
+   * ninguém iria olhar. Quem responde é `podeConcluirDireto`, no core.
+   */
+  concluiDireto: boolean;
+  /**
+   * As etapas em que a demanda conta como entregue, por `colId`.
+   *
+   * Vem pronta de `colunasEntregues` (`kanban-columns.ts`), que é a regra única
+   * do app — o modal não recalcula "isto é conclusão?" a partir do nome da
+   * coluna, senão passariam a existir duas respostas para a mesma pergunta.
+   */
+  entregues: ReadonlySet<string>;
   actorEmail: string;
   activeUsers: UserProfile[];
   usersMap: Record<string, UserProfile>;
@@ -418,7 +443,26 @@ export function CardModal({
   /** A saída pedida com alterações por salvar, esperando a decisão. */
   const [confirmandoSaida, setConfirmandoSaida] = useState(false);
   const [excluindo, setExcluindo] = useState(false);
+  /** O pedido de conclusão em curso, para o botão não ser clicado duas vezes. */
+  const [pedindo, setPedindo] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  /**
+   * Para onde o botão "Solicitar conclusão" aponta, e se já há um pedido.
+   *
+   * A COLUNA vem de `colunaDeConclusao`, que escolhe a ÚLTIMA etapa de entrega
+   * na ordem do quadro — quem clica no botão não escolheu etapa nenhuma, então
+   * a escolha tem de ser a menos surpreendente. Quem arrasta escolhe com o
+   * gesto, e aí é a coluna em que soltou que vale.
+   *
+   * `columns` já vem na ordem do quadro (quem monta é a página, a partir de
+   * `/columns` ordenado), e a ordem é o que decide qual é a última.
+   */
+  const alvoDaConclusao = colunaDeConclusao(
+    columns.map((c) => c.colId),
+    entregues,
+  );
+  const jaPediuConclusao = !!card && temPedido(card);
   /**
    * Qual campo travou o salvamento.
    *
@@ -462,11 +506,27 @@ export function CardModal({
     ? Math.round((doneCount / checklist.length) * 100)
     : 0;
 
-  const columnOptions: SelectOption[] = columns.map((c) => ({
-    value: c.colId,
-    label: c.title,
-    color: c.color,
-  }));
+  /**
+   * A ETAPA DE CONCLUSÃO NÃO É OFERECIDA a quem não conclui direto.
+   *
+   * Sem isto, o operador teria dois caminhos para a mesma coisa e eles dariam
+   * respostas diferentes: arrastar o card abriria o pedido, e escolher a etapa
+   * aqui gravaria a conclusão. Um dos dois é o furo, e seria justamente o mais
+   * silencioso — ninguém repara numa opção de lista.
+   *
+   * A etapa em que a demanda JÁ ESTÁ continua na lista mesmo assim. Ela é o
+   * valor atual do campo: tirá-la faria o `Select` abrir mostrando outra coisa,
+   * e salvar moveria a demanda sem ninguém ter pedido.
+   */
+  const columnOptions: SelectOption[] = columns
+    .filter(
+      (c) => concluiDireto || !entregues.has(c.colId) || c.colId === columnId,
+    )
+    .map((c) => ({
+      value: c.colId,
+      label: c.title,
+      color: c.color,
+    }));
   const typeOptions: SelectOption[] = DEMAND_TYPES.map((t) => ({
     value: t,
     label: DEMAND_TYPE_LABEL[t],
@@ -1178,6 +1238,41 @@ export function CardModal({
    * confirmação passa a ser a própria tela, a dois cliques, onde os olhos já
    * estão.
    */
+  /**
+   * O outro caminho do pedido: pela demanda aberta, não pelo arrasto.
+   *
+   * Os dois existem porque as duas situações existem. Quem está olhando o
+   * quadro arrasta; quem abriu a demanda para conferir o checklist antes de
+   * dizer que acabou já está aqui dentro, e mandá-lo fechar e arrastar seria
+   * fazer o caminho longo do gesto mais natural.
+   *
+   * Não pergunta nada antes: o clique já é deliberado — a pessoa abriu a
+   * demanda e leu o botão. O diálogo do quadro existe porque LÁ o gesto é um
+   * arrasto, que erra o alvo com facilidade.
+   */
+  async function solicitarConclusao() {
+    if (!card || !alvoDaConclusao) return;
+    setErr(null);
+    setPedindo(true);
+    try {
+      await pedirConclusao(card.id, actorEmail, alvoDaConclusao, {
+        autor: actorEmail,
+        sector,
+      });
+      onClose();
+    } catch (e) {
+      console.error("[pedir conclusão]", codigoDe(e), e);
+      setErr(
+        fraseDeFalha(
+          "Não foi possível registrar o pedido de conclusão.",
+          e,
+          navigator.onLine,
+        ),
+      );
+      setPedindo(false);
+    }
+  }
+
   async function remove() {
     if (!card) return;
     setErr(null);
@@ -2084,6 +2179,29 @@ export function CardModal({
             <Icon name="trash" size={15} /> Excluir
           </button>
         )}
+        {/**
+         * "Solicitar conclusão" — e as quatro condições que o fazem existir.
+         *
+         * Não é demanda nova (não há o que concluir antes de existir), quem
+         * está olhando não conclui direto, ainda não há pedido em aberto (dois
+         * pedidos sobre a mesma demanda fariam o gestor decidir duas vezes), e
+         * o quadro tem alguma etapa de conclusão para onde apontar. Faltando
+         * qualquer uma, o botão não aparece — em vez de aparecer e falhar.
+         */}
+        {!isNew &&
+          !concluiDireto &&
+          !confirmandoExclusao &&
+          !jaPediuConclusao &&
+          alvoDaConclusao && (
+            <button
+              className={styles.btnGhost}
+              onClick={() => void solicitarConclusao()}
+              disabled={saving || posting || excluindo || pedindo}
+            >
+              <Icon name="check" size={15} />{" "}
+              {pedindo ? "Enviando…" : "Solicitar conclusão"}
+            </button>
+          )}
         <div className={styles.spacer} />
         {/* Cancelar passa pelo MESMO guarda do clique fora: ele é o gesto mais
             deliberado dos três, mas perde exatamente a mesma coisa. Deixá-lo de
