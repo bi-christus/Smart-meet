@@ -62,6 +62,7 @@ import {
   type Classificacao,
   type EstadoNaAta,
   type ItemDaPauta,
+  type SecaoDaPauta,
   type ItemDeAta,
   type OrigemDoItem,
   type StatusTarefa,
@@ -227,6 +228,68 @@ const SELO_ESTADO: Record<EstadoNaAta, { bg: string; tx: string }> = {
   registro: { bg: "var(--s3)", tx: "var(--tx-2)" },
 };
 
+/**
+ * OS TRÊS BLOCOS DA PAUTA, na ordem em que a reunião os percorre.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * O QUE ISTO CONSERTA, e a queixa chegou nestas palavras: "os assuntos estão
+ * aparecendo em várias reuniões, alguns sem identificação, e a reunião que eu
+ * criei já nasce cheia".
+ *
+ * A pauta empilhava três coisas diferentes com a mesma cara. O que a reunião
+ * registrou, TODA demanda aberta do quadro do setor (`montarPauta` as injeta em
+ * toda ata, de propósito — a reunião fala delas) e os apêndices do documento do
+ * áudio desciam na mesma lista, e a linha vinda do quadro nem chip de origem
+ * ganhava, porque onde há card a procedência de que se fala é a do card.
+ *
+ * O efeito em produção, no dia em que isto foi escrito, setor Cantinas: a ata de
+ * 09/09/2026 tinha ZERO item gravado e abria com nove assuntos; a de 16/09 tinha
+ * onze e abria com quinze. Quem conduz estava certo sobre o que via — os mesmos
+ * nove assuntos nas quatro atas do setor —, ainda que a causa não fosse cópia.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * POR QUE SEPARAR, E NÃO TIRAR. A demanda aberta PRECISA aparecer na reunião:
+ * é dela que se fala. O que não podia continuar era a tela afirmar, pelo
+ * silêncio, que aquilo é pauta que alguém montou. Separado e recolhido, o bloco
+ * do quadro continua a um clique de distância e para de responder pela ata.
+ *
+ * `sempreAberta` vale só para o primeiro: uma reunião sem registro nenhum tem de
+ * DIZER isso. Era exatamente o caso da ata de 09/09, e é a informação que a tela
+ * escondia.
+ */
+const SECOES: readonly {
+  chave: SecaoDaPauta;
+  titulo: string;
+  explica: string;
+  sempreAberta?: boolean;
+}[] = [
+  {
+    chave: "registrada",
+    titulo: "O que esta reunião registrou",
+    explica: "assuntos e decisões desta ata",
+    sempreAberta: true,
+  },
+  {
+    chave: "quadro",
+    titulo: "Demandas abertas do quadro",
+    explica: "vêm do Kanban do setor, não desta reunião",
+  },
+  {
+    chave: "pendencia",
+    titulo: "Pendências da reunião",
+    explica: '"Em aberto" e "Outros pontos" do documento do áudio',
+  },
+];
+
+/**
+ * Os blocos que nascem RECOLHIDOS — e é a metade da correção que se vê.
+ *
+ * Os dois falam de coisa que não é pauta montada por ninguém: um é o quadro do
+ * setor, o outro é apêndice do documento. Abertos por padrão, eles continuariam
+ * fazendo a ata parecer cheia — que é a queixa inteira.
+ */
+const SECOES_FECHADAS: readonly SecaoDaPauta[] = ["quadro", "pendencia"];
+
 /** O estado da TAREFA lê no mesmo eixo do estado da demanda — e nas mesmas cores. */
 const COR_TAREFA: Record<StatusTarefa, string> = {
   concluida: "var(--ok)",
@@ -302,6 +365,10 @@ export default function AtaPage() {
   /** Ver só o que está fora do mapa — ver `semClassificacao`. */
   const [soSemDim, setSoSemDim] = useState(false);
   const [recolhidos, setRecolhidos] = useState<Set<string>>(new Set());
+  /** Quais blocos da pauta estão fechados — ver `SECOES` e `SECOES_FECHADAS`. */
+  const [secoesFechadas, setSecoesFechadas] = useState<Set<SecaoDaPauta>>(
+    () => new Set(SECOES_FECHADAS),
+  );
   const [assuntoAberto, setAssuntoAberto] = useState(false);
   /**
    * A linha que acabou de nascer, para a tela ir até ela.
@@ -371,6 +438,10 @@ export default function AtaPage() {
     setFResp("");
     setSoSemDim(false);
     setRecolhidos(new Set());
+    // Os blocos voltam ao padrão junto com os filtros: deixar o do quadro aberto
+    // porque alguém o abriu na ata anterior faria a próxima reunião nascer com a
+    // mesma aparência de cheia que esta mudança existe para desfazer.
+    setSecoesFechadas(new Set(SECOES_FECHADAS));
     setErroEscrita(null);
     // E os modais que carregam UMA LINHA da ata anterior. A ata da tela pode
     // trocar sem ninguém clicar em nada — ela é `atas[0]` enquanto ninguém
@@ -446,6 +517,24 @@ export default function AtaPage() {
           l.item.tarefas.some((t) => t.responsavel === fResp)),
     );
   }, [pauta, busca, fEstado, fResp, soSemDim, idsForaDoMapa]);
+
+  /**
+   * A pauta filtrada, repartida nos três blocos da tela.
+   *
+   * A REPARTIÇÃO É SÓ AGRUPAMENTO, e não uma segunda régua: `montarPauta` já
+   * ordenou as linhas por seção antes de tudo, e já numerou. Recalcular aqui
+   * quem é de qual bloco daria duas respostas para a mesma pergunta, e elas
+   * divergiriam no primeiro `if` que alguém escrevesse só num dos lados.
+   */
+  const porSecao = useMemo(() => {
+    const vazio: Record<SecaoDaPauta, ItemDaPauta[]> = {
+      registrada: [],
+      quadro: [],
+      pendencia: [],
+    };
+    pautaFiltrada.forEach((l) => vazio[l.secao].push(l));
+    return vazio;
+  }, [pautaFiltrada]);
 
   /**
    * Quem pode receber uma tarefa desta ata.
@@ -695,6 +784,24 @@ export default function AtaPage() {
       if (item.origem !== "herdado") return ORIGEM_LABEL[item.origem];
       const data = dataDe.get(item.origemAtaId);
       return data ? `veio de ${fmtDayMonth(data)}` : ORIGEM_LABEL.herdado;
+    };
+  }, [atas]);
+
+  /**
+   * "16/09" da reunião para onde o assunto já foi levado — ou `null`.
+   *
+   * Par de `rotuloDaOrigem`, e com a mesma degradação: a ata de destino pode ter
+   * sido apagada, e aí o chip some inteiro em vez de virar um link para lugar
+   * nenhum. A diferença é que aqui SUMIR é a resposta certa, e não um rótulo
+   * genérico — sem a ata de destino, a linha voltou a ser um assunto que não foi
+   * levado a lugar nenhum, e o botão "Levar" tem de estar disponível de novo.
+   */
+  const rotuloDaLevada = useMemo(() => {
+    const dataDe = new Map(atas.map((a) => [a.id, a.data]));
+    return (item: ItemDeAta) => {
+      if (!item.levadaParaAtaId) return null;
+      const data = dataDe.get(item.levadaParaAtaId);
+      return data ? `levado para ${fmtDayMonth(data)}` : null;
     };
   }, [atas]);
 
@@ -1436,7 +1543,7 @@ export default function AtaPage() {
                 }
                 description={
                   pauta.length === 0
-                    ? "A pauta junta as demandas em aberto do quadro deste setor com os assuntos que a reunião levantou. Acrescente o primeiro assunto aqui, ou abra uma demanda no Kanban."
+                    ? "Acrescente aqui o primeiro assunto da reunião. As demandas em aberto do quadro deste setor aparecem em bloco separado, logo abaixo."
                     : "Tire um dos filtros para ver o resto da pauta."
                 }
                 action={
@@ -1448,8 +1555,50 @@ export default function AtaPage() {
                 }
               />
             ) : (
-              pautaFiltrada.map((linha) => (
-                <BlocoDaDemanda
+              SECOES.map(({ chave, titulo, explica, sempreAberta }) => {
+                const linhas = porSecao[chave];
+                /**
+                 * SEÇÃO VAZIA NÃO DESENHA CABEÇALHO — com uma exceção.
+                 *
+                 * "O que esta reunião registrou" aparece mesmo vazia, e é o
+                 * ponto inteiro desta mudança: a ata de 09/09/2026 das Cantinas
+                 * não tinha item nenhum gravado e abria mostrando nove
+                 * assuntos, todos do quadro. Quem a marcou leu aquilo como
+                 * vazamento. Com o cabeçalho vazio ali, a tela passa a dizer a
+                 * verdade — a reunião ainda não registrou nada — em vez de
+                 * deixar o bloco do quadro responder por ela.
+                 */
+                if (!linhas.length && !sempreAberta) return null;
+                const aberta = !secoesFechadas.has(chave);
+                return (
+                  <section key={chave} className={styles.secao}>
+                    <button
+                      className={styles.secaoTopo}
+                      onClick={() =>
+                        setSecoesFechadas((cur) => {
+                          const n = new Set(cur);
+                          if (n.has(chave)) n.delete(chave);
+                          else n.add(chave);
+                          return n;
+                        })
+                      }
+                      aria-expanded={aberta}
+                    >
+                      <Icon name={aberta ? "chevronCima" : "chevronBaixo"} size={14} />
+                      <span className={styles.secaoTitulo}>{titulo}</span>
+                      <span className={styles.secaoConta}>{linhas.length}</span>
+                      <span className={styles.secaoExplica}>{explica}</span>
+                    </button>
+                    {aberta && !linhas.length && (
+                      <p className={styles.secaoVazia}>
+                        Nada foi registrado nesta reunião ainda. O que a equipe
+                        decidir aqui, e os assuntos que ela levantar, aparecem
+                        neste bloco.
+                      </p>
+                    )}
+                    {aberta &&
+                      linhas.map((linha) => (
+              <BlocoDaDemanda
                   key={chaveDaLinha(linha)}
                   linha={linha}
                   nomeDe={nomeDe}
@@ -1479,6 +1628,20 @@ export default function AtaPage() {
                      o botão não nasce — ver `onMover`. */
                   onMover={atas.length > 1 ? () => setMovendo(linha) : null}
                   origemRotulo={rotuloDaOrigem(linha.item)}
+                  levadaRotulo={rotuloDaLevada(linha.item)}
+                  /* Só na linha que perdeu o card: `tituloDoCard` lê os cards
+                     crus, lixeira inclusive — ver o comentário dele. */
+                  tituloDeReserva={
+                    linha.foraDoQuadro ? tituloDoCard(linha.item.cardId) : ""
+                  }
+                  /* Mesma regra do chip de origem: a ata de destino pode ter
+                     sido apagada, e um link que não leva a lugar nenhum é pior
+                     do que texto. */
+                  onAbrirLevada={
+                    atas.some((a) => a.id === linha.item.levadaParaAtaId)
+                      ? () => setAtaSel(linha.item.levadaParaAtaId)
+                      : null
+                  }
                   /* A ata de origem pode ter sido apagada — aí o chip continua
                      dizendo que a linha é herdada, mas deixa de ser link. */
                   onAbrirOrigem={
@@ -1490,7 +1653,10 @@ export default function AtaPage() {
                   temProxima={proximas.length > 0}
                   onLevar={() => setLevando(linha)}
                 />
-              ))
+                      ))}
+                  </section>
+                );
+              })
             )}
           </main>
         </div>
@@ -1869,6 +2035,9 @@ function BlocoDaDemanda({
   onMover,
   origemRotulo,
   onAbrirOrigem,
+  levadaRotulo,
+  tituloDeReserva,
+  onAbrirLevada,
   temProxima,
   onLevar,
 }: {
@@ -1913,6 +2082,45 @@ function BlocoDaDemanda({
    * nenhum é pior do que texto.
    */
   onAbrirOrigem: (() => void) | null;
+  /**
+   * "16/09" quando este assunto JÁ FOI levado para outra reunião, ou `null`.
+   *
+   * Mesma divisão de trabalho de `origemRotulo`, e pelo mesmo motivo: quem
+   * traduz `levadaParaAtaId` em data é a página, que tem a lista de atas.
+   *
+   * POR QUE ELE PRECISOU EXISTIR. Até aqui, levar um assunto deixava a marca
+   * `proximaReuniao` acesa e o botão dizendo "Levar para outra reunião" —
+   * exatamente como antes do clique. Nada na linha dizia que o bastão já tinha
+   * sido passado, nem para quem, e o segundo clique era o gesto natural de quem
+   * não sabia se o primeiro funcionou.
+   */
+  levadaRotulo: string | null;
+  /**
+   * O título que a LIXEIRA ainda guarda, para a linha que ficou sem nome.
+   *
+   * O CASO, e ele apareceu em produção no dia em que isto foi escrito: a demanda
+   * entrou na pauta pelo quadro, alguém escreveu uma tarefa nela — e a linha
+   * gravou `cardId` com `assunto` vazio, que é o certo (nome é estado, e estado
+   * vem do card). Depois o card foi para a lixeira. A partir daí `montarPauta`
+   * desenha a linha SEM card, o título sai do `assunto` que nunca existiu, e o
+   * que sobrava na tela era a frase "Demanda sem título na ata" — verdadeira e
+   * inútil, no meio de uma pauta de reunião.
+   *
+   * A ata é REGISTRO: aquela demanda foi discutida naquele dia, e o nome dela
+   * não deixou de existir por ter saído do quadro. Quem o tem é a página, que
+   * assina os cards do setor INCLUSIVE os da lixeira.
+   *
+   * Não é copiado para dentro do item de propósito — continua sendo referência,
+   * e continua acompanhando um rename. Quando nem a lixeira souber responder (o
+   * card foi excluído de vez, ou mudou de setor), a frase de antes volta, que é
+   * o que sobra de honesto.
+   */
+  tituloDeReserva: string;
+  /**
+   * Ir até a reunião para onde o assunto foi, ou `null` quando ela não existe
+   * mais. Mesma degradação de `onAbrirOrigem`.
+   */
+  onAbrirLevada: (() => void) | null;
   /**
    * Existe reunião futura neste setor?
    *
@@ -2049,8 +2257,41 @@ function BlocoDaDemanda({
                 onAbrir={onAbrirOrigem}
               />
             )}
+            {/* O CHIP DO BASTÃO JÁ PASSADO, e este aparece TAMBÉM na linha com
+                card — ao contrário do de origem.
+
+                A diferença é que ele não fala da procedência da linha, e sim do
+                que ESTA reunião decidiu sobre ela: "isto volta a ser falado em
+                16/09". Levar aceita demanda do quadro de propósito (é o caso
+                mais comum do botão), então esconder o chip onde há card
+                esconderia o aviso justo na maioria das linhas. */}
+            {levadaRotulo &&
+              (onAbrirLevada ? (
+                <button
+                  className={`${styles.origemChip} ${styles.origemLink} ${styles.levadaChip}`}
+                  onClick={onAbrirLevada}
+                  title="Abrir a reunião para onde este assunto foi levado"
+                >
+                  <Icon name="calendar" size={11} /> {levadaRotulo}
+                </button>
+              ) : (
+                <span className={`${styles.origemChip} ${styles.levadaChip}`}>
+                  <Icon name="calendar" size={11} /> {levadaRotulo}
+                </span>
+              ))}
           </div>
-          <h3>{titulo || (foraDoQuadro ? "Demanda sem título na ata" : "")}</h3>
+          {/* A RESERVA VEM ANTES DO `titulo`, e não depois — é a regra da casa
+              aplicada onde ela ainda não valia. Onde há card, quem responde pelo
+              nome é o CARD; `assunto` é o que a reunião CHAMOU aquilo, e só é
+              lido quando card nunca houve (cabeçalho de `ItemDeAta`). A linha
+              fora do quadro teve card, e a lixeira ainda sabe o nome dele —
+              preferir o `assunto` aqui faria uma demanda de verdade aparecer na
+              pauta pelo apelido que um bloco do documento lhe deu. */}
+          <h3>
+            {tituloDeReserva ||
+              titulo ||
+              (foraDoQuadro ? "Demanda sem título na ata" : "")}
+          </h3>
           {foraDoQuadro && (
             <p className={styles.foraDoQuadro}>
               A demanda saiu do quadro deste setor — foi para a lixeira, mudou de

@@ -179,6 +179,25 @@ export type ItemDeAta = {
   objetivo: string;
   /** Levada para a pauta da próxima. */
   proximaReuniao: boolean;
+  /**
+   * A ata para onde este assunto JÁ FOI levado. Vazio = ainda não foi.
+   *
+   * É o par de `origemAtaId`, e existe para fechar o vazamento que os dois
+   * caminhos de "levar adiante" produziam juntos. `levarAssunto` grava numa ata
+   * que já existe; `herdarParaProxima` colhe `proximaReuniao` para uma ata que
+   * ainda vai nascer. Enquanto a marca continuava acesa depois do primeiro, o
+   * segundo a colhia de novo — e o mesmo assunto aparecia em duas reuniões
+   * futuras, sem que ninguém tivesse pedido a segunda cópia.
+   *
+   * Em produção, no dia em que este campo nasceu: a ata de 26/08 das Cantinas
+   * tinha SEIS itens marcados que já estavam gravados na ata de 16/09. Um clique
+   * em "Abrir a próxima reunião" teria criado uma quinta ata com os seis
+   * duplicados, sem erro e sem aviso.
+   *
+   * GUARDA ID, e não a data — mesma regra de `origemAtaId` e do `cardId`: a data
+   * de uma reunião se corrige no cabeçalho, e o chip da tela tem de acompanhar.
+   */
+  levadaParaAtaId: string;
   tarefas: TarefaDeAta[];
 };
 
@@ -281,6 +300,46 @@ export function chaveDeTexto(bruto: unknown): string {
  */
 export function chaveDeAssunto(bruto: unknown): string {
   return chaveDeTexto(String(bruto ?? "").replace(/^\d+\.\s*/, ""));
+}
+
+/**
+ * Os cabeçalhos que o documento do Cowork usa para SEÇÃO, e não para assunto.
+ *
+ * "Em aberto" (o bloco `⚠`) e "Outros pontos" (o `##` final) são apêndices da
+ * reunião inteira: listam pendências soltas, de assuntos diferentes, que não
+ * couberam em nenhum bloco. `lerPontosImportantes` os transforma em item porque
+ * é o que o gabarito manda, e o conteúdo deles é real — o "Outros pontos" da
+ * reunião de 26/08/2026 das Cantinas tem 600 caracteres de contexto útil.
+ *
+ * O QUE ELES NÃO SÃO É ASSUNTO. Numerados junto com o resto, eles ocupam duas
+ * linhas da pauta cujo nome não identifica nada — "vamos ao oito" não quer dizer
+ * coisa nenhuma quando o oito se chama "Outros pontos" —, e `herdarParaProxima`
+ * os levava adiante como se fossem, reunião após reunião. Foi a queixa literal
+ * de quem conduz: "alguns assuntos sem identificação".
+ *
+ * LISTA FECHADA, e não heurística. Os dois rótulos são contrato do prompt
+ * `Cowork/Prompts/Pontos Importantes.md` e estão no gabarito no cabeçalho de
+ * `ata-de-reuniao-core.ts`. Adivinhar por "parece genérico" erraria num assunto
+ * de verdade chamado "Outras unidades", e erraria calado.
+ */
+export const ROTULOS_DE_SECAO: readonly string[] = ["Em aberto", "Outros pontos"];
+
+/**
+ * Este item é apêndice da reunião, e não um assunto dela.
+ *
+ * O `cardId` MANDA MAIS QUE O NOME, e é a metade que não dá para esquecer:
+ * quando alguém ligou aquela linha a uma demanda do quadro, uma pessoa decidiu
+ * que aquilo é trabalho com dono. O nome herdado do documento vira histórico do
+ * que a reunião chamou, exatamente como em qualquer outra linha com card (ver o
+ * cabeçalho de `ItemDeAta`), e quem responde pelo título passa a ser o quadro.
+ * Rebaixá-la a apêndice pelo nome antigo esconderia uma demanda viva num bloco
+ * que ninguém abre — e é o caso literal do item "Em aberto" da ata de 16/09 das
+ * Cantinas, que carrega três tarefas com responsável.
+ */
+export function ehPendenciaDaReuniao(item: Pick<ItemDeAta, "cardId" | "assunto">): boolean {
+  if (item.cardId) return false;
+  const k = chaveDeAssunto(item.assunto);
+  return !!k && ROTULOS_DE_SECAO.some((r) => chaveDeAssunto(r) === k);
 }
 
 /**
@@ -402,6 +461,8 @@ function normalizarItem(
     decisao: limparParagrafo(b.decisao),
     objetivo: limparParagrafo(b.objetivo),
     proximaReuniao: b.proximaReuniao === true,
+    levadaParaAtaId:
+      typeof b.levadaParaAtaId === "string" ? b.levadaParaAtaId : "",
     tarefas,
   };
 }
@@ -603,6 +664,29 @@ export function estadoNaAta(
   return "andamento";
 }
 
+/**
+ * Em que bloco da tela esta linha entra — e a distinção é a razão do tipo.
+ *
+ * A PAUTA JUNTAVA TRÊS COISAS DIFERENTES COM A MESMA CARA. A tela desenhava o
+ * que a reunião registrou, toda demanda aberta do quadro e os apêndices do
+ * documento no mesmo empilhado, e a linha vinda do quadro nem chip de origem
+ * ganhava (a tela não desenha chip onde há card — e a procedência de que se
+ * fala ali é a do card). O efeito em produção: a ata de 09/09/2026 das Cantinas,
+ * com ZERO item gravado, abria mostrando nove assuntos; e a de 16/09, com onze
+ * gravados, abria com quinze. Quem marcou a reunião leu aquilo como vazamento —
+ * "os assuntos estão aparecendo em várias reuniões" —, e estava certo sobre o
+ * que via, ainda que a causa fosse outra.
+ *
+ *   - `registrada` — a ata gravou alguma coisa sobre esta linha. É o registro,
+ *     e é por isso que vem primeiro: a ata existe para responder o que foi
+ *     decidido naquele dia.
+ *   - `quadro` — a linha só existe porque a demanda está aberta no Kanban deste
+ *     setor. Ela PRECISA aparecer (a reunião fala das demandas abertas), mas
+ *     dizer que ela é da reunião é afirmar o que não aconteceu.
+ *   - `pendencia` — apêndice do documento do áudio. Ver `ehPendenciaDaReuniao`.
+ */
+export type SecaoDaPauta = "registrada" | "quadro" | "pendencia";
+
 /** Uma linha da pauta: a demanda, o que a reunião registrou, e o estado de hoje. */
 export type ItemDaPauta = {
   /** O card do quadro, ou `null` no assunto que ainda não é demanda. */
@@ -612,8 +696,16 @@ export type ItemDaPauta = {
   titulo: string;
   descricao: string;
   estado: EstadoNaAta;
-  /** "01", "02"… — a numeração que a tela imprime, sempre na ordem final. */
+  /**
+   * "01", "02"… — a numeração que a tela imprime, sempre na ordem final.
+   *
+   * VAZIA NA PENDÊNCIA, e é a consequência direta de ela não ser assunto: a
+   * numeração existe para alguém dizer "vamos ao três" em voz alta, e um "oito"
+   * que se chama "Outros pontos" não nomeia nada.
+   */
   numero: string;
+  /** Em que bloco da tela esta linha entra — ver `SecaoDaPauta`. */
+  secao: SecaoDaPauta;
   /** Nome da dimensão e da subdimensão, quando classificada. */
   dimensao: string;
   subdimensao: string;
@@ -658,6 +750,7 @@ function itemVazio(cardId: string): ItemDeAta {
     decisao: "",
     objetivo: "",
     proximaReuniao: false,
+    levadaParaAtaId: "",
     tarefas: [],
   };
 }
@@ -714,6 +807,21 @@ export function montarPauta(opcoes: {
     descricao: card ? (card.description ?? "") : item?.contexto || "",
     estado: estadoNaAta(card, item, entregues, hoje),
     numero: "",
+    /**
+     * `item` é a resposta inteira, e é por isso que ela nasce aqui.
+     *
+     * O parâmetro só vem preenchido quando a ata GRAVOU alguma coisa sobre esta
+     * linha: `porCard.get()` devolve `undefined` na demanda que ninguém tocou, e
+     * a terceira origem sempre passa um item de verdade. Derivar a seção em
+     * outro lugar exigiria refazer essa mesma pergunta com outra informação, e
+     * as duas respostas divergiriam no primeiro `if` que alguém escrevesse só
+     * numa delas.
+     */
+    secao: !item
+      ? ("quadro" as const)
+      : ehPendenciaDaReuniao(item)
+        ? ("pendencia" as const)
+        : ("registrada" as const),
     dimensao: (dimensaoId && nomeDim.get(dimensaoId)) || "",
     subdimensao:
       (dimensaoId && subdimensaoId && nomeSub.get(`${dimensaoId}/${subdimensaoId}`)) || "",
@@ -768,6 +876,10 @@ export function montarPauta(opcoes: {
 
   linhas.sort(
     (a, b) =>
+      // A SEÇÃO VEM ANTES DA GRAVIDADE, e é a única chave nova. Ela decide em
+      // que bloco a linha cai, e ordenar por gravidade primeiro entregaria à
+      // tela três listas intercaladas para desentrelaçar de novo.
+      ORDEM_DA_SECAO[a.secao] - ORDEM_DA_SECAO[b.secao] ||
       PESO[a.estado] - PESO[b.estado] ||
       // Dentro do mesmo estado, a ordem é a da dimensão: é o classificador, e
       // manter as da mesma área juntas evita a reunião pular de assunto a cada
@@ -776,8 +888,27 @@ export function montarPauta(opcoes: {
       a.titulo.localeCompare(b.titulo, "pt-BR"),
   );
 
-  return linhas.map((l, i) => ({ ...l, numero: String(i + 1).padStart(2, "0") }));
+  /**
+   * A NUMERAÇÃO CORRE PELAS DUAS PRIMEIRAS SEÇÕES, e não se reinicia entre elas.
+   *
+   * São dois blocos na tela, mas uma reunião só: "vamos ao doze" tem de achar um
+   * item, e não dois. Reiniciar em "01" no bloco do quadro daria dois "01" na
+   * mesma pauta — e o bloco do quadro nasce recolhido, então o segundo estaria
+   * escondido justamente de quem está contando em voz alta.
+   */
+  let n = 0;
+  return linhas.map((l) => ({
+    ...l,
+    numero: l.secao === "pendencia" ? "" : String(++n).padStart(2, "0"),
+  }));
 }
+
+/** A ordem dos blocos na tela — ver `SecaoDaPauta` para o porquê de cada um. */
+const ORDEM_DA_SECAO: Record<SecaoDaPauta, number> = {
+  registrada: 0,
+  quadro: 1,
+  pendencia: 2,
+};
 
 /**
  * Sem classificação vai para o fim, e não para o começo com `ordem` 0.
@@ -852,6 +983,25 @@ export function resumoDaAta(pauta: readonly ItemDaPauta[]): ResumoDaAta {
 export function herdarParaProxima(ata: Pick<Ata, "id" | "itens">): ItemDeAta[] {
   return ata.itens
     .filter((i) => i.proximaReuniao)
+    /**
+     * O QUE JÁ FOI LEVADO NÃO É HERDADO DE NOVO.
+     *
+     * Os dois caminhos de "levar adiante" existem e convivem de propósito —
+     * `levarAssunto` serve à reunião JÁ marcada, este serve à que ainda vai ser
+     * —, e enquanto nenhum dos dois sabia do outro o mesmo assunto ia para as
+     * duas. `levarAssunto` agora consome a marca e grava `levadaParaAtaId`; este
+     * filtro é a outra metade, e cobre também as marcas acesas antes desta
+     * versão que já foram colhidas à mão.
+     */
+    .filter((i) => !i.levadaParaAtaId)
+    /**
+     * APÊNDICE DO DOCUMENTO NÃO ATRAVESSA. "Em aberto" e "Outros pontos" são
+     * pendências soltas da reunião que passou, e herdá-los cria na reunião nova
+     * uma linha cujo nome não diz de que ela trata — que é a queixa que
+     * `ehPendenciaDaReuniao` registra. O que de fato precisa continuar sai dali
+     * como assunto ou como demanda, por decisão de alguém.
+     */
+    .filter((i) => !ehPendenciaDaReuniao(i))
     .map((i) => ({
       id: i.id,
       cardId: i.cardId,
@@ -871,6 +1021,9 @@ export function herdarParaProxima(ata: Pick<Ata, "id" | "itens">): ItemDeAta[] {
       decisao: "",
       objetivo: i.objetivo,
       proximaReuniao: false,
+      // A cópia nasce SEM destino: `levadaParaAtaId` é o registro de que ESTA
+      // linha já foi passada adiante, e a que acabou de chegar não foi.
+      levadaParaAtaId: "",
       tarefas: i.tarefas.filter((t) => t.status !== "concluida"),
     }));
 }

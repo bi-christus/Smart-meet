@@ -397,6 +397,7 @@ export function blocoParaItem(
     decisao: texto.decisao,
     objetivo: texto.objetivo,
     proximaReuniao: false,
+    levadaParaAtaId: "",
     tarefas: bloco.encaminhamentos.map((e, i) => paraTarefa(e, String(i + 1))),
   };
 }

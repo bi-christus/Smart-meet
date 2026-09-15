@@ -404,6 +404,81 @@
   width: 200px;
 }
 
+/**
+ * OS TRÊS BLOCOS DA PAUTA — ver `SECOES` em `page.tsx` para o porquê deles.
+ *
+ * O cabeçalho é um `<button>` de largura inteira porque o alvo do clique é a
+ * faixa toda: uma seta de 14px como único alvo obrigaria a mirar num item que a
+ * pessoa quer abrir e fechar várias vezes durante a reunião.
+ *
+ * SEM ANIMAÇÃO DE ALTURA, e é a Frequency Gate do AGENTS.md §3 respondendo: o
+ * bloco do quadro tem nove demandas, cada uma com a própria tabela de tarefas, e
+ * animar a altura disso é trabalho de layout em cima da lista inteira a cada
+ * clique — lentidão percebida exatamente onde a skill manda não animar. O que
+ * responde ao clique é a seta, que troca na hora.
+ */
+.secao {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.secaoTopo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--tx-2);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+}
+.secaoTopo:hover {
+  color: var(--tx);
+  border-color: var(--brand-line);
+}
+.secaoTitulo {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+/* A contagem ao lado do título, e não depois da explicação: ela é a resposta
+   que se procura com o bloco fechado ("quantas demandas do quadro estão
+   abertas?"), e no fim da linha ela se perderia. */
+.secaoConta {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--s3);
+  color: var(--tx-2);
+  font-size: 10px;
+  font-weight: 700;
+}
+.secaoExplica {
+  color: var(--tx-3);
+  font-size: 10.5px;
+  /* Some no estreito: o título e a contagem respondem sozinhos, e a explicação
+     empurraria o cabeçalho para duas linhas no celular. */
+  display: none;
+}
+@media (min-width: 720px) {
+  .secaoExplica {
+    display: inline;
+  }
+}
+/* A frase da reunião que ainda não registrou nada. Ela é o ponto da separação:
+   a ata de 09/09/2026 das Cantinas abria com nove assuntos do quadro e nenhum
+   registro, e nada na tela dizia isso. */
+.secaoVazia {
+  padding: 4px 10px 8px;
+  color: var(--tx-3);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .bloco {
   background: var(--s1);
   border: 1px solid var(--line-soft);
@@ -567,6 +642,18 @@
 .origemLink:hover svg {
   opacity: 1;
 }
+/* O bastão já passado. Cor de token, e a de `--info` — o chip diz que aquilo já
+   aconteceu e tem endereço, que é informação e não alerta. Mesma razão pela qual
+   ele não ganha transição: ver o comentário de `.origemChip`. */
+.levadaChip {
+  background: var(--info-bg);
+  border-color: transparent;
+  color: var(--info-tx);
+}
+.levadaChip svg {
+  opacity: 0.85;
+}
+
 .demanda h3 {
   font-size: 14.5px;
   font-weight: 700;

@@ -284,6 +284,47 @@ checa(
   semClassificacao(pautaComOrfa).length === 0,
 );
 
+/**
+ * O APÊNDICE DO DOCUMENTO TAMBÉM NÃO, e pela mesma razão.
+ *
+ * "Em aberto" e "Outros pontos" são seção do documento do Cowork, não assunto da
+ * reunião (ver `ehPendenciaDaReuniao` em `ata-core`). Não há o que classificar
+ * num apêndice, e cobrá-lo deixaria o alerta de "fora do mapa" travado em duas
+ * linhas por ata — impossível de zerar, e por isso rápido de aprender a ignorar.
+ */
+const pautaComPendencia = montarPauta({
+  cards: [],
+  ata: {
+    itens: [
+      item("1", { assunto: "Em aberto", contexto: "POPs sem responsável técnico" }),
+      item("2", { assunto: "Reforma Dom Luís" }),
+    ],
+  },
+  dimensoes: DIMS,
+  entregues: { Cantinas: new Set() },
+  hoje: new Date(2026, 7, 26).getTime(),
+});
+checa(
+  "o apêndice é a seção de pendências; o assunto de verdade é registro da reunião",
+  pautaComPendencia.find((l) => l.item.id === "1").secao === "pendencia" &&
+    pautaComPendencia.find((l) => l.item.id === "2").secao === "registrada",
+  pautaComPendencia.map((l) => `${l.item.id}:${l.secao}`).join(","),
+);
+checa(
+  "e só o assunto de verdade é cobrado por falta de dimensão",
+  semClassificacao(pautaComPendencia).map((l) => l.item.id).join(",") === "2",
+  semClassificacao(pautaComPendencia).map((l) => l.item.id).join(","),
+);
+// A pendência vai para o FIM e sai da numeração: "vamos ao dois" tem de nomear
+// um assunto, e "Em aberto" não nomeia nada.
+checa(
+  "a pendência fica no fim e não é numerada",
+  pautaComPendencia[1].item.id === "1" &&
+    pautaComPendencia[1].numero === "" &&
+    pautaComPendencia[0].numero === "01",
+  pautaComPendencia.map((l) => `${l.item.id}:${l.numero}`).join(","),
+);
+
 
 console.log("\n— corrigir o assunto depois de criado —");
 
@@ -539,9 +580,31 @@ checa(
   lv_levado.valor.origem.length === 2 &&
     lv_levado.valor.origem.some((i) => i.assunto === "Sistema Connect e totens"),
 );
+/**
+ * O REGISTRO MUDOU DE CAMPO, e é a correção do vazamento.
+ *
+ * Esta checagem cobrava `proximaReuniao === true` depois de levar. A marca ficava
+ * acesa como registro da decisão — só que ela não é só registro: é o que
+ * `herdarParaProxima` COLHE quando alguém clica em "Abrir a próxima reunião".
+ * Levar e depois abrir punha o mesmo assunto em duas reuniões futuras, sem erro
+ * e sem aviso. Em produção, a ata de 26/08/2026 das Cantinas tinha seis itens
+ * nesse estado, todos já gravados na ata de 16/09.
+ *
+ * `levadaParaAtaId` responde a mesma pergunta e mais uma que a marca nunca
+ * respondeu: PARA ONDE. É o que a tela desenha como "levado para 09/09".
+ */
 checa(
-  "e ele fica marcado como levado, que é o registro da decisão de hoje",
-  lv_levado.valor.origem.find((i) => i.id === "2").proximaReuniao === true,
+  "a marca é CONSUMIDA — senão 'Abrir a próxima' colhe o mesmo assunto de novo",
+  lv_levado.valor.origem.find((i) => i.id === "2").proximaReuniao === false,
+);
+checa(
+  "e o registro passa a dizer para ONDE o assunto foi",
+  lv_levado.valor.origem.find((i) => i.id === "2").levadaParaAtaId === "ata-09-09",
+  lv_levado.valor.origem.find((i) => i.id === "2").levadaParaAtaId,
+);
+checa(
+  "a cópia que chega NÃO nasce se dizendo levada",
+  lv_levado.valor.destino[2].levadaParaAtaId === "",
 );
 checa(
   "a decisão FICA na origem",
@@ -616,8 +679,9 @@ const lv_fantasma = levarAssunto(
 );
 checa("o item fantasma é materializado na origem", lv_fantasma.valor.origem.length === 1);
 checa(
-  "com a marca acesa e id de item, nunca o cardId",
-  lv_fantasma.valor.origem[0].proximaReuniao === true &&
+  "com o destino registrado e id de item, nunca o cardId",
+  lv_fantasma.valor.origem[0].levadaParaAtaId === "ata-09-09" &&
+    lv_fantasma.valor.origem[0].proximaReuniao === false &&
     lv_fantasma.valor.origem[0].id === "1" &&
     lv_fantasma.valor.origem[0].cardId === "c9",
   lv_fantasma.valor.origem[0].id,

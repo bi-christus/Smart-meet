@@ -183,6 +183,7 @@ export function conferirAssuntoNovo(
       decisao: "",
       objetivo: "",
       proximaReuniao: false,
+      levadaParaAtaId: "",
       tarefas: [],
     },
   };
@@ -226,6 +227,7 @@ export function vincularCard(
       decisao: "",
       objetivo: "",
       proximaReuniao: false,
+      levadaParaAtaId: "",
       tarefas: [],
     }),
     // O id do fantasma é o `cardId` de origem, que não serve como id de item
@@ -259,6 +261,12 @@ export function semClassificacao(
     // encheria o alerta de linhas históricas que ninguém pode resolver — e um
     // alerta que não se consegue zerar é um alerta que se aprende a ignorar.
     if (l.foraDoQuadro) return false;
+    // A PENDÊNCIA TAMBÉM NÃO, e pela mesma razão: "Em aberto" e "Outros pontos"
+    // são apêndice do documento do áudio, não assunto (ver `ehPendenciaDaReuniao`
+    // em `ata-core`). Não há o que classificar num apêndice, e cobrá-lo aqui
+    // deixaria o alerta de "fora do mapa" travado em duas linhas por ata —
+    // impossível de zerar, e por isso rápido de aprender a ignorar.
+    if (l.secao === "pendencia") return false;
     return l.card ? !l.card.dimensaoId : !l.item.dimensaoId;
   });
 }
@@ -584,19 +592,43 @@ export function levarAssunto(
     proximaReuniao: false,
     origem: "herdado",
     origemAtaId: origem.id,
+    // A cópia chega SEM destino. `levadaParaAtaId` diz que aquela linha já foi
+    // passada adiante, e a que acabou de chegar não foi — carregá-lo faria a
+    // linha nova nascer se declarando levada para uma reunião que ela nunca viu.
+    levadaParaAtaId: "",
     tarefas: item.tarefas.filter((t) => t.status !== "concluida"),
   };
 
   /**
-   * A ORIGEM MANTÉM O ITEM, com a marca acesa — é o que distingue levar de mover.
+   * A ORIGEM MANTÉM O ITEM — é o que distingue levar de mover. O que ela NÃO
+   * mantém mais é a marca acesa, e essa é a correção.
    *
-   * A marca fica por duas razões. Ela é o registro de que a reunião decidiu
-   * levar aquilo adiante, que é informação da ata daquele dia; e é ela que
-   * "Abrir a próxima reunião" continua colhendo, para o caso em que a próxima
-   * ainda não existe. Os dois caminhos convivem, e é de propósito: um serve à
-   * reunião já marcada, o outro à que ainda vai ser.
+   * ─────────────────────────────────────────────────────────────────────────
+   * O VAZAMENTO QUE ISTO FECHA
+   *
+   * `proximaReuniao` ficava aceso depois de levar, como registro de que a
+   * reunião decidiu levar aquilo adiante. Só que ele não é só registro: é o que
+   * `herdarParaProxima` COLHE quando alguém clica em "Abrir a próxima reunião".
+   * Os dois caminhos convivem de propósito — um serve à reunião já marcada, o
+   * outro à que ainda vai ser —, e enquanto nenhum sabia do outro, levar e
+   * depois abrir punha o mesmo assunto em duas reuniões futuras.
+   *
+   * Em produção, no dia em que isto foi escrito: a ata de 26/08/2026 das
+   * Cantinas tinha seis itens marcados que já estavam gravados na ata de 16/09.
+   * Um clique em "Abrir a próxima reunião" teria criado uma quinta ata com os
+   * seis duplicados, sem erro e sem aviso — que é exatamente a forma que a
+   * queixa de quem conduz tomou: "o mesmo assunto está em várias reuniões".
+   *
+   * ─────────────────────────────────────────────────────────────────────────
+   * O REGISTRO NÃO SE PERDE — ele fica MELHOR
+   *
+   * `levadaParaAtaId` responde a mesma pergunta que a marca respondia ("a
+   * reunião decidiu levar isto adiante?") e mais uma que ela nunca respondeu:
+   * PARA ONDE. É o par de `origemAtaId`, e é o que permite a tela trocar o botão
+   * "Levar" por "levado para 16/09", com link. A marca acesa dizia à pessoa que
+   * havia algo pendente de acontecer; o ponteiro diz que já aconteceu, e onde.
    */
-  const marcado = { ...item, proximaReuniao: true };
+  const marcado = { ...item, proximaReuniao: false, levadaParaAtaId: destino.id };
   const existeNaOrigem = origem.itens.some((i) => i.id === item.id);
   return {
     ok: true,
