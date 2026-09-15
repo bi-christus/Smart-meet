@@ -358,7 +358,32 @@ checa(
   pauta.slice(-2).every((l) => l.estado === "registro"),
   pauta.map((l) => `${l.titulo}:${l.estado}`).join(" | "),
 );
-checa("a numeração é contínua e começa em 01", pauta[0].numero === "01" && pauta[5].numero === "06");
+/**
+ * E AGORA ELES SÃO OUTRO BLOCO, não o rabo do mesmo.
+ *
+ * "Em aberto" e "Outros pontos" são seções do documento do Cowork, não assuntos
+ * da reunião — o gabarito no cabeçalho de `ata-de-reuniao-core` os mostra assim.
+ * Numerados junto com o resto, eles davam à pauta duas linhas cujo nome não
+ * identifica nada, e `herdarParaProxima` as levava adiante reunião após reunião.
+ * Foi a queixa literal de quem conduz: "alguns assuntos sem identificação".
+ */
+checa(
+  "e são a seção de pendências, não assunto da reunião",
+  pauta.slice(-2).every((l) => l.secao === "pendencia"),
+  pauta.map((l) => `${l.titulo}:${l.secao}`).join(" | "),
+);
+checa(
+  "os quatro assuntos de verdade continuam numerados de 01 a 04",
+  pauta.slice(0, 4).map((l) => l.numero).join(",") === "01,02,03,04",
+  pauta.map((l) => l.numero).join(","),
+);
+// A numeração existe para alguém dizer "vamos ao três" em voz alta, e um "cinco"
+// chamado "Outros pontos" não nomeia nada.
+checa(
+  "a pendência não é numerada",
+  pauta.slice(-2).every((l) => l.numero === ""),
+  pauta.map((l) => `${l.titulo}:${l.numero}`).join(" | "),
+);
 checa("cada → do documento chegou na pauta como tarefa", resumo.tarefas === 4, String(resumo.tarefas));
 
 console.log("\n— ligar no card que a mesma reunião gerou —");

@@ -24,6 +24,7 @@ import {
   herdarParaProxima,
   limparParagrafo,
   limparTexto,
+  ehPendenciaDaReuniao,
   montarPauta,
   normalizarAta,
   proximoIdDeTarefa,
@@ -162,12 +163,36 @@ const ata = {
 };
 const pauta = montarPauta({ cards, ata, dimensoes: DIMS, entregues: ENTREGUES, hoje: HOJE });
 const ordem = pauta.map((l) => l.card.id).join(",");
+const atrasada = pauta.find((l) => l.card.id === "atrasada");
 checa("linha de card sempre traz o título dele", pauta.every((l) => l.titulo === l.card.title));
 
+/**
+ * A SEÇÃO ORDENA ANTES DA GRAVIDADE — e a checagem mudou de resposta por isso.
+ *
+ * Ela dizia "atrasada,tranquila,decidida,entregue-com-registro": a gravidade
+ * mandava sozinha, e a demanda que a ata NUNCA TOCOU abria a pauta na frente
+ * das duas sobre as quais a reunião decidiu alguma coisa. Era o sintoma de que
+ * a tela não distinguia o registro da reunião do quadro do setor — em produção,
+ * a ata de 09/09/2026 das Cantinas tinha zero item gravado e abria com nove
+ * assuntos, todos do Kanban.
+ *
+ * A gravidade continua mandando DENTRO de cada seção, e é o que as duas metades
+ * desta checagem prendem.
+ */
 checa(
-  "o atrasado vem primeiro; o decidido, depois do pendente; o concluído por último",
-  ordem === "atrasada,tranquila,decidida,entregue-com-registro",
+  "o que a reunião registrou vem primeiro; o quadro, depois",
+  ordem === "decidida,entregue-com-registro,atrasada,tranquila",
   ordem,
+);
+checa(
+  "dentro do registro, o decidido vem antes do concluído",
+  pauta[0].secao === "registrada" && pauta[1].secao === "registrada",
+  pauta.map((l) => l.secao).join(","),
+);
+checa(
+  "dentro do quadro, o atrasado continua vindo primeiro",
+  pauta[2].card.id === "atrasada" && pauta[2].secao === "quadro",
+  pauta.map((l) => `${l.card.id}:${l.secao}`).join(","),
 );
 checa(
   "demanda entregue que a ata NÃO registrou fica de fora",
@@ -179,15 +204,18 @@ checa(
   "demanda entregue que a ata registrou CONTINUA nela",
   pauta.some((l) => l.card.id === "entregue-com-registro"),
 );
+// UMA numeração para as duas seções, e não uma por bloco: "vamos ao três" tem de
+// achar um item, e o bloco do quadro nasce recolhido — um segundo "01" escondido
+// lá dentro seria invisível justamente para quem está contando em voz alta.
 checa(
-  "a numeração é atribuída depois de ordenar, e começa em 01",
-  pauta[0].numero === "01" && pauta[3].numero === "04",
+  "a numeração é atribuída depois de ordenar, e corre pelas duas seções",
+  pauta.map((l) => l.numero).join(",") === "01,02,03,04",
   pauta.map((l) => l.numero).join(","),
 );
 checa(
   "a dimensão e a subdimensão viram texto ao lado",
-  pauta[0].dimensao === "D1 · Cadeia de suprimentos" && pauta[0].subdimensao === "Estoque",
-  `${pauta[0].dimensao} / ${pauta[0].subdimensao}`,
+  atrasada.dimensao === "D1 · Cadeia de suprimentos" && atrasada.subdimensao === "Estoque",
+  `${atrasada.dimensao} / ${atrasada.subdimensao}`,
 );
 checa(
   "demanda sem classificação não inventa dimensão",
@@ -195,7 +223,12 @@ checa(
 );
 checa(
   "demanda que a ata nunca tocou entra com item vazio, não com undefined",
-  pauta[0].item.decisao === "" && Array.isArray(pauta[0].item.tarefas),
+  atrasada.item.decisao === "" && Array.isArray(atrasada.item.tarefas),
+);
+// E ela é o bloco "quadro" — é o que a tela lê para recolher o bloco inteiro.
+checa(
+  "a demanda que a ata nunca tocou é do QUADRO, não do registro",
+  atrasada.secao === "quadro",
 );
 
 // Dentro do MESMO estado, a dimensão ordena — e "sem classificação" vai para o
@@ -292,6 +325,91 @@ checa(
   "a linha herdada sabe que é herdada",
   herdado.every((i) => i.origem === "herdado"),
   JSON.stringify(herdado.map((i) => i.origem)),
+);
+checa(
+  "e ela não nasce se dizendo levada para lugar nenhum",
+  herdado.every((i) => i.levadaParaAtaId === ""),
+);
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * O VAZAMENTO QUE OS DOIS CAMINHOS DE "LEVAR ADIANTE" PRODUZIAM JUNTOS
+ *
+ * `levarAssunto` grava numa ata que JÁ existe; `herdarParaProxima` colhe
+ * `proximaReuniao` para uma ata que ainda vai nascer. Os dois convivem de
+ * propósito — um serve à reunião já marcada, o outro à que ainda vai ser —, mas
+ * enquanto nenhum sabia do outro, levar e depois abrir a próxima punha o mesmo
+ * assunto em DUAS reuniões futuras, sem erro e sem aviso.
+ *
+ * Em produção, no dia em que isto foi escrito: a ata de 26/08/2026 das Cantinas
+ * tinha SEIS itens marcados que já estavam gravados na ata de 16/09. Um clique
+ * em "Abrir a próxima reunião" teria criado uma quinta ata com os seis
+ * duplicados. A queixa de quem conduz chegou assim: "o mesmo assunto está
+ * aparecendo em várias reuniões".
+ */
+const herdadoDepoisDeLevar = herdarParaProxima({
+  id: "ata-2608",
+  itens: [
+    {
+      id: "1",
+      cardId: "",
+      assunto: "Estoque, recebimento e conferência",
+      proximaReuniao: true,
+      levadaParaAtaId: "ata-1609",
+      tarefas: [],
+    },
+    { id: "2", cardId: "", assunto: "Contratação e vagas", proximaReuniao: true, tarefas: [] },
+  ],
+});
+checa(
+  "o que já foi levado NÃO é herdado de novo",
+  herdadoDepoisDeLevar.length === 1 && herdadoDepoisDeLevar[0].assunto === "Contratação e vagas",
+  herdadoDepoisDeLevar.map((i) => i.assunto).join(","),
+);
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * "EM ABERTO" E "OUTROS PONTOS" SÃO SEÇÃO DO DOCUMENTO, NÃO ASSUNTO
+ *
+ * O documento do Cowork traz os dois como apêndice da reunião inteira —
+ * pendências soltas, de assuntos diferentes. Herdados adiante, eles viram na ata
+ * nova uma linha cujo nome não diz de que ela trata, reunião após reunião. Foi a
+ * queixa literal de quem conduz: "alguns assuntos sem identificação".
+ */
+checa(
+  "'Em aberto' é apêndice da reunião",
+  ehPendenciaDaReuniao({ cardId: "", assunto: "Em aberto" }),
+);
+checa(
+  "'Outros pontos' também, e a acentuação e a caixa não importam",
+  ehPendenciaDaReuniao({ cardId: "", assunto: "OUTROS PONTOS" }),
+);
+checa(
+  "um assunto de verdade não é confundido com apêndice",
+  !ehPendenciaDaReuniao({ cardId: "", assunto: "Outras unidades em aberto" }),
+);
+/**
+ * O `cardId` MANDA MAIS QUE O NOME, e é a metade que não dá para esquecer:
+ * quando alguém ligou aquela linha a uma demanda do quadro, uma pessoa decidiu
+ * que aquilo é trabalho com dono, e o nome herdado vira histórico. Rebaixá-la a
+ * apêndice pelo nome antigo esconderia uma demanda viva num bloco que ninguém
+ * abre — e é o caso literal do item "Em aberto" da ata de 16/09 das Cantinas,
+ * que carrega três tarefas com responsável.
+ */
+checa(
+  "mas a linha que virou demanda do quadro NÃO é apêndice, apesar do nome",
+  !ehPendenciaDaReuniao({ cardId: "c1", assunto: "Em aberto" }),
+);
+checa(
+  "e o apêndice não atravessa para a próxima reunião",
+  herdarParaProxima({
+    id: "a",
+    itens: [
+      { id: "1", cardId: "", assunto: "Em aberto", proximaReuniao: true, tarefas: [] },
+      { id: "2", cardId: "", assunto: "Outros pontos", proximaReuniao: true, tarefas: [] },
+      { id: "3", cardId: "", assunto: "Reforma Dom Luís", proximaReuniao: true, tarefas: [] },
+    ],
+  }).map((i) => i.assunto).join(",") === "Reforma Dom Luís",
 );
 checa(
   "e sabe de QUAL reunião veio",
