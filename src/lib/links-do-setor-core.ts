@@ -29,6 +29,62 @@
  * aqui seria o primeiro passo para as duas discordarem sobre o que é seguro.
  */
 import { dominioDe, normalizarUrl, SERVICO_ROTULO, servicoDe } from "./links-core.ts";
+import { LIMITE_FOTO_BYTES, LIMITE_FOTO_CHARS, tamanhoDataUri } from "./avatar-core.ts";
+
+/**
+ * O LOGO DO LINK, enviado por quem cadastra (06/10/2026).
+ *
+ * O ícone deduzido reconhece Drive, Power BI, Planilhas — e devolve o mesmo
+ * monograma para todo sistema interno. Para quem procura "o sistema da
+ * clínica" numa grade de vinte cards, o que se reconhece de longe é a marca.
+ *
+ * Mesmo caminho da foto de perfil, e pelos mesmos motivos: o Storage não está
+ * ligado (habilitar é ação humana no console, AGENTS.md §6), então o logo é um
+ * data URI DENTRO do documento — e por isso tem teto. O teto e o alfabeto são
+ * os da foto, sem conversão: a régua em CEL (`fotoOk()`) já foi medida e
+ * testada, e `linkOk()` usa os mesmos números. `test-links-do-setor.mjs`
+ * reprova se os dois lados se afastarem.
+ *
+ * Só JPEG e PNG. SVG fica de fora pelo motivo escrito em `fotoOk()`: ele vira
+ * `src` de um `<img>` na tela de todo o setor, e SVG carrega script. PNG é o
+ * preferido na preparação porque logo costuma ter fundo transparente.
+ */
+export const LIMITE_LOGO_BYTES = LIMITE_FOTO_BYTES;
+export const LIMITE_LOGO_CHARS = LIMITE_FOTO_CHARS;
+/** O lado máximo do logo gravado. O selo tem 40 px de CSS; 96 cobre tela 2×. */
+export const LADO_LOGO_PX = 96;
+
+const LOGO_ACEITO = /^data:image\/(?:jpeg|png);base64,[A-Za-z0-9+/]+={0,2}$/;
+
+/**
+ * O logo cabe e é imagem? O `motivo` é texto de tela.
+ *
+ * O formato vem antes do tamanho, como em `conferirFoto`: um SVG pequeno é o
+ * problema grave, e recusá-lo por "grande demais" seria a mensagem errada.
+ */
+export function conferirLogo(
+  uri: unknown,
+): { ok: true } | { ok: false; motivo: string } {
+  const t = typeof uri === "string" ? uri.trim() : "";
+  if (!t) return { ok: false, motivo: "Nenhuma imagem foi escolhida." };
+  if (!LOGO_ACEITO.test(t) || t.length > LIMITE_LOGO_CHARS) {
+    return {
+      ok: false,
+      motivo: "Formato não aceito. O logo precisa ser uma imagem JPEG ou PNG.",
+    };
+  }
+  const bytes = tamanhoDataUri(t);
+  if (bytes <= 0) return { ok: false, motivo: "A imagem chegou vazia." };
+  if (bytes > LIMITE_LOGO_BYTES) {
+    return {
+      ok: false,
+      motivo:
+        "Mesmo reduzido, o logo ficou grande demais. Tente uma imagem mais " +
+        "simples — só a marca, sem fundo fotográfico.",
+    };
+  }
+  return { ok: true };
+}
 
 /**
  * Os tetos dos campos. Espelhados em `linkOk()`, no `firestore.rules`, e
@@ -54,6 +110,8 @@ export type LinkDoSetor = {
   url: string;
   /** O ícone escolhido. Ausente = deduzido da URL, como no link da demanda. */
   icone?: string;
+  /** O logo enviado (data URI JPEG/PNG). Quando existe, vence o ícone no selo. */
+  logo?: string;
   /** E-mail de quem cadastrou. */
   createdBy: string;
   /** Milissegundos; `null` só no instante entre a gravação e o eco do servidor. */
@@ -248,6 +306,10 @@ export function normalizarLinkDoSetor(id: string, bruto: unknown): LinkDoSetor |
   // escrita — é o tropeço que `aplicarIcone` já documenta em `icones-core`.
   const icone = texto(d.icone);
   if (icone) link.icone = icone;
+  // O logo vai para o `src` de um `<img>`: a régua roda de novo na LEITURA,
+  // porque o console e o Admin SDK escrevem sem passar pela regra. Logo que não
+  // passa some do card — o selo volta ao ícone, que é a falha certa.
+  if (typeof d.logo === "string" && conferirLogo(d.logo).ok) link.logo = d.logo.trim();
   const updatedBy = texto(d.updatedBy);
   if (updatedBy) link.updatedBy = updatedBy;
   if (d.updatedAt !== undefined) link.updatedAt = instante(d.updatedAt);

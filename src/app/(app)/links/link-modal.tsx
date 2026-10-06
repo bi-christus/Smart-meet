@@ -4,9 +4,11 @@ import { useId, useMemo, useRef, useState } from "react";
 import { iconeDoLink } from "@/lib/icones-core";
 import { monogramaDe, seloDoLink } from "@/lib/links-core";
 import {
+  LADO_LOGO_PX,
   LIMITE_DESCRICAO_LINK,
   LIMITE_NOME_LINK,
   conferirLink,
+  conferirLogo,
   conflitoDeLink,
   criarLink,
   editarLink,
@@ -46,6 +48,105 @@ export function fraseDoErro(acao: string, e: unknown): string {
 }
 
 // ---------------------------------------------------------------------------
+// O logo — arquivo escolhido → data URI pequeno, conferido
+// ---------------------------------------------------------------------------
+
+const LOGO_NAO_ABRE =
+  "Este arquivo não é uma imagem que o navegador consiga abrir. Escolha um PNG, JPG, WebP ou SVG.";
+const LOGO_SEM_CANVAS =
+  "Este navegador não conseguiu preparar a imagem. Tente por outro navegador, ou por um computador.";
+
+/**
+ * Decodifica o arquivo. `createImageBitmap` primeiro (decodifica fora da thread
+ * principal); o `<img>` é a reserva — e é o único caminho que abre SVG.
+ */
+async function decodificarLogo(file: File): Promise<ImageBitmap | HTMLImageElement> {
+  if (typeof createImageBitmap === "function") {
+    try {
+      return await createImageBitmap(file);
+    } catch {
+      // SVG cai aqui no Chrome; segue para o `<img>`.
+    }
+  }
+  const url = URL.createObjectURL(file);
+  try {
+    return await new Promise<HTMLImageElement>((resolver, rejeitar) => {
+      const img = new Image();
+      img.onload = () => resolver(img);
+      img.onerror = () => rejeitar(new Error("nao decodificou"));
+      img.src = url;
+    });
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+/**
+ * Arquivo → data URI pronto para gravar, ou o motivo da recusa.
+ *
+ * DIFERENTE DA FOTO DE PERFIL EM DUAS COISAS, as duas por ser logo:
+ *
+ * 1. NÃO CORTA. A foto vira círculo e é recortada no centro; um logo recortado
+ *    perde a ponta da marca, que é justamente o que se reconhece. Aqui a imagem
+ *    cabe INTEIRA num quadrado de `LADO_LOGO_PX`, mantendo a proporção.
+ * 2. PNG PRIMEIRO. Logo costuma ter fundo transparente, e JPEG pintaria o
+ *    vazado. O JPEG (sobre branco) é só a reserva para a imagem que, mesmo
+ *    reduzida, estoura o teto em PNG — foto de fachada usada como logo, por
+ *    exemplo.
+ *
+ * SVG entra pelo `<img>` e SAI COMO PNG: o que vai para o banco é sempre o
+ * desenho rasterizado, nunca o SVG — que carrega script.
+ */
+async function prepararLogo(
+  file: File,
+): Promise<{ ok: true; uri: string } | { ok: false; motivo: string }> {
+  let fonte: ImageBitmap | HTMLImageElement;
+  try {
+    fonte = await decodificarLogo(file);
+  } catch {
+    return { ok: false, motivo: LOGO_NAO_ABRE };
+  }
+  try {
+    const largura = "naturalWidth" in fonte ? fonte.naturalWidth : fonte.width;
+    const altura = "naturalHeight" in fonte ? fonte.naturalHeight : fonte.height;
+    if (!largura || !altura) return { ok: false, motivo: LOGO_NAO_ABRE };
+
+    // Nunca ampliar: um ícone de 32 px esticado não ganha detalhe, só bytes.
+    const escala = Math.min(1, LADO_LOGO_PX / Math.max(largura, altura));
+    const w = Math.max(1, Math.round(largura * escala));
+    const h = Math.max(1, Math.round(altura * escala));
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return { ok: false, motivo: LOGO_SEM_CANVAS };
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(fonte, 0, 0, w, h);
+
+    const png = canvas.toDataURL("image/png");
+    const r = conferirLogo(png);
+    if (r.ok) return { ok: true, uri: png };
+
+    let motivo = r.motivo;
+    ctx.globalCompositeOperation = "destination-over";
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, w, h);
+    for (const q of [0.85, 0.7, 0.55]) {
+      const jpg = canvas.toDataURL("image/jpeg", q);
+      if (!jpg.startsWith("data:image/jpeg")) break;
+      const rj = conferirLogo(jpg);
+      if (rj.ok) return { ok: true, uri: jpg };
+      motivo = rj.motivo;
+    }
+    return { ok: false, motivo };
+  } catch {
+    return { ok: false, motivo: LOGO_SEM_CANVAS };
+  } finally {
+    if ("close" in fonte) fonte.close();
+  }
+}
+
+// ---------------------------------------------------------------------------
 // O formulário — criar e editar são o mesmo
 // ---------------------------------------------------------------------------
 
@@ -77,6 +178,7 @@ export function LinkModal({
       url: link?.url ?? "",
       descricao: link?.descricao ?? "",
       icone: link?.icone ?? null,
+      logo: link?.logo ?? null,
     }),
     [link],
   );
@@ -85,6 +187,10 @@ export function LinkModal({
   const [url, setUrl] = useState(inicial.url);
   const [descricao, setDescricao] = useState(inicial.descricao);
   const [icone, setIcone] = useState<string | null>(inicial.icone);
+  const [logo, setLogo] = useState<string | null>(inicial.logo);
+  const [preparandoLogo, setPreparandoLogo] = useState(false);
+  const [erroLogo, setErroLogo] = useState<string | null>(null);
+  const arquivoRef = useRef<HTMLInputElement>(null);
   const [setor, setSetor] = useState(link?.setor ?? setorInicial);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<{ campo: CampoDoLink | null; texto: string } | null>(
@@ -101,6 +207,7 @@ export function LinkModal({
     url !== inicial.url ||
     descricao !== inicial.descricao ||
     icone !== inicial.icone ||
+    logo !== inicial.logo ||
     (novo && setor !== setorInicial);
 
   /**
@@ -145,8 +252,8 @@ export function LinkModal({
     setErro(null);
     setSalvando(true);
     try {
-      if (link) await editarLink(link, r.dados, icone, autor, existentes);
-      else await criarLink(setor, r.dados, icone, autor, existentes);
+      if (link) await editarLink(link, r.dados, icone, logo, autor, existentes);
+      else await criarLink(setor, r.dados, icone, logo, autor, existentes);
       onClose();
     } catch (e) {
       console.error("Erro ao salvar o link:", e);
@@ -173,6 +280,22 @@ export function LinkModal({
       console.error("Erro ao remover o link:", e);
       setErro({ campo: null, texto: fraseDoErro("Não foi possível remover o link.", e) });
       setSalvando(false);
+    }
+  }
+
+  async function escolherLogo(file: File | undefined) {
+    if (!file) return;
+    setErroLogo(null);
+    setPreparandoLogo(true);
+    try {
+      const r = await prepararLogo(file);
+      if (r.ok) setLogo(r.uri);
+      else setErroLogo(r.motivo);
+    } finally {
+      setPreparandoLogo(false);
+      // Zera o campo: escolher o MESMO arquivo de novo (depois de remover) não
+      // dispararia `change`, e o clique pareceria não fazer nada.
+      if (arquivoRef.current) arquivoRef.current.value = "";
     }
   }
 
@@ -221,6 +344,12 @@ export function LinkModal({
         noValidate
       >
         <div className={styles.linhaNome}>
+          {logo ? (
+            <span className={styles.logoSelo}>
+              {/* eslint-disable-next-line @next/next/no-img-element -- data URI conferido; next/image não otimiza data URI */}
+              <img src={logo} alt={`Logo de ${nome.trim() || "o link novo"}`} />
+            </span>
+          ) : (
           <IconePicker
             valor={icone}
             deduzido={deduzido}
@@ -232,6 +361,7 @@ export function LinkModal({
           >
             {iconeAgora ? <Icon name={iconeAgora} size={19} /> : monogramaDe(url)}
           </IconePicker>
+          )}
           <label className={styles.field}>
             <span>Nome</span>
             <input
@@ -295,6 +425,58 @@ export function LinkModal({
             </small>
           )}
         </label>
+
+        {/* O logo é opcional: sem ele o selo segue mostrando o ícone, como
+            sempre. O `<input type="file">` fica escondido atrás de um botão do
+            app — o controle nativo muda de cara em cada navegador e diz
+            "Nenhum arquivo escolhido" mesmo quando há um logo gravado. */}
+        <div className={styles.field}>
+          <span>
+            Logo <em className={styles.opcional}>opcional</em>
+          </span>
+          <div className={styles.logoLinha}>
+            <input
+              ref={arquivoRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+              className={styles.arquivoEscondido}
+              onChange={(e) => void escolherLogo(e.target.files?.[0])}
+              tabIndex={-1}
+              aria-hidden="true"
+            />
+            <button
+              type="button"
+              className={styles.btnGhost}
+              onClick={() => arquivoRef.current?.click()}
+              disabled={salvando || preparandoLogo}
+            >
+              <Icon name="upload" size={14} />
+              {preparandoLogo ? "Preparando…" : logo ? "Trocar imagem" : "Enviar imagem"}
+            </button>
+            {logo && (
+              <button
+                type="button"
+                className={styles.btnGhost}
+                onClick={() => {
+                  setLogo(null);
+                  setErroLogo(null);
+                }}
+                disabled={salvando || preparandoLogo}
+              >
+                <Icon name="trash" size={14} /> Remover logo
+              </button>
+            )}
+          </div>
+          <small className={styles.dica}>
+            PNG, JPG, WebP ou SVG. A imagem é reduzida para {LADO_LOGO_PX} px, sem
+            cortar, e aparece no lugar do ícone.
+          </small>
+          {erroLogo && (
+            <p className={styles.erro} role="alert">
+              {erroLogo}
+            </p>
+          )}
+        </div>
 
         {/* O setor só é escolha na CRIAÇÃO e para quem participa de mais de
             um. `<Select>` não é um controle de formulário nativo, por isso o

@@ -19,10 +19,13 @@ import { dirname, join } from "node:path";
 
 import {
   LIMITE_DESCRICAO_LINK,
+  LIMITE_LOGO_BYTES,
+  LIMITE_LOGO_CHARS,
   LIMITE_NOME_LINK,
   LIMITE_URL_LINK,
   casaBusca,
   conferirLink,
+  conferirLogo,
   conflitoDeLink,
   normalizarLinkDoSetor,
   ordenarLinks,
@@ -247,6 +250,45 @@ checa("lixo não derruba nada", normalizarLinkDoSetor("x", "texto") === null && 
 }
 
 // ---------------------------------------------------------------------------
+console.log("\n— o logo —");
+
+{
+  const PNG = "data:image/png;base64," + "A".repeat(400);
+  const JPG = "data:image/jpeg;base64," + "A".repeat(400);
+  checa("PNG pequeno passa", conferirLogo(PNG).ok);
+  checa("JPEG pequeno passa", conferirLogo(JPG).ok);
+  // O caso que a lista de permissão existe para recusar: tem "image" no nome,
+  // o navegador desenha, e carrega script.
+  checa("SVG é recusado", !conferirLogo("data:image/svg+xml;base64," + "A".repeat(400)).ok);
+  checa("endereço de outro site é recusado", !conferirLogo("https://exemplo.com/logo.png").ok);
+  checa("vazio é recusado", !conferirLogo("").ok && !conferirLogo(null).ok);
+  checa(
+    "base64 com espaço é recusado (o tamanho deixaria de ser previsível)",
+    !conferirLogo("data:image/png;base64,AAAA AAAA").ok,
+  );
+  const prefixo = "data:image/png;base64,";
+  const noTeto = prefixo + "A".repeat(Math.floor(LIMITE_LOGO_BYTES / 3) * 4);
+  checa("no teto de bytes passa", conferirLogo(noTeto).ok);
+  checa(
+    "acima do teto de bytes é recusado",
+    !conferirLogo(prefixo + "A".repeat(Math.ceil((LIMITE_LOGO_BYTES + 3) / 3) * 4)).ok,
+  );
+
+  const lido = normalizarLinkDoSetor("x", { setor: "B.I.", nome: "A", url: "https://x.com", logo: PNG });
+  checa("o logo válido chega ao card", lido?.logo === PNG);
+  const svg = normalizarLinkDoSetor("x", {
+    setor: "B.I.",
+    nome: "A",
+    url: "https://x.com",
+    logo: "data:image/svg+xml;base64,PHN2Zz4=",
+  });
+  checa(
+    "logo inválido gravado por fora some na LEITURA, e o card continua",
+    svg !== null && !("logo" in svg),
+  );
+}
+
+// ---------------------------------------------------------------------------
 console.log("\n— a ordem e a busca —");
 
 {
@@ -317,6 +359,15 @@ if (bloco) {
     "o teto do endereço é o mesmo dos dois lados",
     teto("url") === LIMITE_URL_LINK,
     `regra=${teto("url")} core=${LIMITE_URL_LINK}`,
+  );
+  checa(
+    "o teto do logo é o mesmo dos dois lados (em caracteres de base64)",
+    teto("logo") === LIMITE_LOGO_CHARS,
+    `regra=${teto("logo")} core=${LIMITE_LOGO_CHARS}`,
+  );
+  checa(
+    "a regra só aceita logo JPEG ou PNG",
+    b.includes("logo.matches('^data:image/(jpeg|png);base64,[A-Za-z0-9+/]+={0,2}$')"),
   );
   checa("quem enxerga o setor lê", /allow read: if podeNoSetor\(cur\('setor'\)\);/.test(b));
   checa("ninguém cria em nome de outro", /souEu\(novo\('createdBy'\)\)/.test(b));

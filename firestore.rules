@@ -77,6 +77,9 @@ rules_version = '2';
 //    link é documento próprio, com nome e descrição, escopado por setor como
 //    tudo o mais. Coleção NOVA, então nenhuma resposta antiga muda — publicar
 //    esta regra antes do app não quebra nada no ar (AGENTS.md §2).
+//  - /links ganhou `logo`, a imagem que quem cadastra envia. Mesma régua da
+//    foto de perfil (`fotoOk()`). Campo novo e opcional: link sem logo
+//    continua passando exatamente como antes.
 //
 // Nota sobre consultas: as telas sempre filtram por setor (`==` ou `in`), e o
 // admin consulta DEFAULT_SECTORS. Por isso o escopo por setor na leitura não
@@ -968,9 +971,18 @@ service cloud.firestore {
         let descricao = d.get('descricao', '');
         let url = d.get('url', '');
         let icone = d.get('icone', null);
+        let logo = d.get('logo', null);
         return d.keys().hasOnly(['setor', 'nome', 'descricao', 'url', 'icone',
+                                 'logo',
                                  'createdBy', 'createdAt',
                                  'updatedBy', 'updatedAt'])
+               // O LOGO (06/10/2026) usa o teto e o alfabeto de `fotoOk()`, sem
+               // conversão: é data URI no próprio documento, vira `src` de um
+               // `<img>` na tela de todo o setor, e SVG carrega script.
+               && (logo == null
+                   || (logo is string
+                       && logo.size() <= 16407
+                       && logo.matches('^data:image/(jpeg|png);base64,[A-Za-z0-9+/]+={0,2}$')))
                && nome is string
                && nome.size() <= 80
                && nome.matches('(?s).*[\\p{L}\\p{N}].*')

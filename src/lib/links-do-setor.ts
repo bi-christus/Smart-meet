@@ -17,6 +17,7 @@ import { db } from "./firebase";
 import { ehIconeDeLink } from "./icones-core.ts";
 import {
   conferirLink,
+  conferirLogo,
   conflitoDeLink,
   normalizarLinkDoSetor,
   ordenarLinks,
@@ -38,10 +39,12 @@ import {
  */
 
 export {
+  LADO_LOGO_PX,
   LIMITE_DESCRICAO_LINK,
   LIMITE_NOME_LINK,
   casaBusca,
   conferirLink,
+  conferirLogo,
   conflitoDeLink,
   type CampoDoLink,
   type LinkDoSetor,
@@ -117,20 +120,34 @@ function iconeParaGravar(icone: string | null) {
   return icone !== null && ehIconeDeLink(icone) ? icone : deleteField();
 }
 
+/**
+ * O logo como vai para o banco, ou `null` para "sem logo". Lança com a frase
+ * de tela quando o valor não passa na régua — mesma postura de `conferido`.
+ */
+function logoParaGravar(logo: string | null): string | null {
+  if (logo === null || logo === "") return null;
+  const r = conferirLogo(logo);
+  if (!r.ok) throw new Error(r.motivo);
+  return logo.trim();
+}
+
 export async function criarLink(
   setor: string,
   rascunho: RascunhoDeLink,
   icone: string | null,
+  logo: string | null,
   autor: string,
   existentes: readonly LinkDoSetor[],
 ): Promise<string> {
   const dados = conferido(rascunho, setor, existentes);
+  const logoOk = logoParaGravar(logo);
   const ref = await addDoc(collection(db, "links"), {
     setor,
     ...dados,
     // Na criação, ícone automático é a chave AUSENTE — `deleteField()` só
     // serve em update, e `addDoc` o recusaria.
     ...(icone !== null && ehIconeDeLink(icone) ? { icone } : {}),
+    ...(logoOk ? { logo: logoOk } : {}),
     createdBy: autor,
     createdAt: serverTimestamp(),
   });
@@ -141,13 +158,16 @@ export async function editarLink(
   link: LinkDoSetor,
   rascunho: RascunhoDeLink,
   icone: string | null,
+  logo: string | null,
   autor: string,
   existentes: readonly LinkDoSetor[],
 ): Promise<void> {
   const dados = conferido(rascunho, link.setor, existentes, link.id);
+  const logoOk = logoParaGravar(logo);
   await updateDoc(doc(db, "links", link.id), {
     ...dados,
     icone: iconeParaGravar(icone),
+    logo: logoOk ?? deleteField(),
     updatedBy: autor,
     updatedAt: serverTimestamp(),
   });

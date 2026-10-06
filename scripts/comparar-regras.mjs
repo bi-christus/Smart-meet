@@ -621,6 +621,12 @@ for (const quem of Object.keys(PESSOAS)) {
   caso(quem, "cadastrar link com campo a mais", "create", LK, null, meuLink({ cards: ["c1"] }));
   caso(quem, "editar link", "update", LK, LINK, editado());
   caso(quem, "mudar o setor do link", "update", LK, LINK, editado({ setor: "RH" }));
+  // O logo: mesma regua da foto de perfil. PNG passa; SVG e o tamanho acima
+  // do teto nao, para ninguem.
+  caso(quem, "cadastrar link com logo PNG", "create", LK, null, meuLink({ logo: FOTO_OK.replace("jpeg", "png") }));
+  caso(quem, "cadastrar link com logo SVG", "create", LK, null, meuLink({ logo: FOTO_SVG }));
+  caso(quem, "cadastrar link com logo grande demais", "create", LK, null, meuLink({ logo: FOTO_GRANDE }));
+  caso(quem, "por logo no link", "update", LK, LINK, editado({ logo: FOTO_NO_TETO }));
   caso(quem, "apagar link de outra pessoa", "delete", LK, LINK, null);
   caso(quem, "apagar o proprio link", "delete", LK, meuLink(), null);
 

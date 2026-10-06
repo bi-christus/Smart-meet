@@ -63,17 +63,26 @@ export function LinkCard({
         {/* Cor de dado entra inline, como o projeto já faz com `tagColor`.
             Fundo e tinta saem JUNTOS de `seloDoLink` porque um depende do
             outro: branco chapado some no amarelo do Drive. */}
-        <IconePicker
-          valor={link.icone ?? null}
-          deduzido={padrao}
-          rotulo={link.nome}
-          onEscolher={onEscolherIcone}
-          disabled={salvando}
-          className={styles.icone}
-          style={{ background: selo.fundo, color: selo.tinta }}
-        >
-          {icone ? <Icon name={icone} size={19} /> : monogramaDe(link.url)}
-        </IconePicker>
+        {link.logo ? (
+          // Com logo, o selo é a MARCA e não um seletor: trocar o ícone ali não
+          // mudaria nada na tela. Trocar ou tirar o logo é no lápis, ao lado.
+          <span className={styles.logoSelo}>
+            {/* eslint-disable-next-line @next/next/no-img-element -- data URI conferido na leitura; next/image não otimiza data URI */}
+            <img src={link.logo} alt={`Logo de ${link.nome}`} />
+          </span>
+        ) : (
+          <IconePicker
+            valor={link.icone ?? null}
+            deduzido={padrao}
+            rotulo={link.nome}
+            onEscolher={onEscolherIcone}
+            disabled={salvando}
+            className={styles.icone}
+            style={{ background: selo.fundo, color: selo.tinta }}
+          >
+            {icone ? <Icon name={icone} size={19} /> : monogramaDe(link.url)}
+          </IconePicker>
+        )}
 
         <div className={styles.cardTitulo}>
           {/* O NOME É O ALVO, e não mais uma linha de baixo. No card antigo o
