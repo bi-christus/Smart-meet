@@ -19,21 +19,19 @@ import type { UserProfile } from "@/lib/users";
 import styles from "./demanda-card.module.css";
 
 /**
- * O card de demanda — um só, para o quadro e para a árvore de dimensões.
+ * O card de demanda do quadro.
  *
- * ELE SAIU DE `kanban/page.tsx` NESTA FRENTE, e a extração é o motivo de ele
- * existir. A aba Dimensões precisa mostrar demanda, e a instrução foi clara:
- * "cada card precisa ter a estrutura de um card do Kanban". Escrever um card
- * PARECIDO na tela nova é o modo garantido de as duas telas divergirem — a
- * primeira vez que alguém acrescentar um selo no quadro, a árvore fica para
- * trás, e ninguém percebe porque as duas continuam funcionando.
+ * ELE SAIU DE `kanban/page.tsx` para a aba Dimensões mostrar demanda com "a
+ * estrutura de um card do Kanban" sem escrever um card PARECIDO — que é o modo
+ * garantido de duas telas divergirem. A aba foi removida em 06/10/2026 e o
+ * quadro voltou a ser o único consumidor; o componente continua separado
+ * porque é aqui que mora a decisão de como uma demanda aparece, e o próximo
+ * lugar que precisar mostrar demanda deve usá-lo, não copiá-lo.
  *
- * O QUE MUDA ENTRE OS DOIS CONSUMIDORES é só o gesto: no quadro o card se
- * arrasta entre colunas, na árvore ele só abre. Por isso `onDragStart` e
- * `onDragEnd` são OPCIONAIS e o `draggable` do DOM segue a presença deles, em
- * vez de existir uma prop `modo` que quem chama teria de acertar. Sem
- * arrastador, o grip some — um punho de arrastar que não arrasta é uma promessa
- * que a tela não cumpre.
+ * `onDragStart` e `onDragEnd` são OPCIONAIS e o `draggable` do DOM segue a
+ * presença deles, em vez de existir uma prop `modo` que quem chama teria de
+ * acertar. Sem arrastador, o grip some — um punho de arrastar que não arrasta é
+ * uma promessa que a tela não cumpre.
  *
  * `onHistorico` também é opcional, pelo mesmo princípio: quem não tem para onde
  * abrir a timeline não desenha a porta dela.
@@ -48,7 +46,6 @@ export function DemandaCard({
   dragging,
   apagado,
   pedidoPor,
-  dimensao,
   fusao,
   onDragStart,
   onDragEnd,
@@ -77,8 +74,7 @@ export function DemandaCard({
    * O card sai apagado — está na tela, mas não é o que se está procurando.
    *
    * Quem decide é o quadro (o destaque por tag). O card não sabe da regra, só
-   * do estado: é a mesma divisão de `dragging`, e é o que permite a árvore de
-   * Dimensões usar a prop um dia sem herdar o conceito de tag junto.
+   * do estado: é a mesma divisão de `dragging`.
    *
    * APAGADO NÃO É DESABILITADO. Ele continua clicável, arrastável e legível —
    * baixar a opacidade e tirar o clique junto transformaria "isto não é o que
@@ -96,15 +92,6 @@ export function DemandaCard({
    */
   pedidoPor?: string;
   /**
-   * Onde esta demanda mora na árvore de dimensões, em texto.
-   *
-   * Só a aba Dimensões passa, e só quando a árvore está agrupada por TAG — no
-   * eixo por dimensão o galho já diz isso, e repetir a mesma palavra em todos os
-   * cards de um galho é gastar a linha mais visível do card para não informar
-   * nada. Quem decide é quem monta a lista; o card só desenha o que recebe.
-   */
-  dimensao?: string;
-  /**
    * O papel deste card no gesto de fusão que está em curso. Ausente = nenhum.
    *
    * `origem` é o card que foi escolhido para fundir; `alvo` e `recusado` são os
@@ -115,8 +102,7 @@ export function DemandaCard({
    * pessoa tenta de novo, e da terceira vez desconfia do arrasto inteiro.
    *
    * O card não conhece a regra da fusão — ele recebe o veredito. É a mesma
-   * divisão de `dragging` e `apagado`, e é o que permite a árvore de Dimensões
-   * usar este componente sem herdar o conceito de fusão junto.
+   * divisão de `dragging` e `apagado`.
    */
   fusao?: { papel: "origem" | "alvo" | "recusado"; motivo?: string };
   onDragStart?: (e: React.DragEvent) => void;
@@ -187,9 +173,9 @@ export function DemandaCard({
    *
    * Lido aqui dentro, e não recebido pronto: é campo do card que o componente já
    * tem em mãos, e a leitura tolerante (`pedidoDoCard`) é a mesma do quadro
-   * inteiro. Recebê-lo por prop faria a árvore de Dimensões — que usa o mesmo
-   * card — ter de descobrir sozinha como se lê o campo, e é assim que duas telas
-   * passam a discordar sobre o que é um pedido válido.
+   * inteiro. Recebê-lo por prop obrigaria cada tela que mostra o card a
+   * descobrir sozinha como se lê o campo, e é assim que duas telas passam a
+   * discordar sobre o que é um pedido válido.
    */
   const pedido = pedidoDoCard(card);
   const podeRevisar = !!pedido && !!onAprovarConclusao && !!onRecusarConclusao;
@@ -384,14 +370,6 @@ export function DemandaCard({
           title={`Solicitante: ${requester}${requesterSector ? ` · ${requesterSector}` : ""}`}
         >
           por {requester}
-        </div>
-      )}
-      {/* Abaixo do solicitante e acima das tags: as três linhas respondem
-          "quem pediu", "onde isto mora" e "do que isto trata", nessa ordem. */}
-      {dimensao && (
-        <div className={styles.kDimensao} title={`Dimensão: ${dimensao}`}>
-          <Icon name="dimensoes" size={11} />
-          {dimensao}
         </div>
       )}
       {tags.length > 0 && (

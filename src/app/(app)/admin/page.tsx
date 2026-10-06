@@ -817,13 +817,14 @@ function DimensoesAdmin({ setores }: { setores: string[] }) {
         trabalho de um setor. Dentro dela vêm as <strong>subdimensões</strong>,
         que podem ser um <strong>projeto</strong> (tem fim, e por isso tem
         porcentagem de conclusão) ou uma <strong>rotina</strong> (não termina — é
-        uma caixa que abriga trabalhos ao longo do tempo). É esta árvore que a aba{" "}
-        <strong>Dimensões</strong> desenha.
+        uma caixa que abriga trabalhos ao longo do tempo). É com esta árvore que
+        as demandas são classificadas: o formulário do card pergunta onde cada
+        uma entra, e a Ata exige uma dimensão antes de abrir demanda.
       </p>
       <p className={styles.permIntro}>
         Remover daqui <strong>não apaga demanda nenhuma</strong>: as que
-        apontavam para a gaveta removida voltam a aparecer na árvore, em
-        &ldquo;Sem classificação&rdquo;.
+        apontavam para a gaveta removida ficam sem classificação e continuam no
+        quadro.
       </p>
 
       <div className={styles.dimSetor}>
@@ -877,7 +878,7 @@ function DimensoesAdmin({ setores }: { setores: string[] }) {
             size="compact"
             icon="pasta"
             title="Este setor ainda não tem árvore"
-            description="Cadastre acima a primeira dimensão. Enquanto não houver nenhuma, a aba Dimensões mostra todas as demandas do setor em “Sem classificação”, e o formulário da demanda não pergunta nada."
+            description="Cadastre acima a primeira dimensão. Enquanto não houver nenhuma, o formulário da demanda não pergunta nada e a Ata não consegue abrir demanda — ela exige uma dimensão."
           />
         ) : (
           <div className={styles.dimLista}>
@@ -976,7 +977,7 @@ function DimensaoItem({
               : "";
             if (
               !confirm(
-                `Remover a dimensão "${dim.nome}"${comSubs}?\n\nNenhuma demanda é apagada: as que estavam aqui voltam a aparecer em "Sem classificação", na aba Dimensões.`,
+                `Remover a dimensão "${dim.nome}"${comSubs}?\n\nNenhuma demanda é apagada: as que estavam aqui ficam sem classificação e continuam no quadro.`,
               )
             ) {
               return;

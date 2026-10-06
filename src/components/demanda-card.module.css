@@ -2,9 +2,9 @@
  * O card de demanda — a folha que saiu de `kanban.module.css`.
  *
  * Ela mudou de casa junto com o JSX (ver `demanda-card.tsx`), e não foi
- * copiada: o quadro e a árvore de dimensões leem ESTAS regras, não duas cópias
- * livres para divergir. Se o card mudar de desenho, muda nos dois ao mesmo
- * tempo — que é o ponto inteiro da extração.
+ * copiada: quem mostra demanda lê ESTAS regras, não uma cópia livre para
+ * divergir. Se o card mudar de desenho, muda em todo lugar ao mesmo tempo — que
+ * é o ponto inteiro da extração.
  *
  * Os comentários abaixo vieram de lá com o texto original. Eles registram
  * decisões tomadas olhando o quadro em uso, e reescrevê-los na mudança de
@@ -33,7 +33,7 @@
   cursor: grabbing;
 }
 
-/* Fora do quadro o card não se arrasta: na árvore de dimensões ele é um alvo de
+/* Card sem arrastador (quem o monta não passou `onDragStart`) é um alvo de
    clique que abre a demanda. O cursor tem de dizer isso — `grab` prometeria um
    gesto que não existe ali, e a pessoa tentaria. */
 .semArraste,
@@ -497,26 +497,4 @@
 }
 .fusao_alvo .kFusao {
   color: var(--ok-tx);
-}
-
-/**
- * A dimensão da demanda, quando o galho em volta não a diz.
- *
- * Discreta de propósito: ela é contexto, não conteúdo. No eixo por tag a
- * pergunta que o card responde continua sendo "o que é esta demanda"; a
- * dimensão só evita que a organização do setor desapareça da tela ao trocar de
- * eixo. Do tamanho e da cor do "por Fulano" logo acima, porque as duas fazem o
- * mesmo trabalho.
- */
-.kDimensao {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  max-width: 100%;
-  margin-top: 3px;
-  font-size: 11px;
-  color: var(--tx-3);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }

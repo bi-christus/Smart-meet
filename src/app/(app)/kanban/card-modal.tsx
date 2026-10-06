@@ -234,21 +234,11 @@ function NovoCadastro({
  * conta — reordenar a checklist É uma mudança.
  */
 export type EditState =
-  /**
-   * `dimensaoId` e `subdimensaoId` chegam preenchidos quando a demanda nasce de
-   * um lugar da árvore — o botão "Criar demanda aqui" da aba Dimensões. É o que
-   * evita a pergunta idiota: quem clicou DENTRO da subdimensão já disse onde a
-   * demanda entra, e o formulário abrindo vazio faria ele dizer de novo.
-   *
-   * Opcionais porque o Kanban não sabe nada de árvore: lá o campo abre no
-   * padrão, como qualquer outro.
-   */
-  | {
-      mode: "new";
-      columnId: string;
-      dimensaoId?: string | null;
-      subdimensaoId?: string | null;
-    }
+  // A demanda nova chegava com `dimensaoId`/`subdimensaoId` preenchidos quando
+  // nascia do botão "Criar demanda aqui" da aba Dimensões. A aba saiu em
+  // 06/10/2026 e, com ela, o único lugar que sabia a dimensão antes de o
+  // formulário abrir: o campo agora sempre abre vazio, e quem cria escolhe.
+  | { mode: "new"; columnId: string }
   | { mode: "edit"; card: Card }
   | null;
 
@@ -344,20 +334,14 @@ export function CardModal({
   const [requesterSector, setRequesterSector] = useState(
     card?.requesterSector ?? "",
   );
-  const [dimensaoId, setDimensaoId] = useState(
-    card?.dimensaoId ?? (state.mode === "new" ? (state.dimensaoId ?? "") : ""),
-  );
-  const [subdimensaoId, setSubdimensaoId] = useState(
-    card?.subdimensaoId ??
-      (state.mode === "new" ? (state.subdimensaoId ?? "") : ""),
-  );
+  const [dimensaoId, setDimensaoId] = useState(card?.dimensaoId ?? "");
+  const [subdimensaoId, setSubdimensaoId] = useState(card?.subdimensaoId ?? "");
 
   /**
    * A árvore do setor, assinada AQUI e não recebida por prop.
    *
-   * Dois lugares abrem este modal — o quadro e a aba Dimensões —, e nenhum dos
-   * dois precisa do cadastro para desenhar a si mesmo do jeito que precisaria
-   * para alimentar esta prop. Passá-lo obrigaria as duas telas a assinar a
+   * Quem abre este modal — o quadro e o Cronograma — não precisa do cadastro
+   * para desenhar a si mesmo. Passá-lo obrigaria essas telas a assinar a
    * coleção o tempo todo por causa de um seletor que só existe enquanto o modal
    * está aberto; aqui, o listener nasce e morre com ele.
    *

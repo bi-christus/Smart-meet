@@ -54,10 +54,10 @@ export type { TagRef };
 
 // A cor da tag MUDOU DE CASA para `tags-core`, e este arquivo passa a
 // reexportá-la — como já faz com as colunas, a lixeira e os rótulos de demanda.
-// Não é arrumação: a árvore de Dimensões precisa dela para pintar os galhos do
-// eixo por tag, e `dimensoes-core` é um módulo PURO que não pode importar este
-// aqui (ele traz o SDK do cliente na primeira linha). Nenhuma tela precisa trocar
-// de import.
+// Mudou quando a árvore da aba Dimensões (removida em 06/10/2026) precisou dela
+// num módulo puro, que não pode importar este aqui (ele traz o SDK do cliente na
+// primeira linha). Ficou lá porque é onde mora o resto da régua de tag. Nenhuma
+// tela precisa trocar de import.
 import { TAG_COLORS, tagColor } from "./tags-core.ts";
 export { TAG_COLORS, tagColor };
 

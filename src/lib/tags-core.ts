@@ -471,10 +471,11 @@ export function vocabularioDeTags(
 /**
  * Paleta de tags — cor estável por nome.
  *
- * VEIO DE `kanban.ts` e mora aqui agora, porque a árvore de Dimensões precisa
- * dela para pintar os galhos do eixo por tag e `dimensoes-core` é puro: ele não
- * consegue importar `kanban.ts`, que traz o SDK do cliente junto. `kanban.ts`
- * reexporta, então nenhuma tela precisou trocar de import.
+ * VEIO DE `kanban.ts` quando a árvore da aba Dimensões (removida em
+ * 06/10/2026) precisou dela num módulo puro, que não consegue importar
+ * `kanban.ts` — ele traz o SDK do cliente junto. Ficou aqui porque é onde mora
+ * o resto da régua de tag. `kanban.ts` reexporta, então nenhuma tela precisou
+ * trocar de import.
  *
  * A cor sai do NOME e não de um campo escolhido: tag não tem cadastro, nasce
  * digitada, e uma cor guardada em algum lugar seria mais um estado para manter

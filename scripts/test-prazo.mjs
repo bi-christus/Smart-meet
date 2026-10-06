@@ -1,9 +1,9 @@
 /**
  * Testes da regra de prazo do card.
  *
- * Esta regra pinta o selo de TODO card do quadro e decide a cor de TODO galho
- * da árvore de dimensões. Ela não tinha teste nenhum até esta frente: morava
- * dentro de `dueInfo`, em `kanban/page.tsx`, junto do JSX.
+ * Esta regra pinta o selo de TODO card do quadro e marca "atrasada" na pauta
+ * da Ata. Ela não tinha teste nenhum até esta frente: morava dentro de
+ * `dueInfo`, em `kanban/page.tsx`, junto do JSX.
  *
  * O que dói mais errar, e por isso vem primeiro aqui:
  *
@@ -141,16 +141,16 @@ const fonte = readFileSync(join(raiz, "src/lib/prazo-core.ts"), "utf8");
 checa("nada de firebase dentro do core (AGENTS.md §4)", !/from\s+["']firebase/.test(fonte));
 checa("nada de react dentro do core", !/from\s+["']react["']/.test(fonte));
 
-console.log("\n— a árvore usa esta regra, e não uma cópia —");
+// Quem conferia isto era a árvore da aba Dimensões, removida em 06/10/2026. A
+// pergunta continua de pé para quem sobrou fora do quadro: a pauta da Ata
+// marca "atrasada", e uma cópia da comparação lá faria a ata e o selo do card
+// discordarem sobre a mesma demanda.
+console.log("\n— a ata usa esta regra, e não uma cópia —");
 
-const arvore = readFileSync(join(raiz, "src/lib/dimensoes-core.ts"), "utf8");
+const ata = readFileSync(join(raiz, "src/lib/ata-core.ts"), "utf8");
 checa(
-  "dimensoes-core importa estaAtrasada de prazo-core",
-  /from\s+["']\.\/prazo-core\.ts["']/.test(arvore),
-);
-checa(
-  "dimensoes-core NÃO reimplementa a comparação de prazo",
-  !/msDaData\(\s*c\.due\s*\)\s*<\s*inicioDoDia/.test(arvore),
+  "ata-core importa estaAtrasada de prazo-core",
+  /import\s*\{[^}]*\bestaAtrasada\b[^}]*\}\s*from\s+["']\.\/prazo-core\.ts["']/.test(ata),
 );
 
 console.log(falhas === 0 ? "\nprazo: ok" : `\nprazo: ${falhas} falha(s)`);

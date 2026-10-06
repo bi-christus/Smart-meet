@@ -16,8 +16,8 @@
  * regra nova, e — o que decidiu — um SEGUNDO motivo para um card estar
  * escondido, convivendo com a lixeira (`deletedAt`). Quem fosse procurar um
  * card sumido passaria a ter dois lugares para olhar, e toda tela que lê
- * `/cards` (Dashboard, Rank, relatório do gestor, catálogo do Cowork, árvore de
- * Dimensões, Ata) teria de decidir sobre os dois. Fora que arquivar depende de
+ * `/cards` (Dashboard, Rank, relatório do gestor, catálogo do Cowork, Ata)
+ * teria de decidir sobre os dois. Fora que arquivar depende de
  * alguém lembrar de arquivar: se ninguém lembrar, a coluna cresce igual, agora
  * com um botão que todo mundo aprendeu a ignorar.
  *

@@ -32,9 +32,9 @@
  */
 
 // A regra de "este card conta como entregue" é UMA no app inteiro e mora em
-// `entregas-core`. A ata lê a mesma que o Rank, os emblemas e a árvore de
-// Dimensões — o pior defeito possível aqui seria a ata dizer "concluída" sobre
-// uma demanda que o quadro ainda mostra em andamento.
+// `entregas-core`. A ata lê a mesma que o Rank e os emblemas — o pior defeito
+// possível aqui seria a ata dizer "concluída" sobre uma demanda que o quadro
+// ainda mostra em andamento.
 import { ehEntrega, type CardContavel, type EntreguePorSetor } from "./entregas-core.ts";
 
 // "Esta demanda está atrasada?" também é uma só, e é a mesma que pinta o selo

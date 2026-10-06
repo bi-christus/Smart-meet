@@ -19,7 +19,7 @@
  * decorativa (ver `dimensoes-core.ts`): projeto tem fim e ganha porcentagem de
  * conclusão; rotina não termina, e medir "40% do controle de estoque" é
  * inventar um fim que não existe. A ata prevê que um item "pode virar projeto",
- * e virar é um clique na aba Dimensões — nascer projeto seria o app decidindo
+ * e virar é um clique em Admin › Dimensões — nascer projeto seria o app decidindo
  * por quem conduz o trabalho.
  *
  * É IDEMPOTENTE: roda quantas vezes quiser. O que já existe é reconhecido pelo

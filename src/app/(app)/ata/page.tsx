@@ -2754,8 +2754,8 @@ function SeletorDeDimensao({
     return (
       <p className={styles.avisoModal}>
         Este setor ainda não tem dimensão cadastrada, e toda demanda desta aba
-        precisa de uma. Abra a aba <b>Dimensões</b> e cadastre a árvore do setor
-        primeiro.
+        precisa de uma. A árvore do setor é cadastrada em{" "}
+        <b>Admin › Dimensões</b> — peça a quem administra o sistema.
       </p>
     );
   }
@@ -3136,8 +3136,8 @@ function ModalDeDemanda({
  *
  * O MESMO BOTÃO, DUAS ESCRITAS DIFERENTES — e a tela diz qual, porque as
  * consequências não são iguais. No assunto, a classificação fica na ata. Na
- * demanda ela vai para o CARD, aparece na árvore de Dimensões e deixa linha no
- * histórico da demanda. Quem clica precisa saber que está mexendo no quadro.
+ * demanda ela vai para o CARD e deixa linha no histórico da demanda. Quem
+ * clica precisa saber que está mexendo no quadro.
  */
 function ModalDeClassificar({
   setor,
@@ -3176,7 +3176,7 @@ function ModalDeClassificar({
       <h2 className={styles.mtitulo}>{linha.titulo}</h2>
       <p className={styles.avisoModal}>
         {linha.card
-          ? "Esta linha é uma demanda do quadro: a dimensão é gravada no card, aparece na árvore de Dimensões e deixa registro no histórico da demanda."
+          ? "Esta linha é uma demanda do quadro: a dimensão é gravada no card e deixa registro no histórico da demanda."
           : "Esta linha ainda é um assunto: a dimensão fica na ata, e passa para o card no dia em que ela virar demanda."}
       </p>
 

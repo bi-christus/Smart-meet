@@ -107,7 +107,7 @@ export function conferirClassificacao(
       ok: false,
       motivo: dimensoes.length
         ? "Escolha a dimensão. Toda demanda desta aba precisa de uma."
-        : "Este setor ainda não tem dimensão cadastrada. Cadastre a árvore em Dimensões antes de abrir demanda pela ata.",
+        : "Este setor ainda não tem dimensão cadastrada. A árvore é cadastrada em Admin › Dimensões, por quem administra o sistema, antes de abrir demanda pela ata.",
     };
   }
 
