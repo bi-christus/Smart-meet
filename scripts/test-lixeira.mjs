@@ -3,10 +3,9 @@
  *
  * A regra testada aqui cabe em uma linha, e mesmo assim é a que mais custa
  * errar: ela é o ÚNICO ponto que decide se uma demanda excluída aparece no
- * quadro, no Dashboard, no Cronograma, na aba Links, nas Recorrências e no
- * relatório do gestor. Errar para um lado deixa demanda apagada circulando por
- * seis telas; errar para o outro faz sumir para sempre tudo que alguém
- * restaurou.
+ * quadro, no Dashboard, no Cronograma, nas Recorrências e no relatório do
+ * gestor. Errar para um lado deixa demanda apagada circulando por cinco telas;
+ * errar para o outro faz sumir para sempre tudo que alguém restaurou.
  *
  * O caso que este arquivo existe para travar: `restaurarDaLixeira` grava
  * `deletedAt: null`, e NÃO remove o campo. Quem trocar `!!c.deletedAt` por

@@ -3,7 +3,9 @@
  *
  * Moradia em módulo puro, como `kanban-columns`, `tags-ref` e `historico-core`:
  * aqui não entra o SDK do Firestore, então tudo isto é testado por
- * `scripts/test-links.mjs` sem subir nada. Quem escreve no banco é `kanban.ts`.
+ * `scripts/test-links.mjs` sem subir nada. Quem escreve no banco é `kanban.ts`
+ * (o link de dentro da demanda) e `links-do-setor.ts` (o cadastro da aba
+ * Links) — os dois passam pela mesma régua daqui.
  *
  * O PROBLEMA que isto resolve: a demanda vive de coisas que moram fora dela — a
  * planilha do consumo, o painel do Looker, a pasta no Drive. Até aqui esses

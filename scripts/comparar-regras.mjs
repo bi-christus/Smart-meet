@@ -575,6 +575,51 @@ for (const quem of Object.keys(PESSOAS)) {
   // nao faz a reuniao inteira deixar de ter existido.
   caso(quem, "apagar ata", "delete", doc("atas/a1"), ATA, null);
 
+  // ---- links do setor (o cadastro da aba Links) ----
+  //
+  // Estes casos NASCEM mudando de resposta, como os de /config: na `main` o
+  // caminho /links nao existe e cai na negacao final. O que tem de mudar e
+  // exatamente isto — quem enxerga o setor le, cadastra e edita; apagar e de
+  // quem cadastrou ou de gestor; e os outros setores continuam de fora das
+  // onze linhas, que e a pergunta que vale para toda colecao nova.
+  const LK = doc("links/l1");
+  const LINK = {
+    setor: "B.I.",
+    nome: "Painel de vendas",
+    descricao: "",
+    url: "https://app.powerbi.com/r/1",
+    createdBy: "op@px.com.br",
+    createdAt: QUANDO,
+  };
+  const meuLink = (extra = {}) => ({
+    ...LINK,
+    createdBy: PESSOAS[quem].email,
+    ...extra,
+  });
+  const editado = (extra = {}) => ({
+    ...LINK,
+    nome: "Painel de vendas por unidade",
+    updatedBy: PESSOAS[quem].email,
+    updatedAt: QUANDO,
+    ...extra,
+  });
+  caso(quem, "ler link", "get", LK, LINK, null);
+  caso(quem, "listar links do setor", "list", LK, LINK, null);
+  caso(quem, "cadastrar link", "create", LK, null, meuLink());
+  caso(quem, "cadastrar link em nome de outro", "create", LK, null, {
+    ...LINK,
+    createdBy: "outro@px.com.br",
+  });
+  // O valor vai para um `href`: e o caso que `normalizarUrl` recusa na tela, e
+  // que a regra recusa para quem escreve pelo console.
+  caso(quem, "cadastrar link javascript:", "create", LK, null, meuLink({ url: "javascript:alert(1)" }));
+  caso(quem, "cadastrar link sem nome", "create", LK, null, meuLink({ nome: "" }));
+  caso(quem, "cadastrar link com campo a mais", "create", LK, null, meuLink({ cards: ["c1"] }));
+  caso(quem, "editar link", "update", LK, LINK, editado());
+  caso(quem, "mudar o setor do link", "update", LK, LINK, editado({ setor: "RH" }));
+  caso(quem, "apagar link de outra pessoa", "delete", LK, LINK, null);
+  caso(quem, "apagar o proprio link", "delete", LK, meuLink(), null);
+
   caso(
     quem,
     "listar colunas",

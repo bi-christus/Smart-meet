@@ -2,8 +2,9 @@
  * O ícone de um link — o que o app deduz, e o que a pessoa escolhe por cima.
  *
  * Módulo puro (AGENTS.md §4), como `links-core`, `tags-ref` e `avatar-core`: sem
- * `firebase/firestore`, sem React, sem DOM. Quem grava é `kanban.ts`; quem
- * desenha é `icons.tsx`. Aqui mora só a decisão.
+ * `firebase/firestore`, sem React, sem DOM. Quem grava é `kanban.ts` (o link de
+ * dentro da demanda, junto com o card) e `links-do-setor.ts` (o cadastro da aba
+ * Links); quem desenha é `icons.tsx`. Aqui mora só a decisão.
  *
  * DE ONDE ISTO VEIO. O mapa de serviço → ícone morava dentro de
  * `app/(app)/links/page.tsx`, numa constante de página. Era regra — "que desenho
@@ -162,8 +163,13 @@ const ICONE_DO_SERVICO: Record<Exclude<ServicoLink, "generico">, string> = {
  * escolha que o catálogo não conhece cai na DEDUÇÃO, não no monograma. Quem
  * gravou "planilha" numa versão em que esse nome existia não perde o desenho
  * quando o catálogo mudar; perde a escolha, e volta ao que o app já sabia.
+ *
+ * Recebe só `url` e `icone`, e não o `CardLink` inteiro, porque são dois os
+ * links que desenham selo: o de dentro da demanda e o do cadastro da aba Links
+ * (`links-do-setor-core`). A pergunta é a mesma para os dois, e a resposta tem
+ * de ser — senão o mesmo endereço sairia com desenhos diferentes nas duas telas.
  */
-export function iconeDoLink(l: CardLink): string | null {
+export function iconeDoLink(l: Pick<CardLink, "url" | "icone">): string | null {
   if (ehIconeDeLink(l.icone)) return l.icone as string;
   const servico = servicoDe(l.url);
   return servico === "generico" ? null : ICONE_DO_SERVICO[servico];

@@ -71,6 +71,13 @@ rules_version = '2';
 //    branco não é só feio — a pessoa cai na inicial do e-mail no avatar e some
 //    da ordenação de `subscribeUsers`, que ordena por nome.
 //
+// O QUE MUDOU (2026-10-06):
+//  - /links, o cadastro da aba Links. Até aqui a aba não tinha coleção: ela lia
+//    os `links` de dentro dos cards e mostrava o título da demanda. Agora cada
+//    link é documento próprio, com nome e descrição, escopado por setor como
+//    tudo o mais. Coleção NOVA, então nenhuma resposta antiga muda — publicar
+//    esta regra antes do app não quebra nada no ar (AGENTS.md §2).
+//
 // Nota sobre consultas: as telas sempre filtram por setor (`==` ou `in`), e o
 // admin consulta DEFAULT_SECTORS. Por isso o escopo por setor na leitura não
 // quebra nenhuma query existente.
@@ -920,6 +927,86 @@ service cloud.firestore {
                     && podeNoSetor(cur('setor'));
 
       allow delete: if gestorNoSetor(cur('setor'));
+    }
+
+    // ---- links do setor (o cadastro da aba Links) ----
+    //
+    // O aplicativo, o painel, a pasta que o setor usa — com o nome e a
+    // descrição que quem cadastrou escreveu. NÃO CONFUNDIR com o campo `links`
+    // de /cards, que é o que UMA demanda usa e continua morando nela.
+    //
+    // MESMA LEITURA DOS CARDS: quem enxerga o setor, lê. O catálogo do B.I.
+    // fica fora do alcance das Cantinas e vice-versa, e isso vale para qualquer
+    // caminho que não passe pela tela.
+    //
+    // ESCRITA DE QUEM PARTICIPA DO SETOR, como na ata e como era o link dentro
+    // do card: quem descobre que o endereço do painel mudou é quem trabalha com
+    // ele, e uma aba em que só o gestor corrige um link é uma aba que fica
+    // desatualizada. APAGAR é de quem cadastrou ou de gestor/admin: um operador
+    // corrige o link de outra pessoa, mas não some com ele.
+    //
+    // FORMA TRAVADA (`linkOk()`), porque é dado que o cliente escreve e que vai
+    // para um `href`. Os tetos são os de `links-do-setor-core.ts`, na mesma
+    // unidade (UTF-16 dos dois lados), e `scripts/test-links-do-setor.mjs`
+    // reprova se as duas cópias se afastarem. A URL aqui só confere o esquema —
+    // a régua inteira é `normalizarUrl`, na gravação E de novo na leitura, e a
+    // regra é a tranca que sobra para quem escreve pelo console.
+    //
+    // `setor`, `createdBy` e `createdAt` são IMUTÁVEIS: trocar o setor por
+    // update seria a porta dos fundos para escrever no catálogo de outro setor,
+    // e trocar o autor seria ganhar o direito de apagar o link alheio. As datas
+    // são do servidor, como no histórico da demanda.
+    //
+    // O QUE ESTA REGRA NÃO FECHA, dito na cara: quem está no setor pode
+    // reescrever o nome e o endereço de um link que outra pessoa cadastrou, e
+    // não há trilha além de `updatedBy`/`updatedAt` (quem mexeu por último).
+    // É a mesma confiança que o link dentro do card sempre teve.
+    match /links/{doc} {
+      function linkOk() {
+        let d = request.resource.data;
+        let nome = d.get('nome', '');
+        let descricao = d.get('descricao', '');
+        let url = d.get('url', '');
+        let icone = d.get('icone', null);
+        return d.keys().hasOnly(['setor', 'nome', 'descricao', 'url', 'icone',
+                                 'createdBy', 'createdAt',
+                                 'updatedBy', 'updatedAt'])
+               && nome is string
+               && nome.size() <= 80
+               && nome.matches('(?s).*[\\p{L}\\p{N}].*')
+               && descricao is string
+               && descricao.size() <= 300
+               && url is string
+               && url.size() <= 2048
+               && url.matches('^https?://\\S+$')
+               // Mesma régua de `molduraOk()`: o nome do ícone vira chave de
+               // desenho, e quem confere o catálogo é `icones-core`, na leitura.
+               && (icone == null
+                   || (icone is string
+                       && icone.size() <= 24
+                       && icone.matches('^[a-z][a-z0-9-]*$')));
+      }
+
+      allow read: if podeNoSetor(cur('setor'));
+
+      // As comparações que não leem documento vêm primeiro: um cadastro torto
+      // é recusado sem pagar a leitura do perfil.
+      allow create: if linkOk()
+                    && novo('setor') != ''
+                    && souEu(novo('createdBy'))
+                    && request.resource.data.createdAt == request.time
+                    && podeNoSetor(novo('setor'));
+
+      allow update: if !mudou(['setor', 'createdBy', 'createdAt'])
+                    && linkOk()
+                    && souEu(novo('updatedBy'))
+                    && request.resource.data.get('updatedAt', null) == request.time
+                    && podeNoSetor(cur('setor'));
+
+      // Quem cadastrou paga uma leitura do perfil; o gestor que apaga o link
+      // de outra pessoa paga a dele. O `souEu` vem antes porque não lê nada.
+      allow delete: if (souEu(cur('createdBy')) && podeNoSetor(cur('setor')))
+                    || gestorNoSetor(cur('setor'));
     }
 
     // ---- propostas de demanda geradas a partir de reuniões ----
