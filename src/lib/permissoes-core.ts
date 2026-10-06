@@ -51,6 +51,9 @@ export type Aba = {
  */
 export const ABAS: Aba[] = [
   { id: "inicio", label: "Início", href: "/", configuravel: false },
+  // Logo depois do Início (06/10/2026): é por onde a diretoria chega aos
+  // sistemas, e no fim da barra a aba ficava escondida na rolagem.
+  { id: "links", label: "Links", href: "/links", configuravel: true },
   { id: "reunioes", label: "Reuniões", href: "/reunioes", configuravel: true },
   {
     id: "relatorios",
@@ -80,7 +83,6 @@ export const ABAS: Aba[] = [
     href: "/cronograma",
     configuravel: true,
   },
-  { id: "links", label: "Links", href: "/links", configuravel: true },
   { id: "rank", label: "Rank", href: "/rank", configuravel: true },
   {
     id: "admin",

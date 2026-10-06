@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { Icon } from "@/components/icons";
+import { AtalhosDeSistemas } from "./atalhos-de-sistemas";
 import styles from "./inicio.module.css";
 
 const CARDS = [
@@ -25,6 +26,8 @@ export default function Inicio() {
           <h1>Olá, {primeiro} 👋</h1>
           <p>Bem-vindo ao Smart Meeting. Escolha por onde começar.</p>
         </div>
+
+        {profile && <AtalhosDeSistemas profile={profile} />}
 
         <div className={styles.grid}>
           {CARDS.map((c, i) => (

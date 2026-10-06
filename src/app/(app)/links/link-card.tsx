@@ -13,6 +13,7 @@ import type { LinkDoSetor } from "@/lib/links-do-setor";
 import { fmtDayMonth, toISO } from "@/lib/datas";
 import { Icon } from "@/components/icons";
 import { IconePicker } from "@/components/icone-picker";
+import { SeloDoLink } from "./selo";
 import styles from "./links.module.css";
 
 // ---------------------------------------------------------------------------
@@ -66,23 +67,11 @@ export function LinkCard({
         {/* Cor de dado entra inline, como o projeto já faz com `tagColor`.
             Fundo e tinta saem JUNTOS de `seloDoLink` porque um depende do
             outro: branco chapado some no amarelo do Drive. */}
-        {link.logo ? (
-          // Com logo, o selo é a MARCA e não um seletor: trocar o ícone ali não
-          // mudaria nada na tela. Trocar ou tirar o logo é no lápis, ao lado.
-          <span className={styles.logoSelo}>
-            {/* eslint-disable-next-line @next/next/no-img-element -- data URI conferido na leitura; next/image não otimiza data URI */}
-            <img src={link.logo} alt={`Logo de ${link.nome}`} />
-          </span>
-        ) : !podeAlterar ? (
-          // Sem permissão, o selo é só desenho: um botão que abre a grade de
-          // ícones para depois a regra negar a escolha é promessa que a tela
-          // não cumpre.
-          <span
-            className={`${styles.icone} ${styles.iconeFixo}`}
-            style={{ background: selo.fundo, color: selo.tinta }}
-          >
-            {icone ? <Icon name={icone} size={19} /> : monogramaDe(link.url)}
-          </span>
+        {link.logo || !podeAlterar ? (
+          // Com logo, o selo é a MARCA e não um seletor; sem permissão, é só
+          // desenho — a grade de ícones seria negada pela regra depois. Os dois
+          // casos são o selo estático, o mesmo do atalho no Início.
+          <SeloDoLink link={link} />
         ) : (
           <IconePicker
             valor={link.icone ?? null}
