@@ -2,7 +2,7 @@
 
 import { useId, useMemo, useRef, useState } from "react";
 import { iconeDoLink } from "@/lib/icones-core";
-import { monogramaDe, seloDoLink } from "@/lib/links-core";
+import { monogramaDe, normalizarUrl, seloDoLink } from "@/lib/links-core";
 import {
   LADO_LOGO_PX,
   LIMITE_DESCRICAO_LINK,
@@ -12,6 +12,7 @@ import {
   conflitoDeLink,
   criarLink,
   editarLink,
+  buscarIconeDoSite,
   excluirLink,
   type CampoDoLink,
   type LinkDoSetor,
@@ -60,7 +61,7 @@ const LOGO_SEM_CANVAS =
  * Decodifica o arquivo. `createImageBitmap` primeiro (decodifica fora da thread
  * principal); o `<img>` é a reserva — e é o único caminho que abre SVG.
  */
-async function decodificarLogo(file: File): Promise<ImageBitmap | HTMLImageElement> {
+async function decodificarLogo(file: Blob): Promise<ImageBitmap | HTMLImageElement> {
   if (typeof createImageBitmap === "function") {
     try {
       return await createImageBitmap(file);
@@ -97,8 +98,8 @@ async function decodificarLogo(file: File): Promise<ImageBitmap | HTMLImageEleme
  * SVG entra pelo `<img>` e SAI COMO PNG: o que vai para o banco é sempre o
  * desenho rasterizado, nunca o SVG — que carrega script.
  */
-async function prepararLogo(
-  file: File,
+export async function prepararLogo(
+  file: Blob,
 ): Promise<{ ok: true; uri: string } | { ok: false; motivo: string }> {
   let fonte: ImageBitmap | HTMLImageElement;
   try {
@@ -283,6 +284,37 @@ export function LinkModal({
     }
   }
 
+  /** O último endereço tentado no automático — para não repetir a cada foco. */
+  const tentadoRef = useRef<string>("");
+
+  /**
+   * Usa o ícone do site como logo.
+   *
+   * No AUTOMÁTICO (sair do campo de endereço) a falha é calada: o site sem
+   * ícone, ou fora do ar, não é erro de quem está cadastrando, e uma faixa
+   * vermelha ali o faria achar que o link está errado. No clique do botão a
+   * falha fala, porque ali a pessoa pediu.
+   */
+  async function usarIconeDoSite(automatico: boolean) {
+    const alvo = normalizarUrl(url);
+    if (!alvo) return;
+    if (automatico && tentadoRef.current === alvo) return;
+    tentadoRef.current = alvo;
+    setErroLogo(null);
+    setPreparandoLogo(true);
+    try {
+      const blob = await buscarIconeDoSite(alvo);
+      const r = await prepararLogo(blob);
+      if (r.ok) setLogo(r.uri);
+      else if (!automatico) setErroLogo(r.motivo);
+    } catch (e) {
+      if (!automatico)
+        setErroLogo(e instanceof Error ? e.message : "Não foi possível buscar o ícone do site.");
+    } finally {
+      setPreparandoLogo(false);
+    }
+  }
+
   async function escolherLogo(file: File | undefined) {
     if (!file) return;
     setErroLogo(null);
@@ -397,6 +429,12 @@ export function LinkModal({
             spellCheck={false}
             aria-invalid={invalido("url")}
             disabled={salvando}
+            // Ao sair do campo, um link SEM logo tenta o ícone do site sozinho:
+            // é o que torna o logo o padrão, e não um trabalho a mais. Quem já
+            // escolheu um logo não o perde por ter corrigido o endereço.
+            onBlur={() => {
+              if (!logo) void usarIconeDoSite(true);
+            }}
           />
         </label>
 
@@ -453,6 +491,15 @@ export function LinkModal({
               <Icon name="upload" size={14} />
               {preparandoLogo ? "Preparando…" : logo ? "Trocar imagem" : "Enviar imagem"}
             </button>
+            <button
+              type="button"
+              className={styles.btnGhost}
+              onClick={() => void usarIconeDoSite(false)}
+              disabled={salvando || preparandoLogo || !normalizarUrl(url)}
+              title="Busca o ícone que aparece na aba do navegador quando o site está aberto"
+            >
+              <Icon name="globo" size={14} /> Usar ícone do site
+            </button>
             {logo && (
               <button
                 type="button"
@@ -468,8 +515,9 @@ export function LinkModal({
             )}
           </div>
           <small className={styles.dica}>
-            PNG, JPG, WebP ou SVG. A imagem é reduzida para {LADO_LOGO_PX} px, sem
-            cortar, e aparece no lugar do ícone.
+            Ao preencher o endereço, o ícone do site entra sozinho. Para trocar,
+            envie PNG, JPG, WebP ou SVG — a imagem é reduzida para {LADO_LOGO_PX} px,
+            sem cortar.
           </small>
           {erroLogo && (
             <p className={styles.erro} role="alert">

@@ -13,7 +13,7 @@ import {
   where,
   type DocumentData,
 } from "firebase/firestore";
-import { db } from "./firebase";
+import { auth, db } from "./firebase";
 import { ehIconeDeLink } from "./icones-core.ts";
 import {
   conferirLink,
@@ -197,6 +197,48 @@ export async function definirIconeDoLinkDoSetor(
  * que qualquer pessoa do setor recadastra em dez segundos. A tela pergunta
  * antes.
  */
+/**
+ * Grava SÓ o logo — é o preenchimento em lote dos links antigos, que não abre
+ * o formulário de cada um. Carimba `updatedBy`/`updatedAt` como qualquer
+ * edição: a regra exige, e é a única trilha deste cadastro.
+ */
+export async function definirLogoDoLinkDoSetor(
+  id: string,
+  logo: string,
+  autor: string,
+): Promise<void> {
+  const ok = logoParaGravar(logo);
+  if (!ok) return;
+  await updateDoc(doc(db, "links", id), {
+    logo: ok,
+    updatedBy: autor,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+/**
+ * Busca a imagem crua do ícone do site, pela rota do servidor
+ * (`api/links/favicon`). Quem a reduz e confere é `prepararLogo`, no navegador
+ * — a mesma régua do envio manual.
+ *
+ * O servidor e não o navegador porque o canvas não pode LER imagem de outro
+ * site (CORS), e sem ler não há como gravar. O porquê inteiro está em
+ * `favicon-core.ts`.
+ */
+export async function buscarIconeDoSite(url: string): Promise<Blob> {
+  const user = auth.currentUser;
+  if (!user) throw new Error("Sessão expirada. Entre novamente.");
+  const token = await user.getIdToken();
+  const r = await fetch(`/api/links/favicon?url=${encodeURIComponent(url)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!r.ok) {
+    const corpo = (await r.json().catch(() => ({}))) as { error?: string };
+    throw new Error(corpo.error || "Não foi possível buscar o ícone do site.");
+  }
+  return await r.blob();
+}
+
 export async function excluirLink(id: string): Promise<void> {
   await deleteDoc(doc(db, "links", id));
 }

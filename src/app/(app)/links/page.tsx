@@ -10,7 +10,9 @@ import {
 } from "@/lib/users";
 import {
   casaBusca,
+  buscarIconeDoSite,
   definirIconeDoLinkDoSetor,
+  definirLogoDoLinkDoSetor,
   subscribeLinksDoSetor,
   type LinkDoSetor,
 } from "@/lib/links-do-setor";
@@ -22,7 +24,8 @@ import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
 import { SkeletonCard, classeAparece } from "@/components/skeleton";
 import { LinkCard } from "./link-card";
-import { LinkModal, fraseDoErro } from "./link-modal";
+import { LinkModal, fraseDoErro, prepararLogo } from "./link-modal";
+import { normalizarUrl } from "@/lib/links-core";
 import styles from "./links.module.css";
 
 /**
@@ -210,6 +213,59 @@ export default function LinksPage() {
 
   const anoAtual = useMemo(() => new Date().getFullYear(), []);
 
+  /**
+   * O ícone do site para os links que ainda não têm logo — os cadastrados
+   * antes de o logo existir, e os de site que não respondeu na hora.
+   *
+   * UM POR VEZ, e não em paralelo: são poucos links, e disparar vinte buscas
+   * ao mesmo tempo contra a rota do servidor só trocaria uma espera que a
+   * contagem explica por uma rajada de falhas por tempo-limite.
+   *
+   * Site sem ícone não é erro: ele fica com o ícone deduzido de sempre, e o
+   * resumo do fim diz quantos foram assim. Só a gravação negada interrompe —
+   * ela se repetiria em todos os outros.
+   */
+  const semLogo = useMemo(() => links.filter((l) => !l.logo && normalizarUrl(l.url)), [links]);
+  const [lote, setLote] = useState<{ feitos: number; total: number } | null>(null);
+  const [resultadoLote, setResultadoLote] = useState<string | null>(null);
+
+  async function buscarIconesEmLote() {
+    const fila = semLogo;
+    if (fila.length === 0) return;
+    setResultadoLote(null);
+    setLote({ feitos: 0, total: fila.length });
+    let achados = 0;
+    let semIcone = 0;
+    try {
+      for (let i = 0; i < fila.length; i++) {
+        const l = fila[i];
+        try {
+          const blob = await buscarIconeDoSite(normalizarUrl(l.url));
+          const r = await prepararLogo(blob);
+          if (r.ok) {
+            await definirLogoDoLinkDoSetor(l.id, r.uri, autor);
+            achados++;
+          } else semIcone++;
+        } catch (e) {
+          if ((e as { code?: unknown } | null)?.code) throw e;
+          semIcone++;
+        }
+        setLote({ feitos: i + 1, total: fila.length });
+      }
+      setResultadoLote(
+        `${achados} ${achados === 1 ? "ícone encontrado" : "ícones encontrados"}` +
+          (semIcone
+            ? `; ${semIcone} ${semIcone === 1 ? "site não tem" : "sites não têm"} ícone que dê para usar e ${semIcone === 1 ? "continua" : "continuam"} com o desenho de antes.`
+            : "."),
+      );
+    } catch (e) {
+      console.error("Erro ao gravar o ícone do site:", e);
+      setResultadoLote(fraseDoErro("A busca parou: não foi possível gravar o ícone.", e));
+    } finally {
+      setLote(null);
+    }
+  }
+
   const contagem =
     visiveis.length === links.length
       ? `${links.length} ${links.length === 1 ? "link" : "links"}`
@@ -272,6 +328,20 @@ export default function LinksPage() {
               aria-label="Buscar links"
             />
           </div>
+          {(semLogo.length > 0 || lote) && (
+            <button
+              type="button"
+              className={styles.btnGhost}
+              onClick={() => void buscarIconesEmLote()}
+              disabled={!!lote}
+              title="Busca o ícone que cada site mostra na aba do navegador, para os links que ainda não têm logo"
+            >
+              <Icon name="globo" size={14} />
+              {lote
+                ? `Buscando ícones… ${lote.feitos}/${lote.total}`
+                : `Buscar ícones dos sites (${semLogo.length})`}
+            </button>
+          )}
           <button
             type="button"
             className={styles.btnPri}
@@ -281,6 +351,15 @@ export default function LinksPage() {
           </button>
         </div>
       </div>
+
+      {resultadoLote && (
+        <div className={styles.avisoLote} role="status">
+          {resultadoLote}
+          <button type="button" className={styles.editar} onClick={() => setResultadoLote(null)} aria-label="Fechar aviso">
+            <Icon name="x" size={14} />
+          </button>
+        </div>
+      )}
 
       <div className={styles.corpo} aria-busy={tela.carregando || undefined}>
         {tela.erro ? (
