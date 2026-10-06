@@ -583,12 +583,16 @@ for (const quem of Object.keys(PESSOAS)) {
   // quem cadastrou ou de gestor; e os outros setores continuam de fora das
   // onze linhas, que e a pergunta que vale para toda colecao nova.
   const LK = doc("links/l1");
+  // O autor NAO e nenhuma das PESSOAS acima, de proposito: com
+  // "op@px.com.br" o caso "apagar link de outra pessoa" virava, para o
+  // operador do setor, apagar o PROPRIO link — e o "permite" que isso dava
+  // parecia um buraco na regra que nao existia.
   const LINK = {
     setor: "B.I.",
     nome: "Painel de vendas",
     descricao: "",
     url: "https://app.powerbi.com/r/1",
-    createdBy: "op@px.com.br",
+    createdBy: "outra@px.com.br",
     createdAt: QUANDO,
   };
   const meuLink = (extra = {}) => ({
