@@ -80,6 +80,8 @@ rules_version = '2';
 //  - /links ganhou `logo`, a imagem que quem cadastra envia. Mesma régua da
 //    foto de perfil (`fotoOk()`). Campo novo e opcional: link sem logo
 //    continua passando exatamente como antes.
+//  - /links: alterar e apagar passam a ser de quem cadastrou, ou de admin.
+//    Antes qualquer pessoa do setor alterava, e gestor apagava.
 //
 // Nota sobre consultas: as telas sempre filtram por setor (`==` ou `in`), e o
 // admin consulta DEFAULT_SECTORS. Por isso o escopo por setor na leitura não
@@ -942,11 +944,12 @@ service cloud.firestore {
     // fica fora do alcance das Cantinas e vice-versa, e isso vale para qualquer
     // caminho que não passe pela tela.
     //
-    // ESCRITA DE QUEM PARTICIPA DO SETOR, como na ata e como era o link dentro
-    // do card: quem descobre que o endereço do painel mudou é quem trabalha com
-    // ele, e uma aba em que só o gestor corrige um link é uma aba que fica
-    // desatualizada. APAGAR é de quem cadastrou ou de gestor/admin: um operador
-    // corrige o link de outra pessoa, mas não some com ele.
+    // CADASTRAR é de quem participa do setor. ALTERAR E APAGAR é de quem
+    // cadastrou — ou de admin, que altera o de todo mundo (pedido do setor,
+    // 06/10/2026). Até essa data qualquer pessoa do setor reescrevia o link de
+    // outra; o card passou a ser a vitrine de um sistema entregue, e quem
+    // responde pelo que está escrito nele é quem o pôs lá. O gestor NÃO entra
+    // na exceção, de propósito: o pedido foi "só administradores".
     //
     // FORMA TRAVADA (`linkOk()`), porque é dado que o cliente escreve e que vai
     // para um `href`. Os tetos são os de `links-do-setor-core.ts`, na mesma
@@ -960,10 +963,9 @@ service cloud.firestore {
     // e trocar o autor seria ganhar o direito de apagar o link alheio. As datas
     // são do servidor, como no histórico da demanda.
     //
-    // O QUE ESTA REGRA NÃO FECHA, dito na cara: quem está no setor pode
-    // reescrever o nome e o endereço de um link que outra pessoa cadastrou, e
-    // não há trilha além de `updatedBy`/`updatedAt` (quem mexeu por último).
-    // É a mesma confiança que o link dentro do card sempre teve.
+    // O QUE ESTA REGRA NÃO FECHA, dito na cara: não há trilha além de
+    // `updatedBy`/`updatedAt` (quem mexeu por último) — o que um admin mudou
+    // no link de outra pessoa não fica registrado em lugar nenhum.
     match /links/{doc} {
       function linkOk() {
         let d = request.resource.data;
@@ -1013,12 +1015,15 @@ service cloud.firestore {
                     && linkOk()
                     && souEu(novo('updatedBy'))
                     && request.resource.data.get('updatedAt', null) == request.time
-                    && podeNoSetor(cur('setor'));
+                    && (souEu(cur('createdBy'))
+                        ? podeNoSetor(cur('setor'))
+                        : isAdmin());
 
-      // Quem cadastrou paga uma leitura do perfil; o gestor que apaga o link
-      // de outra pessoa paga a dele. O `souEu` vem antes porque não lê nada.
-      allow delete: if (souEu(cur('createdBy')) && podeNoSetor(cur('setor')))
-                    || gestorNoSetor(cur('setor'));
+      // Mesmo par do update. O `souEu` vem antes porque não lê nada: quem
+      // cadastrou paga uma leitura do perfil, o admin paga a dele.
+      allow delete: if souEu(cur('createdBy'))
+                       ? podeNoSetor(cur('setor'))
+                       : isAdmin();
     }
 
     // ---- propostas de demanda geradas a partir de reuniões ----

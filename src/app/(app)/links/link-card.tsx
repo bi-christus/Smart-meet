@@ -26,6 +26,7 @@ export function LinkCard({
   mostrarSetor,
   salvando,
   erro,
+  podeAlterar,
   onEscolherIcone,
   onEditar,
 }: {
@@ -35,6 +36,8 @@ export function LinkCard({
   mostrarSetor: boolean;
   salvando: boolean;
   erro: string | null;
+  /** Quem cadastrou, ou admin. Sem isso o card só se lê e se abre. */
+  podeAlterar: boolean;
   onEscolherIcone: (nome: string | null) => void;
   onEditar: () => void;
 }) {
@@ -69,6 +72,16 @@ export function LinkCard({
           <span className={styles.logoSelo}>
             {/* eslint-disable-next-line @next/next/no-img-element -- data URI conferido na leitura; next/image não otimiza data URI */}
             <img src={link.logo} alt={`Logo de ${link.nome}`} />
+          </span>
+        ) : !podeAlterar ? (
+          // Sem permissão, o selo é só desenho: um botão que abre a grade de
+          // ícones para depois a regra negar a escolha é promessa que a tela
+          // não cumpre.
+          <span
+            className={`${styles.icone} ${styles.iconeFixo}`}
+            style={{ background: selo.fundo, color: selo.tinta }}
+          >
+            {icone ? <Icon name={icone} size={19} /> : monogramaDe(link.url)}
           </span>
         ) : (
           <IconePicker
@@ -119,15 +132,17 @@ export function LinkCard({
           </div>
         </div>
 
-        <button
-          type="button"
-          className={styles.editar}
-          onClick={onEditar}
-          title="Editar nome, endereço e descrição"
-          aria-label={`Editar o link ${link.nome}`}
-        >
-          <Icon name="edit" size={14} />
-        </button>
+        {podeAlterar && (
+          <button
+            type="button"
+            className={styles.editar}
+            onClick={onEditar}
+            title="Editar nome, endereço e descrição"
+            aria-label={`Editar o link ${link.nome}`}
+          >
+            <Icon name="edit" size={14} />
+          </button>
+        )}
       </div>
 
       {link.descricao && <p className={styles.descricao}>{link.descricao}</p>}

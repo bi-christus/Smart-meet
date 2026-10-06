@@ -376,7 +376,18 @@ if (bloco) {
     /!mudou\(\['setor', 'createdBy', 'createdAt'\]\)/.test(b),
   );
   checa("a forma do documento é travada", /keys\(\)\.hasOnly\(/.test(b));
-  checa("apagar o link alheio exige gestor", /gestorNoSetor\(cur\('setor'\)\)/.test(b));
+  // Alterar e apagar o link ALHEIO é só de admin — nem gestor (06/10/2026).
+  const update = b.slice(b.indexOf("allow update"), b.indexOf("allow delete"));
+  const del = b.slice(b.indexOf("allow delete"));
+  checa(
+    "alterar o link alheio exige admin, e o próprio exige estar no setor",
+    /souEu\(cur\('createdBy'\)\)\s*\?\s*podeNoSetor\(cur\('setor'\)\)\s*:\s*isAdmin\(\)/.test(update),
+  );
+  checa(
+    "apagar segue a mesma regra de alterar",
+    /souEu\(cur\('createdBy'\)\)\s*\?\s*podeNoSetor\(cur\('setor'\)\)\s*:\s*isAdmin\(\)/.test(del),
+  );
+  checa("gestor não tem exceção em /links", !/gestorNoSetor/.test(b));
 }
 
 console.log(falhas === 0 ? "\nlinks do setor: ok" : `\nlinks do setor: ${falhas} falha(s)`);

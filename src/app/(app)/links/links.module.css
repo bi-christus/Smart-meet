@@ -656,3 +656,10 @@
 .avisoLote .editar {
   margin-left: auto;
 }
+
+/* O selo de quem não pode alterar o link: o mesmo desenho, sem cara de botão. */
+.icone.iconeFixo,
+.icone.iconeFixo:hover {
+  cursor: default;
+  filter: none;
+}

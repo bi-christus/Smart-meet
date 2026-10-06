@@ -131,20 +131,20 @@ export default function LinksPage() {
   );
 
   /**
-   * Quem pode REMOVER um link — o espelho, na tela, do `delete` de `/links`.
+   * Quem pode ALTERAR e REMOVER um link — o espelho, na tela, do `update` e do
+   * `delete` de `/links`: quem cadastrou, ou admin.
    *
-   * A regra é a barreira; isto só decide se o botão aparece. Mostrar "Remover"
-   * a quem a regra vai negar ensinaria a pessoa a clicar para ler "sem
-   * permissão", que é a pior forma de descobrir o que se pode fazer.
+   * A regra é a barreira; isto só decide se o lápis, o seletor de ícone e o
+   * "Remover" aparecem. Mostrá-los a quem a regra vai negar ensinaria a pessoa
+   * a clicar para ler "sem permissão", que é a pior forma de descobrir o que se
+   * pode fazer.
    */
-  const podeApagar = useCallback(
+  const podeAlterar = useCallback(
     (l: LinkDoSetor) => {
       if (!profile) return false;
       const eu = profile.email.toLowerCase();
-      if (eu === SUPER_ADMIN_EMAIL) return true;
-      if (l.createdBy.toLowerCase() === eu) return true;
-      if (profile.role === "admin") return true;
-      return profile.role === "gestor" && (profile.sectors ?? []).includes(l.setor);
+      if (eu === SUPER_ADMIN_EMAIL || profile.role === "admin") return true;
+      return l.createdBy.toLowerCase() === eu;
     },
     [profile],
   );
@@ -225,7 +225,12 @@ export default function LinksPage() {
    * resumo do fim diz quantos foram assim. Só a gravação negada interrompe —
    * ela se repetiria em todos os outros.
    */
-  const semLogo = useMemo(() => links.filter((l) => !l.logo && normalizarUrl(l.url)), [links]);
+  // Só os que a pessoa pode alterar: o lote grava, e gravar o link alheio
+  // seria negado pela regra um por um.
+  const semLogo = useMemo(
+    () => links.filter((l) => !l.logo && normalizarUrl(l.url) && podeAlterar(l)),
+    [links, podeAlterar],
+  );
   const [lote, setLote] = useState<{ feitos: number; total: number } | null>(null);
   const [resultadoLote, setResultadoLote] = useState<string | null>(null);
 
@@ -415,6 +420,7 @@ export default function LinksPage() {
                   mostrarSetor={variosSetores}
                   salvando={salvando === link.id}
                   erro={erroIcone?.id === link.id ? erroIcone.texto : null}
+                  podeAlterar={podeAlterar(link)}
                   onEscolherIcone={(nome) => void escolherIcone(link, nome)}
                   onEditar={() => setAberto(link)}
                 />
@@ -431,7 +437,7 @@ export default function LinksPage() {
           setorInicial={setorInicial}
           existentes={links}
           autor={autor}
-          podeApagar={aberto !== "novo" && podeApagar(aberto)}
+          podeApagar={aberto !== "novo" && podeAlterar(aberto)}
           onClose={() => setAberto(null)}
         />
       )}
