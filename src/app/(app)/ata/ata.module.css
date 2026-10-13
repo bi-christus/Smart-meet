@@ -666,12 +666,9 @@
   line-height: 1.5;
   margin-top: 5px;
 }
-/* A linha de baixo do bloco: a dimensão, e o botão que abre a demanda.
-
-   Os dois moram juntos porque respondem à mesma pergunta em ordem — "onde isto
-   mora?" e "isto é trabalho de alguém?". Separados, o segundo botão teria de
-   nascer numa coluna própria e o bloco ganharia uma sexta coluna para caber um
-   clique que quase todo assunto recebe uma vez só. */
+/* A linha de baixo do bloco: as ações do assunto e o botão que abre a demanda.
+   Até #206 a dimensão abria esta linha; ela saiu, e a pastilha `.area` ficou
+   como a base que as ações compõem. */
 .rodapeDemanda {
   display: flex;
   flex-wrap: wrap;
@@ -700,25 +697,11 @@
 .area svg {
   opacity: 0.75;
 }
-/* Sem dimensão a etiqueta ACENDE, em vez de sumir. Uma etiqueta que só aparece
-   quando está preenchida esconde exatamente o caso que precisa de alguém. */
-.areaFalta {
-  background: var(--warn-bg);
-  border-color: color-mix(in srgb, var(--warn) 42%, transparent);
-  color: var(--warn-tx);
-}
-.areaFalta:hover {
-  color: var(--warn-tx);
-  border-color: var(--warn);
-}
-.areaFalta svg {
-  opacity: 1;
-}
-/* As ações do assunto — "Editar" e "Mover" — na MESMA pastilha da dimensão.
+/* As ações do assunto — "Editar" e "Mover" — na mesma pastilha.
 
-   As três mudam o que a linha diz de si; só "Criar demanda" muda o mundo fora
+   As duas mudam o que a linha diz de si; só "Criar demanda" muda o mundo fora
    da ata, e por isso é a única com o acento da marca. Dar destaque igual às
-   quatro faria o rodapé competir consigo mesmo, e a ação mais rara e mais
+   três faria o rodapé competir consigo mesmo, e a ação mais rara e mais
    grave deixaria de saltar. `composes` em vez de copiar as onze linhas do
    `.area`: a pastilha da linha é uma só, e no dia em que o raio ou a cor dela
    mudar, um botão não pode ficar para trás. */
@@ -1160,38 +1143,6 @@
 
 /* ---------- o que a pauta cobra, e o que ela deixa acrescentar ---------- */
 
-/* O contador de linhas sem dimensão, no painel lateral.
-
-   Cor de AVISO e não de erro: não há nada quebrado — há trabalho que ainda não
-   foi classificado, e o conserto é de quem está na reunião. Vermelho aqui
-   competiria com "Atrasada" logo acima, que é a única coisa nesta lateral que
-   pede reação hoje. */
-.alerta {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin-top: 8px;
-  padding: 8px 10px;
-  border-radius: 9px;
-  border: 1px solid color-mix(in srgb, var(--warn) 38%, transparent);
-  background: var(--warn-bg);
-  color: var(--warn-tx);
-  font-family: inherit;
-  font-size: 11.5px;
-  font-weight: 600;
-  text-align: left;
-  cursor: pointer;
-  transition: border-color 0.12s;
-}
-.alerta:hover {
-  border-color: var(--warn);
-}
-.alertaOn {
-  border-color: var(--warn);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn) 40%, transparent);
-}
-
 .addAssunto {
   flex: none;
   height: 34px;
@@ -1211,21 +1162,6 @@
 }
 .addAssunto:hover {
   background: color-mix(in srgb, var(--brand) 24%, transparent);
-}
-
-/* "obrigatória", ao lado do rótulo do campo.
-
-   No RÓTULO e não como asterisco: asterisco é uma convenção que exige legenda,
-   e a legenda nunca cabe num modal de seis campos. A palavra dispensa nota de
-   rodapé. */
-.obrigatorio {
-  margin-left: 6px;
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: var(--brand-soft);
-  color: var(--accent-2);
-  font-size: 9px;
-  letter-spacing: 0.3px;
 }
 
 .inputArea {

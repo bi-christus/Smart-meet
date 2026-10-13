@@ -2450,3 +2450,291 @@
   opacity: 0.6;
   cursor: default;
 }
+
+/* ---------- criação rápida na coluna (#210) ---------- */
+/* Tem o corpo de um card — mesma borda, mesmo raio, mesmo fundo — porque é
+   isso que ela vai virar: a pessoa vê o card nascendo no lugar em que vai
+   ficar, em vez de um formulário estranho no meio da coluna. Sem animação de
+   entrada: abrir e fechar esta linha é gesto de alta frequência (AGENTS.md §3). */
+.rapida {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 9px;
+  border-radius: 11px;
+  border: 1px solid var(--brand-line);
+  background: var(--s2);
+  box-shadow: 0 0 0 3px var(--brand-soft);
+}
+.rapidaTitulo {
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--s1);
+  color: var(--tx);
+  font-family: inherit;
+  font-size: 13px;
+}
+.rapidaTitulo:focus {
+  outline: none;
+  border-color: var(--brand);
+}
+.rapidaErro {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--danger-tx);
+}
+.rapidaAcoes {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rapidaMais {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--accent-2);
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.rapidaMais:hover {
+  text-decoration: underline;
+}
+.rapidaDica {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--tx-3);
+  white-space: nowrap;
+}
+.rapidaCriar {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 11px;
+  border: none;
+  border-radius: 7px;
+  background: var(--brand);
+  color: #fff;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.rapidaCriar:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+/* ---------- o modal enxuto (#211) ---------- */
+/* O título da seção recolhível tem a cara do `.sectionLabel` de sempre —
+   caixa alta pequena e o traço até a borda — para a seção fechada continuar
+   lendo como título, e não como um botão solto. */
+.secao + .secao {
+  margin-top: 4px;
+}
+.secaoTopo {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 14px 0 8px;
+  padding: 2px 0;
+  border: none;
+  background: none;
+  color: var(--tx-3);
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  text-align: left;
+  cursor: pointer;
+}
+.secaoTopo::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line-soft);
+}
+.secaoTopo:hover {
+  color: var(--tx-2);
+}
+.secaoTopo:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+/* O corpo não tem estilo próprio: o conteúdo de cada seção já traz o dele, e a
+   classe existe para a seção poder ser alvo de seletor sem depender da ordem. */
+.secaoCorpo {
+  min-width: 0;
+}
+.secaoResumo {
+  letter-spacing: 0;
+  text-transform: none;
+  font-weight: 600;
+  color: var(--tx-2);
+}
+@media (min-width: 761px) {
+  .mconteudo > .secao:first-of-type .secaoTopo {
+    margin-top: 0;
+  }
+}
+
+/* "+ campo": os opcionais que ainda não estão à vista. Pílulas tracejadas —
+   a borda tracejada é a convenção de "lugar para pôr alguma coisa", e as
+   distingue dos chips de valor, que são sólidos. */
+.maisCampos {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 14px;
+}
+.maisCamposRot {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--tx-3);
+  margin-right: 2px;
+}
+.maisCampo {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px dashed var(--line);
+  border-radius: 999px;
+  background: none;
+  color: var(--tx-2);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s;
+}
+.maisCampo:hover {
+  border-color: var(--brand-line);
+  color: var(--tx);
+}
+@media (prefers-reduced-motion: reduce) {
+  .maisCampo {
+    transition: none;
+  }
+}
+/* ---------- a caixa de passagem de etapa (#212) ---------- */
+/* Mais estreita que o modal da demanda: ela pergunta dois ou três campos, e
+   numa janela larga eles viravam linhas compridas com muito vazio à direita. */
+.passagem {
+  width: min(460px, 100%);
+}
+.passagemTitulo {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--tx);
+  margin: 2px 0 4px;
+}
+.passagemIntro {
+  font-size: 12.5px;
+  color: var(--tx-3);
+  margin-bottom: 12px;
+}
+.passagemObrig {
+  color: var(--danger-tx);
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.passagemOpc {
+  color: var(--tx-3);
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.passagemLista {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.passagemItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  background: var(--s2);
+  font-size: 12.5px;
+}
+.passagemItem span {
+  flex: 1;
+  min-width: 0;
+}
+.passagemAcoes {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+/* ---------- campos desta etapa, na configuração da coluna (#212) ---------- */
+.etapaCampos {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.etapaCampo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+.etapaCampo:hover {
+  background: var(--s2);
+}
+.etapaCampo label {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.etapaObrig {
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: none;
+  color: var(--tx-3);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.etapaObrigOn {
+  border-color: transparent;
+  background: var(--danger-bg);
+  color: var(--danger-tx);
+}
+.etapaSugestao {
+  align-self: flex-start;
+  border: none;
+  background: none;
+  padding: 0;
+  margin-top: 4px;
+  color: var(--accent-2);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.etapaSugestao:hover {
+  text-decoration: underline;
+}

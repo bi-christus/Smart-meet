@@ -50,6 +50,7 @@ export type CardQueMuda = {
   assignee?: string | null;
   dimensaoId?: string | null;
   subdimensaoId?: string | null;
+  produtoId?: string | null;
   setoresAnteriores?: string[] | null;
   /** Só para saber se há um a cancelar — a forma dele não interessa aqui. */
   conclusaoPedida?: unknown;
@@ -191,6 +192,8 @@ export type PlanoDaMudanca = {
   coluna: ColunaEscolhida;
   /** A classificação de dimensão será apagada? Só é falso se não havia. */
   limpaClassificacao: boolean;
+  /** A demanda deixa o produto do Portfólio de origem? Só é falso se não havia. */
+  saiDoProduto: boolean;
   /** O responsável atual não participa do setor de destino. */
   responsavelForaDoDestino: boolean;
   /** Havia um pedido de conclusão em aberto, e ele será cancelado. */
@@ -201,6 +204,7 @@ export type PlanoDaMudanca = {
     columnId: string;
     dimensaoId: null;
     subdimensaoId: null;
+    produtoId: null;
     enteredAt: number;
     order: number;
     setoresAnteriores: string[];
@@ -223,11 +227,15 @@ export type PlanoDaMudanca = {
  * AS QUATRO COISAS QUE MUDAM ALÉM DO SETOR:
  *
  * - `columnId`, porque as etapas são de outro quadro. Ver `mapearColuna`.
- * - `dimensaoId`/`subdimensaoId` viram `null`. A árvore de dimensões é cadastro
- *   POR SETOR (`dimensoes-core.ts`): um id da origem não significa nada no
- *   destino, e mantê-lo faria a demanda aparecer pendurada num galho de outro
- *   setor — ou em galho nenhum, dependendo de o id colidir. A árvore do destino
- *   sabe acolher isto: cai em "Sem classificação".
+ * - `dimensaoId`/`subdimensaoId` viram `null`. A árvore de dimensões era
+ *   cadastro POR SETOR: um id da origem não significa nada no destino. A
+ *   classificação saiu do app em 13/10/2026 (#206) e nenhuma tela lê mais estes
+ *   campos, mas zerá-los continua certo — é o que impede a branch
+ *   `arquivo/dimensoes`, se voltar, de achar demanda pendurada em galho alheio.
+ * - `produtoId` vira `null` (#209). O Portfólio é POR SETOR, escopado pela
+ *   regra de `/links`: um produto da origem é algo que quem lê o quadro de
+ *   destino pode nem enxergar, e o andamento dele contaria uma demanda que já
+ *   não é do setor. A tela avisa antes.
  * - `enteredAt` recomeça, porque a demanda entrou agora nesta etapa. Sem isso o
  *   selo "parado há N dias" chegaria contando desde o outro quadro.
  * - `order` recomeça no topo, como em `moveCard`: a demanda chega para ser vista.
@@ -279,6 +287,7 @@ export function planoDaMudanca(args: {
     destino,
     coluna,
     limpaClassificacao: !!card.dimensaoId || !!card.subdimensaoId,
+    saiDoProduto: !!card.produtoId,
     responsavelForaDoDestino:
       !!card.assignee &&
       Array.isArray(args.setoresDoResponsavel) &&
@@ -289,6 +298,7 @@ export function planoDaMudanca(args: {
       columnId: coluna.colId,
       dimensaoId: null,
       subdimensaoId: null,
+      produtoId: null,
       enteredAt: agora,
       order: -agora,
       setoresAnteriores: anteriores,

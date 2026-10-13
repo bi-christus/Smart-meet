@@ -53,7 +53,11 @@ export const ABAS: Aba[] = [
   { id: "inicio", label: "Início", href: "/", configuravel: false },
   // Logo depois do Início (06/10/2026): é por onde a diretoria chega aos
   // sistemas, e no fim da barra a aba ficava escondida na rolagem.
-  { id: "links", label: "Links", href: "/links", configuravel: true },
+  //
+  // Virou Portfólio em 13/10/2026 (#208), mas o id continua `links`: é a
+  // chave que os quadros de permissão gravados leem, e trocá-la faria a aba
+  // sumir para quem já tem acesso. `/links` redireciona (next.config.ts).
+  { id: "links", label: "Portfólio", href: "/portfolio", configuravel: true },
   { id: "reunioes", label: "Reuniões", href: "/reunioes", configuravel: true },
   {
     id: "relatorios",
@@ -65,17 +69,15 @@ export const ABAS: Aba[] = [
   // Depois do Kanban porque é dele que a pauta sai: a Ata não tem demanda
   // própria, ela lê as do quadro do setor e registra o que a reunião decidiu.
   { id: "ata", label: "Ata", href: "/ata", configuravel: true },
-  // A aba Dimensões saiu em 06/10/2026. A classificação por dimensão continua
-  // no card e na Ata, e o cadastro em Admin › Dimensões. Um quadro de
-  // permissões gravado antes disso ainda pode citar "dimensoes":
+  // A aba Dimensões saiu em 06/10/2026, e a classificação inteira em
+  // 13/10/2026 (#206; o código está na branch `arquivo/dimensoes`). Um quadro
+  // de permissões gravado antes disso ainda pode citar "dimensoes":
   // `normalizarPermissoes` só lê as abas desta lista, então a entrada é
   // ignorada, e não vira aba fantasma.
-  {
-    id: "recorrencias",
-    label: "Recorrências",
-    href: "/recorrencias",
-    configuravel: true,
-  },
+  //
+  // A aba Recorrências saiu em 13/10/2026 (#207; o código está na branch
+  // `arquivo/recorrencias`), e vale o mesmo: um "recorrencias" gravado num
+  // quadro antigo é ignorado na leitura.
   { id: "dashboard", label: "Dashboard", href: "/dashboard", configuravel: true },
   {
     id: "cronograma",

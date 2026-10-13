@@ -5,7 +5,7 @@
  *
  * POR QUE ELE EXISTE. A decisão estava escrita à mão dentro de `dueInfo`, em
  * `kanban/page.tsx` — a função que pinta o selo de prazo do card. A árvore de
- * dimensões precisa exatamente da mesma decisão para dizer que um galho está
+ * dimensões (que já saiu do app) precisou da mesma decisão para dizer que um galho estava
  * vermelho, e reimplementá-la produziria o pior defeito deste tipo: o card
  * dizendo "entregue" em verde e o galho acima dele dizendo "tem atrasada" em
  * vermelho, sobre a MESMA demanda, cada um com o seu jeito de comparar data.

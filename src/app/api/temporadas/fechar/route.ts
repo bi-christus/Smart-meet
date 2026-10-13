@@ -154,10 +154,42 @@ async function executar(req: Request, corpo: Corpo) {
   const ranking = montarRank(participantes);
   const vencedores = vencedoresDoRanking(ranking);
 
+  /**
+   * O PÓDIO DE CADA SETOR (#215). O Rank é individual por setor, e o pódio
+   * congelado precisa ser também: a tela mostra o do setor escolhido. A mesma
+   * conta de sempre (`entregasDoMes` + `montarRank`), só que recortada — e o
+   * pódio geral continua gravado ao lado, porque é dele que os emblemas de
+   * campeã(o) no perfil leem `vencedores`.
+   */
+  const porSetor = [];
+  for (const setor of [...setoresComCard].sort((a, b) => a.localeCompare(b, "pt-BR"))) {
+    const doSetor = entregasDoMes(
+      cardsVivos.filter((c) => c.sector === setor),
+      ent,
+      mes,
+    );
+    const participantesDoSetor = [];
+    for (const [email, entregues] of doSetor.por.entries()) {
+      participantesDoSetor.push({
+        chave: email,
+        rotulo: await nomeDe(db, nomesPorEmail, email),
+        entregues,
+      });
+    }
+    const rankingDoSetor = montarRank(participantesDoSetor);
+    porSetor.push({
+      setor,
+      ranking: rankingDoSetor,
+      vencedores: vencedoresDoRanking(rankingDoSetor),
+      entregas: doSetor.total,
+    });
+  }
+
   await ref.set({
     mes,
     ranking,
     vencedores,
+    porSetor,
     entregas: total,
     fechadaEm: new Date(),
     fechadaPor: autor,

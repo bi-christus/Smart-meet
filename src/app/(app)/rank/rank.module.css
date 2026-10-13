@@ -97,7 +97,7 @@
        ele se mexeria conforme a aba muda de altura */
     radial-gradient(
       620px 320px at 50% calc(100% - 150px),
-      color-mix(in srgb, var(--brand) 16%, transparent),
+      color-mix(in srgb, var(--brand) 22%, transparent),
       transparent 72%
     ),
     /* 2. o escurecimento. NENHUMA parada opaca: a última é translúcida, senão
@@ -106,7 +106,7 @@
         180deg,
         rgba(6, 6, 9, 0.8) 0%,
         rgba(6, 6, 9, 0.56) 20%,
-        rgba(6, 6, 9, 0.44) 46%,
+        rgba(6, 6, 9, 0.52) 46%,
         rgba(6, 6, 9, 0.6) 74%,
         rgba(6, 6, 9, 0.74) 100%
       ),
@@ -146,6 +146,52 @@
   color: var(--sobre-foto-2);
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
   margin-top: 4px;
+}
+
+/* O seletor de temporada numa largura própria (#215). O `<Select>` ocupa 100%
+   do pai, e solto no cabeçalho ele atravessava a tela inteira — uma faixa
+   escura cortando a foto ao meio para escolher entre meia dúzia de meses. */
+.seletor {
+  width: 230px;
+  max-width: 100%;
+}
+
+/* As abas de setor do pódio (#215), sobre a foto. Pílulas com a superfície
+   escura fixa da cena — nada aqui lê token de tema, pela regra do topo desta
+   folha —, e a escolhida acende na cor da marca, que é a única cor da tela. */
+.setores {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+.setor {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--linha-foto);
+  background: var(--painel-foto);
+  color: var(--sobre-foto-2);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.setor:hover {
+  border-color: rgba(255, 255, 255, 0.42);
+  color: var(--sobre-foto);
+}
+.setor:focus-visible {
+  outline: 2px solid var(--acento-foto);
+  outline-offset: 2px;
+}
+.setorOn,
+.setorOn:hover {
+  border-color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 30%, rgba(10, 9, 8, 0.8));
+  color: #ffffff;
 }
 
 /* O aviso de quem venceu a temporada fechada — texto, não outro pódio em
@@ -334,7 +380,7 @@
   position: relative;
   z-index: 1;
   flex: 0 1 auto;
-  width: 148px;
+  width: 176px;
   min-width: 100px;
   display: flex;
   flex-direction: column;
@@ -342,7 +388,7 @@
   animation: assenta 220ms var(--atraso, 0ms) both cubic-bezier(0.32, 0.72, 0, 1);
 }
 .degrau.primeiro {
-  width: 172px;
+  width: 208px;
   /* 124 = 112 do rosto + 8 do respiro do anel + 4 das duas bordas. Um pixel a
      menos e o avatar, que tem tamanho fixo, escapa do slot ao encolher. */
   min-width: 124px;
@@ -421,7 +467,7 @@
 .nome {
   margin-top: 12px;
   max-width: 100%;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--sobre-foto);
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
@@ -435,7 +481,7 @@
   line-height: 1.3;
 }
 .primeiro .nome {
-  font-size: 16px;
+  font-size: 18px;
 }
 
 /* O plinto: uma pedra, não um cartão.
@@ -473,20 +519,23 @@
     cubic-bezier(0.32, 0.72, 0, 1);
 }
 
-/* A laje do topo. */
+/* A laje do topo — mais clara que antes, e com o fio de luz na aresta (#215).
+   Sobre a foto escura, a laje de 22% se perdia, e sem ela o plinto lia como um
+   retângulo chapado; é a aresta iluminada que diz "isto tem volume". */
 .bloco::before {
   content: "";
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  height: 9px;
+  height: 10px;
   border-radius: 4px 4px 0 0;
   background: linear-gradient(
     180deg,
-    rgba(255, 255, 255, 0.22),
-    rgba(255, 255, 255, 0.05)
+    rgba(255, 255, 255, 0.3),
+    rgba(255, 255, 255, 0.06)
   );
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
 }
 
 /* O plinto SAI DO CHÃO. `clip-path` recortando a borda de cima é o único jeito
@@ -521,7 +570,7 @@
 
 .posicao {
   font-family: var(--font-serif), serif;
-  font-size: 30px;
+  font-size: 34px;
   font-weight: 700;
   line-height: 1;
   color: var(--sobre-foto-2);
@@ -530,16 +579,32 @@
   text-shadow: 0 1px 0 rgba(0, 0, 0, 0.45);
 }
 .primeiro .posicao {
-  font-size: 40px;
+  font-size: 46px;
   color: var(--acento-foto);
 }
 .entregas {
   font-family: var(--font-mono), monospace;
-  font-size: 11px;
-  color: var(--sobre-foto-2);
+  font-size: 11.5px;
+  color: var(--sobre-foto);
   /* Tabular: a contagem sobe até o número na chegada, e sem largura fixa por
      dígito o texto inteiro tremeria a cada quadro. */
   font-variant-numeric: tabular-nums;
+}
+
+/* A pontualidade (#215): a segunda linha gravada no plinto, menor e num verde
+   FIXO — ele encosta na pedra, que não segue o tema (ver o topo da folha), e o
+   verde do tema claro sumiria nela. Verde e não a cor da marca: no 1º lugar a
+   marca já é a pedra, e a linha desapareceria justamente no campeão. */
+.noPrazo,
+.chaoPrazo {
+  font-family: var(--font-mono), monospace;
+  font-size: 10.5px;
+  color: #8fe3b4;
+  font-variant-numeric: tabular-nums;
+}
+.chaoPrazo {
+  font-size: 10px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
 }
 
 /* ---------- quem fica de pé no chão ---------- */

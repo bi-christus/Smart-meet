@@ -18,8 +18,6 @@ import {
   type DemandType,
   type KanbanColumn,
 } from "@/lib/kanban";
-import { subscribeRecorrencias } from "@/lib/recorrencias";
-import { recLoadHours, type Recorrencia } from "@/lib/recorrencias-core";
 import { daysBetween, fmtDayMonth, hh, startOfDay } from "@/lib/datas";
 import {
   PASSO_LABEL,
@@ -38,6 +36,14 @@ import {
   type Janela,
   type Periodo,
 } from "@/lib/fluxo-core";
+import {
+  entreguesNaJanela,
+  medidasPorProduto,
+  medir,
+  pctNoPrazo,
+  type LinhaDeProduto,
+} from "@/lib/metricas-core";
+import { subscribeLinksDoSetor, type LinkDoSetor } from "@/lib/links-do-setor";
 import { juntarFontes, type Fonte } from "@/lib/async-data-core";
 import { useAsyncData } from "@/lib/use-async-data";
 import { Icon } from "@/components/icons";
@@ -70,9 +76,8 @@ import styles from "./dashboard.module.css";
  * Toda métrica aqui é do SISTEMA: fila que cresce, prazo que estoura, demanda
  * que fica parada. Nenhuma é ranking de pessoa — "consumo por responsável"
  * mostra carga para redistribuir, segmentada pelo setor solicitante (de onde a
- * demanda veio, que é com quem se negocia) e somando as horas de manutenção
- * recorrente: quem tem quatro recorrências no nome tem menos mão para demanda
- * nova, mesmo com poucos cards.
+ * demanda veio, que é com quem se negocia). Até 13/10/2026 ela somava também
+ * as horas de manutenção recorrente; a aba Recorrências saiu do app (#207).
  *
  * DEMANDA ENTREGUE SAI DE TUDO. Card na etapa de entrega não entra em "em
  * aberto", não conta como vencido e não pesa na carga de ninguém — o prazo dele
@@ -113,7 +118,6 @@ const PERIODO_PADRAO: Periodo = 12;
  */
 const SEM_CARDS: Card[] = [];
 const SEM_COLS: ColumnDoc[] = [];
-const SEM_RECS: Recorrencia[] = [];
 const SEM_USERS: UserProfile[] = [];
 
 export default function DashboardPage() {
@@ -137,9 +141,6 @@ export default function DashboardPage() {
   const fCols = useAsyncData<ColumnDoc>(chaveSetores, (onData, onErro) =>
     subscribeColumnsForSectors(sectors, onData, onErro),
   );
-  const fRecs = useAsyncData<Recorrencia>(chaveSetores, (onData, onErro) =>
-    subscribeRecorrencias(sectors, onData, onErro),
-  );
   // A lista de pessoas não é recortada por setor, então a chave é fixa: só
   // remonta em "tentar de novo".
   const fUsers = useAsyncData<UserProfile>("todos", (onData, onErro) =>
@@ -148,7 +149,6 @@ export default function DashboardPage() {
 
   const cards = fCards.data ?? SEM_CARDS;
   const cols = fCols.data ?? SEM_COLS;
-  const recs = fRecs.data ?? SEM_RECS;
   const users = fUsers.data ?? SEM_USERS;
 
   /**
@@ -202,6 +202,16 @@ export default function DashboardPage() {
    */
   const quadro = sectors.includes(quadroSel) ? quadroSel : (sectors[0] ?? "");
   const noRecorte = useMemo(() => (quadro ? [quadro] : []), [quadro]);
+
+  /**
+   * Os produtos do Portfólio DESTE quadro (#216) — só para dar nome às linhas
+   * do painel por produto. A chave é o quadro, e não a lista de setores: trocar
+   * de aba troca o Portfólio lido, do mesmo jeito que a pessoa só enxerga o
+   * Portfólio do próprio setor na aba dele.
+   */
+  const fProdutos = useAsyncData<LinkDoSetor>(quadro || "__sem_quadro__", (onData, onErro) =>
+    subscribeLinksDoSetor(quadro ? [quadro] : [], onData, onErro),
+  );
 
   /** Cor estável por setor, na ordem fixa da paleta categórica. */
   const corDoSetor = useMemo(() => {
@@ -333,10 +343,23 @@ export default function DashboardPage() {
     [noPeriodo, concluido],
   );
 
-  const recsNoRecorte = useMemo(
-    () => recs.filter((r) => noRecorte.includes(r.sector)),
-    [recs, noRecorte],
+  /**
+   * Pontualidade e lead time das entregas da janela (#216), e o mesmo recorte
+   * quebrado por produto do Portfólio. A janela é a de `limites` — a mesma do
+   * resto da tela —, então "Entregas" no KPI e a soma das entregas aqui contam
+   * o mesmo conjunto.
+   */
+  const ini = limites?.ini ?? 0;
+  const fim = limites?.fim ?? Number.POSITIVE_INFINITY;
+  const medidas = useMemo(
+    () => medir(entreguesNaJanela(doQuadro, concluido, ini, fim)),
+    [doQuadro, concluido, ini, fim],
   );
+  const porProduto = useMemo(
+    () => medidasPorProduto(doQuadro, concluido, ini, fim),
+    [doQuadro, concluido, ini, fim],
+  );
+
   const prazos = useMemo(() => {
     const vencidas = abertos.filter(
       (c) => c.due && daysBetween(c.due, hoje) > 0,
@@ -426,6 +449,8 @@ export default function DashboardPage() {
   const p85Txt =
     kpiSemResposta || fluxo.amostra < MIN_AMOSTRA ? "—" : String(fluxo.p85);
   const kpi = (n: number) => (kpiSemResposta ? "—" : n);
+  const pct = pctNoPrazo(medidas);
+  const pctTxt = kpiSemResposta || pct === null ? "—" : String(pct);
 
   return (
     <div className={`${styles.page} ${styles.viz}`}>
@@ -581,7 +606,7 @@ export default function DashboardPage() {
         />
         <Kpi
           icone="clock"
-          rotulo="Cycle time p85"
+          rotulo="Lead time p85"
           valor={p85Txt}
           unidade={p85Txt === "—" ? "" : "dias"}
           rodape={
@@ -607,6 +632,26 @@ export default function DashboardPage() {
           rotulo="Entregas"
           valor={kpi(fluxo.totalEntregas)}
           rodape={`concluídas · ${janelaTxt}`}
+        />
+        {/**
+         * NO PRAZO É SÓ SOBRE O QUE TINHA PRAZO (#216), a mesma régua do Rank:
+         * demanda sem data não entra nem a favor nem contra. O rodapé diz o
+         * denominador, porque "100%" de uma entrega e "100%" de quarenta não
+         * pesam igual.
+         */}
+        <Kpi
+          icone="calendar"
+          rotulo="No prazo"
+          valor={pctTxt}
+          unidade={pctTxt === "—" ? "" : "%"}
+          rodape={
+            kpiSemResposta
+              ? "aguardando o quadro"
+              : medidas.comPrazo
+                ? `${medidas.noPrazo} de ${medidas.comPrazo} com prazo · ${janelaTxt}`
+                : `nenhuma entrega com prazo · ${janelaTxt}`
+          }
+          tom={!kpiSemResposta && pct !== null && pct < 70 ? "warn" : undefined}
         />
       </div>
 
@@ -709,13 +754,22 @@ export default function DashboardPage() {
 
         <Painel
           titulo="Consumo por responsável"
-          fontes={[fCards, fCols, fRecs, fUsers]}
+          fontes={[fCards, fCols, fUsers]}
           esqueleto={<SkeletonRow rows={4} texto="Carregando a carga por responsável…" />}
         >
-          <BarrasResponsavel
-            cards={abertos}
-            recs={recsNoRecorte}
-            nomeDe={nomeDe}
+          <BarrasResponsavel cards={abertos} nomeDe={nomeDe} />
+        </Painel>
+
+        <Painel
+          titulo="Entregas por produto"
+          sub="Produtos do Portfólio deste quadro com entrega no período ou demanda em aberto"
+          chip={`${porProduto.length} ${porProduto.length === 1 ? "produto" : "produtos"}`}
+          fontes={[fCards, fCols, fProdutos]}
+          esqueleto={<SkeletonRow rows={4} texto="Carregando as entregas por produto…" />}
+        >
+          <TabelaProdutos
+            linhas={porProduto}
+            produtos={fProdutos.data ?? SEM_PRODUTOS}
           />
         </Painel>
 
@@ -927,6 +981,77 @@ function Painel({
   );
 }
 
+const SEM_PRODUTOS: LinkDoSetor[] = [];
+
+/**
+ * O andamento de cada produto do Portfólio no período (#216).
+ *
+ * Uma TABELA, e não barras: são quatro números de natureza diferente por linha
+ * (contagem, porcentagem, dias, contagem), e barra só compara uma grandeza.
+ * Produto cujo link foi apagado continua aparecendo — as demandas existem —,
+ * com o nome trocado por "Produto removido".
+ */
+function TabelaProdutos({
+  linhas,
+  produtos,
+}: {
+  linhas: LinhaDeProduto[];
+  produtos: LinkDoSetor[];
+}) {
+  const nomes = useMemo(() => {
+    const m = new Map<string, string>();
+    produtos.forEach((p) => m.set(p.id, p.nome));
+    return m;
+  }, [produtos]);
+
+  if (!linhas.length)
+    return (
+      <EmptyState
+        size="compact"
+        icon="link"
+        title="Nenhum produto com movimento no período"
+        description="Associe as demandas a um produto do Portfólio (campo Produto, no card) para acompanhar aqui as entregas, a pontualidade e o lead time de cada um."
+      />
+    );
+
+  return (
+    <div className={styles.tabelaWrap}>
+      <table className={styles.tabela}>
+        <thead>
+          <tr>
+            <th>Produto</th>
+            <th className={styles.num}>Entregas</th>
+            <th className={styles.num}>No prazo</th>
+            <th className={styles.num}>Lead time mediano</th>
+            <th className={styles.num}>Em aberto</th>
+          </tr>
+        </thead>
+        <tbody>
+          {linhas.map((l) => {
+            const p = pctNoPrazo(l);
+            return (
+              <tr key={l.produtoId}>
+                <td>{nomes.get(l.produtoId) ?? "Produto removido"}</td>
+                <td className={styles.num}>{l.entregas}</td>
+                <td
+                  className={`${styles.num} ${p !== null && p < 70 ? styles.numAlerta : ""}`}
+                  title={l.comPrazo ? `${l.noPrazo} de ${l.comPrazo} com prazo` : "nenhuma entrega com prazo"}
+                >
+                  {p === null ? "—" : `${p}%`}
+                </td>
+                <td className={styles.num}>
+                  {l.leadMediano === null ? "—" : `${l.leadMediano} d`}
+                </td>
+                <td className={styles.num}>{l.abertas}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 /** Rótulo do card cujo setor solicitante ficou em branco. */
 const SEM_ORIGEM = "Sem setor solicitante";
 
@@ -950,11 +1075,9 @@ const SEM_ORIGEM = "Sem setor solicitante";
  */
 function BarrasResponsavel({
   cards,
-  recs,
   nomeDe,
 }: {
   cards: Card[];
-  recs: Recorrencia[];
   nomeDe: (e: string) => string;
 }) {
   const linhas = useMemo(() => {
@@ -975,15 +1098,6 @@ function BarrasResponsavel({
         nomeDe(a[0]).localeCompare(nomeDe(b[0]), "pt-BR"),
     );
   }, [cards, nomeDe]);
-
-  const horasDe = useMemo(() => {
-    const m: Record<string, number> = {};
-    recs.forEach((r) => {
-      if (!r.owner) return;
-      m[r.owner] = (m[r.owner] ?? 0) + recLoadHours(r);
-    });
-    return m;
-  }, [recs]);
 
   /**
    * Cor por setor solicitante, na ordem alfabética dos que aparecem — a mesma
@@ -1014,15 +1128,11 @@ function BarrasResponsavel({
     );
 
   const max = Math.max(...linhas.map((l) => l[1].total));
-  // Setor sem nenhuma recorrência programada não ganha uma coluna de "0 h/mês"
-  // repetida linha a linha: zero em todo mundo não distingue ninguém.
-  const mostrarHoras = linhas.some(([quem]) => (horasDe[quem] ?? 0) > 0);
 
   return (
     <>
       <div className={styles.barras}>
         {linhas.map(([quem, d]) => {
-          const horas = horasDe[quem] ?? 0;
           const nome = quem === "__sem__" ? "Sem responsável" : nomeDe(quem);
           const origens = Object.entries(d.origens).sort(
             (a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "pt-BR"),
@@ -1047,19 +1157,8 @@ function BarrasResponsavel({
                   ))}
                 </div>
                 <div className={styles.barraNum}>{d.total}</div>
-                {mostrarHoras && (
-                  <div
-                    className={`${styles.barraHoras} ${horas ? "" : styles.barraHorasZero}`}
-                  >
-                    {hh(horas)} h/mês
-                  </div>
-                )}
               </div>
-              <div
-                className={`${styles.barraOrigens} ${
-                  mostrarHoras ? "" : styles.barraOrigensSemHoras
-                }`}
-              >
+              <div className={`${styles.barraOrigens} ${styles.barraOrigensSemHoras}`}>
                 {origens.map(([origem, n]) => (
                   <span key={origem} className={styles.origem}>
                     <i style={{ background: corDaOrigem[origem] }} />

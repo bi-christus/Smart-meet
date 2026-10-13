@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 
 /**
  * O ícone do site de um link — a imagem crua, para o navegador reduzir e
- * gravar como logo (ver `prepararLogo`, em `links/link-modal.tsx`).
+ * gravar como logo (ver `prepararLogo`, em `portfolio/link-modal.tsx`).
  *
  * Só quem está logado e ativo chama (`requireUser`): sem isso, esta rota seria
  * um proxy aberto de imagens na conta da Vercel do setor.

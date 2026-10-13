@@ -157,15 +157,6 @@ const auth = new GoogleAuth({ credentials: sa, scopes: [DRIVE_SCOPE] });
 const token = (await (await auth.getClient()).getAccessToken()).token;
 const markdown = await baixarDoc(token, fileId);
 
-const dimensoes = (
-  await db.collection("dimensoes").where("setor", "==", setor).get()
-).docs.map((d) => ({
-  id: d.id,
-  nome: d.data().nome ?? "",
-  ordem: Number(d.data().ordem ?? 0),
-  subs: (d.data().subs ?? []).map((s) => ({ id: String(s.id), nome: s.nome ?? "" })),
-}));
-
 const ata = montarAtaDaReuniao({
   markdown,
   reuniao: {
@@ -176,7 +167,6 @@ const ata = montarAtaDaReuniao({
     createdBy: m.createdBy ?? "",
   },
   setor,
-  dimensoes,
 });
 
 // O card que a mesma reunião gerou, quando ele está NESTE setor. A ata das
@@ -214,11 +204,8 @@ console.log(`  citados:      ${ata.citados.join(", ") || "—"}`);
 console.log(`\n  ${ata.itens.length} assunto(s):\n`);
 
 for (const item of ata.itens) {
-  const dim = dimensoes.find((d) => d.id === item.dimensaoId);
-  const sub = dim?.subs.find((s) => s.id === item.subdimensaoId);
   const marca = item.cardId ? `card ${item.cardId}` : "sem card";
   console.log(`  ── ${item.assunto}   [${marca}]`);
-  if (dim) console.log(`     dimensão:  ${dim.nome}${sub ? ` · ${sub.nome}` : ""}`);
   if (item.decisao) console.log(`     decisão:   ${item.decisao}`);
   if (item.objetivo) console.log(`     objetivo:  ${item.objetivo}`);
   if (item.contexto) console.log(`     contexto:  ${item.contexto.slice(0, 160)}…`);

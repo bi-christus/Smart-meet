@@ -15,11 +15,7 @@ import {
   type Medida,
   type ReuniaoNaLinha,
 } from "@/lib/ata-linha-do-tempo-core";
-import {
-  STATUS_TAREFA_LABEL,
-  type Ata,
-  type ItemDeAta,
-} from "@/lib/ata";
+import { STATUS_TAREFA_LABEL, type Ata } from "@/lib/ata";
 import type { UserProfile } from "@/lib/users";
 import { fmtDayMonth } from "@/lib/datas";
 import { Icon } from "@/components/icons";
@@ -86,7 +82,6 @@ export function LinhaDoTempo({
   setor,
   atas,
   tituloDoCard,
-  classeDoItem,
   nomeDe,
   usersMap,
   onFechar,
@@ -96,8 +91,6 @@ export function LinhaDoTempo({
   /** Todas as atas do setor — a assinatura da tela já as tem inteiras. */
   atas: Ata[];
   tituloDoCard: (cardId: string) => string;
-  /** "D1 · Cadeia de Suprimentos · Estoque", ou vazio. */
-  classeDoItem: (item: ItemDeAta) => string;
   nomeDe: (email: string) => string;
   usersMap: Record<string, UserProfile>;
   onFechar: () => void;
@@ -404,7 +397,6 @@ export function LinhaDoTempo({
         <Detalhe
           ata={ataAberta}
           tituloDoCard={tituloDoCard}
-          classeDoItem={classeDoItem}
           nomeDe={nomeDe}
           usersMap={usersMap}
           onFechar={() => setAberta(null)}
@@ -568,7 +560,6 @@ function Tabela({
 function Detalhe({
   ata,
   tituloDoCard,
-  classeDoItem,
   nomeDe,
   usersMap,
   onFechar,
@@ -576,7 +567,6 @@ function Detalhe({
 }: {
   ata: Ata;
   tituloDoCard: (cardId: string) => string;
-  classeDoItem: (item: ItemDeAta) => string;
   nomeDe: (email: string) => string;
   usersMap: Record<string, UserProfile>;
   onFechar: () => void;
@@ -690,7 +680,6 @@ function Detalhe({
         <ol className={styles.pauta}>
           {ata.itens.map((i, n) => {
             const doQuadro = i.cardId ? tituloDoCard(i.cardId) : "";
-            const classe = classeDoItem(i);
             return (
               <li key={i.id} className={styles.itemPauta}>
                 <div className={styles.itemTopo}>
@@ -704,7 +693,6 @@ function Detalhe({
                           ? "Demanda"
                           : "Demanda fora do quadro"
                         : "Assunto"}
-                      {classe && ` · ${classe}`}
                     </span>
                     <h3>{doQuadro || i.assunto || "Sem título na ata"}</h3>
                     {i.contexto && <p className={styles.itemCtx}>{i.contexto}</p>}

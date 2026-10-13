@@ -10,6 +10,11 @@ import {
   SERVICO_ROTULO,
 } from "@/lib/links-core";
 import type { LinkDoSetor } from "@/lib/links-do-setor";
+import {
+  SAUDE_ROTULO,
+  rotuloDoSelo,
+  type AndamentoDoProduto,
+} from "@/lib/produtos-core";
 import { fmtDayMonth, toISO } from "@/lib/datas";
 import { Icon } from "@/components/icons";
 import { IconePicker } from "@/components/icone-picker";
@@ -24,21 +29,27 @@ export function LinkCard({
   link,
   nomeDe,
   anoAtual,
-  mostrarSetor,
   salvando,
   erro,
   podeAlterar,
+  andamento,
+  onAbrirAndamento,
   onEscolherIcone,
   onEditar,
 }: {
   link: LinkDoSetor;
   nomeDe: (e: string | null | undefined) => string;
   anoAtual: number;
-  mostrarSetor: boolean;
   salvando: boolean;
   erro: string | null;
   /** Quem cadastrou, ou admin. Sem isso o card só se lê e se abre. */
   podeAlterar: boolean;
+  /**
+   * O andamento das demandas deste produto (#209). Ausente = nenhuma demanda
+   * aberta, e o card fica como sempre foi — o caso da maioria do Portfólio.
+   */
+  andamento?: AndamentoDoProduto;
+  onAbrirAndamento?: () => void;
   onEscolherIcone: (nome: string | null) => void;
   onEditar: () => void;
 }) {
@@ -146,7 +157,17 @@ export function LinkCard({
       )}
 
       <div className={styles.cardPe}>
-        {mostrarSetor && <span className={styles.setor}>{link.setor}</span>}
+        {andamento && onAbrirAndamento && (
+          <button
+            type="button"
+            className={`${styles.seloAndamento} ${styles["saude_" + andamento.saude]}`}
+            onClick={onAbrirAndamento}
+            title={`${rotuloDoSelo(andamento)} — ${SAUDE_ROTULO[andamento.saude]}. Ver o andamento.`}
+          >
+            <i aria-hidden />
+            {rotuloDoSelo(andamento)}
+          </button>
+        )}
         <span className={styles.autoria} title={editadoPor}>
           {nomeDe(link.createdBy)}
           {link.createdAt ? ` · ${dataDe(link.createdAt, anoAtual)}` : ""}
