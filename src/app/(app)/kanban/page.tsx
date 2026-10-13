@@ -20,6 +20,7 @@ import {
   moverParaLixeira,
   moveCard,
   fundirCards,
+  createCard,
   DEMAND_TYPE_LABEL,
   PRIORITY_LABEL,
   pedirConclusao,
@@ -38,6 +39,7 @@ import {
   corrigirTagsDeCards,
   tagColor,
   type Card,
+  type CardInput,
   type Priority,
   type ColumnDoc,
 } from "@/lib/kanban";
@@ -76,6 +78,7 @@ import {
   ACAO_ROTULO,
   diffCard,
   linhaDaMudanca,
+  mudancasIniciais,
   type Evento,
 } from "@/lib/historico-core";
 import { GripDots, Icon } from "@/components/icons";
@@ -90,6 +93,7 @@ import { SkeletonCard, SkeletonRow } from "@/components/skeleton";
 import { juntarFontes } from "@/lib/async-data-core";
 import { useAsyncData } from "@/lib/use-async-data";
 import { CardModal, type EditState } from "./card-modal";
+import { CriacaoRapida } from "./criacao-rapida";
 import {
   PRIORITY_COLOR,
   autorDoRegistro,
@@ -276,6 +280,8 @@ export default function KanbanPage() {
   /** O catálogo cresce; a barra não. Isto abre o resto dele. */
   const [tagsAbertas, setTagsAbertas] = useState(false);
   const [edit, setEdit] = useState<EditState>(null);
+  /** A coluna com a linha de criação rápida aberta (#210). Uma por vez. */
+  const [rapidaEm, setRapidaEm] = useState<string | null>(null);
   /** Demanda com o histórico aberto — independente do modal de edição. */
   const [histCard, setHistCard] = useState<Card | null>(null);
   /**
@@ -732,6 +738,67 @@ export default function KanbanPage() {
    * mudança silenciosa da outra. Ver a prop `concluiDireto` do `CardModal`.
    */
   const concluiDireto = podeConcluirDireto(papelAtual);
+
+  /**
+   * A demanda que nasce na linha rápida da coluna (#210).
+   *
+   * Nasce com o que se sabe na hora — título e, se houver, produto — e o resto
+   * em branco: sem responsável, sem prazo, prioridade média, tipo padrão. Prazo
+   * inventado para destravar um formulário vira atraso falso no relatório do
+   * gestor; deixar em branco é o estado honesto, e o card já diz "sem prazo
+   * definido".
+   *
+   * A primeira linha do histórico entra no mesmo lote, como no modal: sem ela a
+   * demanda pareceria ter nascido de lugar nenhum.
+   */
+  async function criarRapida(colId: string, titulo: string, produtoId: string) {
+    const input: CardInput = {
+      title: titulo,
+      description: "",
+      columnId: colId,
+      type: "implementacao",
+      assignee: null,
+      requester: null,
+      requesterSector: null,
+      produtoId: produtoId || null,
+      startDate: null,
+      due: null,
+      priority: "media",
+      tags: [],
+      tagRefs: [],
+      checklist: [],
+      links: [],
+    };
+    try {
+      await createCard(
+        sector,
+        input,
+        autorAtual,
+        mudancasIniciais(
+          {
+            ...input,
+            produtoNome: produtoId ? (produtosPorId.get(produtoId)?.nome ?? null) : null,
+          },
+          rotulos,
+        ),
+      );
+    } catch (e) {
+      throw new Error(
+        fraseDeFalha("Não foi possível criar a demanda.", e, navigator.onLine),
+      );
+    }
+  }
+
+  /** As opções de produto da linha rápida — só os do Portfólio deste setor. */
+  const opcoesRapida: SelectOption[] = produtos.length
+    ? [
+        { value: "", label: "— Sem produto —" },
+        ...produtos
+          .slice()
+          .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"))
+          .map((p) => ({ value: p.id, label: p.nome })),
+      ]
+    : [];
 
   /**
    * O papel de um card no gesto de fusão em curso — ou nada, fora dele.
@@ -1246,7 +1313,10 @@ export default function KanbanPage() {
                 <button
                   className={styles.iconbtn}
                   title="Adicionar demanda"
-                  onClick={() => setEdit({ mode: "new", columnId: col.colId })}
+                  aria-expanded={rapidaEm === col.colId}
+                  onClick={() =>
+                    setRapidaEm((cur) => (cur === col.colId ? null : col.colId))
+                  }
                 >
                   <Icon name="plus" size={15} />
                 </button>
@@ -1261,6 +1331,26 @@ export default function KanbanPage() {
                 )}
               </div>
               <div className={styles.collist}>
+                {/* A linha rápida mora NO TOPO da lista, onde o card novo
+                    aparece (o card nasce com `order` negativo e sobe). */}
+                {rapidaEm === col.colId && !quadro.carregando && (
+                  <CriacaoRapida
+                    coluna={col.title}
+                    produtos={opcoesRapida}
+                    onCriar={(titulo, produtoId) =>
+                      criarRapida(col.colId, titulo, produtoId)
+                    }
+                    onMaisCampos={(titulo, produtoId) => {
+                      setRapidaEm(null);
+                      setEdit({
+                        mode: "new",
+                        columnId: col.colId,
+                        inicial: { title: titulo, produtoId },
+                      });
+                    }}
+                    onFechar={() => setRapidaEm(null)}
+                  />
+                )}
                 {/* Esqueleto DENTRO da coluna, e não no lugar do quadro: as
                     sete colunas precisam manter a forma e a largura enquanto
                     esperam, senão a espera vira um solavanco quando o dado

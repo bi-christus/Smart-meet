@@ -234,7 +234,15 @@ function NovoCadastro({
  * conta — reordenar a checklist É uma mudança.
  */
 export type EditState =
-  | { mode: "new"; columnId: string }
+  | {
+      mode: "new";
+      columnId: string;
+      /**
+       * O que a criação rápida já tinha (#210): "mais campos" traz o título e
+       * o produto digitados na linha da coluna, em vez de recomeçar do zero.
+       */
+      inicial?: { title?: string; produtoId?: string };
+    }
   | { mode: "edit"; card: Card }
   | null;
 
@@ -314,7 +322,8 @@ export function CardModal({
   const isNew = state.mode === "new";
   const card = state.mode === "edit" ? state.card : null;
 
-  const [title, setTitle] = useState(card?.title ?? "");
+  const inicial = state.mode === "new" ? state.inicial : undefined;
+  const [title, setTitle] = useState(card?.title ?? inicial?.title ?? "");
   const [description, setDescription] = useState(card?.description ?? "");
   const [columnId, setColumnId] = useState(
     state.mode === "new" ? state.columnId : state.card.columnId,
@@ -330,7 +339,9 @@ export function CardModal({
   const [requesterSector, setRequesterSector] = useState(
     card?.requesterSector ?? "",
   );
-  const [produtoId, setProdutoId] = useState(card?.produtoId ?? "");
+  const [produtoId, setProdutoId] = useState(
+    card?.produtoId ?? inicial?.produtoId ?? "",
+  );
 
   /**
    * Os produtos do Portfólio deste setor, assinados AQUI e não recebidos por

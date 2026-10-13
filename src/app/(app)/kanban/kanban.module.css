@@ -2450,3 +2450,83 @@
   opacity: 0.6;
   cursor: default;
 }
+
+/* ---------- criação rápida na coluna (#210) ---------- */
+/* Tem o corpo de um card — mesma borda, mesmo raio, mesmo fundo — porque é
+   isso que ela vai virar: a pessoa vê o card nascendo no lugar em que vai
+   ficar, em vez de um formulário estranho no meio da coluna. Sem animação de
+   entrada: abrir e fechar esta linha é gesto de alta frequência (AGENTS.md §3). */
+.rapida {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 9px;
+  border-radius: 11px;
+  border: 1px solid var(--brand-line);
+  background: var(--s2);
+  box-shadow: 0 0 0 3px var(--brand-soft);
+}
+.rapidaTitulo {
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--s1);
+  color: var(--tx);
+  font-family: inherit;
+  font-size: 13px;
+}
+.rapidaTitulo:focus {
+  outline: none;
+  border-color: var(--brand);
+}
+.rapidaErro {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--danger-tx);
+}
+.rapidaAcoes {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rapidaMais {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--accent-2);
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.rapidaMais:hover {
+  text-decoration: underline;
+}
+.rapidaDica {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--tx-3);
+  white-space: nowrap;
+}
+.rapidaCriar {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 11px;
+  border: none;
+  border-radius: 7px;
+  background: var(--brand);
+  color: #fff;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.rapidaCriar:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
