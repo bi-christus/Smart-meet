@@ -224,7 +224,7 @@ function chaveDeNome(nome: string): string {
  * `ignorarId` é o próprio link na edição; sem ele, salvar sem mudar nada
  * acusaria o link de ser duplicata de si mesmo.
  *
- * Como em `addSetor` e `addDimensao`, a conferência é contra a lista que a TELA
+ * Como em `addSetor`, a conferência é contra a lista que a TELA
  * já tem. Duas pessoas cadastrando o mesmo endereço no mesmo segundo criam dois
  * documentos — e uma transação por causa de um empate que ninguém viu
  * acontecer seria caro demais para um cadastro deste tamanho.
@@ -275,7 +275,7 @@ function instante(v: unknown): number | null {
  * Documento ilegível é DESCARTADO, não derruba a lista: o Firestore aceita
  * escrita pelo console e pelo Admin SDK, que não passam pelas regras, e um
  * único documento torto não pode deixar a aba inteira em branco. É a mesma
- * escolha de `normalizarDimensao`.
+ * escolha de `normalizarAta`.
  *
  * O que descarta é o mínimo para o card existir: nome e setor. Endereço
  * inválido NÃO descarta — o card aparece sem abrir nada (a tela confere a URL

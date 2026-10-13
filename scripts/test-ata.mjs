@@ -45,11 +45,6 @@ const HOJE = new Date(2026, 7, 26).getTime();
 const SETOR = "Cantinas";
 const ENTREGUES = { [SETOR]: new Set(["entregue"]) };
 
-const DIMS = [
-  { id: "d1", nome: "D1 · Cadeia de suprimentos", ordem: 1, subs: [{ id: "1", nome: "Estoque" }] },
-  { id: "d2", nome: "D2 · Operação e gente", ordem: 2, subs: [] },
-];
-
 const card = (id, extra = {}) => ({
   id,
   sector: SETOR,
@@ -161,7 +156,7 @@ const ata = {
     { cardId: "entregue-com-registro", decisao: "Fechado na reunião passada", objetivo: "", proximaReuniao: false, tarefas: [] },
   ],
 };
-const pauta = montarPauta({ cards, ata, dimensoes: DIMS, entregues: ENTREGUES, hoje: HOJE });
+const pauta = montarPauta({ cards, ata, entregues: ENTREGUES, hoje: HOJE });
 const ordem = pauta.map((l) => l.card.id).join(",");
 const atrasada = pauta.find((l) => l.card.id === "atrasada");
 checa("linha de card sempre traz o título dele", pauta.every((l) => l.titulo === l.card.title));
@@ -212,14 +207,11 @@ checa(
   pauta.map((l) => l.numero).join(",") === "01,02,03,04",
   pauta.map((l) => l.numero).join(","),
 );
+// A classificação saiu do app (#206): a linha da pauta não carrega mais o nome
+// da dimensão, nem quando o card antigo ainda tem o id gravado.
 checa(
-  "a dimensão e a subdimensão viram texto ao lado",
-  atrasada.dimensao === "D1 · Cadeia de suprimentos" && atrasada.subdimensao === "Estoque",
-  `${atrasada.dimensao} / ${atrasada.subdimensao}`,
-);
-checa(
-  "demanda sem classificação não inventa dimensão",
-  pauta.find((l) => l.card.id === "entregue-com-registro").dimensao === "",
+  "a pauta não desenha mais dimensão, nem a do card antigo classificado",
+  !("dimensao" in atrasada) && !("subdimensao" in atrasada),
 );
 checa(
   "demanda que a ata nunca tocou entra com item vazio, não com undefined",
@@ -231,18 +223,17 @@ checa(
   atrasada.secao === "quadro",
 );
 
-// Dentro do MESMO estado, a dimensão ordena — e "sem classificação" vai para o
-// fim, em vez de ganhar a primeira posição com `ordem` zero.
+// Dentro do MESMO estado, o título ordena. Até #206 a dimensão vinha antes dele;
+// um id de dimensão que sobrou num card antigo não pode mais mexer na ordem.
 const mesmoEstado = montarPauta({
-  cards: [card("sem-dim"), card("da-d2", { dimensaoId: "d2" }), card("da-d1", { dimensaoId: "d1" })],
+  cards: [card("c-sem"), card("b-d2", { dimensaoId: "d2" }), card("a-d1", { dimensaoId: "d1" })],
   ata: { itens: [] },
-  dimensoes: DIMS,
   entregues: ENTREGUES,
   hoje: HOJE,
 });
 checa(
-  "no mesmo estado, ordena pela dimensão e joga a sem classificação para o fim",
-  mesmoEstado.map((l) => l.card.id).join(",") === "da-d1,da-d2,sem-dim",
+  "no mesmo estado, ordena pelo título — a dimensão antiga não conta mais",
+  mesmoEstado.map((l) => l.card.id).join(",") === "a-d1,b-d2,c-sem",
   mesmoEstado.map((l) => l.card.id).join(","),
 );
 
@@ -263,7 +254,7 @@ const comTarefas = {
   ],
 };
 const r = resumoDaAta(
-  montarPauta({ cards, ata: comTarefas, dimensoes: DIMS, entregues: ENTREGUES, hoje: HOJE }),
+  montarPauta({ cards, ata: comTarefas, entregues: ENTREGUES, hoje: HOJE }),
 );
 checa("conta uma atrasada", r.porEstado.atrasada === 1, JSON.stringify(r.porEstado));
 checa("em aberto é tudo menos as concluídas", r.emAberto === 3, String(r.emAberto));
@@ -301,11 +292,12 @@ const herdado = herdarParaProxima({
   ],
 });
 checa("só os marcados são levados", herdado.length === 2 && herdado[0].cardId === "vai");
-// Sem card, assunto e classificação são a ÚNICA coisa que diz do que a linha
-// trata. Deixá-los para trás levaria para a próxima reunião uma pauta de itens
-// sem nome — e a numeração da tela não ajuda a lembrar do que era o "04".
+// Sem card, assunto e contexto são a ÚNICA coisa que diz do que a linha trata.
+// Deixá-los para trás levaria para a próxima reunião uma pauta de itens sem
+// nome. A classificação antiga vai como veio: a dimensão saiu da tela (#206),
+// mas não pode ser apagada por quem só levou o assunto adiante.
 checa(
-  "o assunto sem card vai junto, com contexto e dimensão",
+  "o assunto sem card vai junto, com contexto e a classificação antiga intacta",
   herdado[1].assunto === "Sistema Connect e totens" &&
     herdado[1].contexto === "Totem custa cerca de R$ 5.800" &&
     herdado[1].dimensaoId === "d1" &&
@@ -527,7 +519,6 @@ checa(
 const pautaSemCard = montarPauta({
   cards: [],
   ata: comAssunto,
-  dimensoes: DIMS,
   entregues: ENTREGUES,
   hoje: HOJE,
 });
@@ -584,7 +575,6 @@ const pautaOrfa = montarPauta({
   // foi apagado de vez. `cardsVivos` já o filtrou antes de chegar aqui.
   cards: [card("vivo")],
   ata: ataComOrfao,
-  dimensoes: DIMS,
   entregues: ENTREGUES,
   hoje: HOJE,
 });

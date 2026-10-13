@@ -54,10 +54,9 @@ export type { TagRef };
 
 // A cor da tag MUDOU DE CASA para `tags-core`, e este arquivo passa a
 // reexportá-la — como já faz com as colunas, a lixeira e os rótulos de demanda.
-// Mudou quando a árvore da aba Dimensões (removida em 06/10/2026) precisou dela
-// num módulo puro, que não pode importar este aqui (ele traz o SDK do cliente na
-// primeira linha). Ficou lá porque é onde mora o resto da régua de tag. Nenhuma
-// tela precisa trocar de import.
+// Mudou quando um módulo puro precisou dela, e módulo puro não pode importar
+// este aqui (ele traz o SDK do cliente na primeira linha). Ficou lá porque é
+// onde mora o resto da régua de tag. Nenhuma tela precisa trocar de import.
 import { TAG_COLORS, tagColor } from "./tags-core.ts";
 export { TAG_COLORS, tagColor };
 
@@ -127,21 +126,13 @@ export type Card = {
   requester?: string | null; // solicitante (nome cadastrado)
   requesterSector?: string | null; // setor solicitante (cadastrado)
   /**
-   * Onde esta demanda mora na árvore do setor — ver `dimensoes-core.ts`.
+   * A classificação por dimensão, que SAIU DO APP em 13/10/2026 (#206).
    *
-   * Guarda o ID, e não o nome, pelo motivo que `tags-ref.ts` documenta: nome é
-   * cópia, e cópia não sobrevive ao rename do cadastro. Quem traduz para texto é
-   * quem tem o cadastro em mãos.
-   *
-   * Os DOIS campos existem porque os dois casos existem. A ata prevê a demanda
-   * que mora numa subdimensão e a que fica direto na dimensão ("uma caixa que
-   * abriga vários trabalhos"), e o formulário não obriga a descer o segundo
-   * nível. `subdimensaoId` sem `dimensaoId` não é estado válido, e a árvore
-   * trata como não classificada.
-   *
-   * Ausente em toda demanda anterior a esta frente — que é a maioria delas. A
-   * árvore junta essas no nó "Sem classificação"; ela nunca esconde demanda por
-   * falta de campo.
+   * Nenhuma tela lê nem escreve mais estes campos; eles ficam no tipo porque
+   * continuam gravados nos cards antigos, e o código da classificação está na
+   * branch `arquivo/dimensoes`. Ninguém os apaga: a única escrita que sobrou é
+   * a de `mover-setor-core`, que os zera na troca de setor — o id é de uma
+   * árvore POR SETOR e não significaria nada no quadro de chegada.
    */
   dimensaoId?: string | null;
   subdimensaoId?: string | null;
@@ -265,8 +256,6 @@ export type CardInput = {
   assignee: string | null;
   requester: string | null;
   requesterSector: string | null;
-  dimensaoId: string | null;
-  subdimensaoId: string | null;
   startDate: string | null;
   due: string | null;
   priority: Priority;
@@ -422,8 +411,6 @@ export async function createCard(
     assignee: input.assignee || null,
     requester: input.requester || null,
     requesterSector: input.requesterSector || null,
-    dimensaoId: input.dimensaoId || null,
-    subdimensaoId: input.subdimensaoId || null,
     startDate: input.startDate || null,
     due: input.due || null,
     priority: input.priority,

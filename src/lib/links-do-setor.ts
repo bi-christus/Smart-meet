@@ -30,7 +30,7 @@ import {
  *
  * A regra mora em `links-do-setor-core.ts`, que é onde ela é testada. Aqui só
  * vivem a assinatura e as escritas. **Não coloque decisão neste arquivo**: o
- * partido é o mesmo de `dimensoes`/`dimensoes-core`.
+ * partido é o mesmo de `setores`/`setores-core`.
  *
  * Cada link é um DOCUMENTO, e não um item de array como dentro do card. É isso
  * que dispensa as transações que o link da demanda precisava: lá, gravar a

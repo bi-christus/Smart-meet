@@ -76,7 +76,6 @@ import {
 import { conferirTag, normalizarTag, semAcento } from "@/lib/tags-core";
 import { codigoDe, fraseDeFalha } from "@/lib/erro-ui-core";
 import { diffCard, mudancasIniciais, type Rotulos } from "@/lib/historico-core";
-import { subscribeDimensoes, type Dimensao } from "@/lib/dimensoes";
 import { type UserProfile } from "@/lib/users";
 import { Icon } from "@/components/icons";
 import { IconePicker } from "@/components/icone-picker";
@@ -234,10 +233,6 @@ function NovoCadastro({
  * conta — reordenar a checklist É uma mudança.
  */
 export type EditState =
-  // A demanda nova chegava com `dimensaoId`/`subdimensaoId` preenchidos quando
-  // nascia do botão "Criar demanda aqui" da aba Dimensões. A aba saiu em
-  // 06/10/2026 e, com ela, o único lugar que sabia a dimensão antes de o
-  // formulário abrir: o campo agora sempre abre vazio, e quem cria escolhe.
   | { mode: "new"; columnId: string }
   | { mode: "edit"; card: Card }
   | null;
@@ -334,49 +329,6 @@ export function CardModal({
   const [requesterSector, setRequesterSector] = useState(
     card?.requesterSector ?? "",
   );
-  const [dimensaoId, setDimensaoId] = useState(card?.dimensaoId ?? "");
-  const [subdimensaoId, setSubdimensaoId] = useState(card?.subdimensaoId ?? "");
-
-  /**
-   * A árvore do setor, assinada AQUI e não recebida por prop.
-   *
-   * Quem abre este modal — o quadro e o Cronograma — não precisa do cadastro
-   * para desenhar a si mesmo. Passá-lo obrigaria essas telas a assinar a
-   * coleção o tempo todo por causa de um seletor que só existe enquanto o modal
-   * está aberto; aqui, o listener nasce e morre com ele.
-   *
-   * `[]` inicial e não `undefined`: enquanto a resposta não chega, o seletor
-   * mostra "— Sem dimensão —" e nada mais, que é o estado honesto. O caso do
-   * falso vazio que este projeto caça é a tela dizer "não há nenhuma"; um
-   * seletor ainda sem opções não afirma isso.
-   */
-  const [dims, setDims] = useState<Dimensao[]>([]);
-  useEffect(
-    () => subscribeDimensoes(sector, setDims, (e) => console.error("[dimensoes]", e)),
-    [sector],
-  );
-
-  const dimAtual = dims.find((d) => d.id === dimensaoId);
-  /**
-   * Trocar de dimensão zera a subdimensão, e é obrigatório que zere: o id da
-   * subdimensão só é único DENTRO da dimensão, então mantê-lo apontaria para
-   * uma gaveta de outra árvore — ou, pior, para uma que existe com o mesmo id e
-   * outro significado.
-   */
-  function trocarDimensao(novo: string) {
-    setDimensaoId(novo);
-    setSubdimensaoId("");
-  }
-
-  /** id → nome, para o histórico gravar texto e não identificador. */
-  function nomesDaArvore(dId?: string | null, sId?: string | null) {
-    const d = dId ? dims.find((x) => x.id === dId) : undefined;
-    const sub = d && sId ? d.subs.find((x) => x.id === sId) : undefined;
-    return {
-      dimensaoNome: d?.nome ?? null,
-      subdimensaoNome: sub?.nome ?? null,
-    };
-  }
   /**
    * Início e prazo já nascem em dia útil.
    *
@@ -1094,11 +1046,6 @@ export function CardModal({
       assignee: assignee || null,
       requester: requester || null,
       requesterSector: requesterSector || null,
-      dimensaoId: dimensaoId || null,
-      // Subdimensão sem dimensão não é estado válido — ver o campo em
-      // `kanban.ts`. O seletor já impede, e a guarda aqui é o cinto: o estado
-      // pode ter sobrado de uma dimensão apagada com o modal aberto.
-      subdimensaoId: (dimensaoId && subdimensaoId) || null,
       startDate: startDate || null,
       due: semPrazo ? null : due || null,
       priority,
@@ -1281,17 +1228,7 @@ export function CardModal({
           await updateCard(card.id, patch as Partial<Omit<Card, "id">>, {
             ctx,
             acao: "editada",
-            /**
-             * O `antes` leva os NOMES da dimensão e da subdimensão resolvidos
-             * agora, porque o card guarda id e o histórico guarda texto
-             * congelado (ver `EstadoCard`). Sem isto, os dois lados do diff
-             * ficariam `undefined` e uma troca de dimensão não deixaria rastro.
-             */
-            mudancas: diffCard(
-              { ...card, ...nomesDaArvore(card.dimensaoId, card.subdimensaoId) },
-              { ...base, ...nomesDaArvore(dimensaoId, subdimensaoId) },
-              rotulos,
-            ),
+            mudancas: diffCard(card, base, rotulos),
           });
         }
       }
@@ -1592,57 +1529,6 @@ export function CardModal({
           ariaLabel="Responsável"
         />
       </div>
-
-      {/**
-        * ONDE ESTA DEMANDA MORA NA ÁRVORE DO SETOR.
-        *
-        * Aparece SÓ quando o setor tem árvore cadastrada. Um par de seletores
-        * vazios em todo formulário do app seria a pergunta "em qual dimensão?"
-        * feita a quem ainda não tem dimensão nenhuma — e o Kanban dos setores
-        * que nunca vão usar a aba não devia ficar mais comprido por causa dela.
-        *
-        * A subdimensão é OPCIONAL de propósito: a ata prevê a demanda que fica
-        * direto na dimensão, "uma caixa que abriga vários trabalhos". Obrigar o
-        * segundo nível faria quem não soubesse escolher chutar, e chute vira
-        * dado errado que ninguém revisa.
-        */}
-      {dims.length > 0 && (
-        <div className={styles.row2}>
-          <div className={styles.field}>
-            <label className={styles.label}>Dimensão</label>
-            <Select
-              value={dimensaoId}
-              options={[
-                { value: "", label: "— Sem dimensão —" },
-                ...dims.map((d) => ({ value: d.id, label: d.nome })),
-              ]}
-              onChange={trocarDimensao}
-              placeholder="— Sem dimensão —"
-              ariaLabel="Dimensão"
-            />
-          </div>
-          <div className={styles.field}>
-            <label className={styles.label}>Subdimensão</label>
-            <Select
-              value={subdimensaoId}
-              options={[
-                { value: "", label: "— Direto na dimensão —" },
-                ...(dimAtual?.subs ?? []).map((sub) => ({
-                  value: sub.id,
-                  label: sub.nome,
-                })),
-              ]}
-              onChange={setSubdimensaoId}
-              // Sem dimensão escolhida a lista tem só a opção neutra, e o
-              // texto diz o motivo em vez de deixar um seletor mudo na tela.
-              placeholder={
-                dimAtual ? "— Direto na dimensão —" : "Escolha a dimensão primeiro"
-              }
-              ariaLabel="Subdimensão"
-            />
-          </div>
-        </div>
-      )}
 
       <div className={styles.row2}>
         <div className={styles.field}>
@@ -2313,9 +2199,9 @@ export function CardModal({
        * MOVER DE SETOR — o painel, e por que ele mostra o plano antes.
        *
        * Mover é a mudança mais radical que uma demanda sofre neste app: troca de
-       * quadro, de etapa e de classificação de uma vez. Os dois modos de falha
-       * são silenciosos (etapa que não existe no destino, dimensão de outro
-       * setor), e é por isso que o que vai acontecer está escrito aqui, com o
+       * quadro e de etapa de uma vez. O modo de falha é silencioso (etapa que
+       * não existe no destino), e é por isso que o que vai acontecer está
+       * escrito aqui, com o
        * nome da etapa de chegada, antes de qualquer escrita.
        */}
       {movendo && (
@@ -2356,13 +2242,6 @@ export function CardModal({
                   " — casada pelo nome, porque os dois setores criaram essa etapa separadamente"}
                 .
               </li>
-              {plano.limpaClassificacao && (
-                <li>
-                  A classificação de dimensão é <strong>apagada</strong>: a
-                  árvore é cadastro de cada setor, e o galho de {sector} não
-                  existe em {plano.destino}.
-                </li>
-              )}
               {plano.responsavelForaDoDestino && (
                 <li>
                   O responsável atual <strong>não participa de {plano.destino}</strong>.

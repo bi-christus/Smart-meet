@@ -68,8 +68,6 @@ export type CardParaFundir = {
   assignee?: string | null;
   requester?: string | null;
   requesterSector?: string | null;
-  dimensaoId?: string | null;
-  subdimensaoId?: string | null;
   startDate?: string | null;
   due?: string | null;
   tags?: string[];
@@ -163,7 +161,6 @@ export const CAMPOS_ESCOLHIVEIS = [
   "priority",
   "startDate",
   "due",
-  "dimensao",
 ] as const;
 export type CampoEscolhivel = (typeof CAMPOS_ESCOLHIVEIS)[number];
 
@@ -175,7 +172,6 @@ export const CAMPO_DA_FUSAO_ROTULO: Record<CampoEscolhivel, string> = {
   priority: "Prioridade",
   startDate: "Início",
   due: "Prazo",
-  dimensao: "Dimensão",
 };
 
 /**
@@ -188,9 +184,8 @@ export const CAMPO_DA_FUSAO_ROTULO: Record<CampoEscolhivel, string> = {
  * Campo vazio dos dois lados também não é conflito: não há o que escolher entre
  * nada e nada.
  *
- * `dimensao` conta os dois ids juntos porque eles são um endereço só: escolher a
- * dimensão de um card e a subdimensão do outro produziria um par que não existe
- * na árvore de setor nenhum.
+ * A dimensão saiu desta lista com a classificação (13/10/2026, #206): o card
+ * que fica guarda a que já tinha, e a fusão não a escreve.
  */
 export function camposEmConflito(
   a: CardParaFundir,
@@ -209,11 +204,6 @@ export function camposEmConflito(
   if (difere(a.priority, b.priority)) out.push("priority");
   if (difere(a.startDate, b.startDate)) out.push("startDate");
   if (difere(a.due, b.due)) out.push("due");
-  if (
-    difere(a.dimensaoId, b.dimensaoId) ||
-    difere(a.subdimensaoId, b.subdimensaoId)
-  )
-    out.push("dimensao");
   return out;
 }
 
@@ -229,7 +219,6 @@ export type Escolhas = {
   priority: Lado;
   startDate: Lado;
   due: Lado;
-  dimensao: Lado;
 };
 
 /**
@@ -262,8 +251,6 @@ export function escolhasIniciais(
     priority: lado(vencedor.priority, perdido.priority),
     startDate: lado(vencedor.startDate, perdido.startDate),
     due: lado(vencedor.due, perdido.due),
-    dimensao:
-      !vencedor.dimensaoId && perdido.dimensaoId ? "perdido" : "vencedor",
   };
 }
 
@@ -464,8 +451,6 @@ export function resultadoDaFusao(args: {
 
   const tags = unirTags(v.tags, p.tags);
 
-  const dimensaoDe = de(e.dimensao);
-
   return {
     patchVencedor: {
       title: texto(de(e.title).title) || texto(v.title),
@@ -478,8 +463,6 @@ export function resultadoDaFusao(args: {
       priority: de(e.priority).priority ?? v.priority ?? null,
       startDate: de(e.startDate).startDate ?? null,
       due: de(e.due).due ?? null,
-      dimensaoId: dimensaoDe.dimensaoId ?? null,
-      subdimensaoId: dimensaoDe.subdimensaoId ?? null,
       // Os três que a regra da fusão preserva. Herdados, e não escolhidos: o
       // vazio de um lado combina com o valor do outro, e é justamente por isso
       // que a fusão foi permitida.
