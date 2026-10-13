@@ -36,7 +36,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
    * liberado" e sai de `carregando`. O porquê está escrito lá.
    */
   const { permissoes, carregando: permsCarregando } = usePermissoes();
-  const { theme, accent, setTheme, setAccent } = useTheme();
+  const { theme, accent, fundoAnimado, setTheme, setAccent, setFundoAnimado } =
+    useTheme();
   const router = useRouter();
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -101,8 +102,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <RecordingProvider ownerEmail={profile.email}>
       <div className={styles.shell}>
-      {/* uma instância só para o app inteiro — é fixa e atravessa as abas */}
-      <Waveform variant="ambient" />
+      {/* uma instância só para o app inteiro — é fixa e atravessa as abas.
+          Desligada no menu do perfil (#214), ela nem monta: o canvas deixa de
+          ser redesenhado, e não só de aparecer. */}
+      {fundoAnimado && <Waveform variant="ambient" />}
       <header className={styles.topbar}>
         <Link href="/" className={styles.brand}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -189,7 +192,31 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   >
                     Claro
                   </button>
+                  <button
+                    className={`${styles.themeBtn} ${theme === "contraste" ? styles.themeOn : ""}`}
+                    onClick={() => setTheme("contraste")}
+                    title="Fundo preto, texto branco e bordas bem marcadas"
+                  >
+                    Alto contraste
+                  </button>
                 </div>
+
+                {/* UM INTERRUPTOR, e não dois botões como o tema: são dois estados
+                    de uma coisa só, ligada ou desligada, e `role="switch"` diz
+                    isso a quem usa leitor de tela. */}
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={fundoAnimado}
+                  className={styles.popItem}
+                  onClick={() => setFundoAnimado(!fundoAnimado)}
+                >
+                  <span
+                    className={`${styles.chave} ${fundoAnimado ? styles.chaveOn : ""}`}
+                    aria-hidden
+                  />
+                  Animação de fundo
+                </button>
 
                 <div className={styles.popLbl}>Cor de destaque</div>
                 <div className={styles.swatchRow}>

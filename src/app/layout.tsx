@@ -42,7 +42,8 @@ export default function RootLayout({
       <body>
         <script
           dangerouslySetInnerHTML={{
-            /* A lista de acentos aparece aqui E em `theme.tsx`, e é de
+            /* A lista de acentos — e, desde o alto contraste (#214), a de
+               temas — aparece aqui E em `theme.tsx`, e é de
                propósito: este script roda ANTES de qualquer JavaScript do app
                ser baixado — é isso que evita o piscar. Importar o módulo aqui
                desfaria a razão de ele existir. A conferência precisa estar nos
@@ -50,7 +51,7 @@ export default function RootLayout({
                dedo no console) vira um `data-accent` que folha nenhuma casa, e
                o app abre sem cor de marca sem nada dizer por quê. */
             __html:
-              "(function(){try{var r=document.documentElement;var a=localStorage.getItem('sm_accent');r.dataset.theme=localStorage.getItem('sm_theme')||'dark';r.dataset.accent=['preto','azul','cafe','entreaulas'].indexOf(a)<0?'preto':a;}catch(e){}})();",
+              "(function(){try{var r=document.documentElement;var a=localStorage.getItem('sm_accent');var t=localStorage.getItem('sm_theme');r.dataset.theme=['dark','light','contraste'].indexOf(t)<0?'dark':t;r.dataset.accent=['preto','azul','cafe','entreaulas'].indexOf(a)<0?'preto':a;}catch(e){}})();",
           }}
         />
         <ThemeProvider>
