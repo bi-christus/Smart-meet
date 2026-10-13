@@ -19,6 +19,7 @@ import {
   MAX_PLINTOS,
   POSICOES_DO_PODIO,
   TETO_RANK,
+  alturaDaBarra,
   alturaDoDegrau,
   escalaDaFileira,
   maiorEntrega,
@@ -346,6 +347,27 @@ checa(
   POSICOES_DO_PODIO > 0 && POSICOES_DO_PODIO < TETO_RANK,
   `${POSICOES_DO_PODIO} de ${TETO_RANK}`,
 );
+
+// A fileira inteira em barras (13/10/2026): colocação melhor nunca tem barra
+// mais baixa, do 1º ao último — inclusive na virada do 3º para o 4º.
+{
+  const r = montarRank(
+    pessoas(["A", 30], ["B", 29], ["C", 28], ["D", 27], ["E", 9], ["F", 1]),
+    Number.POSITIVE_INFINITY,
+  );
+  const m = maiorEntrega(r);
+  const h = r.map((c) => alturaDaBarra(c.posicao, c.entregues, m));
+  checa(
+    "alturaDaBarra: escada da fileira inteira",
+    h.every((x, i) => i === 0 || x <= h[i - 1]),
+    h.join(", "),
+  );
+  checa(
+    "alturaDaBarra: top 3 igual ao degrau de sempre",
+    [0, 1, 2].every((i) => h[i] === alturaDoDegrau(r[i].posicao, r[i].entregues, m)),
+  );
+  checa("montarRank sem teto devolve todo mundo", r.length === 6, String(r.length));
+}
 
 console.log(falhas === 0 ? "\nrank: ok" : `\nrank: ${falhas} falha(s)`);
 process.exit(falhas === 0 ? 0 : 1);

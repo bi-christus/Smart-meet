@@ -411,26 +411,84 @@
   }
 }
 
-.rosto {
+/* O retrato (13/10/2026): cartão no estilo do cartaz de corrida, com a foto do
+   perfil cobrindo tudo e a colocação escrita na vertical ao lado ("P1"). Canto
+   arredondado em cima e reto embaixo — o retrato ASSENTA no nome e na pedra,
+   como a foto do cartaz assenta na tabela. O fundo é a superfície fixa da
+   cena, e não token de tema: o cartão está sobre a foto (ver o topo). */
+.retrato {
   position: relative;
-  padding: 4px;
-  border-radius: 50%;
-  /* Era `var(--line)`, que sobre a foto dá 1,1:1 nos temas escuros. O anel é o
-     que separa o rosto da cena — ele não pode seguir o tema. */
-  border: 2px solid var(--anel-foto);
-  background: rgba(12, 11, 10, 0.55);
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55);
+  width: var(--retrato-w, 100px);
+  height: var(--retrato-h, 122px);
+  flex: none;
+  display: block;
+  padding: 0;
+  border: 1px solid var(--linha-foto);
+  border-bottom: none;
+  border-radius: 12px 12px 0 0;
+  overflow: hidden;
+  background: linear-gradient(180deg, #3a3631, #1c1a17);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.55);
+  font: inherit;
+  color: inherit;
 }
-.primeiro .rosto {
+button.retrato {
+  cursor: pointer;
+}
+button.retrato:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 3px;
+}
+.primeiro .retrato {
   border-color: var(--brand);
-  /* O halo translúcido sozinho não separa nada: é laranja sobre luz laranja. A
-     sombra escura por fora é o que descola o 1º lugar do fundo. */
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--brand) 38%, #3a3631),
+    #1c1a17
+  );
   box-shadow:
-    0 0 0 5px var(--brand-soft),
-    0 10px 28px rgba(0, 0, 0, 0.6);
+    0 0 0 3px var(--brand-soft),
+    0 12px 30px rgba(0, 0, 0, 0.6);
+}
+.retratoFoto {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 25%;
+}
+.retratoInicial {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-serif), serif;
+  font-size: calc(var(--retrato-w, 100px) * 0.48);
+  font-weight: 600;
+  color: #ffffff;
+}
+/* "P1" na vertical, na faixa direita do cartão, como no cartaz. Sobre a foto
+   ele precisa de chão próprio: um degradê escuro só na borda, e não uma faixa
+   chapada que cortaria o rosto. */
+.retratoPos {
+  position: absolute;
+  top: 8px;
+  right: 4px;
+  writing-mode: vertical-rl;
+  font-family: var(--font-sans), sans-serif;
+  font-size: calc(var(--retrato-w, 100px) * 0.24);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 1px;
+  color: #ffffff;
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.9),
+    0 0 10px rgba(0, 0, 0, 0.6);
 }
 
-/* O troféu: um selo sobre o rosto, nunca um badge que pulsa (a skill de motion
+/* O troféu: um selo sobre o retrato, nunca um badge que pulsa (a skill de motion
    proíbe atenção em laço). Chega DEPOIS de o campeão assentar — primeiro a
    pessoa sobe, depois recebe o troféu; invertida, a ordem entrega o resultado
    antes do vencedor. */
@@ -591,75 +649,145 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* ---------- quem fica de pé no chão ---------- */
+/* ---------- o cartaz: título na lateral, gráfico e lista ---------- */
 
-/* Do 4º em diante. Sem plinto, mas SOBRE o mesmo chão: o friso de baixo tem o
-   material da laje, e a linha de contato da fileira passa por baixo de todo
-   mundo. É isso que faz "estes três subiram, o resto está no palco" se ler sem
-   legenda — e o que impede a leitura de "e também tem estes aqui", que era o
-   defeito da fila embaixo.
-
-   O `padding-inline` é o respiro entre eles: os plintos ficam encostados
-   (plataforma), as pessoas de pé não (elas não são um objeto só). */
-.noChao {
-  position: relative;
-  z-index: 1;
-  flex: 0 1 auto;
-  width: calc(var(--rosto, 52px) + 32px);
-  min-width: calc(var(--rosto, 52px) + 10px);
+/* Duas colunas, como o cartaz de referência: o título de pé à esquerda e, à
+   direita, o gráfico com todo mundo em cima e as entregas embaixo. */
+.palco {
+  flex: 1 0 auto;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  padding: 6px 22px 0 10px;
+}
+.palcoCorpo {
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 5px;
-  padding: 0 6px 13px;
-  animation: assenta 200ms var(--atraso, 0ms) both cubic-bezier(0.32, 0.72, 0, 1);
+}
+.palco .trilho {
+  flex: none;
+  padding: 18px 0 30px;
 }
 
-/* O friso: a mesma pedra da laje do plinto, rasa. */
-.noChao::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 7px;
-  background: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.18),
-    rgba(255, 255, 255, 0.04)
-  );
-  pointer-events: none;
+/* De baixo para cima, como o "RACE RESULT" do cartaz. `vertical-rl` + giro de
+   180° é o que deixa a leitura subindo; `sideways-lr` resolveria numa linha,
+   mas ainda não existe em todos os navegadores do setor. */
+.tituloLateral {
+  align-self: start;
+  position: sticky;
+  top: 8px;
+  display: flex;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  line-height: 0.86;
+  user-select: none;
 }
-
-.chaoPos {
-  font-family: var(--font-serif), serif;
-  font-size: 14px;
+.tituloGrande {
+  font-family: var(--fonte-titulo), var(--font-mono), monospace;
   font-weight: 700;
-  line-height: 1;
+  font-size: clamp(52px, 7.6vh, 88px);
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  color: #ffffff;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.55);
+}
+.tituloAcento {
+  margin-top: 0.35em;
+  font-family: var(--fonte-titulo), var(--font-mono), monospace;
+  font-weight: 700;
+  font-size: clamp(36px, 5.2vh, 60px);
+  color: var(--acento-foto);
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.6);
+}
+
+/* As barras do 4º em diante: pedra mais baixa, inscrição menor — o número
+   grande de serifa não cabe numa barra de 34px. */
+.resto .posicao {
+  font-size: 20px;
+}
+.resto .entregas {
+  font-size: 10px;
+}
+.resto .nome {
+  font-size: 13px;
+}
+
+/* A lista de entregas, no lugar da lista de pilotos do cartaz. Superfície
+   escura translúcida e fixa (está sobre a foto), linhas separadas por um fio. */
+.lista {
+  margin: 0 0 8px;
+  padding: 14px 18px 6px;
+  border-radius: 12px;
+  background: var(--painel-foto);
+  border: 1px solid var(--linha-foto);
+  backdrop-filter: blur(6px);
+}
+.listaTitulo {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
   color: var(--sobre-foto-2);
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
 }
-.noChao .rosto {
-  padding: 3px;
-}
-.chaoNome {
-  max-width: 100%;
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--sobre-foto);
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
-  text-align: center;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  line-height: 1.25;
-}
-.chaoNum {
+.listaTitulo span {
   font-family: var(--font-mono), monospace;
-  font-size: 10.5px;
+  color: var(--sobre-foto);
+}
+.listaItens {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.listaLinha {
+  display: grid;
+  grid-template-columns: 30px 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 0;
+  border-top: 1px solid var(--linha-foto);
+}
+.listaLinha:first-child {
+  border-top: none;
+}
+.listaNum {
+  font-family: var(--font-mono), monospace;
+  font-size: 13px;
   color: var(--sobre-foto-2);
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.listaTexto {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+/* Nome em cima, fino; demanda embaixo, forte — o nome e o sobrenome do piloto
+   no cartaz. */
+.listaQuem {
+  font-size: 11.5px;
+  color: var(--sobre-foto-2);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.listaDemanda {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--sobre-foto);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.listaData {
+  font-family: var(--font-mono), monospace;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--sobre-foto);
   font-variant-numeric: tabular-nums;
 }
 
@@ -693,8 +821,7 @@
 @media (prefers-reduced-motion: reduce) {
   .degrau,
   .bloco,
-  .trofeu,
-  .noChao {
+  .trofeu {
     animation: none;
   }
 }
@@ -712,5 +839,28 @@
   }
   .trilho {
     padding: 10px 14px 30px;
+  }
+  /* No telefone o título deita: de pé ele comeria um terço da largura. */
+  .palco {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 6px 14px 0;
+  }
+  .tituloLateral {
+    position: static;
+    writing-mode: horizontal-tb;
+    transform: none;
+    align-items: baseline;
+    gap: 10px;
+  }
+  .tituloGrande {
+    font-size: 30px;
+  }
+  .tituloAcento {
+    margin-top: 0;
+    font-size: 22px;
+  }
+  .listaLinha {
+    grid-template-columns: 22px 30px minmax(0, 1fr) auto;
+    gap: 8px;
   }
 }
