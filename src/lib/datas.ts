@@ -134,21 +134,17 @@ export function startOfWeek(d: Date): Date {
 /**
  * Semana útil — a regra, e só ela.
  *
- * Ninguém na Rede trabalha sábado nem domingo. Três lugares dependem disso: a
- * grade do Cronograma, que passa a desenhar de segunda a sexta; o prazo do
- * formulário de demanda, que recusa fim de semana; e o gerador de recorrências,
- * que empurra a data prevista. Os três leem daqui. Regra de calendário copiada
- * em três telas é regra que diverge na primeira exceção — e ninguém descobre,
- * porque cada tela continua mostrando um número plausível.
+ * Ninguém na Rede trabalha sábado nem domingo. Os lugares que dependem disso —
+ * a grade do Cronograma, que desenha de segunda a sexta, e o prazo do
+ * formulário de demanda, que recusa fim de semana — leem daqui. (O gerador de
+ * recorrências também lia, até sair do app em 13/10/2026, #207.) Regra de
+ * calendário copiada em várias telas é regra que diverge na primeira exceção —
+ * e ninguém descobre, porque cada tela continua mostrando um número plausível.
  *
  * Cada pergunta tem duas funções, uma para `Date` e outra para o ISO curto, com
  * o sabor no nome. Uma só, aceitando os dois, seria onde o fuso volta a morder:
  * quem tivesse um `Date` na mão passaria por `new Date(iso)` no meio do caminho
  * sem perceber — que é exatamente o que o cabeçalho deste arquivo evita.
- *
- * (`WEEKDAYS`, em `recorrencias-core.ts`, responde outra pergunta: em que dias
- * uma regra de recorrência PODE ser marcada. Aqui a pergunta é sobre uma data
- * que já existe.)
  */
 export function ehFimDeSemana(d: Date): boolean {
   const dow = d.getDay();
