@@ -74,12 +74,10 @@ export const ABAS: Aba[] = [
   // de permissões gravado antes disso ainda pode citar "dimensoes":
   // `normalizarPermissoes` só lê as abas desta lista, então a entrada é
   // ignorada, e não vira aba fantasma.
-  {
-    id: "recorrencias",
-    label: "Recorrências",
-    href: "/recorrencias",
-    configuravel: true,
-  },
+  //
+  // A aba Recorrências saiu em 13/10/2026 (#207; o código está na branch
+  // `arquivo/recorrencias`), e vale o mesmo: um "recorrencias" gravado num
+  // quadro antigo é ignorado na leitura.
   { id: "dashboard", label: "Dashboard", href: "/dashboard", configuravel: true },
   {
     id: "cronograma",

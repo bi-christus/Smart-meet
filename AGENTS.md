@@ -188,7 +188,7 @@ comentário parafraseia a linha abaixo dele, apague-o.
 **Módulo puro é separado do SDK.** Regra que dá para testar mora num `*-core.ts` sem
 `firebase/firestore` dentro. O acesso ao banco fica no módulo irmão. É isso que
 permite testar sem subir nada — veja `kanban-columns.ts`, `tags-ref.ts`,
-`historico-core.ts`, `recorrencias-core.ts`, `datas.ts`.
+`historico-core.ts`, `datas.ts`.
 
 **Todo módulo puro tem teste, e o teste roda no `prebuild`.** Os scripts em
 `scripts/*.mjs` importam o `.ts` real pelo strip de tipos nativo do Node — sem cópia,
@@ -263,4 +263,4 @@ que fez.
 | Firebase | projeto `smart-meet-d441b`, conta `setorbiunichristus@gmail.com` |
 | Vercel | projeto `smart-meeting`, deploy automático no push da `main` |
 | GitHub | `bi-christus/Smart-meet`, tudo direto na `main` até aqui |
-| Crons | `vercel.json` — sync do Drive 06:00, geração de recorrências 06:10 |
+| Crons | `vercel.json` — sync do Drive 06:00, resumo diário no Discord 11:00 (seg–sex), fechamento da temporada 06:20 do dia 1 |

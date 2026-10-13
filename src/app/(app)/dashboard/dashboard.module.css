@@ -363,17 +363,6 @@
   color: var(--tx);
   font-variant-numeric: tabular-nums;
 }
-.barraHoras {
-  width: 66px;
-  text-align: right;
-  font-size: 11px;
-  color: var(--tx-3);
-  font-variant-numeric: tabular-nums;
-}
-.barraHorasZero {
-  color: var(--line);
-}
-
 /* Setor solicitante em texto, alinhado ao início da barra (150px do nome +
    10px do gap). A cor nomeia o segmento e o número diz quantos — a barra
    sozinha não responde nenhuma das duas. */
@@ -384,7 +373,9 @@
   margin-left: 160px;
   padding-right: 96px;
 }
-/* Sem a coluna de h/mês, o recuo à direita reserva só o total. */
+/* No painel de responsáveis o recuo à direita reserva só o total. A coluna de
+   h/mês das recorrências, que pedia os 96px de `.barraOrigens`, saiu com a aba
+   Recorrências (#207); o painel de setor solicitante ainda usa o recuo largo. */
 .barraOrigensSemHoras {
   padding-right: 30px;
 }
