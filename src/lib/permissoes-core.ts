@@ -65,9 +65,9 @@ export const ABAS: Aba[] = [
   // Depois do Kanban porque é dele que a pauta sai: a Ata não tem demanda
   // própria, ela lê as do quadro do setor e registra o que a reunião decidiu.
   { id: "ata", label: "Ata", href: "/ata", configuravel: true },
-  // A aba Dimensões saiu em 06/10/2026. A classificação por dimensão continua
-  // no card e na Ata, e o cadastro em Admin › Dimensões. Um quadro de
-  // permissões gravado antes disso ainda pode citar "dimensoes":
+  // A aba Dimensões saiu em 06/10/2026, e a classificação inteira em
+  // 13/10/2026 (#206; o código está na branch `arquivo/dimensoes`). Um quadro
+  // de permissões gravado antes disso ainda pode citar "dimensoes":
   // `normalizarPermissoes` só lê as abas desta lista, então a entrada é
   // ignorada, e não vira aba fantasma.
   {

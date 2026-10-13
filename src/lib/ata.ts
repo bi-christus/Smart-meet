@@ -28,11 +28,10 @@ import {
  *
  * A regra mora em `ata-core.ts`, que é onde ela é testada. Aqui só vivem a
  * assinatura e as escritas. **Não coloque decisão neste arquivo**: o partido é
- * o mesmo de `dimensoes`/`dimensoes-core` e de `setores`/`setores-core`.
+ * o mesmo de `setores`/`setores-core`.
  *
  * UMA ESCRITA POR ATA, e não uma por item. Os itens moram num array dentro do
- * documento, pelo mesmo motivo que as subdimensões moram dentro da dimensão
- * (ver o cabeçalho de `dimensoes-core`): são poucos, são SEMPRE lidos junto — não
+ * documento: são poucos, são SEMPRE lidos junto — não
  * existe tela que queira um item de ata sem saber de que reunião ele é — e
  * subcoleção custaria uma consulta por ata mais uma regra própria em
  * `firestore.rules`.
@@ -46,7 +45,7 @@ import {
  */
 
 export * from "./ata-core.ts";
-// A régua da demanda que nasce na ata — obrigatoriedade da dimensão inclusive.
+// A régua da demanda que nasce na ata.
 // Reexportada daqui pelo mesmo motivo de tudo o mais neste arquivo: quem monta
 // a tela lê um módulo só.
 export * from "./ata-demanda-core.ts";
@@ -63,8 +62,8 @@ export function subscribeAtas(
   return onSnapshot(
     query(collection(db, "atas"), where("setor", "==", setor)),
     (snap) => {
-      // Documento ilegível é DESCARTADO, não derruba a lista — mesma escolha de
-      // `subscribeDimensoes`, e o porquê está em `normalizarAta`.
+      // Documento ilegível é DESCARTADO, não derruba a lista — o porquê está em
+      // `normalizarAta`.
       const lidas = snap.docs
         .map((d) => normalizarAta(d.id, d.data()))
         .filter((a): a is Ata => a !== null);

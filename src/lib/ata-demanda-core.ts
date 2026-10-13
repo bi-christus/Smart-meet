@@ -1,5 +1,5 @@
 /**
- * A demanda que nasce DENTRO da ata — e a dimensão que ela é obrigada a ter.
+ * A demanda que nasce DENTRO da ata, e o ciclo de vida da linha de pauta.
  *
  * Módulo puro (AGENTS.md §4): nada de `firebase/firestore` aqui dentro. Quem
  * escreve é a tela, por `ata.ts` e `kanban.ts`; é isto que permite
@@ -27,28 +27,13 @@
  * cliente.
  *
  * ─────────────────────────────────────────────────────────────────────────────
- * POR QUE A DIMENSÃO É OBRIGATÓRIA AQUI, E NÃO NO KANBAN
+ * A DIMENSÃO DEIXOU DE SER OBRIGATÓRIA (13/10/2026, #206)
  *
- * O "Mapa de Domínios e Estrutura" das Cantinas (v2, 22/08/2026) organiza a
- * operação em quatro domínios e diz onde cada coisa vive:
- *
- *     Meta vive em Domínio × Cantina. Procedimento vive em Domínio × Fluxo.
- *     Manual muda em Domínio × Perfil. Decisão vive em Domínio × Nível.
- *
- * Toda linha começa em domínio. Trabalho sem domínio é trabalho sem meta-mãe e
- * sem responsável declarado — que é, literalmente, o sintoma que o mapa
- * registra: "assunto simples percorre muitas pessoas antes de fechar".
- *
- * A régua vale AQUI e não no Kanban porque os dois momentos são diferentes. No
- * Kanban a demanda é anotada às pressas, muitas vezes por quem ainda não sabe
- * onde ela mora, e um campo obrigatório ali vira dimensão escolhida no chute só
- * para o botão liberar. Na ata a pergunta já foi respondida em voz alta: o
- * assunto está sendo discutido, com as pessoas do domínio na sala. É o único
- * instante do fluxo em que exigir a classificação não é atrito — é registro.
- *
- * E a obrigatoriedade não vale só para o que nasce depois desta mudança: a
- * pauta CONTA quantas linhas estão sem classificação (`semClassificacao`), para
- * que a ata antiga não fique com o problema calado.
+ * Até esta data, toda demanda aberta pela ata precisava de uma dimensão — o
+ * "Mapa de Domínios" das Cantinas dizia que trabalho sem domínio é trabalho sem
+ * meta-mãe. A classificação saiu do app a pedido do setor; a versão com ela
+ * está na branch `arquivo/dimensoes`. Os campos antigos continuam passando
+ * pelos itens sem ser lidos (ver `dimensaoId` em `ata-core.ts`).
  *
  * ─────────────────────────────────────────────────────────────────────────────
  * O QUE MAIS MORA AQUI HOJE
@@ -56,12 +41,12 @@
  * O arquivo nasceu para o nascimento da demanda, e virou o do CICLO DE VIDA da
  * linha de pauta que ainda não é uma: ela nasce (`conferirAssuntoNovo`), se
  * corrige (`editarAssunto`), muda de reunião (`moverAssunto`) e vira card
- * (`vincularCard`). Os quatro dividem as mesmas duas conferências e o mesmo
- * `Conferido`; em quatro arquivos, seriam quatro lugares para a régua da
- * dimensão deixar de valer — e o quarto ninguém lembraria de mudar.
+ * (`vincularCard`). Os quatro dividem a mesma conferência de título e o mesmo
+ * `Conferido`; em quatro arquivos, seriam quatro lugares para a régua deixar
+ * de valer — e o quarto ninguém lembraria de mudar.
  */
 
-import type { DimensaoDaPauta, ItemDaPauta, ItemDeAta } from "./ata-core.ts";
+import type { ItemDeAta } from "./ata-core.ts";
 import { chaveDeAssunto, limparTexto, proximoIdDeItem } from "./ata-core.ts";
 
 /** Quanto cabe no assunto de um item — o mesmo teto que `normalizarItem` aplica. */
@@ -70,64 +55,11 @@ export const LIMITE_ASSUNTO_CHARS = 200;
 /**
  * O veredito de uma conferência.
  *
- * Mesma forma de `NomeConferido` em `dimensoes-core`, e pelo mesmo motivo: a
- * regra do Firestore é a SEGUNDA barreira e só sabe responder "sem permissão",
- * que é a mensagem errada para quem esqueceu de escolher a dimensão.
+ * A regra do Firestore é a SEGUNDA barreira e só sabe responder "sem
+ * permissão", que é a mensagem errada para quem esqueceu de dar nome ao
+ * assunto. O `motivo` é texto de tela.
  */
 export type Conferido<T> = { ok: true; valor: T } | { ok: false; motivo: string };
-
-export type Classificacao = { dimensaoId: string; subdimensaoId: string };
-
-/**
- * A classificação existe, e existe NA ÁRVORE DESTE SETOR?
- *
- * Conferir contra a árvore, e não só contra o vazio, cobre o caso que aparece
- * sozinho com o tempo: a dimensão escolhida ontem foi apagada do cadastro hoje.
- * Um id órfão desenha igual a nenhum id — a linha some do lugar certo da árvore
- * e reaparece em "Sem classificação" —, e sem esta conferência a tela deixaria
- * gravar de novo o mesmo id morto.
- *
- * A SUBDIMENSÃO CONTINUA OPCIONAL, de propósito. A árvore prevê a demanda que
- * mora direto na dimensão ("uma caixa que abriga vários trabalhos"), e há
- * dimensões sem filho nenhum — exigir o segundo nível tornaria impossível
- * classificar em D2 enquanto ninguém tivesse cadastrado uma subdimensão lá.
- * O que não passa é subdimensão de OUTRA dimensão: `subdimensaoId` sem
- * `dimensaoId` correspondente não é estado válido (ver o comentário do campo em
- * `kanban.ts`).
- */
-export function conferirClassificacao(
-  bruto: Partial<Classificacao> | null | undefined,
-  dimensoes: readonly DimensaoDaPauta[],
-): Conferido<Classificacao> {
-  const dimensaoId = String(bruto?.dimensaoId ?? "").trim();
-  const subdimensaoId = String(bruto?.subdimensaoId ?? "").trim();
-
-  if (!dimensaoId) {
-    return {
-      ok: false,
-      motivo: dimensoes.length
-        ? "Escolha a dimensão. Toda demanda desta aba precisa de uma."
-        : "Este setor ainda não tem dimensão cadastrada. A árvore é cadastrada em Admin › Dimensões, por quem administra o sistema, antes de abrir demanda pela ata.",
-    };
-  }
-
-  const dim = dimensoes.find((d) => d.id === dimensaoId);
-  if (!dim) {
-    return {
-      ok: false,
-      motivo: "Esta dimensão não existe mais na árvore do setor. Escolha outra.",
-    };
-  }
-
-  if (subdimensaoId && !dim.subs.some((s) => s.id === subdimensaoId)) {
-    return {
-      ok: false,
-      motivo: `A subdimensão escolhida não pertence a "${dim.nome}".`,
-    };
-  }
-
-  return { ok: true, valor: { dimensaoId, subdimensaoId } };
-}
 
 /**
  * O texto que nomeia a linha — assunto do item, ou título da demanda.
@@ -145,8 +77,6 @@ export function conferirTitulo(bruto: unknown, oQue: string): Conferido<string> 
 export type AssuntoNovo = {
   assunto: string;
   contexto: string;
-  dimensaoId: string;
-  subdimensaoId: string;
 };
 
 /**
@@ -159,12 +89,9 @@ export type AssuntoNovo = {
 export function conferirAssuntoNovo(
   bruto: Partial<AssuntoNovo> | null | undefined,
   itens: readonly ItemDeAta[],
-  dimensoes: readonly DimensaoDaPauta[],
 ): Conferido<ItemDeAta> {
   const titulo = conferirTitulo(bruto?.assunto, "o assunto");
   if (!titulo.ok) return titulo;
-  const classe = conferirClassificacao(bruto, dimensoes);
-  if (!classe.ok) return classe;
 
   return {
     ok: true,
@@ -173,8 +100,8 @@ export function conferirAssuntoNovo(
       cardId: "",
       assunto: titulo.valor,
       contexto: limparTexto(bruto?.contexto),
-      dimensaoId: classe.valor.dimensaoId,
-      subdimensaoId: classe.valor.subdimensaoId,
+      dimensaoId: "",
+      subdimensaoId: "",
       // O único caminho do app que produz item `manual`: alguém abriu o
       // formulário e digitou. É o que a mesclagem com o documento do áudio lê
       // para saber que aquele texto tem autor humano e não se sobrescreve.
@@ -239,55 +166,11 @@ export function vincularCard(
 }
 
 /**
- * As linhas da pauta que ainda não têm dimensão.
- *
- * Conta as DUAS origens, porque a pergunta do gestor é uma só — "quanto desta
- * reunião está fora do mapa?" — e ela não distingue de onde a linha veio:
- *
- *   - o assunto sem card responde pela própria `dimensaoId`;
- *   - a demanda responde pela do CARD, porque dimensão é estado e estado vem do
- *     quadro (regra do cabeçalho de `ata-core.ts`).
- *
- * Consertar cada uma é escrita em lugar diferente — uma na ata, outra no card —
- * e é por isso que a tela precisa saber qual é qual. Quem responde isso é
- * `linhaEhDeCard`, logo abaixo, e não uma segunda varredura.
- */
-export function semClassificacao(
-  pauta: readonly ItemDaPauta[],
-): ItemDaPauta[] {
-  return pauta.filter((l) => {
-    // A linha cuja demanda saiu do quadro é REGISTRO, não trabalho: não há
-    // card para classificar e não há o que cobrar de ninguém. Contá-la aqui
-    // encheria o alerta de linhas históricas que ninguém pode resolver — e um
-    // alerta que não se consegue zerar é um alerta que se aprende a ignorar.
-    if (l.foraDoQuadro) return false;
-    // A PENDÊNCIA TAMBÉM NÃO, e pela mesma razão: "Em aberto" e "Outros pontos"
-    // são apêndice do documento do áudio, não assunto (ver `ehPendenciaDaReuniao`
-    // em `ata-core`). Não há o que classificar num apêndice, e cobrá-lo aqui
-    // deixaria o alerta de "fora do mapa" travado em duas linhas por ata —
-    // impossível de zerar, e por isso rápido de aprender a ignorar.
-    if (l.secao === "pendencia") return false;
-    return l.card ? !l.card.dimensaoId : !l.item.dimensaoId;
-  });
-}
-
-/** A classificação que a linha mostra hoje, venha ela do card ou do item. */
-export function classificacaoDaLinha(l: ItemDaPauta): Classificacao {
-  return l.card
-    ? {
-        dimensaoId: l.card.dimensaoId ?? "",
-        subdimensaoId: l.card.subdimensaoId ?? "",
-      }
-    : { dimensaoId: l.item.dimensaoId, subdimensaoId: l.item.subdimensaoId };
-}
-
-/**
- * O assunto corrigido — mesmo item, outro nome, outro contexto, outra caixa.
+ * O assunto corrigido — mesmo item, outro nome, outro contexto.
  *
  * POR QUE ISTO PRECISOU EXISTIR. O assunto nascia e nunca mais mudava: a tela
  * desenhava `assunto` e `contexto` como texto morto, e o único editável da
- * linha era o que vem DEPOIS da criação — decisão, objetivo, tarefas e a
- * dimensão. Um nome digitado errado no meio da reunião ficava errado para
+ * linha era o que vem DEPOIS da criação — decisão, objetivo e tarefas. Um nome digitado errado no meio da reunião ficava errado para
  * sempre naquela ata, e a única saída era excluir a ata inteira, levando junto
  * as decisões e as tarefas de todo mundo.
  *
@@ -313,15 +196,13 @@ export function classificacaoDaLinha(l: ItemDaPauta): Classificacao {
  *      daria a alguém a impressão de ter renomeado a demanda, escrevendo em
  *      dois campos que a tela não lê mais.
  *
- * A régua do título e a da dimensão são as MESMAS da criação, chamadas daqui e
- * não copiadas: régua que mora só no formulário é régua que o segundo
- * formulário esquece.
+ * A régua do título é a MESMA da criação, chamada daqui e não copiada: régua
+ * que mora só no formulário é régua que o segundo formulário esquece.
  */
 export function editarAssunto(
   itens: readonly ItemDeAta[],
   itemId: string,
   bruto: Partial<AssuntoNovo> | null | undefined,
-  dimensoes: readonly DimensaoDaPauta[],
 ): Conferido<ItemDeAta[]> {
   const atual = itens.find((i) => i.id === itemId);
   if (!atual) {
@@ -341,8 +222,6 @@ export function editarAssunto(
 
   const titulo = conferirTitulo(bruto?.assunto, "o assunto");
   if (!titulo.ok) return titulo;
-  const classe = conferirClassificacao(bruto, dimensoes);
-  if (!classe.ok) return classe;
 
   return {
     ok: true,
@@ -352,8 +231,6 @@ export function editarAssunto(
             ...i,
             assunto: titulo.valor,
             contexto: limparTexto(bruto?.contexto),
-            dimensaoId: classe.valor.dimensaoId,
-            subdimensaoId: classe.valor.subdimensaoId,
           }
         : i,
     ),
@@ -382,7 +259,7 @@ export function editarAssunto(
  * fazem a escrita de uma cair na outra — é o mesmo estado que `idsUnicos`
  * conserta na leitura, e que aqui dá para simplesmente não criar.
  *
- * O RESTO VAI INTEIRO: assunto, contexto, dimensão, decisão, objetivo,
+ * O RESTO VAI INTEIRO: assunto, contexto, decisão, objetivo,
  * `proximaReuniao` e as tarefas. O item não mudou de natureza, mudou de pasta —
  * e a decisão que a reunião tomou sobre ele continua sendo a mesma decisão.
  *
@@ -398,10 +275,9 @@ export function editarAssunto(
  *   1. A MESMA ATA de origem e destino. Sem isto o item sairia do array e
  *      voltaria com id novo — inofensivo por acaso, e confuso de ler para
  *      sempre.
- *   2. SETORES DIFERENTES. A ata é escopada por setor em `firestore.rules`, e a
- *      árvore de dimensões também: o `dimensaoId` do item não aponta para a
- *      mesma caixa do outro lado, e a linha chegaria classificada em algo que
- *      não existe lá. A tela só oferece atas do mesmo setor; esta é a segunda
+ *   2. SETORES DIFERENTES. A ata é escopada por setor em `firestore.rules`: o
+ *      assunto de um setor chegaria a uma reunião que as pessoas dele talvez
+ *      nem enxerguem. A tela só oferece atas do mesmo setor; esta é a segunda
  *      barreira, no caminho.
  *   3. LINHA COM CARD. A demanda do quadro aparece na pauta de TODA reunião do
  *      setor, vinda do Kanban — mover o item não a moveria, apenas levaria para
@@ -420,7 +296,7 @@ export function moverAssunto(
     return {
       ok: false,
       motivo:
-        "As duas reuniões precisam ser do mesmo setor: a dimensão do assunto só existe na árvore do setor dele.",
+        "As duas reuniões precisam ser do mesmo setor.",
     };
   }
 
@@ -532,7 +408,7 @@ export function levarAssunto(
     return {
       ok: false,
       motivo:
-        "As duas reuniões precisam ser do mesmo setor: a dimensão do assunto só existe na árvore do setor dele.",
+        "As duas reuniões precisam ser do mesmo setor.",
     };
   }
   /**

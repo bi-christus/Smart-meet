@@ -68,7 +68,7 @@ import {
   planejarMesclagem,
   type ReuniaoDaAta,
 } from "@/lib/ata-de-reuniao-core";
-import { normalizarAta, type DimensaoDaPauta } from "@/lib/ata-core";
+import { normalizarAta } from "@/lib/ata-core";
 // As tres regras desta rota moram num modulo puro, com teste — ver o cabecalho
 // de `ata-gerar-core.ts`.
 import { ehJaExiste, idDaAta, paraQuemPediu } from "@/lib/ata-gerar-core";
@@ -216,26 +216,6 @@ export async function POST(req: Request) {
     }
     const markdown = await exportDocMarkdown(await driveToken(), fileId);
 
-    // ---- a árvore do setor de destino, para classificar os assuntos ----
-    const dimsSnap = await db
-      .collection("dimensoes")
-      .where("setor", "==", setor)
-      .get();
-    const dimensoes: DimensaoDaPauta[] = dimsSnap.docs.map((d) => {
-      const x = d.data();
-      return {
-        id: d.id,
-        nome: String(x.nome ?? ""),
-        ordem: Number(x.ordem ?? 0),
-        subs: Array.isArray(x.subs)
-          ? (x.subs as { id?: unknown; nome?: unknown }[]).map((s) => ({
-              id: String(s.id ?? ""),
-              nome: String(s.nome ?? ""),
-            }))
-          : [],
-      };
-    });
-
     const cards = await cardsDaReuniao(db, setor, meetingId);
 
     /**
@@ -264,7 +244,6 @@ export async function POST(req: Request) {
             blocos: doc.blocos,
             itens: ata.itens,
             cards,
-            dimensoes,
           }),
           citados: doc.citados,
         });
@@ -297,14 +276,12 @@ export async function POST(req: Request) {
           blocos: doc.blocos,
           itens: agora.itens,
           cards,
-          dimensoes,
         });
         const itens = aplicarMesclagem({
           itens: agora.itens,
           blocos: doc.blocos,
           plano,
           aprovados,
-          dimensoes,
         });
         /**
          * `citados` VAI JUNTO, e é a única coisa do cabeçalho que vai.
@@ -340,7 +317,7 @@ export async function POST(req: Request) {
       createdBy: String(m.createdBy ?? ""),
     };
 
-    const nova = montarAtaDaReuniao({ markdown, reuniao, setor, dimensoes });
+    const nova = montarAtaDaReuniao({ markdown, reuniao, setor });
     nova.itens = ligarCards(nova.itens, cards);
 
     const ref = db.collection("atas").doc(idDaAta(meetingId, setor));

@@ -9,10 +9,11 @@
  * a das cantinas. O que ela registrou, em uma frase: o grupo saía das reuniões
  * "sem nada para fazer amanhã". As pautas se misturavam, nada ficava medido, e
  * a sensação de estagnação vinha de não haver objetivo comum. A decisão foi
- * organizar a reunião POR DEMANDA, com a dimensão ao lado como classificador —
- * e não por dimensão, com as demandas dentro. Houve divergência declarada sobre
- * isso, e prevaleceu a demanda, pelo motivo que este arquivo inteiro serve:
- * assim cada participante sai com tarefa no nome.
+ * organizar a reunião POR DEMANDA — e não por dimensão, com as demandas dentro.
+ * Houve divergência declarada sobre isso, e prevaleceu a demanda, pelo motivo
+ * que este arquivo inteiro serve: assim cada participante sai com tarefa no
+ * nome. (A dimensão ainda andou ao lado da demanda como classificador até
+ * 13/10/2026, quando a classificação saiu do app — #206.)
  *
  * A ATA É UM REGISTRO, NÃO UMA VISTA DO QUADRO. É a decisão mais importante
  * daqui, e ela explica por que `decisao`, `objetivo` e `tarefas` moram no
@@ -140,8 +141,14 @@ export type ItemDeAta = {
   /** O que a reunião registrou em volta da decisão. Só é lido quando não há card. */
   contexto: string;
   /**
-   * A classificação do assunto que ainda não é demanda. Quando há card, quem
-   * responde é o card — a dimensão é estado, e estado vem do quadro.
+   * A classificação por dimensão, que SAIU DO APP em 13/10/2026 (#206). Ninguém
+   * lê nem escreve estes dois campos — e eles continuam no tipo de propósito.
+   *
+   * A ata grava sempre o array INTEIRO de itens (cabeçalho de `ata.ts`). Tirar
+   * os campos daqui faria a primeira edição de cada ata antiga apagar a
+   * classificação que ela tinha, e a branch `arquivo/dimensoes` existe
+   * justamente para que voltar seja possível sem perder dado. Então eles passam
+   * por `normalizarItem` como vieram, e saem iguais.
    */
   dimensaoId: string;
   subdimensaoId: string;
@@ -345,8 +352,7 @@ export function ehPendenciaDaReuniao(item: Pick<ItemDeAta, "cardId" | "assunto">
 /**
  * O próximo id de tarefa — sempre MAIOR que todos, nunca um buraco reaproveitado.
  *
- * Mesma regra e mesmo motivo de `proximoIdDeSub` em `dimensoes-core`: id
- * reaproveitado faz a tarefa nova herdar em silêncio o que a apagada deixou
+ * Id reaproveitado faz a tarefa nova herdar em silêncio o que a apagada deixou
  * para trás. Aqui o que ela herdaria é a linha aberta de um `key` do React no
  * meio de uma edição, e o efeito visível seria o responsável de uma tarefa
  * aparecendo em outra.
@@ -470,7 +476,7 @@ function normalizarItem(
 /**
  * Lê o documento como se ele pudesse estar em qualquer estado — e ele pode.
  *
- * Mesmo partido de `normalizarSetores` e `normalizarDimensao`: é um documento
+ * Mesmo partido de `normalizarSetores`: é um documento
  * que a tela edita, que o console do Firebase altera à mão e que uma versão
  * antiga do app pode ter gravado sem campo nenhum. Item sem `cardId` não tem o
  * que desenhar e sai em silêncio; o resto passa com o padrão no lugar do que
@@ -571,8 +577,6 @@ export type CardDaPauta = CardContavel & {
   title: string;
   description?: string;
   due?: string | null;
-  dimensaoId?: string | null;
-  subdimensaoId?: string | null;
 };
 
 /**
@@ -706,9 +710,6 @@ export type ItemDaPauta = {
   numero: string;
   /** Em que bloco da tela esta linha entra — ver `SecaoDaPauta`. */
   secao: SecaoDaPauta;
-  /** Nome da dimensão e da subdimensão, quando classificada. */
-  dimensao: string;
-  subdimensao: string;
   /**
    * O item aponta para um card que não está mais no quadro do setor.
    *
@@ -719,14 +720,6 @@ export type ItemDaPauta = {
    * uma história diferente da verdadeira.
    */
   foraDoQuadro?: boolean;
-};
-
-/** O mínimo que a pauta precisa da árvore de dimensões. */
-export type DimensaoDaPauta = {
-  id: string;
-  nome: string;
-  ordem: number;
-  subs: { id: string; nome: string }[];
 };
 
 /** Item vazio, para a demanda que entrou na pauta e ainda não foi tocada. */
@@ -764,12 +757,6 @@ function itemVazio(cardId: string): ItemDeAta {
  * seguinte sairia da lista, e a decisão sobre ela sumiria do documento que a
  * registrou.
  *
- * A DIMENSÃO VAI AO LADO, e não por cima. É a decisão da ata das cantinas, e
- * está no cabeçalho deste arquivo: agrupar por dimensão foi a proposta que NÃO
- * prevaleceu, porque ela produz uma reunião em que se discute a caixa em vez do
- * trabalho, e ninguém sai com tarefa. Aqui a dimensão é texto ao lado do
- * título, exatamente como "Área: Suprimentos".
- *
  * O `numero` é atribuído DEPOIS da ordenação, e nunca antes: numerar na ordem
  * do banco e depois reordenar daria uma pauta que começa em "07", e a numeração
  * existe para que alguém possa dizer "vamos ao três" em voz alta.
@@ -777,12 +764,11 @@ function itemVazio(cardId: string): ItemDeAta {
 export function montarPauta(opcoes: {
   cards: readonly CardDaPauta[];
   ata: Pick<Ata, "itens">;
-  dimensoes: readonly DimensaoDaPauta[];
   entregues: EntreguePorSetor;
   /** Milissegundos de hoje à meia-noite — entra por parâmetro para poder testar. */
   hoje: number;
 }): ItemDaPauta[] {
-  const { cards, ata, dimensoes, entregues } = opcoes;
+  const { cards, ata, entregues } = opcoes;
   const hoje = inicioDoDia(opcoes.hoje);
   // Só entra no índice o item que aponta para card. Os demais são a terceira
   // origem, logo abaixo — e uma chave vazia colidiria todos eles num só.
@@ -791,16 +777,7 @@ export function montarPauta(opcoes: {
     if (i.cardId) porCard.set(i.cardId, i);
   });
 
-  const nomeDim = new Map(dimensoes.map((d) => [d.id, d.nome]));
-  const nomeSub = new Map<string, string>();
-  dimensoes.forEach((d) => d.subs.forEach((s) => nomeSub.set(`${d.id}/${s.id}`, s.nome)));
-
-  const linha = (
-    card: CardDaPauta | null,
-    item: ItemDeAta | undefined,
-    dimensaoId: string,
-    subdimensaoId: string,
-  ) => ({
+  const linha = (card: CardDaPauta | null, item: ItemDeAta | undefined) => ({
     card,
     item: item ?? itemVazio(card?.id ?? ""),
     titulo: card ? card.title : item?.assunto || "",
@@ -822,9 +799,6 @@ export function montarPauta(opcoes: {
       : ehPendenciaDaReuniao(item)
         ? ("pendencia" as const)
         : ("registrada" as const),
-    dimensao: (dimensaoId && nomeDim.get(dimensaoId)) || "",
-    subdimensao:
-      (dimensaoId && subdimensaoId && nomeSub.get(`${dimensaoId}/${subdimensaoId}`)) || "",
   });
 
   // Quais cards de fato viraram linha. É o conjunto que responde a pergunta da
@@ -836,12 +810,7 @@ export function montarPauta(opcoes: {
     .filter((c) => porCard.has(c.id) || !ehEntrega(c, entregues))
     .map((card) => {
       desenhados.add(card.id);
-      return linha(
-        card,
-        porCard.get(card.id),
-        card.dimensaoId ?? "",
-        card.subdimensaoId ?? "",
-      );
+      return linha(card, porCard.get(card.id));
     });
 
   const linhas = [
@@ -869,7 +838,7 @@ export function montarPauta(opcoes: {
     ...ata.itens
       .filter((i) => !i.cardId || !desenhados.has(i.cardId))
       .map((i) => ({
-        ...linha(null, i, i.dimensaoId, i.subdimensaoId),
+        ...linha(null, i),
         foraDoQuadro: !!i.cardId,
       })),
   ];
@@ -881,10 +850,6 @@ export function montarPauta(opcoes: {
       // tela três listas intercaladas para desentrelaçar de novo.
       ORDEM_DA_SECAO[a.secao] - ORDEM_DA_SECAO[b.secao] ||
       PESO[a.estado] - PESO[b.estado] ||
-      // Dentro do mesmo estado, a ordem é a da dimensão: é o classificador, e
-      // manter as da mesma área juntas evita a reunião pular de assunto a cada
-      // linha. `ordem` da dimensão, não o nome — é ela que a árvore respeita.
-      ordemDaDim(a, dimensoes) - ordemDaDim(b, dimensoes) ||
       a.titulo.localeCompare(b.titulo, "pt-BR"),
   );
 
@@ -909,21 +874,6 @@ const ORDEM_DA_SECAO: Record<SecaoDaPauta, number> = {
   quadro: 1,
   pendencia: 2,
 };
-
-/**
- * Sem classificação vai para o fim, e não para o começo com `ordem` 0.
- *
- * Quem responde pela dimensão é o CARD quando existe um — dimensão é estado, e
- * estado vem do quadro. Só o assunto que ainda não é demanda carrega a sua.
- */
-function ordemDaDim(
-  l: { card: CardDaPauta | null; item: ItemDeAta },
-  dimensoes: readonly DimensaoDaPauta[],
-): number {
-  const id = l.card ? l.card.dimensaoId : l.item.dimensaoId;
-  const d = dimensoes.find((x) => x.id === id);
-  return d ? d.ordem : Number.MAX_SAFE_INTEGER;
-}
 
 /** A contagem por estado que vai na coluna da esquerda. */
 export type ResumoDaAta = {
@@ -1005,9 +955,10 @@ export function herdarParaProxima(ata: Pick<Ata, "id" | "itens">): ItemDeAta[] {
     .map((i) => ({
       id: i.id,
       cardId: i.cardId,
-      // Assunto, contexto e classificação vão junto: sem card, são a única
-      // coisa que diz do que a linha trata. Deixá-los para trás levaria para a
-      // próxima reunião uma pauta de itens sem nome.
+      // Assunto e contexto vão junto: sem card, são a única coisa que diz do
+      // que a linha trata. Deixá-los para trás levaria para a próxima reunião
+      // uma pauta de itens sem nome. A classificação antiga vai como veio —
+      // ver o comentário de `dimensaoId` no tipo.
       assunto: i.assunto,
       contexto: i.contexto,
       dimensaoId: i.dimensaoId,

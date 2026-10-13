@@ -51,7 +51,6 @@ import {
   proximoIdDeItem,
   proximoIdDeTarefa,
   type Ata,
-  type DimensaoDaPauta,
   type ItemDeAta,
   type TarefaDeAta,
 } from "./ata-core.ts";
@@ -263,41 +262,6 @@ export function lerPontosImportantes(markdown: string): PontosImportantes {
 
 
 /**
- * A dimensão do assunto, por casamento léxico com a árvore do setor.
- *
- * Determinístico e conservador de propósito: só classifica quando o nome de uma
- * subdimensão aparece INTEIRO dentro do cabeçalho do bloco, com fronteira de
- * palavra. "Estoque, recebimento e conferência" acha "Estoque"; "Sistema
- * Connect e totens" não acha nada e fica sem classificação, que é a resposta
- * honesta — inventar D4 ali seria o app decidindo o que a reunião não decidiu.
- *
- * É a mesma técnica do `varrer-mencoes` do Cowork, e pelo mesmo motivo: onde dá
- * para casar por texto exato, casar por texto exato não erra em silêncio.
- *
- * O nome mais longo ganha, para "Engenharia de cardápio" vencer um eventual
- * "Cardápio" solto em outra dimensão.
- */
-function classificar(
-  assunto: string,
-  dimensoes: readonly DimensaoDaPauta[],
-): { dimensaoId: string; subdimensaoId: string } {
-  const alvo = chaveDeTexto(assunto);
-  let achado = { dimensaoId: "", subdimensaoId: "", tamanho: 0 };
-  for (const d of dimensoes) {
-    for (const s of d.subs) {
-      const nome = chaveDeTexto(s.nome);
-      if (!nome || nome.length <= achado.tamanho) continue;
-      // `\b` não funciona com acento já removido? Funciona: `chave` remove os
-      // diacríticos, então sobra a-z, e a fronteira de palavra vale.
-      if (new RegExp(`\\b${nome.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(alvo)) {
-        achado = { dimensaoId: d.id, subdimensaoId: s.id, tamanho: nome.length };
-      }
-    }
-  }
-  return { dimensaoId: achado.dimensaoId, subdimensaoId: achado.subdimensaoId };
-}
-
-/**
  * Um encaminhamento vira uma tarefa — sem responsável e sem prazo.
  *
  * ISTO NÃO É PREGUIÇA, é a regra da casa. `api/demandas/decidir` e o prompt do
@@ -366,28 +330,22 @@ export type CampoMesclavel = (typeof CAMPOS_MESCLAVEIS)[number];
 function textoDoBloco(bloco: BlocoDoDocumento): Record<CampoMesclavel, string> {
   return {
     // Várias decisões no mesmo bloco são várias frases sobre o mesmo assunto —
-    // e o assunto é a linha. Juntar com " · " é o que a tela já faz com dimensão
-    // e subdimensão, e cabe nos 600 de `limparTexto`.
+    // e o assunto é a linha. Juntar com " · " cabe nos 600 de `limparTexto`.
     decisao: limparTexto(bloco.decisoes.join(" · "), LIMITE_TEXTO_CHARS),
     objetivo: limparTexto(bloco.semDecisao.join(" · "), LIMITE_TEXTO_CHARS),
     contexto: limparTexto(bloco.contexto.join(" · ")),
   };
 }
 
-export function blocoParaItem(
-  bloco: BlocoDoDocumento,
-  id: string,
-  dimensoes: readonly DimensaoDaPauta[],
-): ItemDeAta {
-  const { dimensaoId, subdimensaoId } = classificar(bloco.assunto, dimensoes);
+export function blocoParaItem(bloco: BlocoDoDocumento, id: string): ItemDeAta {
   const texto = textoDoBloco(bloco);
   return {
     id,
     cardId: "",
     assunto: limparTexto(bloco.assunto, 200),
     contexto: texto.contexto,
-    dimensaoId,
-    subdimensaoId,
+    dimensaoId: "",
+    subdimensaoId: "",
     // Esta é a única função do app que produz item `reuniao`: ela é a fronteira
     // entre o documento que o Cowork redigiu e a pauta. O chip que a tela
     // desenha a partir daqui é o que permite a quem conduz a reunião saber que
@@ -427,10 +385,8 @@ export function montarAtaDaReuniao(opcoes: {
   markdown: string;
   reuniao: ReuniaoDaAta;
   setor: string;
-  dimensoes?: readonly DimensaoDaPauta[];
 }): Omit<Ata, "id"> {
   const { markdown, reuniao, setor } = opcoes;
-  const dimensoes = opcoes.dimensoes ?? [];
   const doc = lerPontosImportantes(markdown);
 
   return {
@@ -444,7 +400,7 @@ export function montarAtaDaReuniao(opcoes: {
     participantes: [...new Set((reuniao.participants ?? []).filter(Boolean))],
     citados: doc.citados,
     meetingId: reuniao.id,
-    itens: doc.blocos.map((b, i) => blocoParaItem(b, String(i + 1), dimensoes)),
+    itens: doc.blocos.map((b, i) => blocoParaItem(b, String(i + 1))),
   };
 }
 
@@ -557,8 +513,6 @@ export type ParDeMesclagem = {
    * esconde o que a gravação registrou. Quem conduz decide se corrige à mão.
    */
   divergencias: { campo: CampoMesclavel; doAudio: string; naAta: string }[];
-  /** A dimensão que o parser achou entraria, porque a linha não tem nenhuma. */
-  classifica: boolean;
 };
 
 /**
@@ -592,9 +546,8 @@ export function planejarMesclagem(opcoes: {
   itens: readonly ItemDeAta[];
   /** Os cards que esta reunião produziu, com o assunto que os originou. */
   cards: readonly { id: string; assunto: string }[];
-  dimensoes: readonly DimensaoDaPauta[];
 }): ParDeMesclagem[] {
-  const { blocos, itens, dimensoes } = opcoes;
+  const { blocos, itens } = opcoes;
   const cardPorAssunto = indiceDeCards(opcoes.cards);
 
   const itemPorCard = new Map<string, ItemDeAta>();
@@ -643,7 +596,6 @@ export function planejarMesclagem(opcoes: {
       else preenche.push(campo);
     }
 
-    const classe = classificar(bloco.assunto, dimensoes);
     return {
       bloco: indice,
       assunto: limparTexto(bloco.assunto, 200),
@@ -657,11 +609,6 @@ export function planejarMesclagem(opcoes: {
       preenche,
       tarefas: tarefasQueFaltam(bloco, alvo),
       divergencias,
-      // A classificação HUMANA ganha sempre. O `classificar` é conservador, mas
-      // é léxico: ele acha "Estoque" dentro de "Estoque, recebimento e
-      // conferência" e não sabe que alguém já decidiu, na reunião, que aquilo
-      // mora em outra dimensão.
-      classifica: !!classe.dimensaoId && !alvo?.dimensaoId,
     };
   });
 }
@@ -714,8 +661,7 @@ export function mesclagemFazAlgo(par: ParDeMesclagem): boolean {
     par.itemId === null ||
     par.preenche.length > 0 ||
     par.tarefas.length > 0 ||
-    par.vinculaCard ||
-    par.classifica
+    par.vinculaCard
   );
 }
 
@@ -757,9 +703,8 @@ export function aplicarMesclagem(opcoes: {
   plano: readonly ParDeMesclagem[];
   /** Os índices de bloco que quem conferiu aprovou. */
   aprovados: readonly number[];
-  dimensoes: readonly DimensaoDaPauta[];
 }): ItemDeAta[] {
-  const { blocos, plano, dimensoes } = opcoes;
+  const { blocos, plano } = opcoes;
   const ok = new Set(aprovadosValidos(plano, opcoes.aprovados));
   let itens: ItemDeAta[] = [...opcoes.itens];
 
@@ -769,7 +714,7 @@ export function aplicarMesclagem(opcoes: {
     if (!bloco) continue;
 
     if (par.itemId === null) {
-      const novo = blocoParaItem(bloco, proximoIdDeItem(itens), dimensoes);
+      const novo = blocoParaItem(bloco, proximoIdDeItem(itens));
       // O `cardId` que o bloco resolveu entra junto, e é o que impede a linha
       // nova de aparecer ao lado da própria demanda que ela nomeia.
       itens = [...itens, par.cardId ? { ...novo, cardId: par.cardId } : novo];
@@ -777,7 +722,6 @@ export function aplicarMesclagem(opcoes: {
     }
 
     const texto = textoDoBloco(bloco);
-    const classe = classificar(bloco.assunto, dimensoes);
     itens = itens.map((i) => {
       if (i.id !== par.itemId) return i;
       const mudado = { ...i };
@@ -789,10 +733,6 @@ export function aplicarMesclagem(opcoes: {
       // existe.
       for (const campo of par.preenche) mudado[campo] = texto[campo];
       if (par.vinculaCard && par.cardId) mudado.cardId = par.cardId;
-      if (par.classifica) {
-        mudado.dimensaoId = classe.dimensaoId;
-        mudado.subdimensaoId = classe.subdimensaoId;
-      }
       if (par.tarefas.length) {
         const tarefas = [...mudado.tarefas];
         for (const t of par.tarefas) {

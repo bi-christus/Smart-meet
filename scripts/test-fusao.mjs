@@ -115,13 +115,28 @@ checa(
   "preenchido contra vazio É conflito: alguém precisa dizer se o valor fica",
   camposEmConflito(base, { ...outro, due: "2026-09-30" }).includes("due"),
 );
-checa(
-  "dimensão e subdimensão contam como UM endereço",
-  camposEmConflito(
-    { ...base, dimensaoId: "d1", subdimensaoId: "s1" },
-    { ...outro, dimensaoId: "d1", subdimensaoId: "s9" },
-  ).includes("dimensao"),
-);
+{
+  // A classificação saiu do app (#206). Dois cards antigos com dimensões
+  // diferentes não podem virar pergunta sobre um campo que nenhuma tela mostra,
+  // e a fusão não pode escrever por cima da que o vencedor já tinha.
+  const v = { ...base, dimensaoId: "d1", subdimensaoId: "s1" };
+  const p = { ...outro, dimensaoId: "d2", subdimensaoId: "s9" };
+  checa(
+    "dimensão antiga diferente não vira pergunta",
+    !camposEmConflito(v, p).some((c) => c.startsWith("dimens")),
+  );
+  const { patchVencedor } = resultadoDaFusao({
+    vencedor: v,
+    perdido: p,
+    escolhas: escolhasIniciais(v, p),
+    por: "a@x.com",
+    agora: 1,
+  });
+  checa(
+    "a fusão não escreve a classificação antiga do vencedor",
+    !("dimensaoId" in patchVencedor) && !("subdimensaoId" in patchVencedor),
+  );
+}
 checa(
   "todo campo escolhível tem rótulo — nenhum chega à tela sem nome",
   CAMPOS_ESCOLHIVEIS.every((c) => !!CAMPO_DA_FUSAO_ROTULO[c]),

@@ -223,11 +223,11 @@ export type PlanoDaMudanca = {
  * AS QUATRO COISAS QUE MUDAM ALÉM DO SETOR:
  *
  * - `columnId`, porque as etapas são de outro quadro. Ver `mapearColuna`.
- * - `dimensaoId`/`subdimensaoId` viram `null`. A árvore de dimensões é cadastro
- *   POR SETOR (`dimensoes-core.ts`): um id da origem não significa nada no
- *   destino, e mantê-lo faria a demanda aparecer pendurada num galho de outro
- *   setor — ou em galho nenhum, dependendo de o id colidir. A árvore do destino
- *   sabe acolher isto: cai em "Sem classificação".
+ * - `dimensaoId`/`subdimensaoId` viram `null`. A árvore de dimensões era
+ *   cadastro POR SETOR: um id da origem não significa nada no destino. A
+ *   classificação saiu do app em 13/10/2026 (#206) e nenhuma tela lê mais estes
+ *   campos, mas zerá-los continua certo — é o que impede a branch
+ *   `arquivo/dimensoes`, se voltar, de achar demanda pendurada em galho alheio.
  * - `enteredAt` recomeça, porque a demanda entrou agora nesta etapa. Sem isso o
  *   selo "parado há N dias" chegaria contando desde o outro quadro.
  * - `order` recomeça no topo, como em `moveCard`: a demanda chega para ser vista.

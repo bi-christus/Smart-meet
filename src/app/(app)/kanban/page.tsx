@@ -2039,12 +2039,6 @@ function FusaoModal({
         return c.startDate || "—";
       case "due":
         return c.due || "—";
-      case "dimensao":
-        // O id, e não o nome: a árvore do setor não está carregada aqui, e
-        // buscá-la para uma linha de diálogo custaria uma assinatura inteira.
-        // Quem funde duas demandas da mesma dimensão não vê esta linha; quem vê
-        // está escolhendo entre duas classificações que ele mesmo definiu.
-        return c.dimensaoId ? `${c.dimensaoId}${c.subdimensaoId ? ` › ${c.subdimensaoId}` : ""}` : "sem classificação";
     }
   }
 

@@ -235,7 +235,7 @@ const EXIGIDOS_ATA = [
     exigencia:
       "nao recomputa o plano da mesclagem — passaria a confiar no que o cliente mandou",
     reponha:
-      "volte a montar o plano na rota com `planejarMesclagem({ blocos, itens, cards, dimensoes })` " +
+      "volte a montar o plano na rota com `planejarMesclagem({ blocos, itens, cards })` " +
       "antes de chamar `aplicarMesclagem`, e use so os indices que o cliente aprovou",
   },
   {
@@ -263,37 +263,34 @@ const EXIGIDOS_ATA = [
  * AUTOMATICO, e PROIBIDOS_ATA (acima) continua impedindo a rota de gerar de
  * criar card sozinha.
  *
- * O que este alvo guarda e outra coisa, e ela some sem quebrar nada: a
- * obrigatoriedade da dimensao no CAMINHO DE ESCRITA. Hoje a tela confere duas
- * vezes — o botao fica desabilitado sem dimensao, e `criarDemanda` chama
- * `conferirClassificacao` antes de montar o card. A segunda e a que importa: o
- * `disabled` do botao e estado de formulario, e formulario e reescrito. No dia
- * em que alguem trocar o modal, a checagem do caminho pode ir junto sem que
- * teste, tipo, lint ou tela reclamem — e a aba volta a abrir demanda sem
- * dominio, que e exatamente o que o Mapa de Dominios das Cantinas existe para
- * impedir. Um `disabled` nao e uma regra; uma funcao pura chamada no caminho e.
+ * O que este alvo guarda e outra coisa, e ela some sem quebrar nada: a regua
+ * no CAMINHO DE ESCRITA. A tela confere duas vezes — o botao fica desabilitado
+ * sem titulo, e `criarDemanda` chama `conferirTitulo` antes de montar o card.
+ * A segunda e a que importa: o `disabled` do botao e estado de formulario, e
+ * formulario e reescrito. No dia em que alguem trocar o modal, a checagem do
+ * caminho pode ir junto sem que teste, tipo, lint ou tela reclamem. Um
+ * `disabled` nao e uma regra; uma funcao pura chamada no caminho e.
+ *
+ * Ate 13/10/2026 este alvo exigia tambem `conferirClassificacao` (a dimensao
+ * obrigatoria) em dois caminhos. A classificacao saiu do app (#206) — o codigo
+ * dela esta na branch `arquivo/dimensoes`, e se ela voltar, a exigencia volta
+ * junto.
  */
 const EXIGIDOS_ATA_TELA = [
   {
-    padrao: /\bconferirClassificacao\s*\(/,
-    // DOIS caminhos de escrita precisam da mesma regua, e por isso a conta e de
-    // chamadas e nao de existencia: `criarDemanda` (a demanda que nasce) e
-    // `classificar` (a dimensao trocada depois). Com "existe pelo menos um", a
-    // checagem podia sumir de um dos dois e o guarda continuava verde — foi
-    // exatamente o que aconteceu quando este alvo foi testado pela primeira vez.
-    vezes: 2,
+    padrao: /\bconferirTitulo\s*\(/,
     exigencia:
-      "nao confere a classificacao nos dois caminhos de escrita — a aba voltaria a abrir ou reclassificar demanda sem dimensao",
+      "nao confere o titulo no caminho de escrita — a ata voltaria a abrir demanda sem nome",
     reponha:
-      "volte a chamar `conferirClassificacao(...)` dentro de `criarDemanda` (antes de montar o CardInput) " +
-      "E dentro de `classificar`, recusando quando `ok` for falso",
+      "volte a chamar `conferirTitulo(dados.titulo, ...)` dentro de `criarDemanda`, " +
+      "antes de montar o CardInput, recusando quando `ok` for falso",
   },
   {
     padrao: /\bconferirAssuntoNovo\s*\(/,
     exigencia:
-      "nao confere o assunto novo — assunto sem dimensao entraria na pauta e nunca seria cobrado",
+      "nao confere o assunto novo — assunto sem nome entraria na pauta",
     reponha:
-      "volte a chamar `conferirAssuntoNovo(dados, ata.itens, dims)` dentro de `criarAssunto`",
+      "volte a chamar `conferirAssuntoNovo(dados, ata.itens)` dentro de `criarAssunto`",
   },
   {
     // O vinculo tem de entrar no MESMO lote do card. Duas escritas separadas
@@ -310,8 +307,8 @@ const EXIGIDOS_ATA_TELA = [
 /**
  * O modulo puro da regua (AGENTS.md §4): regra que da para testar mora num
  * `*-core.ts` SEM `firebase/firestore` dentro. E o que permite
- * `scripts/test-ata-demanda.mjs` rodar a obrigatoriedade da dimensao inteira em
- * Node puro, sem subir nada. Um import de SDK aqui nao quebra a tela — quebra o
+ * `scripts/test-ata-demanda.mjs` rodar a regua inteira em Node puro, sem subir
+ * nada. Um import de SDK aqui nao quebra a tela — quebra o
  * teste, que e a unica coisa que reprova a regua quando ela some.
  */
 const PROIBIDOS_ATA_CORE = [
@@ -357,7 +354,7 @@ const REGRAS = [
     arquivo: "src/lib/ata-demanda-core.ts",
     proibidos: PROIBIDOS_ATA_CORE,
     seSumiu:
-      "o modulo puro da regua da ata sumiu ou mudou de nome. A obrigatoriedade da dimensao mora " +
+      "o modulo puro da regua da ata sumiu ou mudou de nome. A regua da linha de pauta mora " +
       "nele e e testada por scripts/test-ata-demanda.mjs; se ela foi para outro arquivo, aponte " +
       "esta regra e o teste para la — nao apague nenhum dos dois.",
   },
@@ -438,9 +435,10 @@ for (const regra of REGRAS) {
      * `vezes` conta CASAMENTOS, e nao "existe pelo menos um".
      *
      * Nasceu de um guarda que nao reprovou o proprio teste. A exigencia de
-     * `conferirClassificacao` na tela da ata passava verde depois de a checagem
-     * ser apagada do caminho de criacao da demanda — porque o mesmo nome ainda
-     * aparecia no caminho de reclassificacao, do outro lado do arquivo. Uma
+     * `conferirClassificacao` na tela da ata (que existiu ate #206) passava
+     * verde depois de a checagem ser apagada do caminho de criacao da demanda —
+     * porque o mesmo nome ainda aparecia no caminho de reclassificacao, do
+     * outro lado do arquivo. Uma
      * defesa apagada e outra intacta somam "existe", e "existe" era tudo o que o
      * guarda perguntava.
      *

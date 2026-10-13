@@ -40,31 +40,6 @@ function checa(rotulo, condicao, detalhe = "") {
   );
 }
 
-/** A árvore das Cantinas, como `semear-cantinas.mjs` a criou. */
-const DIMS = [
-  {
-    id: "d1",
-    nome: "D1 · Cadeia de suprimentos",
-    ordem: 0,
-    subs: [
-      { id: "1", nome: "Estoque" },
-      { id: "2", nome: "Compras" },
-      { id: "3", nome: "Transporte" },
-      { id: "4", nome: "Patrimônio" },
-    ],
-  },
-  {
-    id: "d3",
-    nome: "D3 · Cardápio, comunicação e eventos",
-    ordem: 2,
-    subs: [
-      { id: "1", nome: "Engenharia de cardápio" },
-      { id: "2", nome: "Comunicação" },
-      { id: "3", nome: "Eventos" },
-    ],
-  },
-];
-
 // ---------------------------------------------------------------------------
 // Amostra 1 — "Dimensões cantinas", 26/08/2026. É a ata que originou esta tela.
 // ---------------------------------------------------------------------------
@@ -209,7 +184,7 @@ checa(
 
 console.log("\n— do bloco para o item —");
 
-const itemMetodo = blocoParaItem(doc.blocos[0], "1", DIMS);
+const itemMetodo = blocoParaItem(doc.blocos[0], "1");
 checa("o assunto vira o assunto do item", itemMetodo.assunto === "Método da reunião e das atas");
 checa("o item nasce sem card — a ata não cria demanda", itemMetodo.cardId === "");
 // Esta é a única função do app que produz item `reuniao`, e o chip da tela sai
@@ -235,7 +210,7 @@ checa(
   itemMetodo.tarefas[0].texto,
 );
 
-const itemEstoque = blocoParaItem(doc.blocos[1], "2", DIMS);
+const itemEstoque = blocoParaItem(doc.blocos[1], "2");
 checa(
   "o [CONFERIR] do encaminhamento muda de coluna, e não some",
   itemEstoque.tarefas[0].observacao === "[CONFERIR prazo]" &&
@@ -243,7 +218,7 @@ checa(
   `texto="${itemEstoque.tarefas[0].texto}" obs="${itemEstoque.tarefas[0].observacao}"`,
 );
 
-const itemConnect = blocoParaItem(doc.blocos[2], "3", DIMS);
+const itemConnect = blocoParaItem(doc.blocos[2], "3");
 // Os campos da ata são <textarea> e <td>: não interpretam Markdown. Sem a
 // limpeza, cada decisão chega com asterisco no meio da frase.
 checa(
@@ -262,14 +237,14 @@ checa(
   itemConnect.tarefas[0].texto,
 );
 
-const itemCardapio = blocoParaItem(doc.blocos[3], "4", DIMS);
+const itemCardapio = blocoParaItem(doc.blocos[3], "4");
 checa(
   "duas decisões viram uma só, separadas",
   itemCardapio.decisao.includes("dois pra um") && itemCardapio.decisao.includes(" · "),
   itemCardapio.decisao,
 );
 
-const itemSemDecisao = blocoParaItem(docBoletim.blocos[1], "2", DIMS);
+const itemSemDecisao = blocoParaItem(docBoletim.blocos[1], "2");
 // Gravar "sem decisão" em `decisao` faria a ata afirmar que decidiu não decidir,
 // e o assunto desceria para o meio da pauta em vez de pedir atenção.
 checa(
@@ -282,32 +257,21 @@ checa(
   estadoNaAta(null, itemSemDecisao, {}, Date.now()) === "pendente",
 );
 
-console.log("\n— a classificação por dimensão —");
+console.log("\n— a classificação por dimensão saiu (#206) —");
 
+// O áudio classificava o assunto casando o nome da subdimensão com o cabeçalho
+// do bloco. Com a classificação fora do app, nenhum item novo nasce
+// classificado — nem o que tem "Estoque" no cabeçalho.
 checa(
-  "o nome da subdimensão dentro do assunto classifica",
-  itemEstoque.dimensaoId === "d1" && itemEstoque.subdimensaoId === "1",
-  `${itemEstoque.dimensaoId}/${itemEstoque.subdimensaoId}`,
-);
-checa(
-  "o nome mais longo ganha do mais curto",
-  itemCardapio.dimensaoId === "d3" && itemCardapio.subdimensaoId === "1",
-  `${itemCardapio.dimensaoId}/${itemCardapio.subdimensaoId}`,
-);
-// Inventar uma dimensão para "Sistema Connect e totens" seria o app decidindo o
-// que a reunião não decidiu. Sem classificação é a resposta honesta.
-checa(
-  "assunto que não casa com nada fica SEM classificação",
-  itemConnect.dimensaoId === "" && itemConnect.subdimensaoId === "",
-);
-checa(
-  "sem árvore nenhuma, nada quebra",
-  blocoParaItem(doc.blocos[1], "1", []).dimensaoId === "",
+  "o item do áudio nasce sem classificação",
+  [itemEstoque, itemCardapio, itemConnect].every(
+    (i) => i.dimensaoId === "" && i.subdimensaoId === "",
+  ),
 );
 
 console.log("\n— a ata inteira —");
 
-const ata = montarAtaDaReuniao({ markdown: CANTINAS, reuniao, setor: "Cantinas", dimensoes: DIMS });
+const ata = montarAtaDaReuniao({ markdown: CANTINAS, reuniao, setor: "Cantinas" });
 
 // O H1 é editorial e muda de safra do prompt; o título da reunião é o nome pelo
 // qual a pessoa a procura em /reunioes e /relatorios.
@@ -326,7 +290,6 @@ const ataSemData = montarAtaDaReuniao({
   markdown: CANTINAS,
   reuniao: { ...reuniao, date: "" },
   setor: "Cantinas",
-  dimensoes: DIMS,
 });
 checa(
   "sem data na reunião, a do documento entra no lugar",
@@ -339,7 +302,6 @@ console.log("\n— a pauta que sai daí —");
 const pauta = montarPauta({
   cards: [],
   ata,
-  dimensoes: DIMS,
   entregues: { Cantinas: new Set() },
   hoje: new Date(2026, 8, 1).getTime(),
 });
@@ -415,7 +377,7 @@ checa(
   "prosa sem sentinela vira item sem decisão e sem tarefa",
   (() => {
     const r = lerPontosImportantes("# T\n\n## 1. Só conversa\nnada de especial aqui");
-    const i = blocoParaItem(r.blocos[0], "1", DIMS);
+    const i = blocoParaItem(r.blocos[0], "1");
     return i.decisao === "" && i.tarefas.length === 0 && i.contexto.includes("nada de especial");
   })(),
 );
@@ -487,7 +449,6 @@ const plano = planejarMesclagem({
   blocos: doc.blocos,
   itens: ITENS_ANTES,
   cards: CARDS_DA_REUNIAO,
-  dimensoes: DIMS,
 });
 
 checa("um par por bloco do documento", plano.length === doc.blocos.length, plano.length);
@@ -506,8 +467,8 @@ checa(
   plano[1].itemId === null && plano[1].casouPor === null,
 );
 checa(
-  "e o assunto novo já vem classificado pelo nome — 'Estoque' está no cabeçalho",
-  plano[1].classifica === true,
+  "o plano não fala mais em classificar",
+  plano.every((p) => !("classifica" in p)),
 );
 
 // O CAMPO VAZIO É PREENCHIDO, o campo escrito NÃO É. É a regra de ouro inteira,
@@ -530,12 +491,6 @@ checa(
     plano[3].divergencias[0].doAudio.length > 0,
   JSON.stringify(plano[3].divergencias),
 );
-// A classificação humana ganha sempre: o `classificar` é léxico e não sabe que
-// alguém já decidiu, na reunião, onde aquilo mora.
-checa(
-  "a dimensão que alguém escolheu NÃO é trocada",
-  plano[3].classifica === false,
-);
 
 // Um bloco casa um item só, e um item casa um bloco só. Dois blocos com
 // cabeçalho parecido escreveriam no mesmo item, e o segundo apagaria o primeiro.
@@ -555,7 +510,6 @@ const depois = aplicarMesclagem({
   blocos: doc.blocos,
   plano,
   aprovados: TODOS,
-  dimensoes: DIMS,
 });
 
 // NADA É REMOVIDO. É o que a ata de 02/09 exigia: os assuntos lançados antes da
@@ -589,8 +543,10 @@ checa(
   "o texto humano sobreviveu à mesclagem",
   cardapio.decisao === "ficou combinado revisar só o almoço executivo",
 );
+// A classificação antiga não tem mais tela, mas continua gravada — e a
+// mesclagem não pode ser quem a apaga (#206).
 checa(
-  "a dimensão humana sobreviveu",
+  "a classificação antiga do item sobreviveu à mesclagem",
   cardapio.dimensaoId === "d3" && cardapio.subdimensaoId === "2",
 );
 checa(
@@ -617,8 +573,8 @@ checa(
 );
 const estoque = novos.find((i) => i.assunto === "Estoque, recebimento e conferência");
 checa(
-  "o item novo chega classificado pelo casamento léxico do cabeçalho",
-  estoque.dimensaoId === "d1" && estoque.subdimensaoId === "1",
+  "o item novo da mesclagem chega sem classificação",
+  estoque.dimensaoId === "" && estoque.subdimensaoId === "",
   `${estoque.dimensaoId}/${estoque.subdimensaoId}`,
 );
 
@@ -629,7 +585,6 @@ const denovo = planejarMesclagem({
   blocos: doc.blocos,
   itens: depois,
   cards: CARDS_DA_REUNIAO,
-  dimensoes: DIMS,
 });
 checa(
   "rodar de novo sobre a ata já mesclada não tem o que fazer",
@@ -641,7 +596,6 @@ const terceira = aplicarMesclagem({
   blocos: doc.blocos,
   plano: denovo,
   aprovados: denovo.map((p) => p.bloco),
-  dimensoes: DIMS,
 });
 checa(
   "e aplicar de novo não muda um caractere",
@@ -655,7 +609,6 @@ const soUm = aplicarMesclagem({
   blocos: doc.blocos,
   plano,
   aprovados: [2],
-  dimensoes: DIMS,
 });
 checa(
   "aprovar um par só aplica um par só",
@@ -674,7 +627,6 @@ const nada = aplicarMesclagem({
   blocos: doc.blocos,
   plano,
   aprovados: [99, -1, 3],
-  dimensoes: DIMS,
 });
 checa(
   "índice fora do plano é ignorado",
@@ -698,7 +650,6 @@ const semItemAinda = planejarMesclagem({
   blocos: doc.blocos,
   itens: [],
   cards: CARDS_DA_REUNIAO,
-  dimensoes: DIMS,
 });
 checa(
   "sem item, o bloco continua resolvendo o card",
@@ -711,7 +662,6 @@ const comVinculo = aplicarMesclagem({
   blocos: doc.blocos,
   plano: semItemAinda,
   aprovados: semItemAinda.map((p) => p.bloco),
-  dimensoes: DIMS,
 });
 checa(
   "o item novo nasce JÁ apontando para o card",
@@ -754,7 +704,6 @@ const jaTemATarefa = planejarMesclagem({
     }),
   ],
   cards: [],
-  dimensoes: DIMS,
 });
 checa(
   "a tarefa que a tabela já tem NÃO é proposta de novo",
