@@ -17,6 +17,7 @@ import {
   CAMPO_DA_ETAPA_ROTULO,
   SUGESTAO_POR_ETAPA,
   campoPreenchido,
+  exigenciasDaEtapa,
   normalizarExigencias,
   oQueAPassagemPede,
 } from "../src/lib/etapas-core.ts";
@@ -189,6 +190,36 @@ checa(
 checa(
   "e só de campos do catálogo",
   Object.values(SUGESTAO_POR_ETAPA).flat().every((e) => CAMPOS_DA_ETAPA.includes(e.campo)),
+);
+
+// A etapa nunca configurada pede o que a sugestão diz — senão a caixa de
+// passagem nunca abre num quadro novo (13/10/2026).
+checa(
+  "etapa padrão sem configuração usa a sugestão",
+  exigenciasDaEtapa("andamento", undefined).map((e) => e.campo).join() === "assignee,due,checklist",
+  JSON.stringify(exigenciasDaEtapa("andamento", undefined)),
+);
+checa(
+  "lista vazia gravada é respeitada (o gestor tirou tudo)",
+  exigenciasDaEtapa("andamento", []).length === 0,
+);
+checa(
+  "configuração gravada vence a sugestão",
+  exigenciasDaEtapa("andamento", [{ campo: "tags", obrigatorio: true }]).map((e) => e.campo).join() === "tags",
+);
+checa(
+  "etapa criada à mão sem configuração não pede nada",
+  exigenciasDaEtapa("revisao-juridica", undefined).length === 0,
+);
+checa(
+  "passagem para Em andamento de card vazio pede responsável, prazo e checklist",
+  oQueAPassagemPede({
+    origem: "backlog",
+    destino: "andamento",
+    ordem: DEFAULT_COLUMNS.map((c) => c.id),
+    exigencias: exigenciasDaEtapa("andamento", undefined),
+    card: {},
+  }).length === 3,
 );
 
 console.log(falhas === 0 ? "\netapas: ok" : `\netapas: ${falhas} falha(s)`);
