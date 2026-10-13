@@ -26,14 +26,47 @@ import { useAsyncData } from "./use-async-data";
  */
 
 /** Um doc de `temporadas/{mes}` — o pódio congelado no instante do fechamento. */
-export type TemporadaFechada = {
-  mes: string;
+/** O pódio de UM setor dentro de uma temporada fechada (#215). */
+export type PodioDoSetor = {
+  setor: string;
   ranking: Colocacao[];
   vencedores: string[];
   entregas: number;
+};
+
+export type TemporadaFechada = {
+  mes: string;
+  /** O pódio da organização inteira — o único que existia até #215. */
+  ranking: Colocacao[];
+  vencedores: string[];
+  entregas: number;
+  /**
+   * Um pódio por setor (#215). O Rank é por setor, e a temporada passou a
+   * guardar o de cada um no fechamento. `null` nas temporadas fechadas antes
+   * disso: elas só têm o pódio geral, e ele NÃO é recalculado por setor —
+   * a temporada é um fato registrado, e recontá-la depois contaria uma
+   * história que ninguém viu na época.
+   *
+   * Uma LISTA e não um mapa por nome: nome de setor tem ponto ("B.I."), e
+   * ponto em chave de mapa do Firestore vira caminho de campo em toda escrita
+   * por `update`.
+   */
+  porSetor: PodioDoSetor[] | null;
   fechadaEm: Timestamp | null;
   fechadaPor: string;
 };
+
+function normalizarPodio(bruto: unknown): PodioDoSetor | null {
+  if (!bruto || typeof bruto !== "object") return null;
+  const b = bruto as Record<string, unknown>;
+  if (typeof b.setor !== "string" || !b.setor) return null;
+  return {
+    setor: b.setor,
+    ranking: Array.isArray(b.ranking) ? (b.ranking as Colocacao[]) : [],
+    vencedores: Array.isArray(b.vencedores) ? (b.vencedores as string[]) : [],
+    entregas: typeof b.entregas === "number" ? b.entregas : 0,
+  };
+}
 
 function normalizar(id: string, data: Record<string, unknown>): TemporadaFechada {
   return {
@@ -41,6 +74,9 @@ function normalizar(id: string, data: Record<string, unknown>): TemporadaFechada
     ranking: Array.isArray(data.ranking) ? (data.ranking as Colocacao[]) : [],
     vencedores: Array.isArray(data.vencedores) ? (data.vencedores as string[]) : [],
     entregas: typeof data.entregas === "number" ? data.entregas : 0,
+    porSetor: Array.isArray(data.porSetor)
+      ? data.porSetor.map(normalizarPodio).filter((p): p is PodioDoSetor => !!p)
+      : null,
     fechadaEm: (data.fechadaEm as Timestamp | undefined) ?? null,
     fechadaPor: typeof data.fechadaPor === "string" ? data.fechadaPor : "",
   };

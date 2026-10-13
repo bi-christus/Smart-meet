@@ -9,11 +9,14 @@
  * DOIS vencedores, nunca um escolhido por ordem alfabética.
  */
 import {
+  diaDe,
   entregasDoMes,
   mesAnterior,
   mesAtual,
   mesDe,
+  pontualidadeDoMes,
   rotuloMes,
+  rotuloPontualidade,
   vencedoresDoRanking,
 } from "../src/lib/temporadas-core.ts";
 import { entreguesPorSetor } from "../src/lib/entregas-core.ts";
@@ -109,6 +112,61 @@ checa(
   "ninguém entregou nada: nenhum vencedor",
   vencedoresDoRanking(montarRank([])).length === 0,
 );
+
+console.log("\n— a pontualidade do mês (#215) —");
+
+{
+  const ENT = entreguesPorSetor({
+    "B.I.": [
+      { id: "andamento", title: "Em andamento" },
+      { id: "concluido", title: "Concluído" },
+    ],
+  });
+  // 20/10/2026, 18h em Fortaleza — o FIM do dia combinado ainda é no prazo.
+  const noDiaDoPrazoAs18h = Date.UTC(2026, 9, 20, 21, 0);
+  // 20/10/2026, 23h30 em Fortaleza = 21/10 02:30 em UTC. Pelo relógio do
+  // servidor seria o dia seguinte, e a entrega viraria atraso injusto.
+  const noDiaDoPrazoAs2330 = Date.UTC(2026, 9, 21, 2, 30);
+  const doisDiasDepois = Date.UTC(2026, 9, 22, 15, 0);
+  const card = (extra) => ({ sector: "B.I.", columnId: "concluido", assignee: "ana@px", ...extra });
+  const p = pontualidadeDoMes(
+    [
+      card({ enteredAt: noDiaDoPrazoAs18h, due: "2026-10-20" }),
+      card({ enteredAt: noDiaDoPrazoAs2330, due: "2026-10-20" }),
+      card({ enteredAt: doisDiasDepois, due: "2026-10-20" }),
+      // sem prazo: não entra na conta, nem a favor nem contra
+      card({ enteredAt: doisDiasDepois, due: null }),
+      // ainda não entregue: não conta
+      card({ enteredAt: doisDiasDepois, due: "2026-10-01", columnId: "andamento" }),
+      // entregue noutro mês: não é desta temporada
+      card({ enteredAt: Date.UTC(2026, 8, 10, 15, 0), due: "2026-09-01" }),
+      // sem responsável: não é de ninguém
+      card({ enteredAt: doisDiasDepois, due: "2026-10-30", assignee: null }),
+    ],
+    ENT,
+    "2026-10",
+  ).get("ana@px");
+  checa("conta só as entregas do mês com prazo", p?.comPrazo === 3, JSON.stringify(p));
+  checa(
+    "entregar até o fim do dia do prazo, no fuso local, é cumprir",
+    p?.noPrazo === 2,
+    JSON.stringify(p),
+  );
+  checa("o rótulo arredonda para o inteiro", rotuloPontualidade(p) === "67%", rotuloPontualidade(p));
+  checa(
+    "23h30 local é o mesmo dia, mesmo já sendo o seguinte em UTC",
+    diaDe(noDiaDoPrazoAs2330) === "2026-10-20",
+    diaDe(noDiaDoPrazoAs2330),
+  );
+  checa(
+    "quem só entregou sem prazo fica fora do mapa — não há o que medir",
+    !pontualidadeDoMes(
+      [card({ enteredAt: doisDiasDepois, due: null })],
+      ENT,
+      "2026-10",
+    ).has("ana@px"),
+  );
+}
 
 console.log(
   falhas === 0 ? "\ntemporadas: ok" : `\ntemporadas: ${falhas} falha(s)`,
