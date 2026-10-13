@@ -31,9 +31,7 @@ import {
 import {
   entregasDoMes,
   mesAtual,
-  pontualidadeDoMes,
   rotuloMes,
-  rotuloPontualidade,
 } from "@/lib/temporadas-core";
 import {
   listarTemporadasFechadas,
@@ -164,24 +162,6 @@ export default function RankPage() {
     [cards, setorDoPodio],
   );
 
-  /** Pontualidade de cada pessoa na temporada atual — ver `pontualidadeDoMes`. */
-  const pontualidade = useMemo(
-    () =>
-      vendoAtual
-        ? pontualidadeDoMes(cardsDoPodio, entreguesPorSetor, mesEscolhido)
-        : new Map<string, { noPrazo: number; comPrazo: number }>(),
-    [vendoAtual, cardsDoPodio, entreguesPorSetor, mesEscolhido],
-  );
-  /** A pontualidade do pódio inteiro, para a linha de baixo do título. */
-  const pontualidadeGeral = useMemo(() => {
-    let noPrazo = 0;
-    let comPrazo = 0;
-    pontualidade.forEach((p) => {
-      noPrazo += p.noPrazo;
-      comPrazo += p.comPrazo;
-    });
-    return comPrazo ? rotuloPontualidade({ noPrazo, comPrazo }) : "";
-  }, [pontualidade]);
 
   /** A temporada em exibição: ao vivo (mês corrente) ou congelada (mês passado). */
   const { colocacoes, totalEntregas, vencedores, semFechamento } = useMemo(() => {
@@ -269,7 +249,6 @@ export default function RankPage() {
                 [
                   `${totalEntregas} ${totalEntregas === 1 ? "demanda entregue" : "demandas entregues"}`,
                   rotuloMes(mesEscolhido),
-                  pontualidadeGeral && `${pontualidadeGeral} no prazo`,
                 ]
                   .filter(Boolean)
                   .join(" · ")
@@ -396,7 +375,6 @@ export default function RankPage() {
           colocacoes={colocacoes}
           usersMap={usersMap}
           campea={!vendoAtual}
-          pontualidade={pontualidade}
           onPerfil={setPerfilDe}
         />
       )}
@@ -482,21 +460,14 @@ function Cena({
   colocacoes,
   usersMap,
   campea,
-  pontualidade,
   onPerfil,
 }: {
   colocacoes: Colocacao[];
   usersMap: Record<string, UserProfile>;
   /** Temporada FECHADA sendo exibida — é o que acende o acento de campeão. */
   campea: boolean;
-  /** Por e-mail; vazio na temporada fechada, que não guardou o dado. */
-  pontualidade: ReadonlyMap<string, { noPrazo: number; comPrazo: number }>;
   onPerfil: (p: UserProfile) => void;
 }) {
-  const noPrazoDe = (chave: string) => {
-    const p = pontualidade.get(chave);
-    return p ? `${rotuloPontualidade(p)} no prazo` : undefined;
-  };
   const { degraus, plateia } = useMemo(() => partirCena(colocacoes), [colocacoes]);
   const maior = maiorEntrega(colocacoes);
   // Com pódio, quem está no chão é coadjuvante e usa o diâmetro mínimo. Sem
@@ -552,7 +523,6 @@ function Cena({
             onPerfil={onPerfil}
             maior={maior}
             campea={campea}
-            noPrazo={noPrazoDe(c.chave)}
             indice={i}
             atraso={ATRASO_POR_POSICAO[c.posicao] ?? ATRASO_POR_POSICAO[3]}
           />
@@ -565,7 +535,6 @@ function Cena({
             onPerfil={onPerfil}
             rosto={rosto}
             campea={campea}
-            noPrazo={noPrazoDe(c.chave)}
             indice={degraus.length + i}
             /* Quem está no chão entra ANTES: é a sala tomando lugar, e a
                cerimônia começa depois que ela está cheia. */
@@ -676,7 +645,6 @@ function Degrau({
   maior,
   atraso,
   campea,
-  noPrazo,
   indice,
 }: {
   colocacao: Colocacao;
@@ -685,8 +653,6 @@ function Degrau({
   maior: number;
   atraso: number;
   campea: boolean;
-  /** "100% no prazo", ou nada quando não há entrega com prazo para medir. */
-  noPrazo?: string;
   /** Posição na lista inteira — decide de que lado da fileira ele fica. */
   indice: number;
 }) {
@@ -768,9 +734,6 @@ function Degrau({
             {entregues} {entregues === 1 ? "entrega" : "entregas"}
           </span>
         </span>
-        {/* A pontualidade é a SEGUNDA linha gravada no plinto, menor: ela
-            qualifica a contagem, não compete com ela pelo olho (#215). */}
-        {noPrazo && <span className={styles.noPrazo}>{noPrazo}</span>}
       </div>
     </li>
   );
@@ -800,7 +763,6 @@ function NoChao({
   rosto,
   atraso,
   campea,
-  noPrazo,
   indice,
 }: {
   colocacao: Colocacao;
@@ -810,7 +772,6 @@ function NoChao({
   rosto: number;
   atraso: number;
   campea: boolean;
-  noPrazo?: string;
   /** Posição na lista inteira — decide de que lado da fileira ele fica. */
   indice: number;
 }) {
@@ -847,7 +808,6 @@ function NoChao({
       <span className={styles.chaoNum}>
         {entregues} {entregues === 1 ? "entrega" : "entregas"}
       </span>
-      {noPrazo && <span className={styles.chaoPrazo}>{noPrazo}</span>}
     </li>
   );
 }
