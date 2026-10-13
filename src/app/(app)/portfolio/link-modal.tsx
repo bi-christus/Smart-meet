@@ -40,7 +40,7 @@ function ehNaoEncontrado(e: unknown): boolean {
  */
 export function fraseDoErro(acao: string, e: unknown): string {
   if (ehNaoEncontrado(e)) {
-    return "Este link foi removido por outra pessoa enquanto esta tela estava aberta.";
+    return "Este produto foi removido do portfólio por outra pessoa enquanto esta tela estava aberta.";
   }
   if (typeof (e as { code?: unknown } | null)?.code !== "string" && e instanceof Error) {
     return e.message;
@@ -258,7 +258,7 @@ export function LinkModal({
       onClose();
     } catch (e) {
       console.error("Erro ao salvar o link:", e);
-      setErro({ campo: null, texto: fraseDoErro("Não foi possível salvar o link.", e) });
+      setErro({ campo: null, texto: fraseDoErro("Não foi possível salvar o produto.", e) });
       setSalvando(false);
     }
   }
@@ -269,7 +269,7 @@ export function LinkModal({
     // e a frase que fechava nele saía com dois.
     if (
       !confirm(
-        `Remover o link "${link.nome}" do setor ${link.setor}? Ele some desta aba para todo mundo do setor.`,
+        `Remover "${link.nome}" do portfólio de ${link.setor}? Ele some desta aba para todo mundo do setor.`,
       )
     )
       return;
@@ -279,7 +279,7 @@ export function LinkModal({
       onClose();
     } catch (e) {
       console.error("Erro ao remover o link:", e);
-      setErro({ campo: null, texto: fraseDoErro("Não foi possível remover o link.", e) });
+      setErro({ campo: null, texto: fraseDoErro("Não foi possível remover o produto.", e) });
       setSalvando(false);
     }
   }
@@ -344,12 +344,12 @@ export function LinkModal({
     <Modal
       onClose={onClose}
       podeFechar={podeFechar}
-      ariaLabel={novo ? "Novo link" : `Editar o link ${link.nome}`}
+      ariaLabel={novo ? "Novo produto" : `Editar o produto ${link.nome}`}
       overlayClassName={styles.overlay}
       className={styles.modal}
     >
       <div className={styles.modalHead}>
-        <span className={styles.modalTitulo}>{novo ? "Novo link" : "Editar link"}</span>
+        <span className={styles.modalTitulo}>{novo ? "Novo produto" : "Editar produto"}</span>
         {/* Na edição o setor é fato, não escolha: ele é imutável nas regras,
             porque trocá-lo seria escrever no catálogo de outro setor. */}
         {!novo && <span className={styles.tagNeutra}>{link.setor}</span>}
@@ -379,13 +379,13 @@ export function LinkModal({
           {logo ? (
             <span className={styles.logoSelo}>
               {/* eslint-disable-next-line @next/next/no-img-element -- data URI conferido; next/image não otimiza data URI */}
-              <img src={logo} alt={`Logo de ${nome.trim() || "o link novo"}`} />
+              <img src={logo} alt={`Logo de ${nome.trim() || "o produto novo"}`} />
             </span>
           ) : (
           <IconePicker
             valor={icone}
             deduzido={deduzido}
-            rotulo={nome.trim() || "o link novo"}
+            rotulo={nome.trim() || "o produto novo"}
             onEscolher={setIcone}
             disabled={salvando}
             className={styles.icone}
@@ -536,7 +536,7 @@ export function LinkModal({
               value={setor}
               options={setorOptions}
               onChange={setSetor}
-              ariaLabel="Setor do link"
+              ariaLabel="Setor do produto"
             />
           </div>
         )}
@@ -550,7 +550,7 @@ export function LinkModal({
         {confirmandoSaida && (
           <div className={styles.confirmaSaida} role="alertdialog" aria-live="assertive">
             <span>
-              <strong>Fechar sem salvar?</strong> O que você escreveu neste link é
+              <strong>Fechar sem salvar?</strong> O que você escreveu neste produto é
               perdido.
             </span>
             <div className={styles.confirmaAcoes}>
@@ -593,7 +593,7 @@ export function LinkModal({
           Cancelar
         </button>
         <button type="submit" form={formId} className={styles.btnPri} disabled={salvando}>
-          {salvando ? "Salvando…" : novo ? "Cadastrar link" : "Salvar"}
+          {salvando ? "Salvando…" : novo ? "Cadastrar produto" : "Salvar"}
         </button>
       </div>
     </Modal>

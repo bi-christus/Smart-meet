@@ -19,7 +19,6 @@ import {
 import { juntarFontes } from "@/lib/async-data-core";
 import { useAsyncData } from "@/lib/use-async-data";
 import { Icon } from "@/components/icons";
-import { Select, type SelectOption } from "@/components/select";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
 import { SkeletonCard, classeAparece } from "@/components/skeleton";
@@ -29,7 +28,15 @@ import { normalizarUrl } from "@/lib/links-core";
 import styles from "./links.module.css";
 
 /**
- * Links — os aplicativos, painéis e pastas que o setor usa, num lugar só.
+ * Portfólio — o que cada setor desenvolveu, com acesso rápido.
+ *
+ * ERA A ABA "LINKS", e virou Portfólio em 13/10/2026 (#208): um portfólio por
+ * setor, em abas, e cada item é um PRODUTO. O acesso rápido continua sendo o
+ * principal — muitos produtos são anteriores ao Smart Meeting e nunca tiveram
+ * demanda, e para eles a tela é só isto: nome, logo e um clique. O id da aba
+ * continua `links` no catálogo de permissões, e a coleção continua `/links`:
+ * os quadros de permissão gravados leem esse id, e trocá-lo faria a aba sumir
+ * para quem já tem acesso. `/links` redireciona para `/portfolio`.
  *
  * ESTA TELA TEM CADASTRO PRÓPRIO desde 06/10/2026 (`/links`, ver
  * `links-do-setor-core.ts`). Antes ela não guardava nada: lia o campo Links de
@@ -75,7 +82,19 @@ export default function LinksPage() {
   const users = fUsers.data ?? SEM_USERS;
   const autor = profile?.email ?? "";
 
-  const [filtroSetor, setFiltroSetor] = useState("");
+  /**
+   * O portfólio aberto — um por setor, como abas (#208).
+   *
+   * DERIVADO e não sincronizado por efeito: `useSetoresDaPessoa` começa no piso
+   * e vira o cadastro quando ele responde, e a escolha guardada pode deixar de
+   * existir no meio do caminho. Se deixou, a tela cai no primeiro setor DA
+   * PESSOA — e não no primeiro da lista, que para o admin é o primeiro do
+   * cadastro inteiro, um setor em que ele talvez nem trabalhe.
+   */
+  const [setorEscolhido, setSetorEscolhido] = useState("");
+  const setorPadrao =
+    (profile?.sectors ?? []).find((s) => sectors.includes(s)) || sectors[0] || "";
+  const setorAtual = sectors.includes(setorEscolhido) ? setorEscolhido : setorPadrao;
   const [busca, setBusca] = useState("");
   /** O formulário aberto: um link existente, um novo, ou nenhum. */
   const [aberto, setAberto] = useState<LinkDoSetor | "novo" | null>(null);
@@ -159,57 +178,32 @@ export default function LinksPage() {
    */
   const tela = juntarFontes([fLinks]);
 
-  /**
-   * O setor só aparece no rodapé do card para quem participa de mais de um.
-   * Para os outros todo card diria a mesma palavra.
-   */
-  const variosSetores = sectors.length > 1;
+  /** Os produtos do portfólio aberto — a base da contagem e da busca. */
+  const doSetor = useMemo(
+    () => links.filter((l) => l.setor === setorAtual),
+    [links, setorAtual],
+  );
 
   const visiveis = useMemo(
-    () =>
-      links.filter(
-        (l) => (!filtroSetor || l.setor === filtroSetor) && casaBusca(l, busca),
-      ),
-    [links, filtroSetor, busca],
+    () => doSetor.filter((l) => casaBusca(l, busca)),
+    [doSetor, busca],
   );
 
   /**
-   * Só entram no filtro os setores QUE TÊM LINK, pelo mesmo motivo do antigo
-   * filtro de responsável: opção que devolve zero em qualquer combinação é
-   * ruído. A base é `links`, e não `visiveis`, senão a busca esvaziaria este
-   * select e apagaria a opção escolhida.
+   * Quantos produtos cada portfólio tem, para a aba dizer antes do clique.
+   * Aba de setor vazio continua na barra: é nela que se cadastra o primeiro.
    */
-  const setorOptions = useMemo<SelectOption[]>(() => {
-    const comLink = new Set(links.map((l) => l.setor));
-    const opts: SelectOption[] = [{ value: "", label: "Todos os setores" }];
-    [...comLink]
-      .sort((a, b) => a.localeCompare(b, "pt-BR"))
-      .forEach((s) => opts.push({ value: s, label: s }));
-    return opts;
+  const porSetor = useMemo(() => {
+    const m = new Map<string, number>();
+    links.forEach((l) => m.set(l.setor, (m.get(l.setor) ?? 0) + 1));
+    return m;
   }, [links]);
 
   /**
-   * O filtro só existe quando os links cobrem DOIS setores ou mais — com um só,
-   * escolhê-lo devolve exatamente o mesmo que "Todos". O `filtroSetor` na conta
-   * é a saída de emergência: se os links de um setor somem com o filtro
-   * escolhido, o seletor fica na tela para a pessoa poder desfazê-lo, em vez de
-   * sumir e deixá-la presa numa grade vazia.
+   * O produto novo nasce no portfólio aberto: quem está olhando o das Cantinas
+   * e clica em "Novo produto" quer cadastrar nas Cantinas.
    */
-  const mostrarFiltroSetor = setorOptions.length > 2 || filtroSetor !== "";
-
-  /**
-   * O setor em que um link novo nasce, quando a pessoa participa de vários.
-   *
-   * O do filtro vem primeiro: quem está olhando o catálogo das Cantinas e clica
-   * em "Novo link" quer cadastrar nas Cantinas. Sem filtro, o primeiro setor da
-   * própria pessoa — e não o primeiro da lista, que para o admin é o primeiro
-   * do cadastro inteiro, um setor em que ele talvez nem trabalhe.
-   */
-  const setorInicial =
-    filtroSetor ||
-    (profile?.sectors ?? []).find((s) => sectors.includes(s)) ||
-    sectors[0] ||
-    "";
+  const setorInicial = setorAtual;
 
   const anoAtual = useMemo(() => new Date().getFullYear(), []);
 
@@ -272,9 +266,9 @@ export default function LinksPage() {
   }
 
   const contagem =
-    visiveis.length === links.length
-      ? `${links.length} ${links.length === 1 ? "link" : "links"}`
-      : `${visiveis.length} de ${links.length} links`;
+    visiveis.length === doSetor.length
+      ? `${doSetor.length} ${doSetor.length === 1 ? "produto" : "produtos"}`
+      : `${visiveis.length} de ${doSetor.length} produtos`;
 
   if (!profile) return null;
 
@@ -283,8 +277,8 @@ export default function LinksPage() {
       <div className={styles.page}>
         <div className={styles.head}>
           <div className={styles.headMain}>
-            <h1>Links</h1>
-            <p>Os aplicativos, painéis e pastas que o setor usa, num lugar só.</p>
+            <h1>Portfólio</h1>
+            <p>O que o setor desenvolveu, com acesso rápido, num lugar só.</p>
           </div>
         </div>
         <div className={styles.vazioTela}>
@@ -299,30 +293,18 @@ export default function LinksPage() {
     <div className={styles.page}>
       <div className={styles.head}>
         <div className={styles.headMain}>
-          <h1>Links</h1>
-          {/* A contagem só entra depois da resposta: "0 links" antes de saber é
-              a mesma afirmação falsa da mensagem de vazio, dita com a
+          <h1>Portfólio</h1>
+          {/* A contagem só entra depois da resposta: "0 produtos" antes de
+              saber é a mesma afirmação falsa da mensagem de vazio, dita com a
               autoridade de um número. */}
           <p>
-            Os aplicativos, painéis e pastas que o setor usa, cada um com nome e
-            descrição
-            {tela.carregando || tela.erro ? "." : ` — ${contagem}.`} O link
-            colado numa demanda continua dentro dela, no Kanban.
+            O que o setor desenvolveu — painéis, aplicativos, planilhas e pastas
+            —, com acesso rápido
+            {tela.carregando || tela.erro ? "." : ` — ${contagem}.`}
           </p>
         </div>
 
         <div className={styles.headTools}>
-          {mostrarFiltroSetor && (
-            <div className={styles.filtroSetor}>
-              <Select
-                value={filtroSetor}
-                options={setorOptions}
-                onChange={setFiltroSetor}
-                placeholder="Todos os setores"
-                ariaLabel="Filtrar por setor"
-              />
-            </div>
-          )}
           <div className={styles.searchwrap}>
             <Icon name="search" size={15} />
             <input
@@ -330,7 +312,7 @@ export default function LinksPage() {
               placeholder="Buscar por nome, descrição ou serviço…"
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
-              aria-label="Buscar links"
+              aria-label="Buscar no portfólio"
             />
           </div>
           {(semLogo.length > 0 || lote) && (
@@ -352,10 +334,36 @@ export default function LinksPage() {
             className={styles.btnPri}
             onClick={() => setAberto("novo")}
           >
-            <Icon name="plus" size={14} /> Novo link
+            <Icon name="plus" size={14} /> Novo produto
           </button>
         </div>
       </div>
+
+      {/* UM PORTFÓLIO POR SETOR, como abas (#208). Só aparece para quem vê mais
+          de um: com um setor só, a barra repetiria o título. A leitura continua
+          escopada pela regra de `/links` — cada pessoa só tem abas dos setores
+          dela, e o admin, de todos. */}
+      {sectors.length > 1 && (
+        <div className={styles.abasSetor} role="tablist" aria-label="Portfólios">
+          {sectors.map((s) => {
+            const n = porSetor.get(s) ?? 0;
+            const ativa = s === setorAtual;
+            return (
+              <button
+                key={s}
+                type="button"
+                role="tab"
+                aria-selected={ativa}
+                className={`${styles.abaSetor} ${ativa ? styles.abaSetorOn : ""}`}
+                onClick={() => setSetorEscolhido(s)}
+              >
+                Portfólio {s}
+                {!tela.carregando && <span className={styles.abaConta}>{n}</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {resultadoLote && (
         <div className={styles.avisoLote} role="status">
@@ -370,22 +378,22 @@ export default function LinksPage() {
         {tela.erro ? (
           <ErrorState error={tela.erro} onRetry={() => fLinks.tentarDeNovo()} />
         ) : tela.carregando ? (
-          <SkeletonCard cards={6} texto="Carregando os links do setor…" />
-        ) : links.length === 0 ? (
+          <SkeletonCard cards={6} texto="Carregando o portfólio…" />
+        ) : doSetor.length === 0 ? (
           <EmptyState
             icon="links"
-            title="Nenhum link cadastrado"
+            title={`O portfólio ${setorAtual} ainda está vazio`}
             description={
               <>
-                Cadastre aqui os aplicativos que o setor usa — o painel do Power
-                BI, a planilha de custos, a pasta no Drive —, cada um com um
-                nome e uma descrição do que é. Quem participa do setor encontra
-                tudo nesta aba.
+                Cadastre aqui o que o setor desenvolveu — o painel do Power BI,
+                a planilha de custos, a pasta no Drive —, cada um com um nome e
+                uma descrição do que é. Quem participa do setor encontra tudo
+                nesta aba, a um clique.
               </>
             }
             action={
               <button type="button" onClick={() => setAberto("novo")}>
-                <Icon name="plus" size={14} /> Cadastrar o primeiro link
+                <Icon name="plus" size={14} /> Cadastrar o primeiro produto
               </button>
             }
           />
@@ -395,12 +403,12 @@ export default function LinksPage() {
               <EmptyState
                 size="compact"
                 icon="search"
-                title="Nenhum link com esse filtro"
+                title="Nenhum produto com essa busca"
                 description={
                   <>
-                    Nenhum dos {links.length} links cadastrados casa com o setor
-                    e a busca escolhidos — eles continuam lá, é a peneira que
-                    está apertada.
+                    Nenhum dos {doSetor.length} produtos deste portfólio casa
+                    com a busca — eles continuam lá, é a peneira que está
+                    apertada.
                   </>
                 }
               />
@@ -417,7 +425,6 @@ export default function LinksPage() {
                   link={link}
                   nomeDe={nomeDe}
                   anoAtual={anoAtual}
-                  mostrarSetor={variosSetores}
                   salvando={salvando === link.id}
                   erro={erroIcone?.id === link.id ? erroIcone.texto : null}
                   podeAlterar={podeAlterar(link)}

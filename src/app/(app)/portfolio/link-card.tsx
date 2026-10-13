@@ -24,7 +24,6 @@ export function LinkCard({
   link,
   nomeDe,
   anoAtual,
-  mostrarSetor,
   salvando,
   erro,
   podeAlterar,
@@ -34,7 +33,6 @@ export function LinkCard({
   link: LinkDoSetor;
   nomeDe: (e: string | null | undefined) => string;
   anoAtual: number;
-  mostrarSetor: boolean;
   salvando: boolean;
   erro: string | null;
   /** Quem cadastrou, ou admin. Sem isso o card só se lê e se abre. */
@@ -146,7 +144,6 @@ export function LinkCard({
       )}
 
       <div className={styles.cardPe}>
-        {mostrarSetor && <span className={styles.setor}>{link.setor}</span>}
         <span className={styles.autoria} title={editadoPor}>
           {nomeDe(link.createdBy)}
           {link.createdAt ? ` · ${dataDe(link.createdAt, anoAtual)}` : ""}
