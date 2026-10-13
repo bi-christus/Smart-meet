@@ -271,7 +271,7 @@ export default function RankPage() {
 
 
   return (
-    <div className={styles.page}>
+    <div className={`${styles.page} ${monoTitulo.variable}`}>
       <Cabecalho
         sub={
           fontes.carregando || fontes.erro
@@ -402,21 +402,23 @@ export default function RankPage() {
            de tela e não como outra temporada. A `key` fica AQUI, e não na
            `.page`: a sala não se reconstrói quando muda o mês, só quem sobe
            nela. */
-        /* O cartaz (13/10/2026): o título na lateral, como o "RACE RESULT"
-           da referência; à direita o gráfico com todo mundo e, embaixo, as
-           entregas da temporada da mais recente para a mais antiga. */
+        /* O cartaz (13/10/2026): o gráfico com todo mundo em cima e, embaixo,
+           o título de pé encostado nas entregas da temporada, da mais recente
+           para a mais antiga — como o "RACE RESULT" da referência. */
         <div className={styles.palco}>
-          <TituloLateral />
-          <div className={styles.palcoCorpo}>
-            <Cena
-              /* O setor entra na chave junto do mês: trocar de setor também
-                 troca o elenco, e o gráfico novo precisa entrar em cena. */
-              key={`${mesEscolhido}|${setorDoPodio}`}
-              colocacoes={colocacoes}
-              usersMap={usersMap}
-              campea={!vendoAtual}
-              onPerfil={setPerfilDe}
-            />
+          <Cena
+            /* O setor entra na chave junto do mês: trocar de setor também
+               troca o elenco, e o gráfico novo precisa entrar em cena. */
+            key={`${mesEscolhido}|${setorDoPodio}`}
+            colocacoes={colocacoes}
+            usersMap={usersMap}
+            campea={!vendoAtual}
+            onPerfil={setPerfilDe}
+          />
+          {/* O título encosta na lista, como o "RACE RESULT" encosta na tabela
+              do cartaz — e não na borda da página, longe do que ele nomeia. */}
+          <div className={styles.cartaz}>
+            <TituloLateral />
             <ListaDeEntregas entregas={entregasDaTemporada} usersMap={usersMap} />
           </div>
         </div>
@@ -540,7 +542,8 @@ function Cena({
             campea={campea}
             indice={i}
             retrato={tamanhoDoRetrato(c.posicao, colocacoes.length)}
-            atraso={ATRASO_POR_POSICAO[c.posicao] ?? i * 24}
+            /* `ENTRADA_DA_CENA` espera o véu da tela abrir (ver `.page::after`). */
+            atraso={ENTRADA_DA_CENA + (ATRASO_POR_POSICAO[c.posicao] ?? i * 24)}
           />
         ))}
       </ol>
@@ -554,6 +557,9 @@ function Cena({
  * cerimônia começa depois.
  */
 const ATRASO_POR_POSICAO: Record<number, number> = { 1: 240, 2: 180, 3: 120 };
+
+/** As barras começam a subir quando o véu da entrada já está abrindo. */
+const ENTRADA_DA_CENA = 320;
 
 /**
  * Quanto tempo a contagem leva para chegar ao número.
@@ -783,7 +789,7 @@ function Retrato({
  */
 function TituloLateral() {
   return (
-    <div className={`${styles.tituloLateral} ${monoTitulo.variable}`} aria-hidden="true">
+    <div className={styles.tituloLateral} aria-hidden="true">
       <span className={styles.tituloGrande}>Smart Meeting</span>
       <span className={styles.tituloAcento}>*S2</span>
     </div>
@@ -823,7 +829,11 @@ function ListaDeEntregas({
           const quem = c.assignee ? usersMap[c.assignee] : undefined;
           const nome = quem?.name || c.assignee || "Sem responsável";
           return (
-            <li key={c.id} className={styles.listaLinha}>
+            <li
+              key={c.id}
+              className={styles.listaLinha}
+              style={{ ["--i" as string]: Math.min(i, 12) }}
+            >
               <span className={styles.listaNum}>{i + 1}</span>
               <Avatar
                 pessoa={quem ?? { name: nome, email: c.assignee ?? "" }}

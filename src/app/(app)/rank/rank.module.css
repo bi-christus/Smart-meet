@@ -68,6 +68,7 @@
  */
 
 .page {
+  position: relative;
   height: calc(100vh - 56px);
   overflow: auto;
   /* Coluna: o cabeçalho tem a altura que precisa e a cena fica com o resto.
@@ -84,6 +85,12 @@
   --chao: rgba(255, 255, 255, 0.34);
   --anel-foto: rgba(255, 255, 255, 0.34);
   --painel-foto: rgba(10, 9, 8, 0.72);
+  /* O VIDRO (13/10/2026): o setor pediu o desenho mais limpo, sem caixas bem
+     definidas — superfícies translúcidas e foscas sobre o degradê, borda de um
+     fio quase invisível. Toda superfície da cena sai destes três. */
+  --vidro: rgba(255, 255, 255, 0.1);
+  --vidro-forte: rgba(255, 255, 255, 0.16);
+  --vidro-fio: rgba(255, 255, 255, 0.16);
   --linha-foto: rgba(255, 255, 255, 0.2);
   /* A face do plinto. Fixa nos seis temas — ver o comentário do topo. */
   --face-plinto: #2a2724;
@@ -92,28 +99,78 @@
      numa pedra escura. A mistura mantém o tom da casa e devolve o contraste. */
   --acento-foto: color-mix(in srgb, var(--brand) 76%, #ffffff);
 
+  /* O FUNDO É UM DEGRADÊ, e não mais a foto (13/10/2026). O setor trocou a
+     sala fotografada por um degradê desfocado: quase preto, com uma faixa
+     laranja de borda dourada atravessando em diagonal, de baixo à esquerda
+     para cima à direita. Desenhado em camadas de gradiente em vez de baixado
+     como imagem — nítido em qualquer resolução e sem custo de download.
+
+     O fundo já é escuro, então o escurecimento por cima é só um véu leve no
+     pé, onde a lista de entregas encosta. */
   background:
-    /* 1. o holofote, ancorado no CHÃO da fileira e em pixels — em porcentagem
-       ele se mexeria conforme a aba muda de altura */
-    radial-gradient(
-      620px 320px at 50% calc(100% - 150px),
-      color-mix(in srgb, var(--brand) 22%, transparent),
-      transparent 72%
-    ),
-    /* 2. o escurecimento. NENHUMA parada opaca: a última é translúcida, senão
-       vira uma barra da cor do tema grudada no pé da aba */
-      linear-gradient(
-        180deg,
-        rgba(6, 6, 9, 0.8) 0%,
-        rgba(6, 6, 9, 0.56) 20%,
-        rgba(6, 6, 9, 0.52) 46%,
-        rgba(6, 6, 9, 0.6) 74%,
-        rgba(6, 6, 9, 0.74) 100%
-      ),
-    /* 3. vinheta: puxa o olho para o meio, onde está o 1º lugar */
-      radial-gradient(120% 100% at 50% 62%, transparent 34%, rgba(0, 0, 0, 0.58)),
-    url(/rank-fundo.webp) center 44% / cover no-repeat,
-    /* 4. o chão de tudo, para o caso de a foto não pintar */ #0b0a09;
+    linear-gradient(180deg, transparent 55%, rgba(8, 3, 2, 0.35) 100%),
+    /* as sombras que curvam a faixa: o escuro de cima à esquerda empurra a
+       borda dourada para baixo, e o de baixo à direita fecha a outra margem */
+    radial-gradient(48% 46% at 14% 14%, #0e0302 0%, rgba(14, 3, 2, 0.85) 40%, transparent 78%),
+    radial-gradient(44% 46% at 96% 96%, #0e0302 0%, rgba(14, 3, 2, 0.8) 40%, transparent 80%),
+    /* a faixa contínua, em diagonal: escuro, borda dourada, miolo laranja,
+       vermelho queimado e escuro de novo */
+    linear-gradient(
+      152deg,
+      #120403 0%,
+      #170604 26%,
+      #c98a3e 40%,
+      #e2652b 50%,
+      #d4521f 58%,
+      #6e220f 70%,
+      #120403 84%
+    );
+}
+
+/* ---------- a entrada na tela (13/10/2026) ----------
+
+   UMA SEQUÊNCIA, na chegada, e nunca mais: o fundo sai do escuro, o
+   cabeçalho desce, o título desliza da lateral, as barras sobem (`assenta` e
+   `cresce`, mais abaixo) e as entregas entram em cascata. É a abertura de um
+   cartaz, e é por isso que só esta tela tem uma — o resto do app abre seco.
+
+   O véu é um pseudo POR CIMA de tudo e sem clique (`pointer-events: none`):
+   ele só existe nos primeiros 700ms, e esconder `visibility` no fim garante
+   que nem um pixel dele sobra sobre a tela. A deslizada usa `translate`, e não
+   `transform`, porque o título já tem `transform` próprio (o giro de 180°) e a
+   animação o atropelaria. */
+.page::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  background: #0a0302;
+  pointer-events: none;
+  animation: revela 700ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+@keyframes revela {
+  to {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+@keyframes desce {
+  from {
+    opacity: 0;
+    translate: 0 -10px;
+  }
+}
+@keyframes desliza {
+  from {
+    opacity: 0;
+    translate: -36px 0;
+  }
+}
+@keyframes linhaEntra {
+  from {
+    opacity: 0;
+    translate: 0 8px;
+  }
 }
 
 /* ---------- cabeçalho, sobre a foto ---------- */
@@ -121,6 +178,7 @@
 .head {
   flex: none;
   padding: 16px 22px 0;
+  animation: desce 420ms 220ms both cubic-bezier(0.2, 0, 0, 1);
 }
 .headTopo {
   display: flex;
@@ -129,69 +187,85 @@
   gap: 12px;
   flex-wrap: wrap;
 }
+/* O CABEÇALHO FALA A LÍNGUA DO CARTAZ (13/10/2026): rótulos em monoespaçada,
+   caixa alta e espaçados, sem caixa nenhuma em volta — como o menu da
+   referência que o setor escolheu. O nome grande da tela já é o título
+   lateral; o `<h1>` vira o rótulo discreto da seção. */
 .head h1 {
-  /* A serifa entra AQUI e em nenhum outro lugar da tela. Ela é a voz de
-     cerimônia do app (a mesma do "Acesso pendente"), e uma tela que só ela
-     usa é o que a mantém significando alguma coisa. */
-  font-family: var(--font-serif), serif;
-  font-size: 26px;
-  font-weight: 600;
-  letter-spacing: 0.2px;
-  /* Era `--tx`. Sobre a foto, no tema claro, isso é preto sobre cena escura. */
+  font-family: var(--fonte-titulo), var(--font-mono), monospace;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
   color: var(--sobre-foto);
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
 }
 .head p {
-  font-size: 12.5px;
-  color: var(--sobre-foto-2);
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
-  margin-top: 4px;
+  font-family: var(--font-mono), monospace;
+  font-size: 11.5px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.6);
+  margin-top: 6px;
 }
 
-/* O seletor de temporada numa largura própria (#215). O `<Select>` ocupa 100%
-   do pai, e solto no cabeçalho ele atravessava a tela inteira — uma faixa
-   escura cortando a foto ao meio para escolher entre meia dúzia de meses. */
+/* O seletor de temporada numa largura própria (#215), e em VIDRO: o `<Select>`
+   pinta o gatilho com os tokens do tema (`--s1`, `--line`, `--tx`), e é
+   redefinindo os tokens SÓ AQUI DENTRO que ele assume a superfície da cena sem
+   que o componente compartilhado ganhe uma variante. O menu aberto continua
+   com a cara do app. */
 .seletor {
-  width: 230px;
+  width: 210px;
   max-width: 100%;
+  --s1: rgba(255, 255, 255, 0.1);
+  --line: rgba(255, 255, 255, 0.18);
+  --brand-line: rgba(255, 255, 255, 0.4);
+  --tx: #ffffff;
+  font-family: var(--font-mono), monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+.seletor > * {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 8px;
 }
 
-/* As abas de setor do pódio (#215), sobre a foto. Pílulas com a superfície
-   escura fixa da cena — nada aqui lê token de tema, pela regra do topo desta
-   folha —, e a escolhida acende na cor da marca, que é a única cor da tela. */
+/* As abas de setor (#215) viraram TEXTO, como o menu da referência: sem
+   pílula e sem borda, só a palavra — apagada quando não é a escolhida, branca
+   e sublinhada quando é. Uma régua de quinze pílulas era a parte da tela que
+   mais brigava com o cartaz. */
 .setores {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 12px;
+  gap: 4px 18px;
+  margin-top: 14px;
 }
 .setor {
-  height: 28px;
-  padding: 0 12px;
-  border-radius: 999px;
-  border: 1px solid var(--linha-foto);
-  background: var(--painel-foto);
-  color: var(--sobre-foto-2);
-  font-family: inherit;
-  font-size: 12px;
-  font-weight: 600;
+  padding: 4px 0;
+  border: none;
+  border-bottom: 1px solid transparent;
+  background: none;
+  color: rgba(255, 255, 255, 0.55);
+  font-family: var(--font-mono), monospace;
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
   white-space: nowrap;
   cursor: pointer;
-  transition: border-color 0.15s, color 0.15s;
+  transition: color 0.15s, border-color 0.15s;
 }
 .setor:hover {
-  border-color: rgba(255, 255, 255, 0.42);
-  color: var(--sobre-foto);
+  color: rgba(255, 255, 255, 0.85);
 }
 .setor:focus-visible {
   outline: 2px solid var(--acento-foto);
-  outline-offset: 2px;
+  outline-offset: 3px;
 }
 .setorOn,
 .setorOn:hover {
-  border-color: var(--brand);
-  background: color-mix(in srgb, var(--brand) 30%, rgba(10, 9, 8, 0.8));
   color: #ffffff;
+  border-bottom-color: #ffffff;
 }
 
 /* O aviso de quem venceu a temporada fechada — texto, não outro pódio em
@@ -208,12 +282,10 @@
   align-items: center;
   gap: 7px;
   margin: 12px 22px 0;
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: var(--painel-foto);
-  border: 1px solid var(--linha-foto);
-  font-size: 12.5px;
-  font-weight: 600;
+  font-family: var(--font-mono), monospace;
+  font-size: 11.5px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
   color: var(--sobre-foto);
 }
 .campea svg {
@@ -322,53 +394,17 @@
    Estático — a skill de motion do projeto proíbe brilho que chama atenção
    sozinho (nada em laço, nada pulsando). */
 .fileira::before {
-  content: "";
-  position: absolute;
-  z-index: -1;
-  /* `left`/`right` em ZERO, e não negativos como o desenho pedia: o pseudo é
-     descendente de um contêiner com `overflow-x: auto`, e o que passa da caixa
-     vira ÁREA ROLÁVEL. Com 80px de sobra de cada lado, o trilho ganhava barra
-     de rolagem com a fileira inteira cabendo na tela — rolagem horizontal
-     fantasma, medida em 1024px. O degradê é que dá a impressão de sobra: ele
-     morre bem antes das bordas. */
-  left: 0;
-  right: 0;
-  bottom: 3px;
-  height: 200px;
-  background: radial-gradient(
-    62% 88% at 50% 100%,
-    rgba(255, 255, 255, 0.2),
-    rgba(255, 255, 255, 0.06) 48%,
-    transparent 78%
-  );
-  pointer-events: none;
+  content: none;
 }
 
 /* A LINHA DE CONTATO — uma só, para quem está em cima do plinto e para quem
    está de pé. É ela que faz os dois tratamentos serem a mesma cena. Dissolve
    nas duas pontas: chão que some é chão; linha reta de ponta a ponta é
    divisória. */
+/* Sem linha de chão nem poço de luz: no vidro as barras flutuam sobre o
+   degradê, e um traço de ponta a ponta voltaria a desenhar uma caixa. */
 .fileira::after {
-  content: "";
-  position: absolute;
-  /* Zero pela mesma razão do `::before` — ver o comentário lá. */
-  left: 0;
-  right: 0;
-  /* 25 de altura com 22 abaixo: a borda de cima do pseudo cai exatamente no pé
-     da fileira (que reserva 3px ali), e o resto desce como sombra. */
-  bottom: -22px;
-  height: 25px;
-  background:
-    linear-gradient(
-        90deg,
-        transparent,
-        var(--chao) 14%,
-        var(--chao) 86%,
-        transparent
-      )
-      top / 100% 3px no-repeat,
-    radial-gradient(50% 100% at 50% 0%, rgba(0, 0, 0, 0.5), transparent 76%);
-  pointer-events: none;
+  content: none;
 }
 
 /* ---------- quem sobe no plinto ---------- */
@@ -423,12 +459,12 @@
   flex: none;
   display: block;
   padding: 0;
-  border: 1px solid var(--linha-foto);
-  border-bottom: none;
-  border-radius: 12px 12px 0 0;
+  border: 1px solid var(--vidro-fio);
+  border-radius: 10px;
   overflow: hidden;
-  background: linear-gradient(180deg, #3a3631, #1c1a17);
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.55);
+  background: var(--vidro);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   font: inherit;
   color: inherit;
 }
@@ -440,15 +476,7 @@ button.retrato:focus-visible {
   outline-offset: 3px;
 }
 .primeiro .retrato {
-  border-color: var(--brand);
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--brand) 38%, #3a3631),
-    #1c1a17
-  );
-  box-shadow:
-    0 0 0 3px var(--brand-soft),
-    0 12px 30px rgba(0, 0, 0, 0.6);
+  border-color: rgba(255, 255, 255, 0.5);
 }
 .retratoFoto {
   position: absolute;
@@ -523,10 +551,12 @@ button.retrato:focus-visible {
 }
 
 .nome {
-  margin-top: 12px;
+  margin-top: 10px;
   max-width: 100%;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 600;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
   color: var(--sobre-foto);
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
   text-align: center;
@@ -539,7 +569,7 @@ button.retrato:focus-visible {
   line-height: 1.3;
 }
 .primeiro .nome {
-  font-size: 18px;
+  font-size: 15px;
 }
 
 /* O plinto: uma pedra, não um cartão.
@@ -557,22 +587,20 @@ button.retrato:focus-visible {
 .bloco {
   position: relative;
   margin-top: 12px;
-  width: 100%;
+  width: calc(100% - 8px);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 3px;
-  padding-top: 9px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(0, 0, 0, 0.26)),
-    var(--face-plinto);
-  /* Raio quase nulo: canto vivo é o que faz peças encostadas lerem como uma
-     plataforma. Arredondado, cada uma volta a ser um cartão. */
-  border-radius: 4px 4px 0 0;
-  box-shadow:
-    inset 1px 0 0 rgba(255, 255, 255, 0.07),
-    inset -1px 0 0 rgba(0, 0, 0, 0.34);
+  /* Vidro fosco: translúcido, desfocando o degradê atrás, com um fio de luz
+     só no topo. Cantos suaves em cima — a barra não é mais uma pedra. */
+  background: linear-gradient(180deg, var(--vidro-forte), var(--vidro));
+  backdrop-filter: blur(14px) saturate(1.2);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  border: 1px solid var(--vidro-fio);
+  border-bottom: none;
+  border-radius: 10px 10px 0 0;
   animation: cresce 260ms calc(var(--atraso, 0ms) + 60ms) both
     cubic-bezier(0.32, 0.72, 0, 1);
 }
@@ -581,19 +609,7 @@ button.retrato:focus-visible {
    Sobre a foto escura, a laje de 22% se perdia, e sem ela o plinto lia como um
    retângulo chapado; é a aresta iluminada que diz "isto tem volume". */
 .bloco::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 10px;
-  border-radius: 4px 4px 0 0;
-  background: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.3),
-    rgba(255, 255, 255, 0.06)
-  );
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  content: none;
 }
 
 /* O plinto SAI DO CHÃO. `clip-path` recortando a borda de cima é o único jeito
@@ -610,24 +626,19 @@ button.retrato:focus-visible {
 }
 
 .primeiro .bloco {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(0, 0, 0, 0.2)),
-    color-mix(in srgb, var(--brand) 34%, #241f1b);
-  box-shadow:
-    inset 0 1px 0 var(--brand-line),
-    inset 1px 0 0 rgba(255, 255, 255, 0.09),
-    inset -1px 0 0 rgba(0, 0, 0, 0.34);
-}
-.primeiro .bloco::before {
   background: linear-gradient(
     180deg,
-    color-mix(in srgb, var(--brand) 62%, transparent),
-    color-mix(in srgb, var(--brand) 14%, transparent)
+    rgba(255, 255, 255, 0.28),
+    rgba(255, 255, 255, 0.12)
   );
+  border-color: rgba(255, 255, 255, 0.34);
+}
+.primeiro .bloco::before {
+  content: none;
 }
 
 .posicao {
-  font-family: var(--font-serif), serif;
+  font-family: var(--fonte-titulo), var(--font-mono), monospace;
   font-size: 34px;
   font-weight: 700;
   line-height: 1;
@@ -638,7 +649,7 @@ button.retrato:focus-visible {
 }
 .primeiro .posicao {
   font-size: 46px;
-  color: var(--acento-foto);
+  color: #ffffff;
 }
 .entregas {
   font-family: var(--font-mono), monospace;
@@ -649,21 +660,26 @@ button.retrato:focus-visible {
   font-variant-numeric: tabular-nums;
 }
 
-/* ---------- o cartaz: título na lateral, gráfico e lista ---------- */
+/* ---------- o cartaz: gráfico, e o título encostado na lista ---------- */
 
-/* Duas colunas, como o cartaz de referência: o título de pé à esquerda e, à
-   direita, o gráfico com todo mundo em cima e as entregas embaixo. */
+/* O gráfico com todo mundo em cima; embaixo, o título de pé e a lista lado a
+   lado (`.cartaz`). */
 .palco {
   flex: 1 0 auto;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 8px;
-  padding: 6px 22px 0 10px;
-}
-.palcoCorpo {
-  min-width: 0;
   display: flex;
   flex-direction: column;
+  padding: 6px 22px 0;
+}
+/* O título e a lista lado a lado, como no cartaz: o nome de pé encostado na
+   tabela, e o par inteiro centrado sob as barras. */
+.cartaz {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 22px;
+  width: 100%;
+  max-width: 820px;
+  margin: 0 auto;
 }
 .palco .trilho {
   flex: none;
@@ -673,20 +689,21 @@ button.retrato:focus-visible {
 /* De baixo para cima, como o "RACE RESULT" do cartaz. `vertical-rl` + giro de
    180° é o que deixa a leitura subindo; `sideways-lr` resolveria numa linha,
    mas ainda não existe em todos os navegadores do setor. */
+/* SEM `sticky`: preso ao topo, o nome ficava parado enquanto o resto rolava, e
+   isso se lia como o título se mexendo. Ele rola junto com a lista. */
 .tituloLateral {
-  align-self: start;
-  position: sticky;
-  top: 8px;
+  flex: none;
   display: flex;
   writing-mode: vertical-rl;
   transform: rotate(180deg);
   line-height: 0.86;
+  animation: desliza 620ms 300ms both cubic-bezier(0.2, 0, 0, 1);
   user-select: none;
 }
 .tituloGrande {
   font-family: var(--fonte-titulo), var(--font-mono), monospace;
   font-weight: 700;
-  font-size: clamp(52px, 7.6vh, 88px);
+  font-size: clamp(48px, 6.4vh, 72px);
   letter-spacing: -0.02em;
   white-space: nowrap;
   color: #ffffff;
@@ -713,23 +730,26 @@ button.retrato:focus-visible {
   font-size: 13px;
 }
 
-/* A lista de entregas, no lugar da lista de pilotos do cartaz. Superfície
-   escura translúcida e fixa (está sobre a foto), linhas separadas por um fio. */
+/* A lista de entregas, no lugar da lista de pilotos do cartaz. */
+/* SEM CAIXA (13/10/2026): como no cartaz de referência, a tabela fica direto
+   sobre o fundo — sem superfície, sem borda —, e só os fios entre as linhas a
+   organizam. Estreita e centrada sob as barras, que é onde o olho já está. */
 .lista {
-  margin: 0 0 8px;
-  padding: 14px 18px 6px;
-  border-radius: 12px;
-  background: var(--painel-foto);
-  border: 1px solid var(--linha-foto);
-  backdrop-filter: blur(6px);
+  flex: 1;
+  min-width: 0;
+  max-width: 680px;
+  margin: 0 0 12px;
+  padding: 0;
 }
 .listaTitulo {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  margin: 0 0 6px;
+  margin: 0 0 8px;
+  padding-left: 2px;
+  font-family: var(--font-mono), monospace;
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 500;
   letter-spacing: 1px;
   text-transform: uppercase;
   color: var(--sobre-foto-2);
@@ -745,19 +765,21 @@ button.retrato:focus-visible {
 }
 .listaLinha {
   display: grid;
-  grid-template-columns: 30px 34px minmax(0, 1fr) auto;
+  grid-template-columns: 34px 36px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 12px;
-  padding: 9px 0;
-  border-top: 1px solid var(--linha-foto);
-}
-.listaLinha:first-child {
-  border-top: none;
+  gap: 14px;
+  padding: 10px 2px;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+  /* Em cascata depois das barras; `--i` vem da tela e para em 12 — vinte
+     linhas encadeadas seriam fila, não movimento. */
+  animation: linhaEntra 360ms calc(560ms + var(--i, 0) * 45ms) both
+    cubic-bezier(0.2, 0, 0, 1);
 }
 .listaNum {
   font-family: var(--font-mono), monospace;
-  font-size: 13px;
-  color: var(--sobre-foto-2);
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--sobre-foto);
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
@@ -769,24 +791,29 @@ button.retrato:focus-visible {
 }
 /* Nome em cima, fino; demanda embaixo, forte — o nome e o sobrenome do piloto
    no cartaz. */
+/* Nome em cima, fino; demanda embaixo, forte — o nome e o sobrenome do piloto
+   no cartaz, os dois em caixa alta. */
 .listaQuem {
-  font-size: 11.5px;
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
   color: var(--sobre-foto-2);
   text-transform: uppercase;
   letter-spacing: 0.4px;
 }
 .listaDemanda {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 700;
   color: var(--sobre-foto);
+  text-transform: uppercase;
+  letter-spacing: 0.2px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .listaData {
-  font-family: var(--font-mono), monospace;
-  font-size: 15px;
-  font-weight: 500;
+  font-family: var(--fonte-titulo), var(--font-mono), monospace;
+  font-size: 20px;
+  font-weight: 700;
   color: var(--sobre-foto);
   font-variant-numeric: tabular-nums;
 }
@@ -819,6 +846,12 @@ button.retrato:focus-visible {
    de `@media`, então um nome morto aqui mantém o guarda verde enquanto o
    desligamento para de casar com alguma coisa. */
 @media (prefers-reduced-motion: reduce) {
+  .page::after {
+    display: none;
+  }
+  .head,
+  .tituloLateral,
+  .listaLinha,
   .degrau,
   .bloco,
   .trofeu {
@@ -840,13 +873,16 @@ button.retrato:focus-visible {
   .trilho {
     padding: 10px 14px 30px;
   }
-  /* No telefone o título deita: de pé ele comeria um terço da largura. */
+  /* No telefone o título deita, em cima da lista: de pé ele comeria um terço
+     da largura. */
   .palco {
-    grid-template-columns: minmax(0, 1fr);
     padding: 6px 14px 0;
   }
+  .cartaz {
+    flex-direction: column;
+    gap: 10px;
+  }
   .tituloLateral {
-    position: static;
     writing-mode: horizontal-tb;
     transform: none;
     align-items: baseline;
