@@ -8,7 +8,18 @@ import {
   type ReactNode,
 } from "react";
 
-export type Theme = "dark" | "light";
+/**
+ * Os temas. `contraste` é o alto contraste (#214): preto de verdade, texto
+ * branco e borda que se vê — ver o bloco dele em `globals.css`.
+ */
+export type Theme = "dark" | "light" | "contraste";
+
+const TEMAS: readonly Theme[] = ["dark", "light", "contraste"];
+
+/** O tema guardado, ou o padrão — pelo mesmo motivo de `acentoValido`. */
+function temaValido(bruto: string | null): Theme {
+  return TEMAS.includes(bruto as Theme) ? (bruto as Theme) : "dark";
+}
 /**
  * Os acentos que o app sabe desenhar.
  *
@@ -38,8 +49,19 @@ function acentoValido(bruto: string | null): Accent {
 type ThemeContextValue = {
   theme: Theme;
   accent: Accent;
+  /**
+   * A onda animada atrás do app está ligada? (#214)
+   *
+   * Preferência de cada pessoa, guardada no navegador. Desligada, a onda nem
+   * monta — não é só esconder: o canvas é redesenhado 30 vezes por segundo, e
+   * quem desliga muitas vezes desliga justamente para a máquina respirar.
+   * `prefers-reduced-motion` continua mandando independentemente disto: com
+   * ele, a onda já não se mexe (ver `waveform.tsx`).
+   */
+  fundoAnimado: boolean;
   setTheme: (t: Theme) => void;
   setAccent: (a: Accent) => void;
+  setFundoAnimado: (ligado: boolean) => void;
   toggleTheme: () => void;
 };
 
@@ -54,19 +76,31 @@ function apply(theme: Theme, accent: Accent) {
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>("dark");
   const [accent, setAccentState] = useState<Accent>("preto");
+  const [fundoAnimado, setFundoState] = useState(true);
 
   // Sincroniza com o que o script anti-flash já aplicou / localStorage.
   useEffect(() => {
     try {
-      const t = (localStorage.getItem("sm_theme") as Theme) || "dark";
+      const t = temaValido(localStorage.getItem("sm_theme"));
       const a = acentoValido(localStorage.getItem("sm_accent"));
       setThemeState(t);
       setAccentState(a);
+      // Só "off" desliga: ausente é o padrão de sempre, com a onda ligada.
+      setFundoState(localStorage.getItem("sm_fundo") !== "off");
       apply(t, a);
     } catch {
       /* ignore */
     }
   }, []);
+
+  function setFundoAnimado(ligado: boolean) {
+    setFundoState(ligado);
+    try {
+      localStorage.setItem("sm_fundo", ligado ? "on" : "off");
+    } catch {
+      /* ignore */
+    }
+  }
 
   function setTheme(t: Theme) {
     setThemeState(t);
@@ -94,7 +128,15 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   return (
     <ThemeContext.Provider
-      value={{ theme, accent, setTheme, setAccent, toggleTheme }}
+      value={{
+        theme,
+        accent,
+        fundoAnimado,
+        setTheme,
+        setAccent,
+        setFundoAnimado,
+        toggleTheme,
+      }}
     >
       {children}
     </ThemeContext.Provider>

@@ -333,6 +333,74 @@
   --field: #f7f5ee;
 }
 
+/* ALTO CONTRASTE (#214) — preto de verdade, texto branco, borda que se vê.
+ *
+ * O tema escuro é cinza-carvão com texto cinza-claro: confortável, mas o texto
+ * secundário (`--tx-3`, #78776f) fica perto de 4:1 sobre o fundo, e as bordas
+ * (#2b2b30) quase desaparecem. Aqui o fundo é #000, todo texto passa de 10:1
+ * e toda borda passa de 3:1 — o piso do WCAG para contorno de componente.
+ *
+ * A SOMBRA SAI e a BORDA ASSUME: sombra sobre preto não existe, e o que
+ * separava um card do outro era justamente ela. As cores de estado ficam mais
+ * claras e mais saturadas, para continuarem lendo como verde, amarelo e
+ * vermelho em cima do preto.
+ *
+ * A COR DE MARCA NÃO É TOCADA AQUI: ela continua vindo do acento escolhido —
+ * o laranja e o azul já passam de 6:1 sobre o preto. Os acentos café e Entre
+ * Aulas só existem para os temas claro e escuro; com eles, este tema cai na
+ * marca padrão. */
+[data-theme="contraste"] {
+  --bg: #000000;
+  --s1: #000000;
+  --s2: #0b0b0b;
+  --s3: #1c1c1c;
+  --s4: #2b2b2b;
+  --line: #8c8c8c;
+  --line-soft: #5c5c5c;
+
+  --tx: #ffffff;
+  --tx-2: #ececec;
+  --tx-3: #c9c9c9;
+
+  --topbar-bg: #000000;
+  --topbar-line: #8c8c8c;
+  --topbar-fg: #ececec;
+  --topbar-fg-strong: #ffffff;
+
+  --ok: #4ade80;
+  --ok-bg: rgba(74, 222, 128, 0.2);
+  --ok-tx: #9ff5bf;
+  --warn: #facc15;
+  --warn-bg: rgba(250, 204, 21, 0.2);
+  --warn-tx: #fde68a;
+  --danger: #ff5c7a;
+  --danger-bg: rgba(255, 92, 122, 0.22);
+  --danger-tx: #ffb3c0;
+  --info: #60a5fa;
+  --info-bg: rgba(96, 165, 250, 0.2);
+  --info-tx: #c7e0ff;
+  --susp: #d8b4fe;
+  --susp-bg: rgba(216, 180, 254, 0.2);
+  --susp-tx: #efe1ff;
+
+  --scroll: #6b6b6b;
+  --scroll-hover: #9a9a9a;
+  --overlay: rgba(0, 0, 0, 0.85);
+  --shadow: none;
+
+  --card: #000000;
+  --field: #000000;
+  color-scheme: dark;
+}
+
+/* O foco é a peça que mais importa num tema de contraste: quem escolhe este
+   tema muitas vezes navega pelo teclado, e o anel suave dos outros temas some
+   no preto. Branco, grosso e afastado da borda. */
+[data-theme="contraste"] :focus-visible {
+  outline: 2px solid #ffffff !important;
+  outline-offset: 2px;
+}
+
 * {
   box-sizing: border-box;
   padding: 0;
