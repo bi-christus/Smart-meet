@@ -151,7 +151,7 @@
 /* ---------- faixa de indicadores ---------- */
 .kstrip {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 12px;
   padding: 14px 22px 0;
 }
@@ -539,11 +539,15 @@
   display: block;
   flex: none;
 }
+/* Entrada e entrega saem da paleta categórica validada (#107), e não de
+   --brand/--ok: o acento troca a marca, e no acento azul a barra de entrada
+   ficava a ΔE 11,5 da linha da fila — abaixo do piso de 15, indistinguível até
+   para visão de cor normal. --serie-2/--serie-3/--serie-7 passam entre si. */
 .swEntrada {
-  background: var(--brand);
+  background: var(--serie-2);
 }
 .swEntrega {
-  background: var(--ok);
+  background: var(--serie-3);
 }
 /* Traço e não quadrado: a fila é linha no gráfico, e a legenda tem de dizer
    qual das duas formas ela representa antes de dizer qual cor. */
@@ -681,12 +685,12 @@
    ponteiro atravessa varios de uma vez. 150ms confirma a mira sem deixar um
    rastro aceso atras do cursor. */
 .barEntrada {
-  fill: var(--brand);
+  fill: var(--serie-2);
   fill-opacity: 0.9;
   transition: fill-opacity 0.15s;
 }
 .barEntrega {
-  fill: var(--ok);
+  fill: var(--serie-3);
   fill-opacity: 0.88;
   transition: fill-opacity 0.15s;
 }
@@ -988,6 +992,12 @@
 .num {
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+/* Pontualidade abaixo de 70% no painel por produto (#216). Cor E peso: a cor
+   sozinha some no tema de alto contraste e para quem não distingue o tom. */
+.numAlerta {
+  color: var(--warn);
+  font-weight: 600;
 }
 
 /* O gráfico inteiro em movimento é enfeite; o cartão que aparece é resposta a
