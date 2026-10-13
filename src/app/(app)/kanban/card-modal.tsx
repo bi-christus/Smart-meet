@@ -77,6 +77,11 @@ import { conferirTag, normalizarTag, semAcento } from "@/lib/tags-core";
 import { codigoDe, fraseDeFalha } from "@/lib/erro-ui-core";
 import { diffCard, mudancasIniciais, type Rotulos } from "@/lib/historico-core";
 import { subscribeLinksDoSetor, type LinkDoSetor } from "@/lib/links-do-setor";
+import {
+  CAMPO_DA_ETAPA_ROTULO,
+  campoPreenchido,
+  normalizarExigencias,
+} from "@/lib/etapas-core";
 import { type UserProfile } from "@/lib/users";
 import { Icon } from "@/components/icons";
 import { IconePicker } from "@/components/icone-picker";
@@ -492,6 +497,10 @@ export function CardModal({
   }));
   function alternarSecao(s: keyof typeof secoes) {
     setSecoes((cur) => ({ ...cur, [s]: !cur[s] }));
+  }
+  /** Abre a seção sem fechar a que já está aberta — para levar os olhos até ela. */
+  function alternarSecaoAberta(s: keyof typeof secoes) {
+    setSecoes((cur) => ({ ...cur, [s]: true }));
   }
   const [newComment, setNewComment] = useState("");
   const [posting, setPosting] = useState(false);
@@ -1294,6 +1303,51 @@ export function CardModal({
     }
     if (!semPrazo && due && !prazoHerdado && ehFimDeSemanaISO(due)) {
       cobrar("prazo", "Escolha um dia útil para o prazo de entrega.", prazoRef);
+      return;
+    }
+    /**
+     * A ETAPA DE DESTINO PEDE CAMPOS OBRIGATÓRIOS (#212) — a mesma régua da
+     * caixa de passagem do quadro, para que trocar a etapa aqui não seja o
+     * jeito de contorná-la. Vale para a demanda que nasce na etapa e para a que
+     * AVANÇA para ela; voltar não cobra nada, como no arrasto.
+     *
+     * O comentário fica de fora: ele é o registro de uma passagem, e quem está
+     * no modal escreve na seção de comentários quando quiser — cobrá-lo aqui
+     * seria pedir um texto num campo que não existe neste formulário.
+     */
+    const destinoCol = columns.find((c) => c.colId === columnId);
+    const ordem = columns.map((c) => c.colId);
+    const avancou =
+      isNew ||
+      (!!card &&
+        card.columnId !== columnId &&
+        ordem.indexOf(columnId) > ordem.indexOf(card.columnId));
+    const faltamNaEtapa = avancou
+      ? normalizarExigencias(destinoCol?.campos).filter(
+          (e) =>
+            e.obrigatorio &&
+            e.campo !== "comentario" &&
+            !campoPreenchido(montarBase(), e.campo),
+        )
+      : [];
+    if (faltamNaEtapa.length) {
+      setErr(
+        `A etapa ${destinoCol?.title ?? ""} pede: ${faltamNaEtapa
+          .map((e) => CAMPO_DA_ETAPA_ROTULO[e.campo].toLowerCase())
+          .join(", ")}.`,
+      );
+      // O campo que falta pode estar atrás do "+ campo": ele vem para a tela,
+      // senão a pessoa leria o aviso e não acharia onde preenchê-lo.
+      faltamNaEtapa.forEach((e) => {
+        if (e.campo === "type") abrirCampo("tipo");
+        if (e.campo === "priority") abrirCampo("prioridade");
+        if (e.campo === "requester") abrirCampo("solicitante");
+        if (e.campo === "startDate") abrirCampo("inicio");
+        if (e.campo === "tags") abrirCampo("tags");
+        if (e.campo === "description") alternarSecaoAberta("descricao");
+        if (e.campo === "links") alternarSecaoAberta("links");
+        if (e.campo === "checklist") alternarSecaoAberta("checklist");
+      });
       return;
     }
     setCampoErro(null);

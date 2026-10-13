@@ -94,6 +94,16 @@ import { juntarFontes } from "@/lib/async-data-core";
 import { useAsyncData } from "@/lib/use-async-data";
 import { CardModal, type EditState } from "./card-modal";
 import { CriacaoRapida } from "./criacao-rapida";
+import { PassagemDeEtapa, type ColheitaDaPassagem } from "./passagem-de-etapa";
+import {
+  CAMPOS_DA_ETAPA,
+  CAMPO_DA_ETAPA_ROTULO,
+  SUGESTAO_POR_ETAPA,
+  normalizarExigencias,
+  oQueAPassagemPede,
+  type CampoDaEtapa,
+  type ExigenciaDaEtapa,
+} from "@/lib/etapas-core";
 import {
   PRIORITY_COLOR,
   autorDoRegistro,
@@ -138,6 +148,25 @@ const SEM_TAGS: string[] = [];
 
 /** Valor sentinela do filtro de responsável (e-mails sempre têm "@"). */
 const NO_ASSIGNEE = "__sem__";
+/**
+ * O comentário que a caixa de passagem colheu (#212), pronto para gravar.
+ *
+ * Fora do componente porque lê o relógio: o compilador do React trata qualquer
+ * função declarada no corpo do componente como parte do render, e relógio no
+ * render é impuro. Aqui ela só roda no clique de confirmar.
+ */
+function comentarioDaPassagem(author: string, text: string) {
+  return {
+    id:
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `c_${Date.now()}`,
+    author,
+    text,
+    at: Date.now(),
+  };
+}
+
 /** Valor sentinela do filtro de produto (ids do Firestore nunca têm "_" duplo). */
 const SEM_PRODUTO = "__sem_produto__";
 
@@ -282,6 +311,15 @@ export default function KanbanPage() {
   const [edit, setEdit] = useState<EditState>(null);
   /** A coluna com a linha de criação rápida aberta (#210). Uma por vez. */
   const [rapidaEm, setRapidaEm] = useState<string | null>(null);
+  /**
+   * O card arrastado para uma etapa que pede campos, esperando a caixa (#212).
+   * O movimento ainda NÃO aconteceu: cancelar é só fechar.
+   */
+  const [passagem, setPassagem] = useState<{
+    card: Card;
+    col: ColumnDoc;
+    pede: ExigenciaDaEtapa[];
+  } | null>(null);
   /** Demanda com o histórico aberto — independente do modal de edição. */
   const [histCard, setHistCard] = useState<Card | null>(null);
   /**
@@ -789,6 +827,66 @@ export default function KanbanPage() {
     }
   }
 
+  /** O que a etapa `col` pede para receber o card `c` — a régua é do core. */
+  function pedeNaPassagem(c: Card, col: ColumnDoc): ExigenciaDaEtapa[] {
+    return oQueAPassagemPede({
+      origem: c.columnId,
+      destino: col.colId,
+      ordem: displayCols.map((x) => x.colId),
+      exigencias: normalizarExigencias(col.campos),
+      card: c,
+    });
+  }
+
+  /**
+   * A caixa confirmou: o movimento e o que ela colheu num lote só, com UMA
+   * linha no histórico contando as duas coisas — a etapa e os campos.
+   */
+  async function confirmarPassagem(
+    p: { card: Card; col: ColumnDoc },
+    colheita: ColheitaDaPassagem,
+  ) {
+    const nomeProd = (id?: string | null) =>
+      id ? (produtosPorId.get(id)?.nome ?? null) : null;
+    const depois = { ...p.card, ...colheita.campos, columnId: p.col.colId };
+    try {
+      await moveCard(
+        p.card.id,
+        p.col.colId,
+        {
+          ctx: { autor: autorAtual, sector },
+          mudancas: diffCard(
+            { ...p.card, produtoNome: nomeProd(p.card.produtoId) },
+            { ...depois, produtoNome: nomeProd(depois.produtoId) },
+            rotulos,
+          ),
+        },
+        {
+          campos: colheita.campos,
+          comentario: colheita.comentario
+            ? comentarioDaPassagem(autorAtual, colheita.comentario)
+            : undefined,
+        },
+      );
+    } catch (e) {
+      throw new Error(
+        fraseDeFalha("Não foi possível mover a demanda.", e, navigator.onLine),
+      );
+    }
+    setPassagem(null);
+  }
+
+  /** Responsáveis possíveis para a caixa de passagem. */
+  const opcoesPessoas: SelectOption[] = [
+    { value: "", label: "— Ninguém —" },
+    ...activeUsers.map((u) => ({ value: u.email, label: u.name || u.email, color: u.color })),
+  ];
+  /** O solicitante é gravado pelo NOME do cadastro, como no modal. */
+  const opcoesSolicitantes: SelectOption[] = solicitantes.map((s) => ({
+    value: s.name,
+    label: s.name,
+  }));
+
   /** As opções de produto da linha rápida — só os do Portfólio deste setor. */
   const opcoesRapida: SelectOption[] = produtos.length
     ? [
@@ -865,6 +963,14 @@ export default function KanbanPage() {
          * para o banco e para o Discord de todo mundo.
          */
         setPedindoConclusao({ card: c, colunaAlvo: col.colId });
+      } else if (c && c.columnId !== col.colId && pedeNaPassagem(c, col).length) {
+        /**
+         * A ETAPA PEDE CAMPOS QUE O CARD NÃO TEM (#212) — o arrasto vira a
+         * caixa de passagem, pelo mesmo motivo do pedido de conclusão logo
+         * acima: o card fica onde estava até a pessoa confirmar, e cancelar
+         * não tem nada a desfazer.
+         */
+        setPassagem({ card: c, col, pede: pedeNaPassagem(c, col) });
       } else if (c && c.columnId !== col.colId)
         moveCard(dragCardId, col.colId, {
           ctx: { autor: autorAtual, sector },
@@ -1337,9 +1443,30 @@ export default function KanbanPage() {
                   <CriacaoRapida
                     coluna={col.title}
                     produtos={opcoesRapida}
-                    onCriar={(titulo, produtoId) =>
-                      criarRapida(col.colId, titulo, produtoId)
-                    }
+                    onCriar={async (titulo, produtoId) => {
+                      /**
+                       * ETAPA QUE PEDE CAMPOS OBRIGATÓRIOS (#212) não recebe
+                       * demanda pela linha rápida, que só tem título e produto:
+                       * nascer ali sem o que a etapa exige seria furar a régua
+                       * pela porta da frente. O que já foi digitado vai para o
+                       * modal completo, que cobra o resto.
+                       */
+                      const obrig = normalizarExigencias(col.campos).filter(
+                        (e) =>
+                          e.obrigatorio &&
+                          !(e.campo === "produtoId" && produtoId),
+                      );
+                      if (obrig.length) {
+                        setRapidaEm(null);
+                        setEdit({
+                          mode: "new",
+                          columnId: col.colId,
+                          inicial: { title: titulo, produtoId },
+                        });
+                        return;
+                      }
+                      await criarRapida(col.colId, titulo, produtoId);
+                    }}
                     onMaisCampos={(titulo, produtoId) => {
                       setRapidaEm(null);
                       setEdit({
@@ -1704,6 +1831,23 @@ export default function KanbanPage() {
        * O par já está escolhido quando este diálogo abre — o que falta é decidir
        * o que fica de cada campo em que as duas discordam.
        */}
+      {passagem && (
+        <PassagemDeEtapa
+          // A chave é o par card+etapa: uma caixa reaproveitada para outro
+          // arrasto herdaria o que foi digitado para o anterior.
+          key={`${passagem.card.id}>${passagem.col.colId}`}
+          card={passagem.card}
+          destino={passagem.col.title}
+          pede={passagem.pede}
+          pessoas={opcoesPessoas}
+          produtos={opcoesRapida.length ? opcoesRapida : [{ value: "", label: "— Sem produto —" }]}
+          solicitantes={opcoesSolicitantes}
+          autor={autorAtual}
+          onConfirmar={(colheita) => confirmarPassagem(passagem, colheita)}
+          onCancelar={() => setPassagem(null)}
+        />
+      )}
+
       {fusao && (
         <FusaoModal
           /* A ORDEM entra na chave, e não só os ids: trocar os lados precisa
@@ -2635,6 +2779,26 @@ function ColumnModal({
   const [color, setColor] = useState(col?.color ?? COLUMN_COLORS[1]);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  /**
+   * Os campos que esta etapa pede (#212). Lidos com desconfiança — a coluna é
+   * escrita também pelo console — e gravados já normalizados.
+   */
+  const [campos, setCampos] = useState<ExigenciaDaEtapa[]>(() =>
+    normalizarExigencias(col?.campos),
+  );
+  const sugestao = col ? SUGESTAO_POR_ETAPA[col.colId] : undefined;
+  function alternarCampo(c: CampoDaEtapa) {
+    setCampos((cur) =>
+      cur.some((e) => e.campo === c)
+        ? cur.filter((e) => e.campo !== c)
+        : normalizarExigencias([...cur, { campo: c, obrigatorio: false }]),
+    );
+  }
+  function alternarObrigatorio(c: CampoDaEtapa) {
+    setCampos((cur) =>
+      cur.map((e) => (e.campo === c ? { ...e, obrigatorio: !e.obrigatorio } : e)),
+    );
+  }
 
   const colIndex = col ? columns.findIndex((c) => c.id === col.id) : -1;
 
@@ -2662,7 +2826,7 @@ function ColumnModal({
           : 0;
         await addColumn(sector, title, color, order);
       } else if (col) {
-        await updateColumn(col.id, { title: title.trim(), color });
+        await updateColumn(col.id, { title: title.trim(), color, campos });
       }
       onClose();
     } catch (e) {
@@ -2749,6 +2913,66 @@ function ColumnModal({
             >
               Mover →
             </button>
+          </div>
+        </div>
+      )}
+
+      {/**
+        * CAMPOS DESTA ETAPA (#212) — o que o card precisa ter para entrar nela.
+        * Só na edição: a coluna nova ainda não tem `colId` conhecido nem cards,
+        * e configurar o que ela pede é o passo seguinte a criá-la. Marcar o
+        * campo põe ele na caixa de passagem; "obrigatório" trava o botão
+        * Mover até ser preenchido.
+        */}
+      {!isNew && (
+        <div className={styles.field}>
+          <label className={styles.label}>Campos desta etapa</label>
+          <div className={styles.etapaCampos}>
+            {CAMPOS_DA_ETAPA.map((c) => {
+              const e = campos.find((x) => x.campo === c);
+              return (
+                <div key={c} className={styles.etapaCampo}>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={!!e}
+                      onChange={() => alternarCampo(c)}
+                    />
+                    {CAMPO_DA_ETAPA_ROTULO[c]}
+                  </label>
+                  {e && (
+                    <button
+                      type="button"
+                      className={`${styles.etapaObrig} ${e.obrigatorio ? styles.etapaObrigOn : ""}`}
+                      onClick={() => alternarObrigatorio(c)}
+                      aria-pressed={e.obrigatorio}
+                      title={
+                        e.obrigatorio
+                          ? "Obrigatório: o card só entra com este campo preenchido"
+                          : "Sugerido: a caixa pergunta, mas dá para pular"
+                      }
+                    >
+                      {e.obrigatorio ? "obrigatório" : "sugerido"}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+            {sugestao && campos.length === 0 && (
+              <button
+                type="button"
+                className={styles.etapaSugestao}
+                onClick={() => setCampos(normalizarExigencias(sugestao))}
+              >
+                Usar a sugestão para esta etapa:{" "}
+                {sugestao
+                  .map(
+                    (s) =>
+                      CAMPO_DA_ETAPA_ROTULO[s.campo] + (s.obrigatorio ? "*" : ""),
+                  )
+                  .join(", ")}
+              </button>
+            )}
           </div>
         </div>
       )}

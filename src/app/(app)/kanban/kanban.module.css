@@ -2628,3 +2628,113 @@
     transition: none;
   }
 }
+/* ---------- a caixa de passagem de etapa (#212) ---------- */
+/* Mais estreita que o modal da demanda: ela pergunta dois ou três campos, e
+   numa janela larga eles viravam linhas compridas com muito vazio à direita. */
+.passagem {
+  width: min(460px, 100%);
+}
+.passagemTitulo {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--tx);
+  margin: 2px 0 4px;
+}
+.passagemIntro {
+  font-size: 12.5px;
+  color: var(--tx-3);
+  margin-bottom: 12px;
+}
+.passagemObrig {
+  color: var(--danger-tx);
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.passagemOpc {
+  color: var(--tx-3);
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.passagemLista {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.passagemItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  background: var(--s2);
+  font-size: 12.5px;
+}
+.passagemItem span {
+  flex: 1;
+  min-width: 0;
+}
+.passagemAcoes {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+/* ---------- campos desta etapa, na configuração da coluna (#212) ---------- */
+.etapaCampos {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.etapaCampo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+.etapaCampo:hover {
+  background: var(--s2);
+}
+.etapaCampo label {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.etapaObrig {
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: none;
+  color: var(--tx-3);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.etapaObrigOn {
+  border-color: transparent;
+  background: var(--danger-bg);
+  color: var(--danger-tx);
+}
+.etapaSugestao {
+  align-self: flex-start;
+  border: none;
+  background: none;
+  padding: 0;
+  margin-top: 4px;
+  color: var(--accent-2);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.etapaSugestao:hover {
+  text-decoration: underline;
+}

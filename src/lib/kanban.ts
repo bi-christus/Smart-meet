@@ -697,6 +697,18 @@ export async function moveCard(
   id: string,
   columnId: string,
   registro: { ctx: ContextoHistorico; mudancas: Mudanca[] },
+  /**
+   * O que a caixa de passagem de etapa colheu (#212) — os campos e, quando a
+   * etapa pede, o comentário.
+   *
+   * ENTRA NO MESMO LOTE DO MOVIMENTO, e não numa escrita depois: um prazo que
+   * a etapa exige e que falhasse ao gravar deixaria o card na etapa nova sem o
+   * que ela pede, que é exatamente o estado que a caixa existe para impedir.
+   * O comentário vai por `arrayUnion`, como em `addComment`: gravar a lista
+   * da tela apagaria o que outra pessoa comentou enquanto a caixa estava
+   * aberta.
+   */
+  passagem?: { campos?: Partial<Omit<Card, "id">>; comentario?: Comment },
 ): Promise<void> {
   const now = Date.now();
   const batch = writeBatch(db);
@@ -708,6 +720,8 @@ export async function moveCard(
     registro.mudancas,
   );
   batch.update(doc(db, "cards", id), {
+    ...(passagem?.campos ?? {}),
+    ...(passagem?.comentario ? { comments: arrayUnion(passagem.comentario) } : {}),
     columnId,
     order: -now,
     enteredAt: now,
@@ -930,6 +944,12 @@ export type ColumnDoc = {
   title: string;
   color: string;
   order: number;
+  /**
+   * O que a etapa pede para o card entrar nela (#212). Cru como veio do
+   * banco: quem lê passa por `normalizarExigencias` (`etapas-core`), que
+   * aguenta o documento em qualquer estado. Ausente = a etapa não pede nada.
+   */
+  campos?: unknown;
 };
 
 export const COLUMN_COLORS = [
@@ -1069,7 +1089,12 @@ export async function addColumn(
 
 export async function updateColumn(
   id: string,
-  patch: { title?: string; color?: string },
+  patch: {
+    title?: string;
+    color?: string;
+    /** Já normalizado por quem chama — ver `ExigenciaDaEtapa`. */
+    campos?: { campo: string; obrigatorio: boolean }[];
+  },
 ): Promise<void> {
   await updateDoc(doc(db, "columns", id), patch);
 }
