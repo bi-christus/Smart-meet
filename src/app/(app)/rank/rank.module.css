@@ -591,22 +591,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* A pontualidade (#215): a segunda linha gravada no plinto, menor e num verde
-   FIXO — ele encosta na pedra, que não segue o tema (ver o topo da folha), e o
-   verde do tema claro sumiria nela. Verde e não a cor da marca: no 1º lugar a
-   marca já é a pedra, e a linha desapareceria justamente no campeão. */
-.noPrazo,
-.chaoPrazo {
-  font-family: var(--font-mono), monospace;
-  font-size: 10.5px;
-  color: #8fe3b4;
-  font-variant-numeric: tabular-nums;
-}
-.chaoPrazo {
-  font-size: 10px;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
-}
-
 /* ---------- quem fica de pé no chão ---------- */
 
 /* Do 4º em diante. Sem plinto, mas SOBRE o mesmo chão: o friso de baixo tem o
