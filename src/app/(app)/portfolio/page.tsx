@@ -16,6 +16,16 @@ import {
   subscribeLinksDoSetor,
   type LinkDoSetor,
 } from "@/lib/links-do-setor";
+import {
+  columnsBySector,
+  deliveredBySector,
+  subscribeCards,
+  subscribeColumns,
+  type Card,
+  type ColumnDoc,
+} from "@/lib/kanban";
+import { andamentoPorProduto } from "@/lib/produtos-core";
+import { startOfDay } from "@/lib/datas";
 import { juntarFontes } from "@/lib/async-data-core";
 import { useAsyncData } from "@/lib/use-async-data";
 import { Icon } from "@/components/icons";
@@ -24,6 +34,7 @@ import { ErrorState } from "@/components/error-state";
 import { SkeletonCard, classeAparece } from "@/components/skeleton";
 import { LinkCard } from "./link-card";
 import { LinkModal, fraseDoErro, prepararLogo } from "./link-modal";
+import { ProdutoGaveta } from "./produto-gaveta";
 import { normalizarUrl } from "@/lib/links-core";
 import styles from "./links.module.css";
 
@@ -63,6 +74,8 @@ import styles from "./links.module.css";
  * cada render, e os `useMemo` que dependem dele recalculariam sempre.
  */
 const SEM_LINKS: LinkDoSetor[] = [];
+const SEM_CARDS: Card[] = [];
+const SEM_COLS: ColumnDoc[] = [];
 const SEM_USERS: UserProfile[] = [];
 
 export default function LinksPage() {
@@ -96,6 +109,41 @@ export default function LinksPage() {
     (profile?.sectors ?? []).find((s) => sectors.includes(s)) || sectors[0] || "";
   const setorAtual = sectors.includes(setorEscolhido) ? setorEscolhido : setorPadrao;
   const [busca, setBusca] = useState("");
+
+  /**
+   * As demandas e as etapas do portfólio aberto — só para o andamento (#209).
+   *
+   * FORA de `juntarFontes`, de propósito: o Portfólio é acesso rápido antes de
+   * tudo, e a grade não pode esperar pelo quadro, nem cair junto se ele falhar.
+   * Sem elas, o card fica como sempre foi; o selo aparece quando chegam.
+   *
+   * Só o setor aberto, e não todos os da pessoa: o admin vê todos os setores, e
+   * assinar o quadro inteiro de cada um para desenhar uma aba de cada vez seria
+   * pagar leitura por selos que ninguém está olhando.
+   */
+  const fCards = useAsyncData<Card>(setorAtual, (onData, onErro) =>
+    setorAtual ? subscribeCards(setorAtual, onData, onErro) : (onData([]), () => {}),
+  );
+  const fCols = useAsyncData<ColumnDoc>(setorAtual, (onData, onErro) =>
+    setorAtual ? subscribeColumns(setorAtual, onData, onErro) : (onData([]), () => {}),
+  );
+  const cardsDoSetor = fCards.data ?? SEM_CARDS;
+  const colsDoSetor = fCols.data ?? SEM_COLS;
+  /** Lido uma vez: o andamento só precisa saber o DIA, e o render não pode chamar o relógio. */
+  const agora = useMemo(() => startOfDay().getTime(), []);
+  const andamentos = useMemo(() => {
+    // As colunas do setor na ordem do quadro; sem nenhuma gravada, as padrão —
+    // a mesma regra de `columnsBySector` que o Kanban e o Dashboard usam.
+    const cols = columnsBySector(colsDoSetor, [setorAtual])[setorAtual] ?? [];
+    return andamentoPorProduto({
+      cards: cardsDoSetor,
+      colunas: cols.map((c) => ({ colId: c.id, title: c.title })),
+      entregues: deliveredBySector({ [setorAtual]: cols }),
+      agora,
+    });
+  }, [cardsDoSetor, colsDoSetor, setorAtual, agora]);
+  /** O produto com a gaveta de andamento aberta. */
+  const [gavetaDe, setGavetaDe] = useState<string | null>(null);
   /** O formulário aberto: um link existente, um novo, ou nenhum. */
   const [aberto, setAberto] = useState<LinkDoSetor | "novo" | null>(null);
 
@@ -428,6 +476,8 @@ export default function LinksPage() {
                   salvando={salvando === link.id}
                   erro={erroIcone?.id === link.id ? erroIcone.texto : null}
                   podeAlterar={podeAlterar(link)}
+                  andamento={andamentos.get(link.id)}
+                  onAbrirAndamento={() => setGavetaDe(link.id)}
                   onEscolherIcone={(nome) => void escolherIcone(link, nome)}
                   onEditar={() => setAberto(link)}
                 />
@@ -436,6 +486,17 @@ export default function LinksPage() {
           </>
         )}
       </div>
+
+      {(() => {
+        // A gaveta só abre com o produto E o andamento em mãos: se a última
+        // demanda aberta foi entregue com a gaveta aberta, ela fecha sozinha em
+        // vez de mostrar um andamento que deixou de existir.
+        const p = gavetaDe ? doSetor.find((l) => l.id === gavetaDe) : undefined;
+        const a = gavetaDe ? andamentos.get(gavetaDe) : undefined;
+        return p && a ? (
+          <ProdutoGaveta produto={p} andamento={a} onFechar={() => setGavetaDe(null)} />
+        ) : null;
+      })()}
 
       {aberto && (
         <LinkModal

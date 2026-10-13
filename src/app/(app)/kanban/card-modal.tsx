@@ -76,6 +76,7 @@ import {
 import { conferirTag, normalizarTag, semAcento } from "@/lib/tags-core";
 import { codigoDe, fraseDeFalha } from "@/lib/erro-ui-core";
 import { diffCard, mudancasIniciais, type Rotulos } from "@/lib/historico-core";
+import { subscribeLinksDoSetor, type LinkDoSetor } from "@/lib/links-do-setor";
 import { type UserProfile } from "@/lib/users";
 import { Icon } from "@/components/icons";
 import { IconePicker } from "@/components/icone-picker";
@@ -329,6 +330,46 @@ export function CardModal({
   const [requesterSector, setRequesterSector] = useState(
     card?.requesterSector ?? "",
   );
+  const [produtoId, setProdutoId] = useState(card?.produtoId ?? "");
+
+  /**
+   * Os produtos do Portfólio deste setor, assinados AQUI e não recebidos por
+   * prop (#209).
+   *
+   * Quem abre este modal — o quadro e o Cronograma — não precisa do Portfólio
+   * para desenhar a si mesmo, e passá-lo obrigaria o Cronograma a assinar o
+   * portfólio de todos os setores por causa de um seletor que só existe com o
+   * modal aberto. O listener nasce e morre com ele.
+   *
+   * `null` enquanto não responde: é o que impede o histórico de gravar "de nada
+   * para Painel de Vendas" sobre um produto que só não tinha carregado ainda —
+   * sem a lista, o nome dos dois lados sai `null` e o diff fica calado.
+   */
+  const [produtos, setProdutos] = useState<LinkDoSetor[] | null>(null);
+  useEffect(
+    () =>
+      subscribeLinksDoSetor([sector], setProdutos, (e) =>
+        console.error("[produtos do portfólio]", e),
+      ),
+    [sector],
+  );
+  const nomeDoProduto = (id: string | null | undefined) =>
+    (id && produtos?.find((p) => p.id === id)?.nome) || null;
+  /**
+   * As opções do seletor. Um produto que saiu do Portfólio depois de ser
+   * escolhido continua na lista, marcado — sem ele o seletor mostraria o
+   * placeholder e a pessoa acharia que a demanda não tem produto.
+   */
+  const opcoesDeProduto = useMemo<SelectOption[]>(() => {
+    const lista = (produtos ?? [])
+      .slice()
+      .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"))
+      .map((p) => ({ value: p.id, label: p.nome }));
+    if (produtoId && produtos && !produtos.some((p) => p.id === produtoId)) {
+      lista.unshift({ value: produtoId, label: "Produto removido do portfólio" });
+    }
+    return [{ value: "", label: "— Sem produto —" }, ...lista];
+  }, [produtos, produtoId]);
   /**
    * Início e prazo já nascem em dia útil.
    *
@@ -1046,6 +1087,7 @@ export function CardModal({
       assignee: assignee || null,
       requester: requester || null,
       requesterSector: requesterSector || null,
+      produtoId: produtoId || null,
       startDate: startDate || null,
       due: semPrazo ? null : due || null,
       priority,
@@ -1203,7 +1245,10 @@ export function CardModal({
           sector,
           input,
           actorEmail,
-          mudancasIniciais(base, rotulos),
+          mudancasIniciais(
+            { ...base, produtoNome: nomeDoProduto(base.produtoId) },
+            rotulos,
+          ),
         );
       } else if (card) {
         // Só os campos que REALMENTE mudaram. Enviar o formulário inteiro fazia
@@ -1228,7 +1273,13 @@ export function CardModal({
           await updateCard(card.id, patch as Partial<Omit<Card, "id">>, {
             ctx,
             acao: "editada",
-            mudancas: diffCard(card, base, rotulos),
+            // O produto entra pelo NOME, resolvido agora: o histórico guarda
+            // texto congelado (ver `EstadoCard.produtoNome`).
+            mudancas: diffCard(
+              { ...card, produtoNome: nomeDoProduto(card.produtoId) },
+              { ...base, produtoNome: nomeDoProduto(base.produtoId) },
+              rotulos,
+            ),
           });
         }
       }
@@ -1519,15 +1570,30 @@ export function CardModal({
         )}
       </div>
 
-      <div className={styles.field}>
-        <label className={styles.label}>Responsável</label>
-        <Select
-          value={assignee ?? ""}
-          options={userOptions("— Ninguém —", assignee ?? "")}
-          onChange={setAssignee}
-          placeholder="— Ninguém —"
-          ariaLabel="Responsável"
-        />
+      <div className={styles.row2}>
+        <div className={styles.field}>
+          <label className={styles.label}>Responsável</label>
+          <Select
+            value={assignee ?? ""}
+            options={userOptions("— Ninguém —", assignee ?? "")}
+            onChange={setAssignee}
+            placeholder="— Ninguém —"
+            ariaLabel="Responsável"
+          />
+        </div>
+        {/* O PRODUTO DO PORTFÓLIO (#209). Lista que se digita, só com os
+            produtos deste setor — o Portfólio é por setor. Um só por demanda. */}
+        <div className={styles.field}>
+          <label className={styles.label}>Produto</label>
+          <Combobox
+            value={produtoId}
+            options={opcoesDeProduto}
+            onChange={setProdutoId}
+            placeholder={produtos === null ? "Carregando o portfólio…" : "— Sem produto —"}
+            ariaLabel="Produto do portfólio"
+            vazioTexto="Nenhum produto com esse nome no portfólio deste setor."
+          />
+        </div>
       </div>
 
       <div className={styles.row2}>
@@ -2242,6 +2308,14 @@ export function CardModal({
                   " — casada pelo nome, porque os dois setores criaram essa etapa separadamente"}
                 .
               </li>
+              {plano.saiDoProduto && (
+                <li>
+                  A demanda <strong>sai do produto</strong>{" "}
+                  {nomeDoProduto(card?.produtoId) ?? "do portfólio"}: o
+                  portfólio é de cada setor, e o de {sector} não aparece em{" "}
+                  {plano.destino}.
+                </li>
+              )}
               {plano.responsavelForaDoDestino && (
                 <li>
                   O responsável atual <strong>não participa de {plano.destino}</strong>.

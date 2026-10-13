@@ -69,6 +69,7 @@ import {
 import { rotuloDoMes, separarConcluidas } from "@/lib/concluidas-core";
 import { startOfDay } from "@/lib/datas";
 import { carregarHistorico } from "@/lib/historico";
+import { subscribeLinksDoSetor, type LinkDoSetor } from "@/lib/links-do-setor";
 import { codigoDe, fraseDeFalha } from "@/lib/erro-ui-core";
 import { auth } from "@/lib/firebase";
 import {
@@ -108,6 +109,7 @@ const SEM_USERS: UserProfile[] = [];
 const SEM_SOLICITANTES: Solicitante[] = [];
 const SEM_SETORES: SolicitanteSetor[] = [];
 const SEM_COLUNAS: ColumnDoc[] = [];
+const SEM_PRODUTOS: LinkDoSetor[] = [];
 
 /** Assinatura que nem chegou a abrir: não há nada para fechar depois. */
 const NADA_A_FECHAR = () => undefined;
@@ -132,6 +134,8 @@ const SEM_TAGS: string[] = [];
 
 /** Valor sentinela do filtro de responsável (e-mails sempre têm "@"). */
 const NO_ASSIGNEE = "__sem__";
+/** Valor sentinela do filtro de produto (ids do Firestore nunca têm "_" duplo). */
+const SEM_PRODUTO = "__sem_produto__";
 
 type ColEditState = { mode: "new" } | { mode: "edit"; col: ColumnDoc } | null;
 
@@ -180,6 +184,19 @@ export default function KanbanPage() {
     "todos",
     (onData, onErro) => subscribeSolicitanteSetores(onData, onErro),
   );
+  /**
+   * Os produtos do Portfólio deste setor (#209) — o nome no selo do card e as
+   * opções do filtro. Fora de `juntarFontes` de propósito: o quadro se desenha
+   * sem eles, e um card cujo produto ainda não carregou só fica sem o selo por
+   * um instante.
+   */
+  const fProdutos = useAsyncData<LinkDoSetor>(sector, (onData, onErro) => {
+    if (!sector) {
+      onData([]);
+      return NADA_A_FECHAR;
+    }
+    return subscribeLinksDoSetor([sector], onData, onErro);
+  });
 
   /**
    * A sexta assinatura: o que foi excluído e ainda dá para trazer de volta.
@@ -208,6 +225,7 @@ export default function KanbanPage() {
   const users = fUsers.data ?? SEM_USERS;
   const solicitantes = fSolicitantes.data ?? SEM_SOLICITANTES;
   const reqSetores = fReqSetores.data ?? SEM_SETORES;
+  const produtos = fProdutos.data ?? SEM_PRODUTOS;
   const fireColumns = fCols.data ?? SEM_COLUNAS;
   /** Agora vem do tipo, e não de um booleano à parte que podia discordar. */
   const colsLoaded = fCols.data !== undefined;
@@ -218,6 +236,8 @@ export default function KanbanPage() {
   const [prio, setPrio] = useState<"" | Priority>("");
   // O filtro de responsável é preso ao setor: trocar de quadro o descarta.
   const [assigneeSel, setAssigneeSel] = useState({ sector: "", value: "" });
+  // O de produto também (#209): o Portfólio é por setor.
+  const [produtoSel, setProdutoSel] = useState({ sector: "", value: "" });
   /**
    * As tags marcadas — presas ao setor pelo mesmo motivo do responsável.
    *
@@ -451,6 +471,14 @@ export default function KanbanPage() {
 
   const assigneeF = assigneeSel.sector === sector ? assigneeSel.value : "";
   const setAssigneeF = (value: string) => setAssigneeSel({ sector, value });
+  const produtoF = produtoSel.sector === sector ? produtoSel.value : "";
+  const setProdutoF = (value: string) => setProdutoSel({ sector, value });
+
+  /** id → produto, para o selo do card não procurar numa lista a cada card. */
+  const produtosPorId = useMemo(
+    () => new Map(produtos.map((p) => [p.id, p])),
+    [produtos],
+  );
 
   /**
    * `SEM_TAGS` e não `[]` escrito aqui, pelo mesmo motivo das outras listas
@@ -501,7 +529,8 @@ export default function KanbanPage() {
     });
   const limparTags = () => setTagSel({ sector, tags: [] });
 
-  // Busca + prioridade (sem o filtro de responsável — é a base das contagens).
+  // Busca + prioridade + produto (sem o filtro de responsável — é a base das
+  // contagens).
   const baseFiltered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return cardsVivos.filter(
@@ -509,9 +538,36 @@ export default function KanbanPage() {
         (!q ||
           c.title.toLowerCase().includes(q) ||
           (c.tags ?? []).some((t) => t.toLowerCase().includes(q))) &&
-        (!prio || c.priority === prio),
+        (!prio || c.priority === prio) &&
+        (!produtoF ||
+          (produtoF === SEM_PRODUTO ? !c.produtoId : c.produtoId === produtoF)),
     );
-  }, [cardsVivos, search, prio]);
+  }, [cardsVivos, search, prio, produtoF]);
+
+  /**
+   * As opções do filtro de produto: só os produtos que têm demanda neste
+   * quadro, como no filtro de responsável — opção que devolve zero em qualquer
+   * combinação é ruído. "Sem produto" entra quando existe demanda sem.
+   */
+  const produtoFilterOptions: SelectOption[] = useMemo(() => {
+    const counts = new Map<string, number>();
+    let sem = 0;
+    cardsVivos.forEach((c) => {
+      if (c.produtoId) counts.set(c.produtoId, (counts.get(c.produtoId) ?? 0) + 1);
+      else sem++;
+    });
+    const opts: SelectOption[] = [{ value: "", label: "Todos os produtos" }];
+    [...counts.entries()]
+      .map(([id, n]) => ({
+        id,
+        n,
+        nome: produtosPorId.get(id)?.nome ?? "Produto removido do portfólio",
+      }))
+      .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"))
+      .forEach((p) => opts.push({ value: p.id, label: `${p.nome} (${p.n})` }));
+    if (sem && counts.size) opts.push({ value: SEM_PRODUTO, label: `Sem produto (${sem})` });
+    return opts;
+  }, [cardsVivos, produtosPorId]);
 
   const porResponsavel = useMemo(
     () =>
@@ -823,6 +879,20 @@ export default function KanbanPage() {
             ariaLabel="Filtrar por responsável"
           />
         </div>
+        {/* Só aparece quando o quadro tem alguma demanda com produto: com
+            todas sem, o seletor teria uma opção só, e ela não filtra nada. O
+            `produtoF` na conta é a saída de emergência, como no Portfólio. */}
+        {(produtoFilterOptions.length > 1 || produtoF) && (
+          <div style={{ width: 210 }}>
+            <Select
+              value={produtoF}
+              options={produtoFilterOptions}
+              onChange={setProdutoF}
+              placeholder="Todos os produtos"
+              ariaLabel="Filtrar por produto do portfólio"
+            />
+          </div>
+        )}
         {profile.email &&
           cards.some((c) => c.assignee === profile.email) &&
           assigneeF !== profile.email && (
@@ -1233,6 +1303,11 @@ export default function KanbanPage() {
                       assignee={c.assignee ? usersMap[c.assignee] : undefined}
                       requester={c.requester ?? undefined}
                       requesterSector={c.requesterSector ?? undefined}
+                      produto={
+                        c.produtoId
+                          ? (produtosPorId.get(c.produtoId)?.nome ?? undefined)
+                          : undefined
+                      }
                       dragging={dragCardId === c.id}
                       onDragStart={(e) => {
                         e.dataTransfer.setData("text/plain", c.id);
@@ -1550,6 +1625,9 @@ export default function KanbanPage() {
           sector={sector}
           columns={displayCols}
           actorEmail={autorAtual}
+          nomeDoProduto={(id) =>
+            produtosPorId.get(id)?.nome ?? "Produto removido do portfólio"
+          }
           onFechar={() => setFusao(null)}
           onTrocarLados={() =>
             setFusao({ vencedor: fusao.perdido, perdido: fusao.vencedor })
@@ -1990,6 +2068,7 @@ function FusaoModal({
   sector,
   columns,
   actorEmail,
+  nomeDoProduto,
   onFechar,
   onTrocarLados,
 }: {
@@ -1998,6 +2077,8 @@ function FusaoModal({
   sector: string;
   columns: ColumnDoc[];
   actorEmail: string;
+  /** id → nome do produto do Portfólio; quem tem a lista assinada é o quadro. */
+  nomeDoProduto: (id: string) => string;
   onFechar: () => void;
   onTrocarLados: () => void;
 }) {
@@ -2039,6 +2120,8 @@ function FusaoModal({
         return c.startDate || "—";
       case "due":
         return c.due || "—";
+      case "produtoId":
+        return c.produtoId ? nomeDoProduto(c.produtoId) : "— sem produto —";
     }
   }
 

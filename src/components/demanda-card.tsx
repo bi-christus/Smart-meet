@@ -46,6 +46,7 @@ export function DemandaCard({
   dragging,
   apagado,
   pedidoPor,
+  produto,
   fusao,
   onDragStart,
   onDragEnd,
@@ -91,6 +92,12 @@ export function DemandaCard({
    * serve: é melhor do que "pedido por" seguido de nada.
    */
   pedidoPor?: string;
+  /**
+   * O nome do produto do Portfólio a que a demanda pertence (#209), já
+   * resolvido. Mesma divisão de `pedidoPor`: quem tem o Portfólio assinado é o
+   * quadro, e o card só desenha. Ausente = sem produto, e nenhum selo.
+   */
+  produto?: string;
   /**
    * O papel deste card no gesto de fusão que está em curso. Ausente = nenhum.
    *
@@ -316,6 +323,15 @@ export function DemandaCard({
         {knownPrio && (
           <span className={`${styles.prio} ${styles["prio_" + card.priority]}`}>
             {PRIORITY_LABEL[card.priority as Priority]}
+          </span>
+        )}
+        {/* Neutro, sem cor própria: tipo e prioridade já pintam esta linha, e
+            uma terceira cor competiria com as duas. O nome inteiro vai no
+            `title` — no card ele é cortado pela elipse. */}
+        {produto && (
+          <span className={styles.kProduto} title={`Produto: ${produto}`}>
+            <Icon name="links" size={11} />
+            <span className={styles.kProdutoNome}>{produto}</span>
           </span>
         )}
         <div style={{ flex: 1 }} />

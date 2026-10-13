@@ -216,6 +216,34 @@
 }
 
 /* ---------- tipo + tags no card ---------- */
+/* O produto do Portfólio (#209). Mesmo corpo do selo de tipo, mas sem caixa
+   alta e sem cor: é um nome próprio, e caixa alta num nome de painel ("PAINEL
+   DE VENDAS") grita mais que o tipo e a prioridade ao lado. `min-width: 0` e
+   `flex: 0 1 auto` deixam só ele encolher quando a linha aperta. */
+.kProduto {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  flex: 0 1 auto;
+  padding: 2px 7px;
+  border-radius: 6px;
+  border: 1px solid var(--line-soft);
+  color: var(--tx-2);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+.kProduto svg {
+  flex: none;
+  color: var(--tx-3);
+}
+.kProdutoNome {
+  min-width: 0;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .kType {
   display: inline-flex;
   align-items: center;

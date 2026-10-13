@@ -712,3 +712,191 @@
   cursor: default;
   filter: none;
 }
+
+/* ---------- o andamento do produto (#209) ---------- */
+
+/* O selo "N em andamento". Fica no rodapé do card, e não no topo: o topo é do
+   acesso rápido (logo, nome, clique), e o andamento é a segunda pergunta. Só
+   aparece em produto com demanda aberta — ver `produtos-core.ts`.
+
+   A bolinha diz a saúde pela cor E o texto do `title` diz por extenso: cor
+   sozinha não responde nada para quem não distingue verde de vermelho. */
+.seloAndamento {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 9px 0 7px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--s2);
+  color: var(--tx-2);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.seloAndamento:hover {
+  border-color: var(--brand-line);
+  color: var(--tx);
+}
+.seloAndamento:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* A bolinha da saúde, compartilhada entre o selo e a gaveta. */
+.saude {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--tx-3);
+}
+.saude i,
+.seloAndamento i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--ok);
+}
+.saude_atrasada i {
+  background: var(--danger);
+}
+.saude_atencao i {
+  background: var(--warn);
+}
+.saude_em-dia i {
+  background: var(--ok);
+}
+
+/* A gaveta: o mesmo diálogo dos formulários, mais estreito, com o corpo rolando
+   sozinho — a cabeça (o produto) fica parada enquanto a lista anda. */
+.gaveta {
+  width: min(520px, 100%);
+}
+.gavetaHead {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 14px 14px 12px 16px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.gavetaTitulo {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.gavetaCorpo {
+  overflow-y: auto;
+  padding: 6px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.gavetaSecao {
+  margin: 10px 0 8px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--tx-3);
+}
+.gavetaVazio {
+  font-size: 12.5px;
+  color: var(--tx-3);
+}
+
+.etapas {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.etapas li {
+  display: grid;
+  grid-template-columns: 130px 1fr 24px;
+  align-items: center;
+  gap: 10px;
+}
+.etapaNome {
+  font-size: 12.5px;
+  color: var(--tx-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.etapaTrilho {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--s3);
+  overflow: hidden;
+}
+.etapaBarra {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--brand);
+}
+.etapaN {
+  font-size: 12.5px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--tx);
+}
+
+.demandas {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.demanda {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line-soft);
+  background: var(--s2);
+  color: var(--tx);
+  text-decoration: none;
+  transition: border-color 0.15s;
+}
+.demanda:hover {
+  border-color: var(--brand-line);
+}
+.demandaTitulo {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.prazo {
+  flex: none;
+  font-size: 11px;
+  color: var(--tx-3);
+  font-variant-numeric: tabular-nums;
+}
+.prazo_late {
+  color: var(--danger-tx);
+  font-weight: 600;
+}
+.prazo_soon {
+  color: var(--warn-tx);
+  font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .seloAndamento,
+  .demanda {
+    transition: none;
+  }
+}

@@ -136,6 +136,21 @@ export type Card = {
    */
   dimensaoId?: string | null;
   subdimensaoId?: string | null;
+  /**
+   * O produto do Portfólio a que esta demanda pertence — o id do documento em
+   * `/links` (#209). Um só: uma demanda pertence a no máximo um produto, e é
+   * isso que deixa o andamento do produto ser uma contagem honesta.
+   *
+   * Guarda o ID, pelo motivo de `tagRefs`: nome é cópia, e cópia não sobrevive
+   * ao rename do produto. Ausente ou `null` = sem produto, que é o estado de
+   * toda demanda anterior a esta frente e o normal de muitas que vêm depois.
+   *
+   * O produto é do MESMO setor do card: o Portfólio é escopado por setor na
+   * regra de `/links`, e um id de outro setor apontaria para algo que quem lê o
+   * quadro talvez nem enxergue. Por isso a troca de setor zera o campo
+   * (`mover-setor-core`).
+   */
+  produtoId?: string | null;
   startDate?: string | null; // data de início (yyyy-mm-dd)
   due?: string | null; // prazo de entrega (yyyy-mm-dd)
   priority?: Priority;
@@ -256,6 +271,8 @@ export type CardInput = {
   assignee: string | null;
   requester: string | null;
   requesterSector: string | null;
+  /** Opcional: a Ata e a aceitação de proposta não perguntam o produto. */
+  produtoId?: string | null;
   startDate: string | null;
   due: string | null;
   priority: Priority;
@@ -411,6 +428,7 @@ export async function createCard(
     assignee: input.assignee || null,
     requester: input.requester || null,
     requesterSector: input.requesterSector || null,
+    produtoId: input.produtoId || null,
     startDate: input.startDate || null,
     due: input.due || null,
     priority: input.priority,
