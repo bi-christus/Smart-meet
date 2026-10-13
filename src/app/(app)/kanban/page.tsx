@@ -72,6 +72,7 @@ import { rotuloDoMes, separarConcluidas } from "@/lib/concluidas-core";
 import { startOfDay } from "@/lib/datas";
 import { carregarHistorico } from "@/lib/historico";
 import { subscribeLinksDoSetor, type LinkDoSetor } from "@/lib/links-do-setor";
+import { reaproveitarIguais } from "@/lib/estabilidade-core";
 import { codigoDe, fraseDeFalha } from "@/lib/erro-ui-core";
 import { auth } from "@/lib/firebase";
 import {
@@ -198,7 +199,22 @@ export default function KanbanPage() {
       onData([]);
       return NADA_A_FECHAR;
     }
-    return subscribeCards(sector, onData, onErro);
+    /**
+     * O card que chega IGUAL volta com o mesmo objeto de antes (#213). Cada
+     * snapshot traz a lista inteira em objetos novos — a escrita de qualquer
+     * pessoa do setor redesenhava o quadro todo. A lista anterior mora nesta
+     * closure, e não num `ref`, porque é aqui que o snapshot chega: ler um ref
+     * no render é o que o compilador do React proíbe.
+     */
+    let anterior: Card[] = [];
+    return subscribeCards(
+      sector,
+      (lista) => {
+        anterior = reaproveitarIguais(anterior, lista, (c) => c.id);
+        onData(anterior);
+      },
+      onErro,
+    );
   });
   const fCols = useAsyncData<ColumnDoc>(sector, (onData, onErro) => {
     if (!sector) {
@@ -776,6 +792,19 @@ export default function KanbanPage() {
    * mudança silenciosa da outra. Ver a prop `concluiDireto` do `CardModal`.
    */
   const concluiDireto = podeConcluirDireto(papelAtual);
+
+  /**
+   * Tudo de que os gestos do card dependem além do próprio card (#213).
+   *
+   * O `DemandaCard` agora é `memo` e compara só DADOS — as funções que o quadro
+   * passa nascem novas a cada render, e compará-las desligaria o memo. O preço
+   * de ignorá-las é uma função velha guardada num card que não se redesenhou;
+   * esta string é o que impede isso: as funções do card leem `fundindoDe`,
+   * `canManage`, o autor e o setor, e quando qualquer um deles muda, a versão
+   * muda e todo card se redesenha com as funções novas. Um campo novo lido por
+   * um gesto do card TEM de entrar aqui.
+   */
+  const versaoDosGestos = `${fundindoDe?.id ?? ""}|${canManage}|${autorAtual}|${sector}`;
 
   /**
    * A demanda que nasce na linha rápida da coluna (#210).
@@ -1526,6 +1555,7 @@ export default function KanbanPage() {
                           : undefined
                       }
                       dragging={dragCardId === c.id}
+                      versaoDosGestos={versaoDosGestos}
                       onDragStart={(e) => {
                         e.dataTransfer.setData("text/plain", c.id);
                         e.dataTransfer.effectAllowed = "move";

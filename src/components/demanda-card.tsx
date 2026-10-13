@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { GripDots, Icon } from "@/components/icons";
 import { Avatar } from "@/components/avatar";
 import { agingDays, dueInfo, fmtShort, parseDue } from "@/lib/prazo-core.ts";
@@ -36,7 +37,58 @@ import styles from "./demanda-card.module.css";
  * `onHistorico` também é opcional, pelo mesmo princípio: quem não tem para onde
  * abrir a timeline não desenha a porta dela.
  */
-export function DemandaCard({
+/**
+ * O card só se redesenha quando um DADO dele muda (#213).
+ *
+ * O Kanban travava: qualquer render do quadro — o ponteiro entrando noutra
+ * coluna durante o arraste, uma tecla na busca, o snapshot de uma escrita de
+ * outra pessoa — redesenhava as centenas de cards, cada um refazendo prazo,
+ * aging e checklist. Com `memo`, só o card que mudou se redesenha.
+ *
+ * AS FUNÇÕES NÃO SÃO COMPARADAS, só a PRESENÇA delas: o quadro as cria a cada
+ * render, e compará-las por identidade desligaria o memo inteiro. O que impede
+ * uma função velha de ficar presa num card é `versaoDosGestos`, que o quadro
+ * muda sempre que algo lido pelos gestos muda — ver o comentário dela em
+ * `kanban/page.tsx`.
+ *
+ * `fusao` é comparada pelo conteúdo, e não pela identidade: o quadro monta o
+ * objeto a cada render, e o que importa é o papel e o motivo.
+ */
+function mesmasProps(a: PropsDoCard, b: PropsDoCard): boolean {
+  if (
+    a.card !== b.card ||
+    a.colId !== b.colId ||
+    a.entregue !== b.entregue ||
+    a.assignee !== b.assignee ||
+    a.requester !== b.requester ||
+    a.requesterSector !== b.requesterSector ||
+    a.produto !== b.produto ||
+    a.dragging !== b.dragging ||
+    a.apagado !== b.apagado ||
+    a.pedidoPor !== b.pedidoPor ||
+    a.versaoDosGestos !== b.versaoDosGestos ||
+    a.fusao?.papel !== b.fusao?.papel ||
+    a.fusao?.motivo !== b.fusao?.motivo
+  ) {
+    return false;
+  }
+  return (
+    !a.onDragStart === !b.onDragStart &&
+    !a.onDragEnd === !b.onDragEnd &&
+    !a.onContextMenu === !b.onContextMenu &&
+    !a.onHistorico === !b.onHistorico &&
+    !a.onPerfil === !b.onPerfil &&
+    !a.onAprovarConclusao === !b.onAprovarConclusao &&
+    !a.onRecusarConclusao === !b.onRecusarConclusao &&
+    !a.onSoltarFusao === !b.onSoltarFusao
+  );
+}
+
+export const DemandaCard = memo(DemandaCardBase, mesmasProps);
+
+type PropsDoCard = Parameters<typeof DemandaCardBase>[0];
+
+function DemandaCardBase({
   card,
   colId,
   entregue,
@@ -98,6 +150,11 @@ export function DemandaCard({
    * quadro, e o card só desenha. Ausente = sem produto, e nenhum selo.
    */
   produto?: string;
+  /**
+   * Muda quando algo que os gestos do card leem muda — ver `mesmasProps`. O
+   * card não a usa para desenhar nada; ela existe só para o `memo`.
+   */
+  versaoDosGestos?: string;
   /**
    * O papel deste card no gesto de fusão que está em curso. Ausente = nenhum.
    *
