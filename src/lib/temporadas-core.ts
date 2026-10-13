@@ -20,6 +20,7 @@
  * os nomes, e o cron e a tela vêm de lugares diferentes.
  */
 import {
+  ehEntrega,
   entregasPorPessoa,
   type CardContavel,
   type EntreguePorSetor,
@@ -90,6 +91,68 @@ export function entregasDoMes(
     (c) => typeof c.enteredAt === "number" && mesDe(c.enteredAt, fuso) === mes,
   );
   return entregasPorPessoa(doMes, ent);
+}
+
+/** O recorte de card que a pontualidade precisa: o de uma temporada e o prazo. */
+export type CardComPrazo = CardComEntrada & { due?: string | null };
+
+/** "yyyy-mm-dd" do instante `ms`, no fuso de quem trabalha — o par de `mesDe`. */
+export function diaDe(ms: number, fuso: string = FUSO_DO_SETOR): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: fuso,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(ms));
+}
+
+/**
+ * Das entregas de cada pessoa no mês, quantas saíram no prazo (#215).
+ *
+ * POR QUE ISTO ENTROU NO RANK. O pódio conta entregas, e só conta: dez tarefas
+ * triviais pesam mais que um painel grande, e quem entrega tudo atrasado sobe
+ * igual a quem cumpre o combinado. A pontualidade vai AO LADO da contagem, e
+ * não dentro dela — mudar o critério de colocação reescreveria o que as
+ * temporadas já fechadas anunciaram, e elas estão congeladas de propósito.
+ *
+ * NO PRAZO é ter chegado à etapa de entrega ATÉ O FIM DO DIA do prazo, no fuso
+ * do setor: entregar às 18h do dia combinado é cumprir. A comparação é de DIA
+ * (`diaDe`), e não de instante, pelo mesmo motivo de `inicioDoDia` em
+ * `prazo-core`: o mesmo trabalho não pode ser "no prazo" às 9h e "atrasado" às
+ * 15h.
+ *
+ * SEM PRAZO NÃO ENTRA NA CONTA — nem a favor, nem contra. O denominador é só o
+ * que tinha prazo: cobrar pontualidade de uma demanda sem data seria inventar
+ * um combinado que ninguém fez. Quem não teve nenhuma entrega com prazo fica
+ * FORA do mapa, e a tela não mostra porcentagem nenhuma para essa pessoa.
+ *
+ * A chave é o `assignee` cru, a MESMA de `entregasPorPessoa` — se as duas
+ * divergissem, o pódio mostraria a pontualidade de uma pessoa ao lado da
+ * contagem de outra.
+ */
+export function pontualidadeDoMes(
+  cards: readonly CardComPrazo[],
+  ent: EntreguePorSetor,
+  mes: string,
+  fuso: string = FUSO_DO_SETOR,
+): Map<string, { noPrazo: number; comPrazo: number }> {
+  const out = new Map<string, { noPrazo: number; comPrazo: number }>();
+  cards.forEach((c) => {
+    if (typeof c.enteredAt !== "number" || mesDe(c.enteredAt, fuso) !== mes) return;
+    if (!ehEntrega(c, ent) || !c.assignee) return;
+    const prazo = (c.due ?? "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(prazo)) return;
+    const atual = out.get(c.assignee) ?? { noPrazo: 0, comPrazo: 0 };
+    atual.comPrazo++;
+    if (diaDe(c.enteredAt, fuso) <= prazo) atual.noPrazo++;
+    out.set(c.assignee, atual);
+  });
+  return out;
+}
+
+/** "100%" — arredondado para o inteiro; a casa decimal num pódio é ruído. */
+export function rotuloPontualidade(p: { noPrazo: number; comPrazo: number }): string {
+  return `${Math.round((p.noPrazo / p.comPrazo) * 100)}%`;
 }
 
 /**
