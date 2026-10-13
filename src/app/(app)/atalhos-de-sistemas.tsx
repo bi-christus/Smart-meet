@@ -10,7 +10,7 @@ import { subscribeLinksDoSetor, type LinkDoSetor } from "@/lib/links-do-setor";
 import { useAsyncData } from "@/lib/use-async-data";
 import type { UserProfile } from "@/lib/users";
 import { Icon } from "@/components/icons";
-import { SeloDoLink } from "./links/selo";
+import { SeloDoLink } from "./portfolio/selo";
 import styles from "./inicio.module.css";
 
 /**
@@ -47,9 +47,9 @@ export function AtalhosDeSistemas({ profile }: { profile: UserProfile }) {
   return (
     <section className={styles.sistemas} aria-labelledby="sistemas-titulo">
       <div className={styles.sistemasHead}>
-        <h2 id="sistemas-titulo">Sistemas</h2>
-        <Link href="/links" className={styles.verTodos}>
-          Ver todos <Icon name="links" size={13} />
+        <h2 id="sistemas-titulo">Portfólio</h2>
+        <Link href="/portfolio" className={styles.verTodos}>
+          Ver o portfólio <Icon name="links" size={13} />
         </Link>
       </div>
       <div className={styles.sistemasGrid}>

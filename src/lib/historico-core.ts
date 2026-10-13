@@ -49,6 +49,8 @@ export type CampoRastreado =
   | "checklist"
   | "dimensao"
   | "subdimensao"
+  // O produto do Portfólio a que a demanda pertence (#209).
+  | "produto"
   // O setor entra na lista porque, sem ele, a mudança mais radical que uma
   // demanda sofre seria a única que a timeline não saberia contar: a linha
   // diria "mudou a demanda de setor" e não diria de onde para onde.
@@ -74,8 +76,12 @@ export const CAMPO_ROTULO: Record<CampoRastreado, string> = {
   tags: "Tags",
   links: "Links",
   checklist: "Checklist",
+  // A classificação por dimensão saiu do app em 13/10/2026 (#206), mas os
+  // eventos antigos continuam gravados com estes campos, e a timeline tem de
+  // saber rotulá-los.
   dimensao: "Dimensão",
   subdimensao: "Subdimensão",
+  produto: "Produto",
 };
 
 /** Ordem de leitura da timeline — o que muda o dono e a etapa vem primeiro. */
@@ -87,6 +93,7 @@ const ORDEM: CampoRastreado[] = [
   "prioridade",
   "titulo",
   "tipo",
+  "produto",
   "dimensao",
   "subdimensao",
   "solicitante",
@@ -220,6 +227,13 @@ export type EstadoCard = {
    */
   dimensaoNome?: string | null;
   subdimensaoNome?: string | null;
+  /**
+   * O NOME do produto do Portfólio, pelo mesmo motivo da dimensão logo acima:
+   * a timeline guarda texto congelado, e o produto pode ser renomeado ou sair
+   * do portfólio depois. Quem traduz id → nome é o modal, que já assina os
+   * produtos do setor para desenhar o seletor.
+   */
+  produtoNome?: string | null;
   tags?: string[];
   /** Só a URL: é por ela que o diff compara, e o resto do link não é notícia. */
   links?: { url: string }[];
@@ -328,6 +342,7 @@ export function diffCard(
   par("tipo", rotular(antes.type, r.tipo), rotular(depois.type, r.tipo));
   par("dimensao", ou0(antes.dimensaoNome), ou0(depois.dimensaoNome));
   par("subdimensao", ou0(antes.subdimensaoNome), ou0(depois.subdimensaoNome));
+  par("produto", ou0(antes.produtoNome), ou0(depois.produtoNome));
 
   // Descrição: só o fato. Ver o cabeçalho do arquivo.
   if (ou0(antes.description) !== ou0(depois.description)) {

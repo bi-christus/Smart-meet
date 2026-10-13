@@ -20,6 +20,7 @@ import {
   moverParaLixeira,
   moveCard,
   fundirCards,
+  createCard,
   DEMAND_TYPE_LABEL,
   PRIORITY_LABEL,
   pedirConclusao,
@@ -38,6 +39,7 @@ import {
   corrigirTagsDeCards,
   tagColor,
   type Card,
+  type CardInput,
   type Priority,
   type ColumnDoc,
 } from "@/lib/kanban";
@@ -69,12 +71,15 @@ import {
 import { rotuloDoMes, separarConcluidas } from "@/lib/concluidas-core";
 import { startOfDay } from "@/lib/datas";
 import { carregarHistorico } from "@/lib/historico";
+import { subscribeLinksDoSetor, type LinkDoSetor } from "@/lib/links-do-setor";
+import { reaproveitarIguais } from "@/lib/estabilidade-core";
 import { codigoDe, fraseDeFalha } from "@/lib/erro-ui-core";
 import { auth } from "@/lib/firebase";
 import {
   ACAO_ROTULO,
   diffCard,
   linhaDaMudanca,
+  mudancasIniciais,
   type Evento,
 } from "@/lib/historico-core";
 import { GripDots, Icon } from "@/components/icons";
@@ -89,6 +94,17 @@ import { SkeletonCard, SkeletonRow } from "@/components/skeleton";
 import { juntarFontes } from "@/lib/async-data-core";
 import { useAsyncData } from "@/lib/use-async-data";
 import { CardModal, type EditState } from "./card-modal";
+import { CriacaoRapida } from "./criacao-rapida";
+import { PassagemDeEtapa, type ColheitaDaPassagem } from "./passagem-de-etapa";
+import {
+  CAMPOS_DA_ETAPA,
+  CAMPO_DA_ETAPA_ROTULO,
+  SUGESTAO_POR_ETAPA,
+  normalizarExigencias,
+  oQueAPassagemPede,
+  type CampoDaEtapa,
+  type ExigenciaDaEtapa,
+} from "@/lib/etapas-core";
 import {
   PRIORITY_COLOR,
   autorDoRegistro,
@@ -108,6 +124,7 @@ const SEM_USERS: UserProfile[] = [];
 const SEM_SOLICITANTES: Solicitante[] = [];
 const SEM_SETORES: SolicitanteSetor[] = [];
 const SEM_COLUNAS: ColumnDoc[] = [];
+const SEM_PRODUTOS: LinkDoSetor[] = [];
 
 /** Assinatura que nem chegou a abrir: não há nada para fechar depois. */
 const NADA_A_FECHAR = () => undefined;
@@ -132,6 +149,27 @@ const SEM_TAGS: string[] = [];
 
 /** Valor sentinela do filtro de responsável (e-mails sempre têm "@"). */
 const NO_ASSIGNEE = "__sem__";
+/**
+ * O comentário que a caixa de passagem colheu (#212), pronto para gravar.
+ *
+ * Fora do componente porque lê o relógio: o compilador do React trata qualquer
+ * função declarada no corpo do componente como parte do render, e relógio no
+ * render é impuro. Aqui ela só roda no clique de confirmar.
+ */
+function comentarioDaPassagem(author: string, text: string) {
+  return {
+    id:
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `c_${Date.now()}`,
+    author,
+    text,
+    at: Date.now(),
+  };
+}
+
+/** Valor sentinela do filtro de produto (ids do Firestore nunca têm "_" duplo). */
+const SEM_PRODUTO = "__sem_produto__";
 
 type ColEditState = { mode: "new" } | { mode: "edit"; col: ColumnDoc } | null;
 
@@ -161,7 +199,22 @@ export default function KanbanPage() {
       onData([]);
       return NADA_A_FECHAR;
     }
-    return subscribeCards(sector, onData, onErro);
+    /**
+     * O card que chega IGUAL volta com o mesmo objeto de antes (#213). Cada
+     * snapshot traz a lista inteira em objetos novos — a escrita de qualquer
+     * pessoa do setor redesenhava o quadro todo. A lista anterior mora nesta
+     * closure, e não num `ref`, porque é aqui que o snapshot chega: ler um ref
+     * no render é o que o compilador do React proíbe.
+     */
+    let anterior: Card[] = [];
+    return subscribeCards(
+      sector,
+      (lista) => {
+        anterior = reaproveitarIguais(anterior, lista, (c) => c.id);
+        onData(anterior);
+      },
+      onErro,
+    );
   });
   const fCols = useAsyncData<ColumnDoc>(sector, (onData, onErro) => {
     if (!sector) {
@@ -180,6 +233,19 @@ export default function KanbanPage() {
     "todos",
     (onData, onErro) => subscribeSolicitanteSetores(onData, onErro),
   );
+  /**
+   * Os produtos do Portfólio deste setor (#209) — o nome no selo do card e as
+   * opções do filtro. Fora de `juntarFontes` de propósito: o quadro se desenha
+   * sem eles, e um card cujo produto ainda não carregou só fica sem o selo por
+   * um instante.
+   */
+  const fProdutos = useAsyncData<LinkDoSetor>(sector, (onData, onErro) => {
+    if (!sector) {
+      onData([]);
+      return NADA_A_FECHAR;
+    }
+    return subscribeLinksDoSetor([sector], onData, onErro);
+  });
 
   /**
    * A sexta assinatura: o que foi excluído e ainda dá para trazer de volta.
@@ -208,6 +274,7 @@ export default function KanbanPage() {
   const users = fUsers.data ?? SEM_USERS;
   const solicitantes = fSolicitantes.data ?? SEM_SOLICITANTES;
   const reqSetores = fReqSetores.data ?? SEM_SETORES;
+  const produtos = fProdutos.data ?? SEM_PRODUTOS;
   const fireColumns = fCols.data ?? SEM_COLUNAS;
   /** Agora vem do tipo, e não de um booleano à parte que podia discordar. */
   const colsLoaded = fCols.data !== undefined;
@@ -218,6 +285,8 @@ export default function KanbanPage() {
   const [prio, setPrio] = useState<"" | Priority>("");
   // O filtro de responsável é preso ao setor: trocar de quadro o descarta.
   const [assigneeSel, setAssigneeSel] = useState({ sector: "", value: "" });
+  // O de produto também (#209): o Portfólio é por setor.
+  const [produtoSel, setProdutoSel] = useState({ sector: "", value: "" });
   /**
    * As tags marcadas — presas ao setor pelo mesmo motivo do responsável.
    *
@@ -256,6 +325,17 @@ export default function KanbanPage() {
   /** O catálogo cresce; a barra não. Isto abre o resto dele. */
   const [tagsAbertas, setTagsAbertas] = useState(false);
   const [edit, setEdit] = useState<EditState>(null);
+  /** A coluna com a linha de criação rápida aberta (#210). Uma por vez. */
+  const [rapidaEm, setRapidaEm] = useState<string | null>(null);
+  /**
+   * O card arrastado para uma etapa que pede campos, esperando a caixa (#212).
+   * O movimento ainda NÃO aconteceu: cancelar é só fechar.
+   */
+  const [passagem, setPassagem] = useState<{
+    card: Card;
+    col: ColumnDoc;
+    pede: ExigenciaDaEtapa[];
+  } | null>(null);
   /** Demanda com o histórico aberto — independente do modal de edição. */
   const [histCard, setHistCard] = useState<Card | null>(null);
   /**
@@ -451,6 +531,14 @@ export default function KanbanPage() {
 
   const assigneeF = assigneeSel.sector === sector ? assigneeSel.value : "";
   const setAssigneeF = (value: string) => setAssigneeSel({ sector, value });
+  const produtoF = produtoSel.sector === sector ? produtoSel.value : "";
+  const setProdutoF = (value: string) => setProdutoSel({ sector, value });
+
+  /** id → produto, para o selo do card não procurar numa lista a cada card. */
+  const produtosPorId = useMemo(
+    () => new Map(produtos.map((p) => [p.id, p])),
+    [produtos],
+  );
 
   /**
    * `SEM_TAGS` e não `[]` escrito aqui, pelo mesmo motivo das outras listas
@@ -501,7 +589,8 @@ export default function KanbanPage() {
     });
   const limparTags = () => setTagSel({ sector, tags: [] });
 
-  // Busca + prioridade (sem o filtro de responsável — é a base das contagens).
+  // Busca + prioridade + produto (sem o filtro de responsável — é a base das
+  // contagens).
   const baseFiltered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return cardsVivos.filter(
@@ -509,9 +598,36 @@ export default function KanbanPage() {
         (!q ||
           c.title.toLowerCase().includes(q) ||
           (c.tags ?? []).some((t) => t.toLowerCase().includes(q))) &&
-        (!prio || c.priority === prio),
+        (!prio || c.priority === prio) &&
+        (!produtoF ||
+          (produtoF === SEM_PRODUTO ? !c.produtoId : c.produtoId === produtoF)),
     );
-  }, [cardsVivos, search, prio]);
+  }, [cardsVivos, search, prio, produtoF]);
+
+  /**
+   * As opções do filtro de produto: só os produtos que têm demanda neste
+   * quadro, como no filtro de responsável — opção que devolve zero em qualquer
+   * combinação é ruído. "Sem produto" entra quando existe demanda sem.
+   */
+  const produtoFilterOptions: SelectOption[] = useMemo(() => {
+    const counts = new Map<string, number>();
+    let sem = 0;
+    cardsVivos.forEach((c) => {
+      if (c.produtoId) counts.set(c.produtoId, (counts.get(c.produtoId) ?? 0) + 1);
+      else sem++;
+    });
+    const opts: SelectOption[] = [{ value: "", label: "Todos os produtos" }];
+    [...counts.entries()]
+      .map(([id, n]) => ({
+        id,
+        n,
+        nome: produtosPorId.get(id)?.nome ?? "Produto removido do portfólio",
+      }))
+      .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"))
+      .forEach((p) => opts.push({ value: p.id, label: `${p.nome} (${p.n})` }));
+    if (sem && counts.size) opts.push({ value: SEM_PRODUTO, label: `Sem produto (${sem})` });
+    return opts;
+  }, [cardsVivos, produtosPorId]);
 
   const porResponsavel = useMemo(
     () =>
@@ -678,6 +794,140 @@ export default function KanbanPage() {
   const concluiDireto = podeConcluirDireto(papelAtual);
 
   /**
+   * Tudo de que os gestos do card dependem além do próprio card (#213).
+   *
+   * O `DemandaCard` agora é `memo` e compara só DADOS — as funções que o quadro
+   * passa nascem novas a cada render, e compará-las desligaria o memo. O preço
+   * de ignorá-las é uma função velha guardada num card que não se redesenhou;
+   * esta string é o que impede isso: as funções do card leem `fundindoDe`,
+   * `canManage`, o autor e o setor, e quando qualquer um deles muda, a versão
+   * muda e todo card se redesenha com as funções novas. Um campo novo lido por
+   * um gesto do card TEM de entrar aqui.
+   */
+  const versaoDosGestos = `${fundindoDe?.id ?? ""}|${canManage}|${autorAtual}|${sector}`;
+
+  /**
+   * A demanda que nasce na linha rápida da coluna (#210).
+   *
+   * Nasce com o que se sabe na hora — título e, se houver, produto — e o resto
+   * em branco: sem responsável, sem prazo, prioridade média, tipo padrão. Prazo
+   * inventado para destravar um formulário vira atraso falso no relatório do
+   * gestor; deixar em branco é o estado honesto, e o card já diz "sem prazo
+   * definido".
+   *
+   * A primeira linha do histórico entra no mesmo lote, como no modal: sem ela a
+   * demanda pareceria ter nascido de lugar nenhum.
+   */
+  async function criarRapida(colId: string, titulo: string, produtoId: string) {
+    const input: CardInput = {
+      title: titulo,
+      description: "",
+      columnId: colId,
+      type: "implementacao",
+      assignee: null,
+      requester: null,
+      requesterSector: null,
+      produtoId: produtoId || null,
+      startDate: null,
+      due: null,
+      priority: "media",
+      tags: [],
+      tagRefs: [],
+      checklist: [],
+      links: [],
+    };
+    try {
+      await createCard(
+        sector,
+        input,
+        autorAtual,
+        mudancasIniciais(
+          {
+            ...input,
+            produtoNome: produtoId ? (produtosPorId.get(produtoId)?.nome ?? null) : null,
+          },
+          rotulos,
+        ),
+      );
+    } catch (e) {
+      throw new Error(
+        fraseDeFalha("Não foi possível criar a demanda.", e, navigator.onLine),
+      );
+    }
+  }
+
+  /** O que a etapa `col` pede para receber o card `c` — a régua é do core. */
+  function pedeNaPassagem(c: Card, col: ColumnDoc): ExigenciaDaEtapa[] {
+    return oQueAPassagemPede({
+      origem: c.columnId,
+      destino: col.colId,
+      ordem: displayCols.map((x) => x.colId),
+      exigencias: normalizarExigencias(col.campos),
+      card: c,
+    });
+  }
+
+  /**
+   * A caixa confirmou: o movimento e o que ela colheu num lote só, com UMA
+   * linha no histórico contando as duas coisas — a etapa e os campos.
+   */
+  async function confirmarPassagem(
+    p: { card: Card; col: ColumnDoc },
+    colheita: ColheitaDaPassagem,
+  ) {
+    const nomeProd = (id?: string | null) =>
+      id ? (produtosPorId.get(id)?.nome ?? null) : null;
+    const depois = { ...p.card, ...colheita.campos, columnId: p.col.colId };
+    try {
+      await moveCard(
+        p.card.id,
+        p.col.colId,
+        {
+          ctx: { autor: autorAtual, sector },
+          mudancas: diffCard(
+            { ...p.card, produtoNome: nomeProd(p.card.produtoId) },
+            { ...depois, produtoNome: nomeProd(depois.produtoId) },
+            rotulos,
+          ),
+        },
+        {
+          campos: colheita.campos,
+          comentario: colheita.comentario
+            ? comentarioDaPassagem(autorAtual, colheita.comentario)
+            : undefined,
+        },
+      );
+    } catch (e) {
+      throw new Error(
+        fraseDeFalha("Não foi possível mover a demanda.", e, navigator.onLine),
+      );
+    }
+    setPassagem(null);
+  }
+
+  /** Responsáveis possíveis para a caixa de passagem. */
+  const opcoesPessoas: SelectOption[] = [
+    { value: "", label: "— Ninguém —" },
+    ...activeUsers.map((u) => ({ value: u.email, label: u.name || u.email, color: u.color })),
+  ];
+  /** O solicitante é gravado pelo NOME do cadastro, como no modal. */
+  const opcoesSolicitantes: SelectOption[] = solicitantes.map((s) => ({
+    value: s.name,
+    label: s.name,
+  }));
+
+  /** As opções de produto da linha rápida — só os do Portfólio deste setor. */
+  const opcoesRapida: SelectOption[] = produtos.length
+    ? [
+        { value: "", label: "— Sem produto —" },
+        ...produtos
+          .slice()
+          .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"))
+          .map((p) => ({ value: p.id, label: p.nome })),
+      ]
+    : [];
+
+  /**
    * O papel de um card no gesto de fusão em curso — ou nada, fora dele.
    *
    * Chamada por card, e é de propósito que ela não seja memoizada: `podemFundir`
@@ -742,6 +992,14 @@ export default function KanbanPage() {
          * para o banco e para o Discord de todo mundo.
          */
         setPedindoConclusao({ card: c, colunaAlvo: col.colId });
+      } else if (c && c.columnId !== col.colId && pedeNaPassagem(c, col).length) {
+        /**
+         * A ETAPA PEDE CAMPOS QUE O CARD NÃO TEM (#212) — o arrasto vira a
+         * caixa de passagem, pelo mesmo motivo do pedido de conclusão logo
+         * acima: o card fica onde estava até a pessoa confirmar, e cancelar
+         * não tem nada a desfazer.
+         */
+        setPassagem({ card: c, col, pede: pedeNaPassagem(c, col) });
       } else if (c && c.columnId !== col.colId)
         moveCard(dragCardId, col.colId, {
           ctx: { autor: autorAtual, sector },
@@ -823,6 +1081,20 @@ export default function KanbanPage() {
             ariaLabel="Filtrar por responsável"
           />
         </div>
+        {/* Só aparece quando o quadro tem alguma demanda com produto: com
+            todas sem, o seletor teria uma opção só, e ela não filtra nada. O
+            `produtoF` na conta é a saída de emergência, como no Portfólio. */}
+        {(produtoFilterOptions.length > 1 || produtoF) && (
+          <div style={{ width: 210 }}>
+            <Select
+              value={produtoF}
+              options={produtoFilterOptions}
+              onChange={setProdutoF}
+              placeholder="Todos os produtos"
+              ariaLabel="Filtrar por produto do portfólio"
+            />
+          </div>
+        )}
         {profile.email &&
           cards.some((c) => c.assignee === profile.email) &&
           assigneeF !== profile.email && (
@@ -1176,7 +1448,10 @@ export default function KanbanPage() {
                 <button
                   className={styles.iconbtn}
                   title="Adicionar demanda"
-                  onClick={() => setEdit({ mode: "new", columnId: col.colId })}
+                  aria-expanded={rapidaEm === col.colId}
+                  onClick={() =>
+                    setRapidaEm((cur) => (cur === col.colId ? null : col.colId))
+                  }
                 >
                   <Icon name="plus" size={15} />
                 </button>
@@ -1191,6 +1466,47 @@ export default function KanbanPage() {
                 )}
               </div>
               <div className={styles.collist}>
+                {/* A linha rápida mora NO TOPO da lista, onde o card novo
+                    aparece (o card nasce com `order` negativo e sobe). */}
+                {rapidaEm === col.colId && !quadro.carregando && (
+                  <CriacaoRapida
+                    coluna={col.title}
+                    produtos={opcoesRapida}
+                    onCriar={async (titulo, produtoId) => {
+                      /**
+                       * ETAPA QUE PEDE CAMPOS OBRIGATÓRIOS (#212) não recebe
+                       * demanda pela linha rápida, que só tem título e produto:
+                       * nascer ali sem o que a etapa exige seria furar a régua
+                       * pela porta da frente. O que já foi digitado vai para o
+                       * modal completo, que cobra o resto.
+                       */
+                      const obrig = normalizarExigencias(col.campos).filter(
+                        (e) =>
+                          e.obrigatorio &&
+                          !(e.campo === "produtoId" && produtoId),
+                      );
+                      if (obrig.length) {
+                        setRapidaEm(null);
+                        setEdit({
+                          mode: "new",
+                          columnId: col.colId,
+                          inicial: { title: titulo, produtoId },
+                        });
+                        return;
+                      }
+                      await criarRapida(col.colId, titulo, produtoId);
+                    }}
+                    onMaisCampos={(titulo, produtoId) => {
+                      setRapidaEm(null);
+                      setEdit({
+                        mode: "new",
+                        columnId: col.colId,
+                        inicial: { title: titulo, produtoId },
+                      });
+                    }}
+                    onFechar={() => setRapidaEm(null)}
+                  />
+                )}
                 {/* Esqueleto DENTRO da coluna, e não no lugar do quadro: as
                     sete colunas precisam manter a forma e a largura enquanto
                     esperam, senão a espera vira um solavanco quando o dado
@@ -1233,7 +1549,13 @@ export default function KanbanPage() {
                       assignee={c.assignee ? usersMap[c.assignee] : undefined}
                       requester={c.requester ?? undefined}
                       requesterSector={c.requesterSector ?? undefined}
+                      produto={
+                        c.produtoId
+                          ? (produtosPorId.get(c.produtoId)?.nome ?? undefined)
+                          : undefined
+                      }
                       dragging={dragCardId === c.id}
+                      versaoDosGestos={versaoDosGestos}
                       onDragStart={(e) => {
                         e.dataTransfer.setData("text/plain", c.id);
                         e.dataTransfer.effectAllowed = "move";
@@ -1539,6 +1861,23 @@ export default function KanbanPage() {
        * O par já está escolhido quando este diálogo abre — o que falta é decidir
        * o que fica de cada campo em que as duas discordam.
        */}
+      {passagem && (
+        <PassagemDeEtapa
+          // A chave é o par card+etapa: uma caixa reaproveitada para outro
+          // arrasto herdaria o que foi digitado para o anterior.
+          key={`${passagem.card.id}>${passagem.col.colId}`}
+          card={passagem.card}
+          destino={passagem.col.title}
+          pede={passagem.pede}
+          pessoas={opcoesPessoas}
+          produtos={opcoesRapida.length ? opcoesRapida : [{ value: "", label: "— Sem produto —" }]}
+          solicitantes={opcoesSolicitantes}
+          autor={autorAtual}
+          onConfirmar={(colheita) => confirmarPassagem(passagem, colheita)}
+          onCancelar={() => setPassagem(null)}
+        />
+      )}
+
       {fusao && (
         <FusaoModal
           /* A ORDEM entra na chave, e não só os ids: trocar os lados precisa
@@ -1550,6 +1889,9 @@ export default function KanbanPage() {
           sector={sector}
           columns={displayCols}
           actorEmail={autorAtual}
+          nomeDoProduto={(id) =>
+            produtosPorId.get(id)?.nome ?? "Produto removido do portfólio"
+          }
           onFechar={() => setFusao(null)}
           onTrocarLados={() =>
             setFusao({ vencedor: fusao.perdido, perdido: fusao.vencedor })
@@ -1990,6 +2332,7 @@ function FusaoModal({
   sector,
   columns,
   actorEmail,
+  nomeDoProduto,
   onFechar,
   onTrocarLados,
 }: {
@@ -1998,6 +2341,8 @@ function FusaoModal({
   sector: string;
   columns: ColumnDoc[];
   actorEmail: string;
+  /** id → nome do produto do Portfólio; quem tem a lista assinada é o quadro. */
+  nomeDoProduto: (id: string) => string;
   onFechar: () => void;
   onTrocarLados: () => void;
 }) {
@@ -2039,6 +2384,8 @@ function FusaoModal({
         return c.startDate || "—";
       case "due":
         return c.due || "—";
+      case "produtoId":
+        return c.produtoId ? nomeDoProduto(c.produtoId) : "— sem produto —";
     }
   }
 
@@ -2462,6 +2809,26 @@ function ColumnModal({
   const [color, setColor] = useState(col?.color ?? COLUMN_COLORS[1]);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  /**
+   * Os campos que esta etapa pede (#212). Lidos com desconfiança — a coluna é
+   * escrita também pelo console — e gravados já normalizados.
+   */
+  const [campos, setCampos] = useState<ExigenciaDaEtapa[]>(() =>
+    normalizarExigencias(col?.campos),
+  );
+  const sugestao = col ? SUGESTAO_POR_ETAPA[col.colId] : undefined;
+  function alternarCampo(c: CampoDaEtapa) {
+    setCampos((cur) =>
+      cur.some((e) => e.campo === c)
+        ? cur.filter((e) => e.campo !== c)
+        : normalizarExigencias([...cur, { campo: c, obrigatorio: false }]),
+    );
+  }
+  function alternarObrigatorio(c: CampoDaEtapa) {
+    setCampos((cur) =>
+      cur.map((e) => (e.campo === c ? { ...e, obrigatorio: !e.obrigatorio } : e)),
+    );
+  }
 
   const colIndex = col ? columns.findIndex((c) => c.id === col.id) : -1;
 
@@ -2489,7 +2856,7 @@ function ColumnModal({
           : 0;
         await addColumn(sector, title, color, order);
       } else if (col) {
-        await updateColumn(col.id, { title: title.trim(), color });
+        await updateColumn(col.id, { title: title.trim(), color, campos });
       }
       onClose();
     } catch (e) {
@@ -2576,6 +2943,66 @@ function ColumnModal({
             >
               Mover →
             </button>
+          </div>
+        </div>
+      )}
+
+      {/**
+        * CAMPOS DESTA ETAPA (#212) — o que o card precisa ter para entrar nela.
+        * Só na edição: a coluna nova ainda não tem `colId` conhecido nem cards,
+        * e configurar o que ela pede é o passo seguinte a criá-la. Marcar o
+        * campo põe ele na caixa de passagem; "obrigatório" trava o botão
+        * Mover até ser preenchido.
+        */}
+      {!isNew && (
+        <div className={styles.field}>
+          <label className={styles.label}>Campos desta etapa</label>
+          <div className={styles.etapaCampos}>
+            {CAMPOS_DA_ETAPA.map((c) => {
+              const e = campos.find((x) => x.campo === c);
+              return (
+                <div key={c} className={styles.etapaCampo}>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={!!e}
+                      onChange={() => alternarCampo(c)}
+                    />
+                    {CAMPO_DA_ETAPA_ROTULO[c]}
+                  </label>
+                  {e && (
+                    <button
+                      type="button"
+                      className={`${styles.etapaObrig} ${e.obrigatorio ? styles.etapaObrigOn : ""}`}
+                      onClick={() => alternarObrigatorio(c)}
+                      aria-pressed={e.obrigatorio}
+                      title={
+                        e.obrigatorio
+                          ? "Obrigatório: o card só entra com este campo preenchido"
+                          : "Sugerido: a caixa pergunta, mas dá para pular"
+                      }
+                    >
+                      {e.obrigatorio ? "obrigatório" : "sugerido"}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+            {sugestao && campos.length === 0 && (
+              <button
+                type="button"
+                className={styles.etapaSugestao}
+                onClick={() => setCampos(normalizarExigencias(sugestao))}
+              >
+                Usar a sugestão para esta etapa:{" "}
+                {sugestao
+                  .map(
+                    (s) =>
+                      CAMPO_DA_ETAPA_ROTULO[s.campo] + (s.obrigatorio ? "*" : ""),
+                  )
+                  .join(", ")}
+              </button>
+            )}
           </div>
         </div>
       )}

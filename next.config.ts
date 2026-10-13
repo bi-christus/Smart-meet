@@ -1,6 +1,19 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  async redirects() {
+    return [
+      {
+        // A aba Links virou Portfólio (#208). Temporário (307) e não permanente:
+        // o 308 fica guardado no navegador para sempre, e se um dia `/links`
+        // voltar a ser uma página, quem já visitou continuaria sendo mandado
+        // embora sem nem perguntar ao servidor.
+        source: "/links",
+        destination: "/portfolio",
+        permanent: false,
+      },
+    ];
+  },
   async headers() {
     return [
       {

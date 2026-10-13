@@ -53,7 +53,11 @@ export const ABAS: Aba[] = [
   { id: "inicio", label: "Início", href: "/", configuravel: false },
   // Logo depois do Início (06/10/2026): é por onde a diretoria chega aos
   // sistemas, e no fim da barra a aba ficava escondida na rolagem.
-  { id: "links", label: "Links", href: "/links", configuravel: true },
+  //
+  // Virou Portfólio em 13/10/2026 (#208), mas o id continua `links`: é a
+  // chave que os quadros de permissão gravados leem, e trocá-la faria a aba
+  // sumir para quem já tem acesso. `/links` redireciona (next.config.ts).
+  { id: "links", label: "Portfólio", href: "/portfolio", configuravel: true },
   { id: "reunioes", label: "Reuniões", href: "/reunioes", configuravel: true },
   {
     id: "relatorios",

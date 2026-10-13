@@ -76,6 +76,12 @@ import {
 import { conferirTag, normalizarTag, semAcento } from "@/lib/tags-core";
 import { codigoDe, fraseDeFalha } from "@/lib/erro-ui-core";
 import { diffCard, mudancasIniciais, type Rotulos } from "@/lib/historico-core";
+import { subscribeLinksDoSetor, type LinkDoSetor } from "@/lib/links-do-setor";
+import {
+  CAMPO_DA_ETAPA_ROTULO,
+  campoPreenchido,
+  normalizarExigencias,
+} from "@/lib/etapas-core";
 import { type UserProfile } from "@/lib/users";
 import { Icon } from "@/components/icons";
 import { IconePicker } from "@/components/icone-picker";
@@ -83,6 +89,8 @@ import { Avatar } from "@/components/avatar";
 import { Select, type SelectOption } from "@/components/select";
 import { Combobox } from "@/components/combobox";
 import { Modal } from "@/components/modal";
+import { MaisCampos } from "./mais-campos";
+import { SecaoRecolhivel } from "./secao-recolhivel";
 import {
   KNOWN_PRIORITIES,
   PRIORITY_COLOR,
@@ -232,8 +240,29 @@ function NovoCadastro({
  * vazia. Arrays e objetos (tags, checklist) comparam por conteúdo, e a ordem
  * conta — reordenar a checklist É uma mudança.
  */
+/**
+ * Os campos que só aparecem quando têm valor ou quando alguém os pede (#211).
+ * A ordem é a do botão "+ campo" e a da tela.
+ */
+const CAMPOS_OPCIONAIS = [
+  { id: "tipo", rotulo: "Tipo" },
+  { id: "prioridade", rotulo: "Prioridade" },
+  { id: "solicitante", rotulo: "Solicitante" },
+  { id: "inicio", rotulo: "Início" },
+  { id: "tags", rotulo: "Tags" },
+] as const;
+type CampoOpcional = (typeof CAMPOS_OPCIONAIS)[number]["id"];
+
 export type EditState =
-  | { mode: "new"; columnId: string }
+  | {
+      mode: "new";
+      columnId: string;
+      /**
+       * O que a criação rápida já tinha (#210): "mais campos" traz o título e
+       * o produto digitados na linha da coluna, em vez de recomeçar do zero.
+       */
+      inicial?: { title?: string; produtoId?: string };
+    }
   | { mode: "edit"; card: Card }
   | null;
 
@@ -313,7 +342,8 @@ export function CardModal({
   const isNew = state.mode === "new";
   const card = state.mode === "edit" ? state.card : null;
 
-  const [title, setTitle] = useState(card?.title ?? "");
+  const inicial = state.mode === "new" ? state.inicial : undefined;
+  const [title, setTitle] = useState(card?.title ?? inicial?.title ?? "");
   const [description, setDescription] = useState(card?.description ?? "");
   const [columnId, setColumnId] = useState(
     state.mode === "new" ? state.columnId : state.card.columnId,
@@ -329,17 +359,59 @@ export function CardModal({
   const [requesterSector, setRequesterSector] = useState(
     card?.requesterSector ?? "",
   );
-  /**
-   * Início e prazo já nascem em dia útil.
-   *
-   * Sete dias a partir de uma quarta caem numa quarta, mas a partir de um
-   * sábado caem num sábado — e o formulário abriria cobrando de quem o abriu
-   * uma data que ele mesmo escolheu. O `todayStr()` do início tem o mesmo
-   * problema um dia por semana: quem abre o Kanban no sábado.
-   */
-  const [startDate, setStartDate] = useState(
-    card?.startDate ?? (isNew ? proximoDiaUtilISO(todayStr()) : ""),
+  const [produtoId, setProdutoId] = useState(
+    card?.produtoId ?? inicial?.produtoId ?? "",
   );
+
+  /**
+   * Os produtos do Portfólio deste setor, assinados AQUI e não recebidos por
+   * prop (#209).
+   *
+   * Quem abre este modal — o quadro e o Cronograma — não precisa do Portfólio
+   * para desenhar a si mesmo, e passá-lo obrigaria o Cronograma a assinar o
+   * portfólio de todos os setores por causa de um seletor que só existe com o
+   * modal aberto. O listener nasce e morre com ele.
+   *
+   * `null` enquanto não responde: é o que impede o histórico de gravar "de nada
+   * para Painel de Vendas" sobre um produto que só não tinha carregado ainda —
+   * sem a lista, o nome dos dois lados sai `null` e o diff fica calado.
+   */
+  const [produtos, setProdutos] = useState<LinkDoSetor[] | null>(null);
+  useEffect(
+    () =>
+      subscribeLinksDoSetor([sector], setProdutos, (e) =>
+        console.error("[produtos do portfólio]", e),
+      ),
+    [sector],
+  );
+  const nomeDoProduto = (id: string | null | undefined) =>
+    (id && produtos?.find((p) => p.id === id)?.nome) || null;
+  /**
+   * As opções do seletor. Um produto que saiu do Portfólio depois de ser
+   * escolhido continua na lista, marcado — sem ele o seletor mostraria o
+   * placeholder e a pessoa acharia que a demanda não tem produto.
+   */
+  const opcoesDeProduto = useMemo<SelectOption[]>(() => {
+    const lista = (produtos ?? [])
+      .slice()
+      .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"))
+      .map((p) => ({ value: p.id, label: p.nome }));
+    if (produtoId && produtos && !produtos.some((p) => p.id === produtoId)) {
+      lista.unshift({ value: produtoId, label: "Produto removido do portfólio" });
+    }
+    return [{ value: "", label: "— Sem produto —" }, ...lista];
+  }, [produtos, produtoId]);
+  /**
+   * A demanda nova nasce SEM início (#211): ele é opcional, e um início
+   * preenchido sozinho com "hoje" faria o campo aparecer em toda demanda nova,
+   * que é justamente o formulário cheio que esta frente tira da frente.
+   *
+   * O prazo continua nascendo, e em dia útil: sete dias a partir de uma quarta
+   * caem numa quarta, mas a partir de um sábado caem num sábado — e o
+   * formulário abriria cobrando de quem o abriu uma data que ele mesmo
+   * escolheu.
+   */
+  const [startDate, setStartDate] = useState(card?.startDate ?? "");
   const [due, setDue] = useState(
     card?.due ?? (isNew ? proximoDiaUtilISO(plusDays(todayStr(), 7)) : ""),
   );
@@ -368,6 +440,31 @@ export function CardModal({
   const [tags, setTags] = useState<string[]>(card?.tags ?? []);
   /** Quais tags são referência. Anda junto de `tags`, ligada pelo texto. */
   const [tagRefs, setTagRefs] = useState<TagRef[]>(card?.tagRefs ?? []);
+
+  /**
+   * Quais campos opcionais estão à vista (#211).
+   *
+   * Nasce com os que JÁ TÊM valor na abertura, e só cresce: um campo que a
+   * pessoa esvazia continua na tela até o modal fechar, senão ele sumiria
+   * debaixo do cursor no meio da edição. Tipo e prioridade sempre têm valor
+   * gravado numa demanda que já existe, e por isso aparecem nela; na demanda
+   * nova eles nascem com o padrão e ficam atrás do "+ campo".
+   */
+  const [abertos, setAbertos] = useState<ReadonlySet<CampoOpcional>>(() => {
+    const s = new Set<CampoOpcional>();
+    if (!isNew) {
+      s.add("tipo");
+      s.add("prioridade");
+    }
+    if (requester || requesterSector) s.add("solicitante");
+    if (startDate) s.add("inicio");
+    if (tags.length) s.add("tags");
+    return s;
+  });
+  const ver = (c: CampoOpcional) => abertos.has(c);
+  function abrirCampo(c: CampoOpcional) {
+    setAbertos((cur) => new Set(cur).add(c));
+  }
   const [newTag, setNewTag] = useState("");
   /** Escape fecha a lista de tags sem apagar o que já foi digitado. */
   const [menuTagFechado, setMenuTagFechado] = useState(false);
@@ -387,6 +484,24 @@ export function CardModal({
   const [novoLink, setNovoLink] = useState("");
   const [erroLink, setErroLink] = useState<string | null>(null);
   const [comments, setComments] = useState<Comment[]>(card?.comments ?? []);
+  /**
+   * Quais seções do lado direito estão abertas (#211). Nascem pelo conteúdo
+   * da abertura e daí em diante só a pessoa abre e fecha — reabrir sozinho a
+   * cada tecla seria o modal discordando de quem acabou de recolher.
+   */
+  const [secoes, setSecoes] = useState(() => ({
+    descricao: !!card?.description?.trim(),
+    links: (card?.links?.length ?? 0) > 0,
+    checklist: (card?.checklist?.length ?? 0) > 0,
+    comentarios: (card?.comments?.length ?? 0) > 0,
+  }));
+  function alternarSecao(s: keyof typeof secoes) {
+    setSecoes((cur) => ({ ...cur, [s]: !cur[s] }));
+  }
+  /** Abre a seção sem fechar a que já está aberta — para levar os olhos até ela. */
+  function alternarSecaoAberta(s: keyof typeof secoes) {
+    setSecoes((cur) => ({ ...cur, [s]: true }));
+  }
   const [newComment, setNewComment] = useState("");
   const [posting, setPosting] = useState(false);
   /** Qual comentário está sendo reescrito (chave), e o texto em edição. */
@@ -1046,6 +1161,7 @@ export function CardModal({
       assignee: assignee || null,
       requester: requester || null,
       requesterSector: requesterSector || null,
+      produtoId: produtoId || null,
       startDate: startDate || null,
       due: semPrazo ? null : due || null,
       priority,
@@ -1189,6 +1305,51 @@ export function CardModal({
       cobrar("prazo", "Escolha um dia útil para o prazo de entrega.", prazoRef);
       return;
     }
+    /**
+     * A ETAPA DE DESTINO PEDE CAMPOS OBRIGATÓRIOS (#212) — a mesma régua da
+     * caixa de passagem do quadro, para que trocar a etapa aqui não seja o
+     * jeito de contorná-la. Vale para a demanda que nasce na etapa e para a que
+     * AVANÇA para ela; voltar não cobra nada, como no arrasto.
+     *
+     * O comentário fica de fora: ele é o registro de uma passagem, e quem está
+     * no modal escreve na seção de comentários quando quiser — cobrá-lo aqui
+     * seria pedir um texto num campo que não existe neste formulário.
+     */
+    const destinoCol = columns.find((c) => c.colId === columnId);
+    const ordem = columns.map((c) => c.colId);
+    const avancou =
+      isNew ||
+      (!!card &&
+        card.columnId !== columnId &&
+        ordem.indexOf(columnId) > ordem.indexOf(card.columnId));
+    const faltamNaEtapa = avancou
+      ? normalizarExigencias(destinoCol?.campos).filter(
+          (e) =>
+            e.obrigatorio &&
+            e.campo !== "comentario" &&
+            !campoPreenchido(montarBase(), e.campo),
+        )
+      : [];
+    if (faltamNaEtapa.length) {
+      setErr(
+        `A etapa ${destinoCol?.title ?? ""} pede: ${faltamNaEtapa
+          .map((e) => CAMPO_DA_ETAPA_ROTULO[e.campo].toLowerCase())
+          .join(", ")}.`,
+      );
+      // O campo que falta pode estar atrás do "+ campo": ele vem para a tela,
+      // senão a pessoa leria o aviso e não acharia onde preenchê-lo.
+      faltamNaEtapa.forEach((e) => {
+        if (e.campo === "type") abrirCampo("tipo");
+        if (e.campo === "priority") abrirCampo("prioridade");
+        if (e.campo === "requester") abrirCampo("solicitante");
+        if (e.campo === "startDate") abrirCampo("inicio");
+        if (e.campo === "tags") abrirCampo("tags");
+        if (e.campo === "description") alternarSecaoAberta("descricao");
+        if (e.campo === "links") alternarSecaoAberta("links");
+        if (e.campo === "checklist") alternarSecaoAberta("checklist");
+      });
+      return;
+    }
     setCampoErro(null);
     setSaving(true);
     try {
@@ -1203,7 +1364,10 @@ export function CardModal({
           sector,
           input,
           actorEmail,
-          mudancasIniciais(base, rotulos),
+          mudancasIniciais(
+            { ...base, produtoNome: nomeDoProduto(base.produtoId) },
+            rotulos,
+          ),
         );
       } else if (card) {
         // Só os campos que REALMENTE mudaram. Enviar o formulário inteiro fazia
@@ -1228,7 +1392,13 @@ export function CardModal({
           await updateCard(card.id, patch as Partial<Omit<Card, "id">>, {
             ctx,
             acao: "editada",
-            mudancas: diffCard(card, base, rotulos),
+            // O produto entra pelo NOME, resolvido agora: o histórico guarda
+            // texto congelado (ver `EstadoCard.produtoNome`).
+            mudancas: diffCard(
+              { ...card, produtoNome: nomeDoProduto(card.produtoId) },
+              { ...base, produtoNome: nomeDoProduto(base.produtoId) },
+              rotulos,
+            ),
           });
         }
       }
@@ -1422,153 +1592,46 @@ export function CardModal({
        */}
       <div className={styles.mcorpo}>
       <div className={styles.mdados}>
+      {/**
+        * OS ESSENCIAIS, SEMPRE À VISTA (#211): em que etapa a demanda está, de
+        * quem é, de que produto, e para quando. É o que se pergunta de toda
+        * demanda — o resto é detalhe que nem toda demanda tem, e mora atrás do
+        * "+ campo" logo abaixo enquanto estiver vazio.
+        */}
       <div className={styles.row2}>
         <div className={styles.field}>
-          <label className={styles.label}>Tipo</label>
+          <label className={styles.label}>Etapa</label>
           <Select
-            value={type}
-            options={typeOptions}
-            onChange={(v) => setType(v as DemandType)}
-            ariaLabel="Tipo da demanda"
+            value={columnId}
+            options={columnOptions}
+            onChange={setColumnId}
+            ariaLabel="Coluna"
           />
         </div>
         <div className={styles.field}>
-          <label className={styles.label}>Prioridade</label>
+          <label className={styles.label}>Responsável</label>
           <Select
-            value={priority}
-            options={priorityOptions}
-            onChange={(v) => setPriority(v as Priority)}
-            ariaLabel="Prioridade"
+            value={assignee ?? ""}
+            options={userOptions("— Ninguém —", assignee ?? "")}
+            onChange={setAssignee}
+            placeholder="— Ninguém —"
+            ariaLabel="Responsável"
           />
         </div>
       </div>
-
       <div className={styles.row2}>
+        {/* O PRODUTO DO PORTFÓLIO (#209). Lista que se digita, só com os
+            produtos deste setor — o Portfólio é por setor. Um só por demanda. */}
         <div className={styles.field}>
-          <label className={styles.labelLinha}>
-            Setor solicitante
-            <button
-              type="button"
-              className={styles.novoCadastro}
-              onClick={() => {
-                setCriando(criando === "setor" ? null : "setor");
-                setNovoNome("");
-                setErroCadastro(null);
-              }}
-            >
-              {criando === "setor" ? "cancelar" : "+ novo"}
-            </button>
-          </label>
-          {criando === "setor" ? (
-            <NovoCadastro
-              valor={novoNome}
-              onChange={setNovoNome}
-              onSalvar={salvarCadastro}
-              salvando={salvandoCadastro}
-              placeholder="Nome do setor…"
-            />
-          ) : (
-            <Combobox
-              value={requesterSector}
-              options={reqSetorOptions}
-              onChange={setRequesterSector}
-              placeholder="Digite para buscar…"
-              ariaLabel="Setor solicitante"
-              vazioTexto="Nenhum setor com esse nome. Use “+ novo” para cadastrar."
-            />
-          )}
-        </div>
-        <div className={styles.field}>
-          <label className={styles.labelLinha}>
-            Solicitante
-            <button
-              type="button"
-              className={styles.novoCadastro}
-              onClick={() => {
-                setCriando(criando === "pessoa" ? null : "pessoa");
-                setNovoNome("");
-                setErroCadastro(null);
-              }}
-            >
-              {criando === "pessoa" ? "cancelar" : "+ novo"}
-            </button>
-          </label>
-          {criando === "pessoa" ? (
-            <NovoCadastro
-              valor={novoNome}
-              onChange={setNovoNome}
-              onSalvar={salvarCadastro}
-              salvando={salvandoCadastro}
-              placeholder="Nome do solicitante…"
-            />
-          ) : (
-            <Combobox
-              value={requester}
-              options={solicOptions}
-              onChange={setRequester}
-              placeholder="Digite para buscar…"
-              ariaLabel="Solicitante"
-              vazioTexto="Ninguém com esse nome. Use “+ novo” para cadastrar."
-            />
-          )}
-        </div>
-        {erroCadastro && (
-          <div className={styles.err} style={{ gridColumn: "1 / -1" }}>
-            {erroCadastro}
-          </div>
-        )}
-      </div>
-
-      <div className={styles.field}>
-        <label className={styles.label}>Responsável</label>
-        <Select
-          value={assignee ?? ""}
-          options={userOptions("— Ninguém —", assignee ?? "")}
-          onChange={setAssignee}
-          placeholder="— Ninguém —"
-          ariaLabel="Responsável"
-        />
-      </div>
-
-      <div className={styles.row2}>
-        <div className={styles.field}>
-          <label className={styles.label}>Início</label>
-          <input
-            ref={inicioRef}
-            className={`${styles.inp} ${campoErro === "inicio" ? styles.inpErro : ""}`}
-            type="date"
-            value={startDate ?? ""}
-            onChange={(e) => {
-              setStartDate(e.target.value);
-              if (!e.target.value || !ehFimDeSemanaISO(e.target.value)) {
-                corrigiu("inicio");
-              }
-            }}
-            onBlur={() => saiuDaData("inicio")}
-            aria-invalid={campoErro === "inicio"}
-            aria-label="Início"
+          <label className={styles.label}>Produto</label>
+          <Combobox
+            value={produtoId}
+            options={opcoesDeProduto}
+            onChange={setProdutoId}
+            placeholder={produtos === null ? "Carregando o portfólio…" : "— Sem produto —"}
+            ariaLabel="Produto do portfólio"
+            vazioTexto="Nenhum produto com esse nome no portfólio deste setor."
           />
-          {(campoErro === "inicio" || inicioHerdado) &&
-            !!startDate &&
-            ehFimDeSemanaISO(startDate) && (
-              <div
-                className={
-                  inicioHerdado ? styles.avisoDataNota : styles.avisoData
-                }
-              >
-                {fraseFimDeSemana("inicio", startDate)}{" "}
-                <button
-                  type="button"
-                  className={styles.avisoAcao}
-                  onClick={() => {
-                    setStartDate(proximoDiaUtilISO(startDate));
-                    corrigiu("inicio");
-                  }}
-                >
-                  Usar {diaEMes(proximoDiaUtilISO(startDate))}
-                </button>
-              </div>
-            )}
         </div>
         <div className={styles.field}>
           {/* `div` e não `label`: o `label` da opção mora aqui dentro, e um
@@ -1643,23 +1706,162 @@ export function CardModal({
         </div>
       </div>
 
-      {/* Sozinho na linha e ainda assim dentro de `.row2`: é a grade que o
-          segura na largura de um campo. O `<div className={styles.field} />`
-          vazio que fazia esse papel no layout antigo saiu — ele não era um
-          campo, era um calço, e na coluna estreita ele viraria 14px de vão
-          entre "Coluna" e "Tags" sem nada dentro. */}
-      <div className={styles.row2}>
+      {/**
+        * OS OPCIONAIS só aparecem quando têm valor ou quando alguém os pede em
+        * "+ campo". Uma vez à vista, ficam até o modal fechar: esvaziar um
+        * campo não o faz sumir debaixo do cursor de quem está editando.
+        */}
+      {(ver("tipo") || ver("prioridade")) && (
+        <div className={styles.row2}>
+          {ver("tipo") && (
         <div className={styles.field}>
-          <label className={styles.label}>Coluna</label>
+          <label className={styles.label}>Tipo</label>
           <Select
-            value={columnId}
-            options={columnOptions}
-            onChange={setColumnId}
-            ariaLabel="Coluna"
+            value={type}
+            options={typeOptions}
+            onChange={(v) => setType(v as DemandType)}
+            ariaLabel="Tipo da demanda"
           />
         </div>
-      </div>
+          )}
+          {ver("prioridade") && (
+        <div className={styles.field}>
+          <label className={styles.label}>Prioridade</label>
+          <Select
+            value={priority}
+            options={priorityOptions}
+            onChange={(v) => setPriority(v as Priority)}
+            ariaLabel="Prioridade"
+          />
+        </div>
+          )}
+        </div>
+      )}
 
+      {ver("solicitante") && (
+        <div className={styles.row2}>
+        <div className={styles.field}>
+          <label className={styles.labelLinha}>
+            Setor solicitante
+            <button
+              type="button"
+              className={styles.novoCadastro}
+              onClick={() => {
+                setCriando(criando === "setor" ? null : "setor");
+                setNovoNome("");
+                setErroCadastro(null);
+              }}
+            >
+              {criando === "setor" ? "cancelar" : "+ novo"}
+            </button>
+          </label>
+          {criando === "setor" ? (
+            <NovoCadastro
+              valor={novoNome}
+              onChange={setNovoNome}
+              onSalvar={salvarCadastro}
+              salvando={salvandoCadastro}
+              placeholder="Nome do setor…"
+            />
+          ) : (
+            <Combobox
+              value={requesterSector}
+              options={reqSetorOptions}
+              onChange={setRequesterSector}
+              placeholder="Digite para buscar…"
+              ariaLabel="Setor solicitante"
+              vazioTexto="Nenhum setor com esse nome. Use “+ novo” para cadastrar."
+            />
+          )}
+        </div>
+        <div className={styles.field}>
+          <label className={styles.labelLinha}>
+            Solicitante
+            <button
+              type="button"
+              className={styles.novoCadastro}
+              onClick={() => {
+                setCriando(criando === "pessoa" ? null : "pessoa");
+                setNovoNome("");
+                setErroCadastro(null);
+              }}
+            >
+              {criando === "pessoa" ? "cancelar" : "+ novo"}
+            </button>
+          </label>
+          {criando === "pessoa" ? (
+            <NovoCadastro
+              valor={novoNome}
+              onChange={setNovoNome}
+              onSalvar={salvarCadastro}
+              salvando={salvandoCadastro}
+              placeholder="Nome do solicitante…"
+            />
+          ) : (
+            <Combobox
+              value={requester}
+              options={solicOptions}
+              onChange={setRequester}
+              placeholder="Digite para buscar…"
+              ariaLabel="Solicitante"
+              vazioTexto="Ninguém com esse nome. Use “+ novo” para cadastrar."
+            />
+          )}
+        </div>
+        {erroCadastro && (
+          <div className={styles.err} style={{ gridColumn: "1 / -1" }}>
+            {erroCadastro}
+          </div>
+        )}
+        </div>
+      )}
+
+      {ver("inicio") && (
+        <div className={styles.row2}>
+        <div className={styles.field}>
+          <label className={styles.label}>Início</label>
+          <input
+            ref={inicioRef}
+            className={`${styles.inp} ${campoErro === "inicio" ? styles.inpErro : ""}`}
+            type="date"
+            value={startDate ?? ""}
+            onChange={(e) => {
+              setStartDate(e.target.value);
+              if (!e.target.value || !ehFimDeSemanaISO(e.target.value)) {
+                corrigiu("inicio");
+              }
+            }}
+            onBlur={() => saiuDaData("inicio")}
+            aria-invalid={campoErro === "inicio"}
+            aria-label="Início"
+          />
+          {(campoErro === "inicio" || inicioHerdado) &&
+            !!startDate &&
+            ehFimDeSemanaISO(startDate) && (
+              <div
+                className={
+                  inicioHerdado ? styles.avisoDataNota : styles.avisoData
+                }
+              >
+                {fraseFimDeSemana("inicio", startDate)}{" "}
+                <button
+                  type="button"
+                  className={styles.avisoAcao}
+                  onClick={() => {
+                    setStartDate(proximoDiaUtilISO(startDate));
+                    corrigiu("inicio");
+                  }}
+                >
+                  Usar {diaEMes(proximoDiaUtilISO(startDate))}
+                </button>
+              </div>
+            )}
+        </div>
+        </div>
+      )}
+
+      {ver("tags") && (
+        <>
       <div className={styles.sectionLabel}>Tags</div>
       <div className={styles.tagsEdit}>
         {tags.map((t) => (
@@ -1780,17 +1982,32 @@ export function CardModal({
           </span>
         </div>
       )}
+        </>
+      )}
+
+      <MaisCampos
+        opcoes={CAMPOS_OPCIONAIS.filter((c) => !ver(c.id))}
+        onAbrir={(id) => abrirCampo(id as CampoOpcional)}
+      />
 
       </div>
       <div className={styles.mconteudo}>
 
-      <div className={styles.sectionLabel}>Descrição</div>
+      {/* AS QUATRO SEÇÕES SE RECOLHEM (#211), e nascem abertas só quando têm
+          conteúdo: a demanda recém-criada abre sem quatro áreas de digitação
+          vazias, e a que já tem descrição e checklist abre como sempre. */}
+      <SecaoRecolhivel
+        titulo="Descrição"
+        aberta={secoes.descricao}
+        onAlternar={() => alternarSecao("descricao")}
+      >
       <textarea
         className={styles.textarea}
         value={description}
         onChange={(e) => setDescription(e.target.value)}
         placeholder="Contexto, requisitos, links…"
       />
+      </SecaoRecolhivel>
 
       {/* O campo acima já promete "links" — e é ali que eles vinham parando, no
           meio da prosa: sem poder abrir num clique, sem rótulo, e apagados sem
@@ -1798,9 +2015,12 @@ export function CardModal({
           em forma de dado: cada endereço vira uma linha que abre, se nomeia e
           se remove sozinha. Fica fora do `!isNew` de propósito — a demanda
           costuma nascer de um arquivo que já existe. */}
-      <div className={styles.sectionLabel}>
-        Links{links.length > 0 ? ` · ${links.length}` : ""}
-      </div>
+      <SecaoRecolhivel
+        titulo="Links"
+        resumo={links.length ? String(links.length) : ""}
+        aberta={secoes.links}
+        onAlternar={() => alternarSecao("links")}
+      >
       {links.map((l) => (
         <div key={l.id} className={styles.linkRow}>
           {/* Fundo e tinta saem juntos: branco chapado desaparece no amarelo
@@ -1899,11 +2119,14 @@ export function CardModal({
           {erroLink}
         </div>
       )}
+      </SecaoRecolhivel>
 
-      <div className={styles.sectionLabel}>
-        Checklist
-        {checklist.length > 0 ? ` · ${doneCount}/${checklist.length}` : ""}
-      </div>
+      <SecaoRecolhivel
+        titulo="Checklist"
+        resumo={checklist.length ? `${doneCount}/${checklist.length}` : ""}
+        aberta={secoes.checklist}
+        onAlternar={() => alternarSecao("checklist")}
+      >
       {checklist.length > 0 && (
         <div className={styles.checkBar} style={{ marginBottom: 10 }}>
           <div className={styles.checkFill} style={{ width: `${pct}%` }} />
@@ -1960,12 +2183,15 @@ export function CardModal({
           Adicionar
         </button>
       </div>
+      </SecaoRecolhivel>
 
       {!isNew && (
-        <>
-          <div className={styles.sectionLabel}>
-            Comentários{comments.length ? ` · ${comments.length}` : ""}
-          </div>
+        <SecaoRecolhivel
+          titulo="Comentários"
+          resumo={comments.length ? String(comments.length) : ""}
+          aberta={secoes.comentarios}
+          onAlternar={() => alternarSecao("comentarios")}
+        >
           <div className={styles.comments}>
             {comments.length === 0 ? (
               <div className={styles.noComments}>Nenhum comentário ainda.</div>
@@ -2097,7 +2323,7 @@ export function CardModal({
               ? "Salvando comentário…"
               : "Salvo sozinho ao fechar o card — Ctrl+Enter salva agora."}
           </div>
-        </>
+        </SecaoRecolhivel>
       )}
 
       </div>
@@ -2242,6 +2468,14 @@ export function CardModal({
                   " — casada pelo nome, porque os dois setores criaram essa etapa separadamente"}
                 .
               </li>
+              {plano.saiDoProduto && (
+                <li>
+                  A demanda <strong>sai do produto</strong>{" "}
+                  {nomeDoProduto(card?.produtoId) ?? "do portfólio"}: o
+                  portfólio é de cada setor, e o de {sector} não aparece em{" "}
+                  {plano.destino}.
+                </li>
+              )}
               {plano.responsavelForaDoDestino && (
                 <li>
                   O responsável atual <strong>não participa de {plano.destino}</strong>.

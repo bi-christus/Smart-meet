@@ -63,6 +63,7 @@ export const CAMPO_LABEL: Record<string, string> = {
   assignee: "responsável",
   requester: "solicitante",
   requesterSector: "setor solicitante",
+  produtoId: "produto",
   startDate: "início",
   due: "prazo",
   tags: "tags",

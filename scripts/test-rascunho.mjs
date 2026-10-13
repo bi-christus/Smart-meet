@@ -147,7 +147,7 @@ console.log("\n— o dicionário cobre o formulário —");
 // acrescentar um lá e esquecer aqui, a frase passa a mostrar o nome interno.
 const CAMPOS_DO_SUBMIT = [
   "title", "description", "columnId", "type", "assignee", "requester",
-  "requesterSector", "startDate", "due",
+  "requesterSector", "produtoId", "startDate", "due",
   "priority", "tags", "tagRefs", "checklist", "links",
 ];
 const semRotulo = CAMPOS_DO_SUBMIT.filter((c) => !CAMPO_LABEL[c]);

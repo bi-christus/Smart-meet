@@ -156,7 +156,7 @@ const TEM_CONTEUDO = /[\p{L}\p{N}]/u;
 export function conferirLink(bruto: Partial<RascunhoDeLink>): LinkConferido {
   const nome = typeof bruto.nome === "string" ? bruto.nome.trim() : "";
   if (!nome || !TEM_CONTEUDO.test(nome)) {
-    return { ok: false, campo: "nome", motivo: "Dê um nome ao link." };
+    return { ok: false, campo: "nome", motivo: "Dê um nome ao produto." };
   }
   if (nome.length > LIMITE_NOME_LINK) {
     return {
@@ -168,7 +168,7 @@ export function conferirLink(bruto: Partial<RascunhoDeLink>): LinkConferido {
 
   const urlBruta = typeof bruto.url === "string" ? bruto.url.trim() : "";
   if (!urlBruta) {
-    return { ok: false, campo: "url", motivo: "Cole o endereço do link." };
+    return { ok: false, campo: "url", motivo: "Cole o endereço do produto." };
   }
   const url = normalizarUrl(urlBruta);
   if (!url) {
@@ -253,7 +253,7 @@ export function conflitoDeLink(
   if (mesmoNome) {
     return {
       campo: "nome",
-      motivo: `Já existe um link chamado “${mesmoNome.nome}” neste setor.`,
+      motivo: `Já existe um produto chamado “${mesmoNome.nome}” neste portfólio.`,
     };
   }
   return null;

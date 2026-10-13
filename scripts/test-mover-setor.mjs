@@ -150,6 +150,7 @@ const card = {
   assignee: "ana@px.com.br",
   dimensaoId: "d1",
   subdimensaoId: "s3",
+  produtoId: "painel-vendas",
 };
 
 const plano = planoDaMudanca({
@@ -169,6 +170,23 @@ checa(
   plano?.patch.dimensaoId === null && plano?.patch.subdimensaoId === null,
 );
 checa("e a tela é avisada disso", plano?.limpaClassificacao === true);
+// O Portfólio é por setor (#209): o produto da origem pode nem ser visível no
+// destino, e o andamento dele contaria uma demanda que já não é do setor.
+checa(
+  "o produto do Portfólio de origem sai junto — o portfólio é por setor",
+  plano?.patch.produtoId === null,
+);
+checa("e a tela é avisada disso também", plano?.saiDoProduto === true);
+checa(
+  "demanda sem produto não anuncia que vai sair de um",
+  planoDaMudanca({
+    pessoa: operador,
+    card: { ...card, produtoId: null },
+    destino: "Cantinas",
+    colsDestino: padrao,
+    agora: 1,
+  })?.saiDoProduto === false,
+);
 checa(
   "o relógio da etapa recomeça — senão o card chega dizendo que está parado",
   plano?.patch.enteredAt === 5000,
@@ -204,7 +222,7 @@ checa(
 checa(
   "solicitante e responsável NÃO entram no patch: quem pediu continua quem pediu",
   Object.keys(plano.patch).sort().join(",") ===
-    "columnId,conclusaoPedida,dimensaoId,enteredAt,order,sector,setoresAnteriores,subdimensaoId",
+    "columnId,conclusaoPedida,dimensaoId,enteredAt,order,produtoId,sector,setoresAnteriores,subdimensaoId",
   Object.keys(plano.patch).sort().join(","),
 );
 checa(

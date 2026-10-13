@@ -68,6 +68,7 @@ export type CardParaFundir = {
   assignee?: string | null;
   requester?: string | null;
   requesterSector?: string | null;
+  produtoId?: string | null;
   startDate?: string | null;
   due?: string | null;
   tags?: string[];
@@ -161,6 +162,9 @@ export const CAMPOS_ESCOLHIVEIS = [
   "priority",
   "startDate",
   "due",
+  // Uma demanda pertence a UM produto (#209): dois produtos diferentes não se
+  // juntam, alguém escolhe.
+  "produtoId",
 ] as const;
 export type CampoEscolhivel = (typeof CAMPOS_ESCOLHIVEIS)[number];
 
@@ -172,6 +176,7 @@ export const CAMPO_DA_FUSAO_ROTULO: Record<CampoEscolhivel, string> = {
   priority: "Prioridade",
   startDate: "Início",
   due: "Prazo",
+  produtoId: "Produto",
 };
 
 /**
@@ -204,6 +209,7 @@ export function camposEmConflito(
   if (difere(a.priority, b.priority)) out.push("priority");
   if (difere(a.startDate, b.startDate)) out.push("startDate");
   if (difere(a.due, b.due)) out.push("due");
+  if (difere(a.produtoId, b.produtoId)) out.push("produtoId");
   return out;
 }
 
@@ -219,6 +225,7 @@ export type Escolhas = {
   priority: Lado;
   startDate: Lado;
   due: Lado;
+  produtoId: Lado;
 };
 
 /**
@@ -251,6 +258,7 @@ export function escolhasIniciais(
     priority: lado(vencedor.priority, perdido.priority),
     startDate: lado(vencedor.startDate, perdido.startDate),
     due: lado(vencedor.due, perdido.due),
+    produtoId: lado(vencedor.produtoId, perdido.produtoId),
   };
 }
 
@@ -463,6 +471,7 @@ export function resultadoDaFusao(args: {
       priority: de(e.priority).priority ?? v.priority ?? null,
       startDate: de(e.startDate).startDate ?? null,
       due: de(e.due).due ?? null,
+      produtoId: de(e.produtoId).produtoId ?? null,
       // Os três que a regra da fusão preserva. Herdados, e não escolhidos: o
       // vazio de um lado combina com o valor do outro, e é justamente por isso
       // que a fusão foi permitida.
