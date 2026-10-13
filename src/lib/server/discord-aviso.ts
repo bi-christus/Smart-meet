@@ -26,7 +26,6 @@ import {
   deveMandarDireto,
   montarAviso,
   montarAvisoDireto,
-  montarResumoDeRecorrencias,
   montarResumoDiario,
   resolverWebhook,
   type Canal,
@@ -285,43 +284,6 @@ export async function publicarEventoSemQuebrar(
   } catch (e) {
     console.warn("discord: aviso não saiu para", cardId, e);
   }
-}
-
-/**
- * UMA mensagem para a rodada inteira do cron de recorrências.
- *
- * E não um aviso por card, que é a escolha óbvia e a errada: o cron pode abrir
- * dezenas de cards às 06:10, e vinte mensagens seguidas no canal, todas iguais
- * menos o título, é o jeito de fazer alguém silenciar o canal. Canal silenciado
- * apaga também os avisos que importam — preço alto demais por uma rotina
- * automática que ninguém precisa acompanhar card a card.
- *
- * Sem marca de idempotência aqui, ao contrário de `publicarEvento`: a chamada
- * acontece uma vez por rodada, e a rodada já é protegida contra repetição pela
- * transação que cria a ocorrência (um card por data prevista). Não há evento
- * único a marcar.
- */
-export async function publicarResumoDeRecorrencias(args: {
-  sector: string;
-  cards: { id: string; title: string; responsavel?: string | null }[];
-}): Promise<Resultado> {
-  const { sector, cards } = args;
-  if (cards.length === 0) return { enviado: false, motivo: "nada-a-dizer" };
-
-  // `alertas`, e não `novas`: a rodada do cron não é notícia de demanda
-  // nascendo — é rotina automática, e o canal de entrada existe para o trabalho
-  // que alguém pediu. Misturar as duas faz `#demandas-novas` amanhecer com
-  // quinze linhas de manutenção todo dia.
-  const url = webhookDe(sector, "alertas");
-  if (!url) return { enviado: false, motivo: "sem-webhook" };
-
-  // A montagem é regra e mora no módulo puro, com teste; o que sobra para cá é
-  // resolver o destino e mandar.
-  await enviarAviso(
-    url,
-    montarResumoDeRecorrencias({ sector, cards, appUrl: appUrl() }),
-  );
-  return { enviado: true };
 }
 
 /**
