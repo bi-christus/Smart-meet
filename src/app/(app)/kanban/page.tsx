@@ -100,6 +100,7 @@ import {
   CAMPOS_DA_ETAPA,
   CAMPO_DA_ETAPA_ROTULO,
   SUGESTAO_POR_ETAPA,
+  exigenciasDaEtapa,
   normalizarExigencias,
   oQueAPassagemPede,
   type CampoDaEtapa,
@@ -862,7 +863,7 @@ export default function KanbanPage() {
       origem: c.columnId,
       destino: col.colId,
       ordem: displayCols.map((x) => x.colId),
-      exigencias: normalizarExigencias(col.campos),
+      exigencias: exigenciasDaEtapa(col.colId, col.campos),
       card: c,
     });
   }
@@ -1480,7 +1481,7 @@ export default function KanbanPage() {
                        * pela porta da frente. O que já foi digitado vai para o
                        * modal completo, que cobra o resto.
                        */
-                      const obrig = normalizarExigencias(col.campos).filter(
+                      const obrig = exigenciasDaEtapa(col.colId, col.campos).filter(
                         (e) =>
                           e.obrigatorio &&
                           !(e.campo === "produtoId" && produtoId),
@@ -2814,7 +2815,9 @@ function ColumnModal({
    * escrita também pelo console — e gravados já normalizados.
    */
   const [campos, setCampos] = useState<ExigenciaDaEtapa[]>(() =>
-    normalizarExigencias(col?.campos),
+    // Etapa nunca configurada abre mostrando a sugestão, que é o que ela já
+    // pede na prática (`exigenciasDaEtapa`) — o gestor vê a régua em vigor.
+    col ? exigenciasDaEtapa(col.colId, col.campos) : [],
   );
   const sugestao = col ? SUGESTAO_POR_ETAPA[col.colId] : undefined;
   function alternarCampo(c: CampoDaEtapa) {

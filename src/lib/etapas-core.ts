@@ -196,3 +196,21 @@ export const SUGESTAO_POR_ETAPA: Readonly<Record<string, readonly ExigenciaDaEta
   aguardando: [{ campo: "comentario", obrigatorio: true }],
   validacao: [{ campo: "links", obrigatorio: false }],
 };
+
+/**
+ * O que a etapa pede DE FATO: a configuração do gestor ou, quando ninguém
+ * configurou a etapa, a sugestão padrão dela.
+ *
+ * POR QUE A SUGESTÃO VALE SOZINHA. Na primeira versão (#212) ela era só um
+ * botão no modal da coluna, e nenhum quadro foi configurado: a caixa de
+ * passagem nunca abria, e o setor leu isso como "a funcionalidade não existe"
+ * (13/10/2026). Etapa padrão já nasce pedindo o que a sugestão diz.
+ *
+ * AUSENTE ≠ VAZIA. `campos` ausente no documento é "nunca configurado" e cai na
+ * sugestão; uma lista vazia gravada é o gestor dizendo "esta etapa não pede
+ * nada", e é respeitada.
+ */
+export function exigenciasDaEtapa(colId: string, campos: unknown): ExigenciaDaEtapa[] {
+  if (Array.isArray(campos)) return normalizarExigencias(campos);
+  return normalizarExigencias(SUGESTAO_POR_ETAPA[colId] ?? []);
+}
