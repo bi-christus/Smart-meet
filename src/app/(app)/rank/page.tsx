@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useSetoresDaPessoa } from "@/lib/setores";
-import { subscribeUsers, type UserProfile } from "@/lib/users";
+import { avatarDe, subscribeUsers, type UserProfile } from "@/lib/users";
 import { PerfilModal } from "@/components/perfil-modal";
 import {
   subscribeCardsForSectors,
@@ -14,15 +14,14 @@ import {
   type ColumnDoc,
 } from "@/lib/kanban";
 import {
-  TAM_PLATEIA,
-  alturaDoDegrau,
-  escalaDaFileira,
+  alturaDaBarra,
   maiorEntrega,
   montarRank,
   ordemNaFileira,
-  partirCena,
   type Colocacao,
 } from "@/lib/rank-core";
+import { ehEntrega } from "@/lib/entregas-core";
+import { FUSO_DO_SETOR } from "@/lib/datas";
 // A regra "este card conta como entrega, e de quem" saiu deste arquivo e virou
 // módulo puro, porque os emblemas do perfil precisam EXATAMENTE dela. Duas
 // cópias divergiriam no primeiro ajuste — e o sintoma seria o pódio e o emblema
@@ -31,9 +30,8 @@ import {
 import {
   entregasDoMes,
   mesAtual,
-  pontualidadeDoMes,
+  mesDe,
   rotuloMes,
-  rotuloPontualidade,
 } from "@/lib/temporadas-core";
 import {
   listarTemporadasFechadas,
@@ -48,7 +46,19 @@ import { ErrorState } from "@/components/error-state";
 import { SkeletonAvatar } from "@/components/skeleton";
 import { Select, type SelectOption } from "@/components/select";
 import { Icon } from "@/components/icons";
+import { Space_Mono } from "next/font/google";
 import styles from "./rank.module.css";
+
+/**
+ * A fonte do título lateral (13/10/2026): monoespaçada de exibição, no estilo
+ * terminal que o setor escolheu como referência. Carregada SÓ nesta tela —
+ * fora do layout raiz de propósito, para nenhuma outra tela pagar o download.
+ */
+const monoTitulo = Space_Mono({
+  subsets: ["latin"],
+  weight: "700",
+  variable: "--fonte-titulo",
+});
 
 /**
  * Rank — quem entregou, e quanto, TEMPORADA a temporada.
@@ -164,24 +174,6 @@ export default function RankPage() {
     [cards, setorDoPodio],
   );
 
-  /** Pontualidade de cada pessoa na temporada atual — ver `pontualidadeDoMes`. */
-  const pontualidade = useMemo(
-    () =>
-      vendoAtual
-        ? pontualidadeDoMes(cardsDoPodio, entreguesPorSetor, mesEscolhido)
-        : new Map<string, { noPrazo: number; comPrazo: number }>(),
-    [vendoAtual, cardsDoPodio, entreguesPorSetor, mesEscolhido],
-  );
-  /** A pontualidade do pódio inteiro, para a linha de baixo do título. */
-  const pontualidadeGeral = useMemo(() => {
-    let noPrazo = 0;
-    let comPrazo = 0;
-    pontualidade.forEach((p) => {
-      noPrazo += p.noPrazo;
-      comPrazo += p.comPrazo;
-    });
-    return comPrazo ? rotuloPontualidade({ noPrazo, comPrazo }) : "";
-  }, [pontualidade]);
 
   /** A temporada em exibição: ao vivo (mês corrente) ou congelada (mês passado). */
   const { colocacoes, totalEntregas, vencedores, semFechamento } = useMemo(() => {
@@ -193,6 +185,9 @@ export default function RankPage() {
           rotulo: usersMap[email]?.name || email,
           entregues,
         })),
+        // Sem teto: o gráfico mostra TODO MUNDO que entregou (13/10/2026). A
+        // temporada fechada continua como foi gravada, com o teto de então.
+        Number.POSITIVE_INFINITY,
       );
       // Mês em andamento não tem campeão OFICIAL ainda — só o cron do dia 1
       // registra um vencedor, e é isso que separa "quem está na frente agora"
@@ -229,6 +224,25 @@ export default function RankPage() {
     };
   }, [vendoAtual, cardsDoPodio, entreguesPorSetor, mesEscolhido, usersMap, fTemporadaFechada.data, setorDoPodio]);
 
+  /**
+   * As demandas entregues na temporada, da mais recente para a mais antiga — a
+   * lista ao lado do gráfico. Mesmo recorte do pódio ao vivo (`enteredAt` no
+   * mês, numa coluna de entrega do setor), lido dos cards, então vale também
+   * para a temporada fechada, cujo documento não guardou demanda nenhuma.
+   */
+  const entregasDaTemporada = useMemo(
+    () =>
+      cardsDoPodio
+        .filter(
+          (c) =>
+            typeof c.enteredAt === "number" &&
+            mesDe(c.enteredAt) === mesEscolhido &&
+            ehEntrega(c, entreguesPorSetor),
+        )
+        .sort((a, b) => (b.enteredAt ?? 0) - (a.enteredAt ?? 0)),
+    [cardsDoPodio, mesEscolhido, entreguesPorSetor],
+  );
+
   /** A temporada fechada exibida é das antigas, sem pódio por setor. */
   const foiGeral = !vendoAtual && !!fTemporadaFechada.data?.[0] && !fTemporadaFechada.data[0].porSetor;
 
@@ -257,7 +271,7 @@ export default function RankPage() {
 
 
   return (
-    <div className={styles.page}>
+    <div className={`${styles.page} ${monoTitulo.variable}`}>
       <Cabecalho
         sub={
           fontes.carregando || fontes.erro
@@ -269,7 +283,6 @@ export default function RankPage() {
                 [
                   `${totalEntregas} ${totalEntregas === 1 ? "demanda entregue" : "demandas entregues"}`,
                   rotuloMes(mesEscolhido),
-                  pontualidadeGeral && `${pontualidadeGeral} no prazo`,
                 ]
                   .filter(Boolean)
                   .join(" · ")
@@ -349,7 +362,7 @@ export default function RankPage() {
            mesma espera em sequência. */
         <div className={styles.esqueleto}>
           <SkeletonAvatar
-            sizes={[TAM_PLATEIA, TAM_AVATAR[2], TAM_AVATAR[1], TAM_AVATAR[3], TAM_PLATEIA]}
+            sizes={[64, 88, 112, 88, 64]}
             texto="Montando o pódio…"
           />
         </div>
@@ -389,16 +402,26 @@ export default function RankPage() {
            de tela e não como outra temporada. A `key` fica AQUI, e não na
            `.page`: a sala não se reconstrói quando muda o mês, só quem sobe
            nela. */
-        <Cena
-          /* O setor entra na chave junto do mês: trocar de setor também troca
-             o elenco, e o pódio novo precisa entrar em cena. */
-          key={`${mesEscolhido}|${setorDoPodio}`}
-          colocacoes={colocacoes}
-          usersMap={usersMap}
-          campea={!vendoAtual}
-          pontualidade={pontualidade}
-          onPerfil={setPerfilDe}
-        />
+        /* O cartaz (13/10/2026): o gráfico com todo mundo em cima e, embaixo,
+           o título de pé encostado nas entregas da temporada, da mais recente
+           para a mais antiga — como o "RACE RESULT" da referência. */
+        <div className={styles.palco}>
+          <Cena
+            /* O setor entra na chave junto do mês: trocar de setor também
+               troca o elenco, e o gráfico novo precisa entrar em cena. */
+            key={`${mesEscolhido}|${setorDoPodio}`}
+            colocacoes={colocacoes}
+            usersMap={usersMap}
+            campea={!vendoAtual}
+            onPerfil={setPerfilDe}
+          />
+          {/* O título encosta na lista, como o "RACE RESULT" encosta na tabela
+              do cartaz — e não na borda da página, longe do que ele nomeia. */}
+          <div className={styles.cartaz}>
+            <TituloLateral />
+            <ListaDeEntregas entregas={entregasDaTemporada} usersMap={usersMap} />
+          </div>
+        </div>
       )}
 
       {/**
@@ -447,72 +470,52 @@ function Cabecalho({
 }
 
 /**
- * Diâmetro do rosto de quem sobe em plinto — a hierarquia é o TAMANHO, não a cor.
+ * O tamanho do retrato — a hierarquia é o TAMANHO, não a cor, como sempre foi.
  *
- * O pedido era foto grande o bastante para reconhecer o rosto, e é isso que
- * decide a escala inteira desta tela: 112px no primeiro lugar contra os 30px da
- * topbar e os 22px do card do Kanban. Quem está de pé no chão usa `TAM_PLATEIA`
- * (52px), que é o menor diâmetro em que um rosto ainda se reconhece.
+ * Retrato e não círculo (13/10/2026): o desenho segue o cartaz de resultado de
+ * corrida que o setor escolheu — foto em cartão de canto arredondado em cima,
+ * com a colocação escrita na vertical ao lado ("P1"). A foto é a do perfil de
+ * cada pessoa (`avatarDe`), a mesma do resto do app.
+ *
+ * Com muita gente a fileira inteira encolhe um degrau, para caber sem rolar
+ * nas temporadas comuns.
  */
-const TAM_AVATAR: Record<number, number> = { 1: 112, 2: 88, 3: 88 };
+function tamanhoDoRetrato(posicao: number, quantos: number): { w: number; h: number } {
+  const base = posicao === 1 ? 124 : posicao <= 3 ? 100 : 76;
+  const fator = quantos <= 6 ? 1 : quantos <= 10 ? 0.84 : 0.7;
+  const w = Math.round(base * fator);
+  return { w, h: Math.round(w * 1.22) };
+}
 
 /**
- * A cena inteira: uma fileira só, ninguém abaixo de ninguém.
+ * A cena: TODO MUNDO em barra (13/10/2026).
  *
- * O QUE MUDOU E POR QUÊ. Até aqui a tela era um pódio de três e, ABAIXO dele,
- * uma fila de cartões do 4º ao 8º — duas peças empilhadas, com a segunda lida
- * como "e também tem estes aqui". O Ítalo olhou o print e recusou: todo mundo
- * na mesma fileira. É o que esta cena faz, sem desmontar o pódio: os três
- * primeiros continuam sobre PLINTOS, e do quarto em diante as pessoas ficam DE
- * PÉ no mesmo chão, ao lado. Uma linha de contato só, dois tratamentos —
- * "estes três subiram, o resto está no palco" se lê sem legenda.
+ * Até aqui só os três primeiros subiam em plinto e o resto ficava de pé no
+ * chão. O pedido mudou para todos no gráfico de barras: cada pessoa ganha a
+ * sua, do mesmo material de pedra de antes, com a altura de `alturaDaBarra` —
+ * os três primeiros mantêm a escada do pódio, e do 4º em diante a barra é
+ * proporcional à contagem, sempre abaixo do 3º.
  *
- * A ORDEM. O 1º no meio, os demais descendo para as duas bordas
- * (… 6º 4º 2º **1º** 3º 5º 7º …). Quem calcula isso é `ordemNaFileira`, que
- * devolve `order` de CSS — e o comentário dela explica por que o DOM agora sai
- * em ordem de COLOCAÇÃO, revertendo a regra que este arquivo seguia quando o
- * pódio tinha três peças.
- *
- * QUANDO NÃO HÁ PÓDIO. `partirCena` decide, e não este componente: há meses em
- * que ninguém subiu — no dia 2 de qualquer temporada todo mundo tem uma entrega
- * e todo mundo está em primeiro. Ali a cena inteira vira fileira, com o rosto
- * maior, e o 1º lugar mantém o anel da marca sem plinto nenhum.
+ * A ORDEM continua a de `ordemNaFileira`: o 1º no meio, os demais descendo para
+ * as bordas, e o DOM em ordem de colocação dentro de um `<ol>`.
  */
 function Cena({
   colocacoes,
   usersMap,
   campea,
-  pontualidade,
   onPerfil,
 }: {
   colocacoes: Colocacao[];
   usersMap: Record<string, UserProfile>;
   /** Temporada FECHADA sendo exibida — é o que acende o acento de campeão. */
   campea: boolean;
-  /** Por e-mail; vazio na temporada fechada, que não guardou o dado. */
-  pontualidade: ReadonlyMap<string, { noPrazo: number; comPrazo: number }>;
   onPerfil: (p: UserProfile) => void;
 }) {
-  const noPrazoDe = (chave: string) => {
-    const p = pontualidade.get(chave);
-    return p ? `${rotuloPontualidade(p)} no prazo` : undefined;
-  };
-  const { degraus, plateia } = useMemo(() => partirCena(colocacoes), [colocacoes]);
   const maior = maiorEntrega(colocacoes);
-  // Com pódio, quem está no chão é coadjuvante e usa o diâmetro mínimo. Sem
-  // pódio, a fileira é tudo o que a tela tem, e o rosto cresce até onde a
-  // quantidade de gente permitir.
-  const rosto = degraus.length > 0 ? TAM_PLATEIA : escalaDaFileira(plateia.length);
 
   /**
-   * Enquadra o campeão quando a fileira não cabe.
-   *
-   * `ref` de função, e não `useEffect`: o callback roda no commit, ANTES da
-   * pintura. Num efeito, o primeiro quadro sairia com a rolagem em zero — quem
-   * abre o Rank no telefone veria o último colocado, e o pódio entraria pela
-   * direita depois. Sem `scroll-behavior: smooth` em lugar nenhum: enquadrar
-   * antes de alguém olhar não é animação, e animar ali seria movimento sem
-   * informação.
+   * Enquadra o campeão quando a fileira não cabe. `ref` de função, e não
+   * `useEffect`: roda antes da pintura, e o primeiro quadro já sai centrado.
    */
   const enquadra = useCallback((el: HTMLDivElement | null) => {
     if (el) el.scrollLeft = (el.scrollWidth - el.clientWidth) / 2;
@@ -522,29 +525,14 @@ function Cena({
     <div
       className={styles.trilho}
       ref={enquadra}
-      /* Região rolável precisa ser alcançável por teclado (WCAG 2.1.1). Os
-         rostos AGORA são focáveis — cada um virou botão que abre o perfil —, e
-         normalmente isso já bastaria: tabular por eles rola o trilho sozinho.
-
-         O `tabIndex` fica assim mesmo, e por um caso que existe: só vira botão
-         quem está em `/users`. Um ranking cujas pessoas saíram do cadastro (ou
-         uma temporada antiga de quem já não está na Rede) desenha uma fileira
-         inteira de rostos não focáveis — e aí o trilho volta a ser uma região
-         rolável sem nada dentro para alcançar. Uma parada a mais de Tab custa
-         pouco; a região inalcançável custa a quem depende do teclado. */
+      /* Região rolável alcançável por teclado (WCAG 2.1.1): quem saiu do
+         cadastro não vira botão, e a fileira pode não ter nada focável. */
       tabIndex={0}
       role="group"
       aria-label="Colocações da temporada"
     >
-      {/* Um `<ol>` para o rank INTEIRO, com `value` em cada item — a semântica
-          que a tela sempre afirmou e nunca teve (o pódio era `<div>` e só a
-          fila era lista). */}
       <ol className={styles.fileira}>
-        {/* `indice` é a posição na lista INTEIRA, e é o que decide de que lado
-            da fileira a pessoa fica (`ordemNaFileira`). Como os degraus são
-            sempre o começo do ranking, somar `degraus.length` no chão dá o
-            índice global sem precisar concatenar as duas listas. */}
-        {degraus.map((c, i) => (
+        {colocacoes.map((c, i) => (
           <Degrau
             key={c.chave}
             colocacao={c}
@@ -552,24 +540,10 @@ function Cena({
             onPerfil={onPerfil}
             maior={maior}
             campea={campea}
-            noPrazo={noPrazoDe(c.chave)}
             indice={i}
-            atraso={ATRASO_POR_POSICAO[c.posicao] ?? ATRASO_POR_POSICAO[3]}
-          />
-        ))}
-        {plateia.map((c, i) => (
-          <NoChao
-            key={c.chave}
-            colocacao={c}
-            perfil={usersMap[c.chave]}
-            onPerfil={onPerfil}
-            rosto={rosto}
-            campea={campea}
-            noPrazo={noPrazoDe(c.chave)}
-            indice={degraus.length + i}
-            /* Quem está no chão entra ANTES: é a sala tomando lugar, e a
-               cerimônia começa depois que ela está cheia. */
-            atraso={i * 24}
+            retrato={tamanhoDoRetrato(c.posicao, colocacoes.length)}
+            /* `ENTRADA_DA_CENA` espera o véu da tela abrir (ver `.page::after`). */
+            atraso={ENTRADA_DA_CENA + (ATRASO_POR_POSICAO[c.posicao] ?? i * 24)}
           />
         ))}
       </ol>
@@ -578,17 +552,14 @@ function Cena({
 }
 
 /**
- * Quando cada degrau assenta — 3º, 2º, 1º, nessa ordem.
- *
- * É a ordem em que um pódio se anuncia em qualquer cerimônia do mundo, e ela
- * não é decorativa: o olho segue quem se mexe, então quem se mexe por último
- * fica sendo o assunto.
- *
- * Os 120ms de piso são o tempo de a fileira do chão se formar antes de alguém
- * subir. Empate reparte o mesmo instante: dois segundos lugares sobem juntos,
- * porque juntos foi como ficaram.
+ * Quando cada barra assenta — 3º, 2º, 1º, nessa ordem, como num pódio. Do 4º
+ * em diante elas entram antes, em sequência curta: é a sala tomando lugar, e a
+ * cerimônia começa depois.
  */
 const ATRASO_POR_POSICAO: Record<number, number> = { 1: 240, 2: 180, 3: 120 };
+
+/** As barras começam a subir quando o véu da entrada já está abrindo. */
+const ENTRADA_DA_CENA = 320;
 
 /**
  * Quanto tempo a contagem leva para chegar ao número.
@@ -663,7 +634,7 @@ function semMovimento(): boolean {
 }
 
 /**
- * Um plinto — o tratamento de quem chegou ao pódio.
+ * A barra de uma pessoa: retrato em cima, nome, e a pedra com a colocação.
  *
  * `<li>` com `value`, e não `<div>`: dentro do `<ol>` da cena, é o `value` que
  * carrega a colocação para quem usa leitor de tela mesmo com o `order` do CSS
@@ -676,8 +647,8 @@ function Degrau({
   maior,
   atraso,
   campea,
-  noPrazo,
   indice,
+  retrato,
 }: {
   colocacao: Colocacao;
   perfil?: UserProfile;
@@ -685,81 +656,43 @@ function Degrau({
   maior: number;
   atraso: number;
   campea: boolean;
-  /** "100% no prazo", ou nada quando não há entrega com prazo para medir. */
-  noPrazo?: string;
   /** Posição na lista inteira — decide de que lado da fileira ele fica. */
   indice: number;
+  retrato: { w: number; h: number };
 }) {
   const { posicao, entregues, rotulo } = colocacao;
   // A regra da altura mora em `rank-core.ts`, com teste: é ela que decide o que
-  // a tela AFIRMA sobre quem ganhou, e a escada tem de se sustentar mesmo num
-  // mês em que todo mundo entregou quase a mesma coisa.
-  const altura = alturaDoDegrau(posicao, entregues, maior);
+  // a tela AFIRMA sobre quem ganhou.
+  const altura = alturaDaBarra(posicao, entregues, maior);
   const contagem = useContagem(entregues, atraso + 60);
+  const podio = posicao <= 3;
 
   return (
     <li
-      className={`${styles.degrau} ${posicao === 1 ? styles.primeiro : ""}`}
+      className={`${styles.degrau} ${posicao === 1 ? styles.primeiro : ""} ${podio ? "" : styles.resto}`}
       value={posicao}
       style={{
         order: ordemNaFileira(indice),
         ["--atraso" as string]: `${atraso}ms`,
+        ["--retrato-w" as string]: `${retrato.w}px`,
+        ["--retrato-h" as string]: `${retrato.h}px`,
       }}
     >
-      <div className={styles.rosto}>
-        {/* O troféu só aparece no 1º lugar de uma temporada JÁ FECHADA — é o
-            único momento em que "campeão" é um fato registrado, e não só a
-            liderança do momento (que pode trocar até o mês acabar). */}
-        {campea && posicao === 1 && (
-          <span className={styles.trofeu} aria-hidden="true">
-            <Icon name="trofeu" size={20} />
-          </span>
-        )}
-        {/* alt vazio: o nome está escrito logo abaixo, dentro do mesmo bloco.
-
-            `semMoldura` porque o degrau JÁ é uma moldura: `.rosto` desenha um
-            anel em volta de cada rosto, e o do primeiro lugar é pintado na cor
-            da marca com halo. Uma moldura pessoal por dentro daria três anéis
-            concêntricos — e quem escolhesse a moldura "Cor da casa" apareceria
-            no pódio exibindo o vocabulário visual reservado a quem está em
-            primeiro. Tirar o anel do degrau não resolveria: "Cor da casa"
-            continuaria imitando o campeão. */}
-        {/**
-         * `aoAbrirPerfil` SÓ quando a pessoa existe em `/users`.
-         *
-         * Sem cadastro não há perfil para abrir (ver `perfil-modal.tsx`), e um
-         * rosto que vira botão para depois não abrir nada é a promessa que o
-         * projeto inteiro evita. O fallback `{ name, email }` continua servindo
-         * para DESENHAR o rosto — só não o torna clicável.
-         *
-         * E o `alt` deixa de ser vazio quando ele vira botão: em modo alvo o
-         * `alt` é o rótulo do botão (`avatar.tsx`), e "Ana Souza" leria como se
-         * o clique fizesse alguma coisa com a Ana. O nome continua escrito
-         * embaixo, então repeti-lo aqui só ocuparia o rótulo que precisa dizer
-         * o que acontece.
-         */}
-        <Avatar
-          pessoa={perfil ?? { name: rotulo, email: colocacao.chave }}
-          size={TAM_AVATAR[posicao] ?? 88}
-          alt={perfil ? `Ver o perfil de ${rotulo}` : ""}
-          aoAbrirPerfil={perfil ? () => onPerfil(perfil) : undefined}
-          semMoldura
-        />
-      </div>
+      <Retrato
+        pessoa={perfil ?? { name: rotulo, email: colocacao.chave }}
+        rotulo={rotulo}
+        posicao={posicao}
+        campea={campea}
+        aoAbrir={perfil ? () => onPerfil(perfil) : undefined}
+      />
       <div className={styles.nome} title={rotulo}>
         {rotulo}
       </div>
       <div className={styles.bloco} style={{ height: altura }}>
         <span className={styles.posicao}>{posicao}º</span>
-        {/* O número fica gravado no bloco, e não ao lado do nome: ele é a
-            inscrição do degrau, não um segundo campo do cadastro da pessoa. Um
-            pódio sem contagem não dá para conferir — e conferir é a primeira
-            coisa que se faz olhando para um rank. */}
         {/* Duas cópias do mesmo número, e é de propósito: o leitor de tela não
-            assiste à contagem subir. Ele lê o que estiver ali no instante em que
-            o cursor virtual chega — que pode ser "7 entregas" no meio do
-            caminho — e segue em frente sem nunca voltar. Quem vê recebe a
-            contagem; quem ouve recebe o resultado. */}
+            assiste à contagem subir. Quem vê recebe a contagem; quem ouve
+            recebe o resultado. */}
         <span className={styles.entregas}>
           <span aria-hidden="true">
             {contagem} {contagem === 1 ? "entrega" : "entregas"}
@@ -768,86 +701,158 @@ function Degrau({
             {entregues} {entregues === 1 ? "entrega" : "entregas"}
           </span>
         </span>
-        {/* A pontualidade é a SEGUNDA linha gravada no plinto, menor: ela
-            qualifica a contagem, não compete com ela pelo olho (#215). */}
-        {noPrazo && <span className={styles.noPrazo}>{noPrazo}</span>}
       </div>
     </li>
   );
 }
 
 /**
- * De pé no chão, ao lado do pódio — do 4º em diante.
+ * O retrato no estilo do cartaz de corrida: cartão com a foto do perfil
+ * cobrindo tudo e a colocação escrita na vertical ao lado ("P1").
  *
- * NÃO É UM PLINTO MAIS BAIXO, e essa é a decisão inteira: estender a tabela de
- * alturas de `rank-core.ts` até a oitava posição parece a saída óbvia e derruba
- * a escada (os degraus entre pisos ficam menores que o acréscimo por contagem,
- * e o 8º passa o 7º com contagens perfeitamente comuns). Mais do que isso, oito
- * plintos encostados não são um pódio — são um gráfico de barras deitado, que é
- * exatamente o que o pódio existe para não ser.
+ * A foto é a mesma do resto do app (`avatarDe`: a escolhida no perfil, depois a
+ * do Google, depois a inicial na cor da pessoa). Sem foto, a inicial ocupa o
+ * cartão inteiro, para o cartão nunca ficar vazio.
  *
- * O que estas pessoas ganham no lugar do plinto é o CHÃO: elas assentam na
- * mesma linha de contato dos degraus, com um friso do mesmo material da laje.
- * Mesma cena, dois papéis — e ninguém abaixo de ninguém, que era o pedido.
- *
- * A contagem aqui NÃO sobe: cinco números correndo lado a lado viram ruído, e o
- * que eles anunciariam não é o assunto da cerimônia.
+ * Vira BOTÃO só quando a pessoa existe em `/users` — sem cadastro não há perfil
+ * para abrir, e um retrato clicável que não abre nada é a promessa que o
+ * projeto inteiro evita.
  */
-function NoChao({
-  colocacao,
-  perfil,
-  onPerfil,
-  rosto,
-  atraso,
+function Retrato({
+  pessoa,
+  rotulo,
+  posicao,
   campea,
-  noPrazo,
-  indice,
+  aoAbrir,
 }: {
-  colocacao: Colocacao;
-  perfil?: UserProfile;
-  onPerfil: (p: UserProfile) => void;
-  /** Diâmetro do rosto — cresce quando não há pódio (ver `escalaDaFileira`). */
-  rosto: number;
-  atraso: number;
+  pessoa: Parameters<typeof avatarDe>[0];
+  rotulo: string;
+  posicao: number;
   campea: boolean;
-  noPrazo?: string;
-  /** Posição na lista inteira — decide de que lado da fileira ele fica. */
-  indice: number;
+  aoAbrir?: () => void;
 }) {
-  const { posicao, entregues, rotulo } = colocacao;
+  const [srcQueFalhou, setSrcQueFalhou] = useState<string | null>(null);
+  const escolha = avatarDe(pessoa);
+  const foto = escolha.tipo === "foto" && escolha.src !== srcQueFalhou ? escolha.src : null;
 
-  return (
-    <li
-      className={`${styles.noChao} ${posicao === 1 ? styles.primeiro : ""}`}
-      value={posicao}
-      style={{
-        order: ordemNaFileira(indice),
-        ["--atraso" as string]: `${atraso}ms`,
-        ["--rosto" as string]: `${rosto}px`,
-      }}
-    >
-      <span className={styles.chaoPos}>{posicao}º</span>
-      <div className={styles.rosto}>
-        {campea && posicao === 1 && (
-          <span className={styles.trofeu} aria-hidden="true">
-            <Icon name="trofeu" size={16} />
-          </span>
-        )}
-        <Avatar
-          pessoa={perfil ?? { name: rotulo, email: colocacao.chave }}
-          size={rosto}
-          alt={perfil ? `Ver o perfil de ${rotulo}` : ""}
-          aoAbrirPerfil={perfil ? () => onPerfil(perfil) : undefined}
-          semMoldura
+  const miolo = (
+    <>
+      {foto ? (
+        // eslint-disable-next-line @next/next/no-img-element -- data URI do perfil, sem otimização a fazer
+        <img
+          src={foto}
+          alt=""
+          className={styles.retratoFoto}
+          onError={() => setSrcQueFalhou(foto)}
         />
-      </div>
-      <span className={styles.chaoNome} title={rotulo}>
-        {rotulo}
+      ) : (
+        <span
+          className={styles.retratoInicial}
+          style={{ background: escolha.tipo === "inicial" ? escolha.cor : undefined }}
+          aria-hidden="true"
+        >
+          {escolha.tipo === "inicial" ? escolha.letra : rotulo.charAt(0)}
+        </span>
+      )}
+      <span className={styles.retratoPos} aria-hidden="true">
+        P{posicao}
       </span>
-      <span className={styles.chaoNum}>
-        {entregues} {entregues === 1 ? "entrega" : "entregas"}
-      </span>
-      {noPrazo && <span className={styles.chaoPrazo}>{noPrazo}</span>}
-    </li>
+      {/* O troféu só no 1º lugar de uma temporada JÁ FECHADA — o único momento
+          em que "campeão" é fato registrado, e não liderança do momento. */}
+      {campea && posicao === 1 && (
+        <span className={styles.trofeu} aria-hidden="true">
+          <Icon name="trofeu" size={18} />
+        </span>
+      )}
+    </>
+  );
+
+  return aoAbrir ? (
+    <button
+      type="button"
+      className={styles.retrato}
+      onClick={aoAbrir}
+      aria-label={`Ver o perfil de ${rotulo}`}
+    >
+      {miolo}
+    </button>
+  ) : (
+    <div className={styles.retrato}>{miolo}</div>
+  );
+}
+
+/**
+ * O título na lateral, no lugar do "RACE RESULT" do cartaz: "Smart Meeting"
+ * de baixo para cima, em monoespaçada de terminal, e o "S2" na cor da marca
+ * com o asterisco do prompt. Decorativo para o leitor de tela — o `<h1>` do
+ * cabeçalho já nomeia a tela.
+ */
+function TituloLateral() {
+  return (
+    <div className={styles.tituloLateral} aria-hidden="true">
+      <span className={styles.tituloGrande}>Smart Meeting</span>
+      <span className={styles.tituloAcento}>*S2</span>
+    </div>
+  );
+}
+
+/** "13/10" do instante, no fuso de quem trabalha. */
+const DIA_MES = new Intl.DateTimeFormat("pt-BR", {
+  timeZone: FUSO_DO_SETOR,
+  day: "2-digit",
+  month: "2-digit",
+});
+
+/**
+ * As demandas entregues na temporada, da mais recente para a mais antiga — no
+ * lugar da lista de pilotos do cartaz.
+ *
+ * Cada linha: a ordem, o rosto de quem entregou, o nome em cima e a demanda em
+ * destaque embaixo (como nome e sobrenome no cartaz), e o dia da entrega à
+ * direita, onde o cartaz põe os pontos.
+ */
+function ListaDeEntregas({
+  entregas,
+  usersMap,
+}: {
+  entregas: Card[];
+  usersMap: Record<string, UserProfile>;
+}) {
+  if (!entregas.length) return null;
+  return (
+    <section className={styles.lista} aria-label="Demandas entregues na temporada">
+      <h2 className={styles.listaTitulo}>
+        Entregas da temporada <span>{entregas.length}</span>
+      </h2>
+      <ol className={styles.listaItens}>
+        {entregas.map((c, i) => {
+          const quem = c.assignee ? usersMap[c.assignee] : undefined;
+          const nome = quem?.name || c.assignee || "Sem responsável";
+          return (
+            <li
+              key={c.id}
+              className={styles.listaLinha}
+              style={{ ["--i" as string]: Math.min(i, 12) }}
+            >
+              <span className={styles.listaNum}>{i + 1}</span>
+              <Avatar
+                pessoa={quem ?? { name: nome, email: c.assignee ?? "" }}
+                size={34}
+                semMoldura
+              />
+              <span className={styles.listaTexto}>
+                <span className={styles.listaQuem}>{nome}</span>
+                <span className={styles.listaDemanda} title={c.title}>
+                  {c.title}
+                </span>
+              </span>
+              <span className={styles.listaData}>
+                {typeof c.enteredAt === "number" ? DIA_MES.format(new Date(c.enteredAt)) : ""}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+    </section>
   );
 }

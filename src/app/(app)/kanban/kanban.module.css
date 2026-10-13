@@ -2531,9 +2531,8 @@
   cursor: default;
 }
 /* ---------- o modal enxuto (#211) ---------- */
-/* O título da seção recolhível tem a cara do `.sectionLabel` de sempre —
-   caixa alta pequena e o traço até a borda — para a seção fechada continuar
-   lendo como título, e não como um botão solto. */
+/* O título da seção tem a cara do `.sectionLabel` de sempre — caixa alta
+   pequena e o traço até a borda. A seção não recolhe mais (ver `secao.tsx`). */
 .secao + .secao {
   margin-top: 4px;
 }
@@ -2553,21 +2552,13 @@
   letter-spacing: 0.5px;
   text-transform: uppercase;
   text-align: left;
-  cursor: pointer;
+  cursor: default;
 }
 .secaoTopo::after {
   content: "";
   flex: 1;
   height: 1px;
   background: var(--line-soft);
-}
-.secaoTopo:hover {
-  color: var(--tx-2);
-}
-.secaoTopo:focus-visible {
-  outline: 2px solid var(--brand);
-  outline-offset: 2px;
-  border-radius: 4px;
 }
 /* O corpo não tem estilo próprio: o conteúdo de cada seção já traz o dele, e a
    classe existe para a seção poder ser alvo de seletor sem depender da ordem. */

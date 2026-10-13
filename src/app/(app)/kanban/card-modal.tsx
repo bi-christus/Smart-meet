@@ -80,7 +80,7 @@ import { subscribeLinksDoSetor, type LinkDoSetor } from "@/lib/links-do-setor";
 import {
   CAMPO_DA_ETAPA_ROTULO,
   campoPreenchido,
-  normalizarExigencias,
+  exigenciasDaEtapa,
 } from "@/lib/etapas-core";
 import { type UserProfile } from "@/lib/users";
 import { Icon } from "@/components/icons";
@@ -90,7 +90,7 @@ import { Select, type SelectOption } from "@/components/select";
 import { Combobox } from "@/components/combobox";
 import { Modal } from "@/components/modal";
 import { MaisCampos } from "./mais-campos";
-import { SecaoRecolhivel } from "./secao-recolhivel";
+import { Secao } from "./secao";
 import {
   KNOWN_PRIORITIES,
   PRIORITY_COLOR,
@@ -484,24 +484,6 @@ export function CardModal({
   const [novoLink, setNovoLink] = useState("");
   const [erroLink, setErroLink] = useState<string | null>(null);
   const [comments, setComments] = useState<Comment[]>(card?.comments ?? []);
-  /**
-   * Quais seções do lado direito estão abertas (#211). Nascem pelo conteúdo
-   * da abertura e daí em diante só a pessoa abre e fecha — reabrir sozinho a
-   * cada tecla seria o modal discordando de quem acabou de recolher.
-   */
-  const [secoes, setSecoes] = useState(() => ({
-    descricao: !!card?.description?.trim(),
-    links: (card?.links?.length ?? 0) > 0,
-    checklist: (card?.checklist?.length ?? 0) > 0,
-    comentarios: (card?.comments?.length ?? 0) > 0,
-  }));
-  function alternarSecao(s: keyof typeof secoes) {
-    setSecoes((cur) => ({ ...cur, [s]: !cur[s] }));
-  }
-  /** Abre a seção sem fechar a que já está aberta — para levar os olhos até ela. */
-  function alternarSecaoAberta(s: keyof typeof secoes) {
-    setSecoes((cur) => ({ ...cur, [s]: true }));
-  }
   const [newComment, setNewComment] = useState("");
   const [posting, setPosting] = useState(false);
   /** Qual comentário está sendo reescrito (chave), e o texto em edição. */
@@ -1323,7 +1305,7 @@ export function CardModal({
         card.columnId !== columnId &&
         ordem.indexOf(columnId) > ordem.indexOf(card.columnId));
     const faltamNaEtapa = avancou
-      ? normalizarExigencias(destinoCol?.campos).filter(
+      ? (destinoCol ? exigenciasDaEtapa(destinoCol.colId, destinoCol.campos) : []).filter(
           (e) =>
             e.obrigatorio &&
             e.campo !== "comentario" &&
@@ -1344,9 +1326,6 @@ export function CardModal({
         if (e.campo === "requester") abrirCampo("solicitante");
         if (e.campo === "startDate") abrirCampo("inicio");
         if (e.campo === "tags") abrirCampo("tags");
-        if (e.campo === "description") alternarSecaoAberta("descricao");
-        if (e.campo === "links") alternarSecaoAberta("links");
-        if (e.campo === "checklist") alternarSecaoAberta("checklist");
       });
       return;
     }
@@ -1993,21 +1972,14 @@ export function CardModal({
       </div>
       <div className={styles.mconteudo}>
 
-      {/* AS QUATRO SEÇÕES SE RECOLHEM (#211), e nascem abertas só quando têm
-          conteúdo: a demanda recém-criada abre sem quatro áreas de digitação
-          vazias, e a que já tem descrição e checklist abre como sempre. */}
-      <SecaoRecolhivel
-        titulo="Descrição"
-        aberta={secoes.descricao}
-        onAlternar={() => alternarSecao("descricao")}
-      >
+      <Secao titulo="Descrição">
       <textarea
         className={styles.textarea}
         value={description}
         onChange={(e) => setDescription(e.target.value)}
         placeholder="Contexto, requisitos, links…"
       />
-      </SecaoRecolhivel>
+      </Secao>
 
       {/* O campo acima já promete "links" — e é ali que eles vinham parando, no
           meio da prosa: sem poder abrir num clique, sem rótulo, e apagados sem
@@ -2015,11 +1987,9 @@ export function CardModal({
           em forma de dado: cada endereço vira uma linha que abre, se nomeia e
           se remove sozinha. Fica fora do `!isNew` de propósito — a demanda
           costuma nascer de um arquivo que já existe. */}
-      <SecaoRecolhivel
+      <Secao
         titulo="Links"
         resumo={links.length ? String(links.length) : ""}
-        aberta={secoes.links}
-        onAlternar={() => alternarSecao("links")}
       >
       {links.map((l) => (
         <div key={l.id} className={styles.linkRow}>
@@ -2119,13 +2089,11 @@ export function CardModal({
           {erroLink}
         </div>
       )}
-      </SecaoRecolhivel>
+      </Secao>
 
-      <SecaoRecolhivel
+      <Secao
         titulo="Checklist"
         resumo={checklist.length ? `${doneCount}/${checklist.length}` : ""}
-        aberta={secoes.checklist}
-        onAlternar={() => alternarSecao("checklist")}
       >
       {checklist.length > 0 && (
         <div className={styles.checkBar} style={{ marginBottom: 10 }}>
@@ -2183,14 +2151,12 @@ export function CardModal({
           Adicionar
         </button>
       </div>
-      </SecaoRecolhivel>
+      </Secao>
 
       {!isNew && (
-        <SecaoRecolhivel
+        <Secao
           titulo="Comentários"
           resumo={comments.length ? String(comments.length) : ""}
-          aberta={secoes.comentarios}
-          onAlternar={() => alternarSecao("comentarios")}
         >
           <div className={styles.comments}>
             {comments.length === 0 ? (
@@ -2323,7 +2289,7 @@ export function CardModal({
               ? "Salvando comentário…"
               : "Salvo sozinho ao fechar o card — Ctrl+Enter salva agora."}
           </div>
-        </SecaoRecolhivel>
+        </Secao>
       )}
 
       </div>

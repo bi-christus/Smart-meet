@@ -140,6 +140,28 @@ export function alturaDoDegrau(
 }
 
 /**
+ * A altura da barra de QUALQUER colocação — o Rank virou um gráfico de barras
+ * com todo mundo (13/10/2026), e não mais três plintos e o resto no chão.
+ *
+ * Os três primeiros continuam com `alturaDoDegrau`, e a escada deles não muda.
+ * Do 4º em diante a barra é proporcional à contagem, num teto (`TETO_DO_RESTO`)
+ * ABAIXO do piso do 3º: assim a regra que o teste guarda — colocação melhor
+ * nunca tem barra mais baixa — vale na fileira inteira, e não só no pódio.
+ */
+const BASE_DO_RESTO = 34;
+const TETO_DO_RESTO = 70;
+
+export function alturaDaBarra(
+  posicao: number,
+  entregues: number,
+  maior: number,
+): number {
+  if (posicao <= 3) return alturaDoDegrau(posicao, entregues, maior);
+  const fracao = Math.min(1, Math.max(0, entregues) / Math.max(1, maior));
+  return BASE_DO_RESTO + Math.round(fracao * (TETO_DO_RESTO - BASE_DO_RESTO));
+}
+
+/**
  * Onde cada colocação fica na fileira — e quando NÃO existe pódio.
  *
  * A tela virou uma fileira só: ninguém mais fica abaixo de ninguém. Os três
