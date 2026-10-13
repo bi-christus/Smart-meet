@@ -28,7 +28,13 @@ import {
 // cópias divergiriam no primeiro ajuste — e o sintoma seria o pódio e o emblema
 // discordando sobre a mesma demanda, cada um com o próprio jeito de comparar
 // e-mail.
-import { entregasDoMes, mesAtual, rotuloMes } from "@/lib/temporadas-core";
+import {
+  entregasDoMes,
+  mesAtual,
+  pontualidadeDoMes,
+  rotuloMes,
+  rotuloPontualidade,
+} from "@/lib/temporadas-core";
 import {
   listarTemporadasFechadas,
   subscribeTemporadaFechada,
@@ -105,6 +111,17 @@ export default function RankPage() {
   /** A pessoa cujo rosto foi clicado — `null` enquanto ninguém clicou. */
   const [perfilDe, setPerfilDe] = useState<UserProfile | null>(null);
   const vendoAtual = mesEscolhido === mesCorrente;
+  /**
+   * O setor do pódio (#215). O Rank é INDIVIDUAL POR SETOR — não existe a vista
+   * "todos juntos": quem entrega no B.I. não disputa com quem entrega nas
+   * Cantinas. Derivado na leitura: sem escolha (ou com um setor que saiu da
+   * lista da pessoa), vale o primeiro setor DELA — e não o primeiro do
+   * cadastro, que para o admin pode ser um setor em que ele nem trabalha.
+   */
+  const [setorEscolhido, setSetorEscolhido] = useState("");
+  const setorDoPodio = sectors.includes(setorEscolhido)
+    ? setorEscolhido
+    : (profile?.sectors ?? []).find((s) => sectors.includes(s)) || sectors[0] || "";
 
   const fTemporadasFechadas = useAsyncData<TemporadaFechada>(
     "temporadas-fechadas",
@@ -141,10 +158,35 @@ export default function RankPage() {
     [cols, sectors],
   );
 
+  /** As demandas do pódio da temporada atual: só as do setor escolhido. */
+  const cardsDoPodio = useMemo(
+    () => cards.filter((c) => c.sector === setorDoPodio),
+    [cards, setorDoPodio],
+  );
+
+  /** Pontualidade de cada pessoa na temporada atual — ver `pontualidadeDoMes`. */
+  const pontualidade = useMemo(
+    () =>
+      vendoAtual
+        ? pontualidadeDoMes(cardsDoPodio, entreguesPorSetor, mesEscolhido)
+        : new Map<string, { noPrazo: number; comPrazo: number }>(),
+    [vendoAtual, cardsDoPodio, entreguesPorSetor, mesEscolhido],
+  );
+  /** A pontualidade do pódio inteiro, para a linha de baixo do título. */
+  const pontualidadeGeral = useMemo(() => {
+    let noPrazo = 0;
+    let comPrazo = 0;
+    pontualidade.forEach((p) => {
+      noPrazo += p.noPrazo;
+      comPrazo += p.comPrazo;
+    });
+    return comPrazo ? rotuloPontualidade({ noPrazo, comPrazo }) : "";
+  }, [pontualidade]);
+
   /** A temporada em exibição: ao vivo (mês corrente) ou congelada (mês passado). */
   const { colocacoes, totalEntregas, vencedores, semFechamento } = useMemo(() => {
     if (vendoAtual) {
-      const { por, total } = entregasDoMes(cards, entreguesPorSetor, mesEscolhido);
+      const { por, total } = entregasDoMes(cardsDoPodio, entreguesPorSetor, mesEscolhido);
       const ranking = montarRank(
         [...por.entries()].map(([email, entregues]) => ({
           chave: email,
@@ -161,13 +203,34 @@ export default function RankPage() {
     if (!fechada) {
       return { colocacoes: [] as Colocacao[], totalEntregas: 0, vencedores: [] as string[], semFechamento: true };
     }
+    /**
+     * TEMPORADA FECHADA DEPOIS DE #215: tem o pódio de cada setor, e a tela
+     * mostra o do setor escolhido. Setor ausente da lista não teve card no
+     * mês — o pódio dele é vazio, e a tela diz isso.
+     *
+     * FECHADA ANTES: só existe o pódio geral, e ele aparece como foi gravado,
+     * com o aviso na linha do título (ver `foiGeral`). Recontar por setor
+     * agora mudaria quem a tela diz que venceu um mês já anunciado.
+     */
+    if (fechada.porSetor) {
+      const doSetor = fechada.porSetor.find((p) => p.setor === setorDoPodio);
+      return {
+        colocacoes: doSetor?.ranking ?? [],
+        totalEntregas: doSetor?.entregas ?? 0,
+        vencedores: doSetor?.vencedores ?? [],
+        semFechamento: false,
+      };
+    }
     return {
       colocacoes: fechada.ranking,
       totalEntregas: fechada.entregas,
       vencedores: fechada.vencedores,
       semFechamento: false,
     };
-  }, [vendoAtual, cards, entreguesPorSetor, mesEscolhido, usersMap, fTemporadaFechada.data]);
+  }, [vendoAtual, cardsDoPodio, entreguesPorSetor, mesEscolhido, usersMap, fTemporadaFechada.data, setorDoPodio]);
+
+  /** A temporada fechada exibida é das antigas, sem pódio por setor. */
+  const foiGeral = !vendoAtual && !!fTemporadaFechada.data?.[0] && !fTemporadaFechada.data[0].porSetor;
 
   const fontes = vendoAtual
     ? juntarFontes([fCards, fCols, fUsers])
@@ -200,16 +263,52 @@ export default function RankPage() {
           fontes.carregando || fontes.erro
             ? ""
             : vendoAtual
-              ? `${totalEntregas} ${totalEntregas === 1 ? "demanda entregue" : "demandas entregues"} em ${sectors.join(", ")} · ${rotuloMes(mesEscolhido)}`
-              : rotuloMes(mesEscolhido)
+              ? /* A linha era a lista inteira dos setores da pessoa — para o
+                   admin, quinze nomes numa linha só. O setor agora está nas
+                   abas logo abaixo, e esta linha diz só o que mede. */
+                [
+                  `${totalEntregas} ${totalEntregas === 1 ? "demanda entregue" : "demandas entregues"}`,
+                  rotuloMes(mesEscolhido),
+                  pontualidadeGeral && `${pontualidadeGeral} no prazo`,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")
+              : foiGeral
+                ? `${rotuloMes(mesEscolhido)} · fechada antes da divisão por setor: este é o pódio de todos os setores, como foi registrado`
+                : `${totalEntregas} ${totalEntregas === 1 ? "demanda entregue" : "demandas entregues"} · ${rotuloMes(mesEscolhido)}`
         }
         seletor={
-          <Select
-            value={mesEscolhido}
-            options={seletorOpcoes}
-            onChange={setMesEscolhido}
-            ariaLabel="Temporada"
-          />
+          /* Num invólucro de largura própria: o `<Select>` ocupa 100% do pai,
+             e solto no cabeçalho ele atravessava a tela inteira. */
+          <div className={styles.seletor}>
+            <Select
+              value={mesEscolhido}
+              options={seletorOpcoes}
+              onChange={setMesEscolhido}
+              ariaLabel="Temporada"
+            />
+          </div>
+        }
+        setores={
+          /* Um pódio por setor, sempre — sem "todos juntos". As abas somem só
+             para quem tem um setor (repetiriam o título) e nas temporadas
+             antigas, que não guardaram pódio por setor. */
+          sectors.length > 1 && !foiGeral ? (
+            <div className={styles.setores} role="tablist" aria-label="Setor do pódio">
+              {sectors.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  role="tab"
+                  aria-selected={setorDoPodio === s}
+                  className={`${styles.setor} ${setorDoPodio === s ? styles.setorOn : ""}`}
+                  onClick={() => setSetorEscolhido(s)}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          ) : null
         }
       />
 
@@ -291,10 +390,13 @@ export default function RankPage() {
            `.page`: a sala não se reconstrói quando muda o mês, só quem sobe
            nela. */
         <Cena
-          key={mesEscolhido}
+          /* O setor entra na chave junto do mês: trocar de setor também troca
+             o elenco, e o pódio novo precisa entrar em cena. */
+          key={`${mesEscolhido}|${setorDoPodio}`}
           colocacoes={colocacoes}
           usersMap={usersMap}
           campea={!vendoAtual}
+          pontualidade={pontualidade}
           onPerfil={setPerfilDe}
         />
       )}
@@ -319,7 +421,16 @@ export default function RankPage() {
   );
 }
 
-function Cabecalho({ sub, seletor }: { sub: string; seletor?: React.ReactNode }) {
+function Cabecalho({
+  sub,
+  seletor,
+  setores,
+}: {
+  sub: string;
+  seletor?: React.ReactNode;
+  /** As abas de setor do pódio — só na temporada atual (#215). */
+  setores?: React.ReactNode;
+}) {
   return (
     <div className={styles.head}>
       <div className={styles.headTopo}>
@@ -330,6 +441,7 @@ function Cabecalho({ sub, seletor }: { sub: string; seletor?: React.ReactNode })
           entregues" com a autoridade de um número pronto — mesma regra dos
           chips do Dashboard. */}
       {sub && <p>{sub}</p>}
+      {setores}
     </div>
   );
 }
@@ -370,14 +482,21 @@ function Cena({
   colocacoes,
   usersMap,
   campea,
+  pontualidade,
   onPerfil,
 }: {
   colocacoes: Colocacao[];
   usersMap: Record<string, UserProfile>;
   /** Temporada FECHADA sendo exibida — é o que acende o acento de campeão. */
   campea: boolean;
+  /** Por e-mail; vazio na temporada fechada, que não guardou o dado. */
+  pontualidade: ReadonlyMap<string, { noPrazo: number; comPrazo: number }>;
   onPerfil: (p: UserProfile) => void;
 }) {
+  const noPrazoDe = (chave: string) => {
+    const p = pontualidade.get(chave);
+    return p ? `${rotuloPontualidade(p)} no prazo` : undefined;
+  };
   const { degraus, plateia } = useMemo(() => partirCena(colocacoes), [colocacoes]);
   const maior = maiorEntrega(colocacoes);
   // Com pódio, quem está no chão é coadjuvante e usa o diâmetro mínimo. Sem
@@ -433,6 +552,7 @@ function Cena({
             onPerfil={onPerfil}
             maior={maior}
             campea={campea}
+            noPrazo={noPrazoDe(c.chave)}
             indice={i}
             atraso={ATRASO_POR_POSICAO[c.posicao] ?? ATRASO_POR_POSICAO[3]}
           />
@@ -445,6 +565,7 @@ function Cena({
             onPerfil={onPerfil}
             rosto={rosto}
             campea={campea}
+            noPrazo={noPrazoDe(c.chave)}
             indice={degraus.length + i}
             /* Quem está no chão entra ANTES: é a sala tomando lugar, e a
                cerimônia começa depois que ela está cheia. */
@@ -555,6 +676,7 @@ function Degrau({
   maior,
   atraso,
   campea,
+  noPrazo,
   indice,
 }: {
   colocacao: Colocacao;
@@ -563,6 +685,8 @@ function Degrau({
   maior: number;
   atraso: number;
   campea: boolean;
+  /** "100% no prazo", ou nada quando não há entrega com prazo para medir. */
+  noPrazo?: string;
   /** Posição na lista inteira — decide de que lado da fileira ele fica. */
   indice: number;
 }) {
@@ -644,6 +768,9 @@ function Degrau({
             {entregues} {entregues === 1 ? "entrega" : "entregas"}
           </span>
         </span>
+        {/* A pontualidade é a SEGUNDA linha gravada no plinto, menor: ela
+            qualifica a contagem, não compete com ela pelo olho (#215). */}
+        {noPrazo && <span className={styles.noPrazo}>{noPrazo}</span>}
       </div>
     </li>
   );
@@ -673,6 +800,7 @@ function NoChao({
   rosto,
   atraso,
   campea,
+  noPrazo,
   indice,
 }: {
   colocacao: Colocacao;
@@ -682,6 +810,7 @@ function NoChao({
   rosto: number;
   atraso: number;
   campea: boolean;
+  noPrazo?: string;
   /** Posição na lista inteira — decide de que lado da fileira ele fica. */
   indice: number;
 }) {
@@ -718,6 +847,7 @@ function NoChao({
       <span className={styles.chaoNum}>
         {entregues} {entregues === 1 ? "entrega" : "entregas"}
       </span>
+      {noPrazo && <span className={styles.chaoPrazo}>{noPrazo}</span>}
     </li>
   );
 }
