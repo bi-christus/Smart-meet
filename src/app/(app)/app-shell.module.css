@@ -240,6 +240,56 @@
   background: var(--brand-soft);
   color: var(--accent-2);
 }
+/* Com o terceiro tema (#214) a fileira não cabe mais em três terços do menu
+   sem cortar "Alto contraste". Ele quebra para a linha de baixo, inteiro, em
+   vez de espremer os três num texto ilegível. */
+.themeRow {
+  flex-wrap: wrap;
+}
+.themeBtn {
+  white-space: nowrap;
+  padding: 0 10px;
+}
+
+/* O interruptor da animação de fundo (#214). Desenhado à mão, e não com um
+   checkbox estilizado: o botão inteiro é o alvo do clique, e o desenho só diz
+   o estado. A bolinha anda por `transform`, nunca por `left` — mudança de
+   posição por `left` refaz o layout a cada quadro. */
+.chave {
+  position: relative;
+  flex: none;
+  width: 28px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--s4);
+  border: 1px solid var(--line);
+  transition: background 0.15s;
+}
+.chave::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--tx-2);
+  transition: transform 0.15s;
+}
+.chaveOn {
+  background: var(--brand);
+  border-color: var(--brand);
+}
+.chaveOn::after {
+  background: #fff;
+  transform: translateX(12px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .chave,
+  .chave::after {
+    transition: none;
+  }
+}
 .swatchRow {
   display: flex;
   gap: 8px;

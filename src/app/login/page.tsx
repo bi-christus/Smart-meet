@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { Waveform } from "@/components/waveform";
+import { useTheme } from "@/lib/theme";
 import styles from "./login.module.css";
 
 const PROMOS: [string, string][] = [
@@ -26,6 +27,7 @@ const ENTER_MS = 880;
 
 export default function LoginPage() {
   const { user, loading, signInWithGoogle } = useAuth();
+  const { fundoAnimado } = useTheme();
   const router = useRouter();
   const [promo, setPromo] = useState(0);
   const [fade, setFade] = useState(false);
@@ -114,7 +116,10 @@ export default function LoginPage() {
 
   return (
     <div className={styles.wrap}>
-      <Waveform energized={entering} />
+      {/* A preferência do menu do perfil vale aqui também (#214): ela fica no
+          navegador, e quem desligou a onda neste computador não a quer de
+          volta na próxima vez que entrar. */}
+      {fundoAnimado && <Waveform energized={entering} />}
       <div className={`${styles.stage} ${entering ? styles.entering : ""}`}>
         <div className={styles.card}>
           <div className={styles.brand}>
