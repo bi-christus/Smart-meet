@@ -16,11 +16,10 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "./firebase";
 import { ehIconeDeLink } from "./icones-core.ts";
+import { ehIdDePasta } from "./portfolio-pastas-core.ts";
 import {
-  conferirClassificacao,
   conferirLink,
   conferirLogo,
-  mesmaClassificacao,
   conflitoDeLink,
   normalizarLinkDoSetor,
   ordenarLinks,
@@ -42,13 +41,6 @@ import {
  */
 
 export {
-  LIMITE_CLASSIFICACAO,
-  agruparPorCategoria,
-  classificacoesEmUso,
-  conferirClassificacao,
-  mesmaClassificacao,
-  type GrupoDeCategoria,
-  type GrupoDePasta,
   LADO_LOGO_PX,
   LIMITE_DESCRICAO_LINK,
   LIMITE_NOME_LINK,
@@ -141,27 +133,17 @@ function logoParaGravar(logo: string | null): string | null {
   return logo.trim();
 }
 
-/** Categoria e pasta como o admin as escolheu no formulário (14/10/2026). */
-export type Classificacao = { categoria: string; pasta: string };
-
 /**
- * Confere e limpa a classificação. Pasta sem categoria não existe — a pasta
- * mora dentro de uma categoria —, então ela é descartada. Lança com a frase de
- * tela, como `conferido`.
+ * A pasta do produto, como o admin a escolheu (#229). `undefined` = quem
+ * grava não é admin, e o campo fica FORA da escrita: a regra recusaria
+ * qualquer mudança em `pastaId` vinda de outra pessoa. `null` = na raiz.
  */
-function classificacaoConferida(c: Classificacao): Classificacao {
-  const cat = conferirClassificacao(c.categoria);
-  if (!cat.ok) throw new Error(`Categoria: ${cat.motivo}`);
-  const pasta = conferirClassificacao(c.pasta);
-  if (!pasta.ok) throw new Error(`Pasta: ${pasta.motivo}`);
-  return { categoria: cat.valor, pasta: cat.valor ? pasta.valor : "" };
+export type PastaEscolhida = string | null | undefined;
+
+function pastaParaGravar(pastaId: string | null) {
+  return pastaId !== null && ehIdDePasta(pastaId) ? pastaId : deleteField();
 }
 
-/**
- * `classificacao` só vem do formulário do ADMIN. Para os outros ela é
- * `undefined` e nenhum dos dois campos entra na escrita — a regra recusaria
- * qualquer mudança neles vinda de quem não é admin.
- */
 export async function criarLink(
   setor: string,
   rascunho: RascunhoDeLink,
@@ -169,11 +151,10 @@ export async function criarLink(
   logo: string | null,
   autor: string,
   existentes: readonly LinkDoSetor[],
-  classificacao?: Classificacao,
+  pastaId?: PastaEscolhida,
 ): Promise<string> {
   const dados = conferido(rascunho, setor, existentes);
   const logoOk = logoParaGravar(logo);
-  const cls = classificacao ? classificacaoConferida(classificacao) : null;
   const ref = await addDoc(collection(db, "links"), {
     setor,
     ...dados,
@@ -181,8 +162,7 @@ export async function criarLink(
     // serve em update, e `addDoc` o recusaria.
     ...(icone !== null && ehIconeDeLink(icone) ? { icone } : {}),
     ...(logoOk ? { logo: logoOk } : {}),
-    ...(cls?.categoria ? { categoria: cls.categoria } : {}),
-    ...(cls?.pasta ? { pasta: cls.pasta } : {}),
+    ...(pastaId && ehIdDePasta(pastaId) ? { pastaId } : {}),
     createdBy: autor,
     createdAt: serverTimestamp(),
   });
@@ -196,20 +176,16 @@ export async function editarLink(
   logo: string | null,
   autor: string,
   existentes: readonly LinkDoSetor[],
-  classificacao?: Classificacao,
+  pastaId?: PastaEscolhida,
 ): Promise<void> {
   const dados = conferido(rascunho, link.setor, existentes, link.id);
   const logoOk = logoParaGravar(logo);
-  const cls = classificacao ? classificacaoConferida(classificacao) : null;
   await updateDoc(doc(db, "links", link.id), {
     ...dados,
     icone: iconeParaGravar(icone),
     logo: logoOk ?? deleteField(),
-    ...(cls
-      ? {
-          categoria: cls.categoria || deleteField(),
-          pasta: cls.pasta || deleteField(),
-        }
+    ...(pastaId !== undefined && (pastaId ?? null) !== (link.pastaId ?? null)
+      ? { pastaId: pastaParaGravar(pastaId) }
       : {}),
     updatedBy: autor,
     updatedAt: serverTimestamp(),
@@ -287,51 +263,29 @@ export async function excluirLink(id: string): Promise<void> {
 }
 
 /**
- * Renomeia (ou junta) uma categoria ou uma pasta — só admin (14/10/2026).
+ * Põe produtos numa pasta (`null` = raiz) — é o soltar do arrastar, só admin.
  *
- * Não há cadastro de categorias: o nome vive em cada produto. Renomear é
- * regravar TODOS os produtos do setor que estão nela, num lote só — ou a
- * categoria muda inteira, ou não muda. Dar o nome de uma categoria que já
- * existe junta as duas, que é o jeito de desfazer uma digitada errada.
- *
- * `alvo.pasta` ausente = renomear a CATEGORIA; presente = renomear aquela
- * pasta dentro da categoria. Novo nome vazio tira a classificação: a
- * categoria vira "Sem categoria" (e as pastas dela somem), a pasta devolve os
- * produtos soltos para a categoria.
+ * Num lote só: arrastar uma seleção e ver metade dela chegar seria pior que
+ * não chegar nada. A organização antiga (`categoria`/`pasta`) sai junto, para
+ * o produto arrastado não continuar respondendo a um texto que a tela já não
+ * mostra.
  */
-export async function renomearClassificacao(
-  links: readonly LinkDoSetor[],
-  setor: string,
-  alvo: { categoria: string; pasta?: string },
-  novoNome: string,
+export async function moverProdutos(
+  ids: readonly string[],
+  pastaId: string | null,
   autor: string,
-): Promise<number> {
-  const r = conferirClassificacao(novoNome);
-  if (!r.ok) throw new Error(r.motivo);
-  const afetados = links.filter(
-    (l) =>
-      l.setor === setor &&
-      mesmaClassificacao(l.categoria, alvo.categoria) &&
-      (alvo.pasta === undefined || mesmaClassificacao(l.pasta, alvo.pasta)),
-  );
-  // O lote do Firestore aceita 500 escritas; um portfólio não chega perto, mas
-  // a conta fica explícita para não falhar calada num setor enorme.
-  for (let i = 0; i < afetados.length; i += 450) {
+): Promise<void> {
+  for (let i = 0; i < ids.length; i += 450) {
     const lote = writeBatch(db);
-    afetados.slice(i, i + 450).forEach((l) => {
-      const mudanca =
-        alvo.pasta === undefined
-          ? r.valor
-            ? { categoria: r.valor }
-            : { categoria: deleteField(), pasta: deleteField() }
-          : { pasta: r.valor || deleteField() };
-      lote.update(doc(db, "links", l.id), {
-        ...mudanca,
+    ids.slice(i, i + 450).forEach((id) =>
+      lote.update(doc(db, "links", id), {
+        pastaId: pastaParaGravar(pastaId),
+        categoria: deleteField(),
+        pasta: deleteField(),
         updatedBy: autor,
         updatedAt: serverTimestamp(),
-      });
-    });
+      }),
+    );
     await lote.commit();
   }
-  return afetados.length;
 }

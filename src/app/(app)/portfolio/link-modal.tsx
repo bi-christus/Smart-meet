@@ -5,9 +5,7 @@ import { iconeDoLink } from "@/lib/icones-core";
 import { monogramaDe, normalizarUrl, seloDoLink } from "@/lib/links-core";
 import {
   LADO_LOGO_PX,
-  LIMITE_CLASSIFICACAO,
   LIMITE_DESCRICAO_LINK,
-  classificacoesEmUso,
   LIMITE_NOME_LINK,
   conferirLink,
   conferirLogo,
@@ -160,8 +158,7 @@ export function LinkModal({
   existentes,
   autor,
   podeApagar,
-  organizar = false,
-  classificacaoInicial,
+  pastaDestino,
   onClose,
 }: {
   /** `null` = link novo. */
@@ -172,12 +169,15 @@ export function LinkModal({
   autor: string;
   podeApagar: boolean;
   /**
-   * Mostra Categoria e Pasta — só para o ADMIN (14/10/2026). A regra de
-   * `/links` recusa a mudança desses campos vinda de qualquer outra pessoa.
+   * A pasta aberta no explorador, para o produto NOVO nascer nela (#229). Só
+   * vem para o ADMIN — a regra de `/links` recusa `pastaId` de outra pessoa,
+   * e o produto dela nasce na raiz. `null` = a raiz.
+   *
+   * Não há campo de pasta no formulário, de propósito: a organização é
+   * arrastando, no explorador. Os campos de texto livre do #226 eram
+   * exatamente o que o setor pediu para tirar.
    */
-  organizar?: boolean;
-  /** Produto novo criado de dentro de uma categoria/pasta já nasce nela. */
-  classificacaoInicial?: { categoria: string; pasta: string };
+  pastaDestino?: { id: string; nome: string } | null;
   onClose: () => void;
 }) {
   const novo = link === null;
@@ -191,10 +191,8 @@ export function LinkModal({
       descricao: link?.descricao ?? "",
       icone: link?.icone ?? null,
       logo: link?.logo ?? null,
-      categoria: link ? (link.categoria ?? "") : (classificacaoInicial?.categoria ?? ""),
-      pasta: link ? (link.pasta ?? "") : (classificacaoInicial?.pasta ?? ""),
     }),
-    [link, classificacaoInicial],
+    [link],
   );
 
   const [nome, setNome] = useState(inicial.nome);
@@ -206,15 +204,6 @@ export function LinkModal({
   const [erroLogo, setErroLogo] = useState<string | null>(null);
   const arquivoRef = useRef<HTMLInputElement>(null);
   const [setor, setSetor] = useState(link?.setor ?? setorInicial);
-  const [categoria, setCategoria] = useState(inicial.categoria);
-  const [pasta, setPasta] = useState(inicial.pasta);
-  /** As categorias e pastas já usadas no portfólio do setor — as sugestões. */
-  const emUso = useMemo(
-    () => classificacoesEmUso(existentes.filter((l) => l.setor === setor)),
-    [existentes, setor],
-  );
-  const listaCategorias = `${formId}-categorias`;
-  const listaPastas = `${formId}-pastas`;
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<{ campo: CampoDoLink | null; texto: string } | null>(
     null,
@@ -231,7 +220,6 @@ export function LinkModal({
     descricao !== inicial.descricao ||
     icone !== inicial.icone ||
     logo !== inicial.logo ||
-    (organizar && (categoria !== inicial.categoria || pasta !== inicial.pasta)) ||
     (novo && setor !== setorInicial);
 
   /**
@@ -276,11 +264,19 @@ export function LinkModal({
     setErro(null);
     setSalvando(true);
     try {
-      // Só o admin manda a classificação; para os outros ela fica de fora da
-      // escrita, e o que já estava gravado continua como estava.
-      const cls = organizar ? { categoria, pasta } : undefined;
-      if (link) await editarLink(link, r.dados, icone, logo, autor, existentes, cls);
-      else await criarLink(setor, r.dados, icone, logo, autor, existentes, cls);
+      // A pasta só vai na CRIAÇÃO, e só do admin: editar não mexe nela (quem
+      // muda de pasta é o arrastar), e para os outros ela fica fora da escrita.
+      if (link) await editarLink(link, r.dados, icone, logo, autor, existentes);
+      else
+        await criarLink(
+          setor,
+          r.dados,
+          icone,
+          logo,
+          autor,
+          existentes,
+          pastaDestino && setor === setorInicial ? pastaDestino.id : undefined,
+        );
       onClose();
     } catch (e) {
       console.error("Erro ao salvar o link:", e);
@@ -490,54 +486,13 @@ export function LinkModal({
           )}
         </label>
 
-        {/* CATEGORIA E PASTA (14/10/2026), só para o admin. Texto livre com as
-            que já existem como sugestão: escrever um nome novo cria a
-            categoria; escolher um da lista põe o produto nela. A pasta mora
-            dentro da categoria, e por isso só abre depois dela. */}
-        {organizar && (
-          <div className={styles.linhaOrganizar}>
-            <label className={styles.field}>
-              <span>
-                Categoria <em className={styles.opcional}>opcional</em>
-              </span>
-              <input
-                className={styles.input}
-                value={categoria}
-                onChange={(e) => {
-                  setCategoria(e.target.value);
-                  if (!e.target.value.trim()) setPasta("");
-                }}
-                list={listaCategorias}
-                placeholder="Ex.: Power BI"
-                maxLength={LIMITE_CLASSIFICACAO}
-                disabled={salvando}
-              />
-              <datalist id={listaCategorias}>
-                {emUso.categorias.map((c) => (
-                  <option key={c} value={c} />
-                ))}
-              </datalist>
-            </label>
-            <label className={styles.field}>
-              <span>
-                Pasta <em className={styles.opcional}>opcional</em>
-              </span>
-              <input
-                className={styles.input}
-                value={pasta}
-                onChange={(e) => setPasta(e.target.value)}
-                list={listaPastas}
-                placeholder={categoria.trim() ? "Ex.: Financeiro" : "Escolha a categoria antes"}
-                maxLength={LIMITE_CLASSIFICACAO}
-                disabled={salvando || !categoria.trim()}
-              />
-              <datalist id={listaPastas}>
-                {emUso.pastasDe(categoria).map((p) => (
-                  <option key={p} value={p} />
-                ))}
-              </datalist>
-            </label>
-          </div>
+        {/* Onde o produto novo vai aparecer — só quando é uma pasta, e só no
+            portfólio aberto: trocar o setor acima leva o produto para a raiz
+            do outro portfólio, que não tem esta pasta. */}
+        {novo && pastaDestino && setor === setorInicial && (
+          <p className={styles.destinoPasta}>
+            <Icon name="pasta" size={14} /> Vai ficar na pasta <strong>{pastaDestino.nome}</strong>.
+          </p>
         )}
 
         {/* O logo é opcional: sem ele o selo segue mostrando o ícone, como

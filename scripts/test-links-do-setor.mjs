@@ -19,8 +19,6 @@ import { dirname, join } from "node:path";
 
 import {
   LIMITE_CLASSIFICACAO,
-  agruparPorCategoria,
-  classificacoesEmUso,
   conferirClassificacao,
   LIMITE_DESCRICAO_LINK,
   LIMITE_LOGO_BYTES,
@@ -338,7 +336,7 @@ checa("nada de firebase dentro do core (AGENTS.md §4)", !/from\s+["']firebase/.
 checa("nada de react dentro do core", !/from\s+["']react["']/.test(fonte));
 
 // ---------------------------------------------------------------------------
-console.log("\n— categorias e pastas (14/10/2026) —");
+console.log("\n— a organização antiga e o pastaId (#229) —");
 {
   checa("vazio é sem categoria", conferirClassificacao("  ").ok);
   checa("só símbolo é recusado", !conferirClassificacao("--").ok);
@@ -350,34 +348,19 @@ console.log("\n— categorias e pastas (14/10/2026) —");
   const lido = normalizarLinkDoSetor("x", { setor: "B.I.", nome: "A", url: "https://x.com", pasta: "Vendas" });
   checa("pasta sem categoria é descartada na leitura", lido && lido.pasta === undefined);
 
-  const ls = [
-    link("1", "Painel A", "https://a.com", "B.I.", { categoria: "Power BI", pasta: "Financeiro" }),
-    link("2", "Painel B", "https://b.com", "B.I.", { categoria: "power bi", pasta: "Acadêmico" }),
-    link("3", "Painel C", "https://c.com", "B.I.", { categoria: "Power BI" }),
-    link("4", "Sistema D", "https://d.com", "B.I.", { categoria: "Automações" }),
-    link("5", "Avulso", "https://e.com", "B.I."),
-  ];
-  const g = agruparPorCategoria(ls);
+  const antigo = link("1", "Painel A", "https://a.com", "B.I.", { categoria: "Power BI", pasta: "Financeiro" });
+  checa("a busca ainda acha pela categoria antiga", casaBusca(antigo, "power bi"));
   checa(
-    "categorias em ordem alfabética, Sem categoria por último",
-    g.map((x) => x.categoria).join("|") === "Automações|Power BI|",
-    g.map((x) => x.categoria).join("|"),
+    "a busca acha pelo caminho da pasta",
+    casaBusca(link("2", "Painel B", "https://b.com"), "academico", "Painéis › Acadêmico"),
   );
-  const pbi = g[1];
-  checa("caixa diferente não faz duas categorias", pbi.total === 3);
+  const comPasta = normalizarLinkDoSetor("x", { setor: "B.I.", nome: "A", url: "https://x.com", pastaId: "abcDEF_12-3" });
+  checa("pastaId válido é lido", comPasta?.pastaId === "abcDEF_12-3");
+  const pastaTorta = normalizarLinkDoSetor("x", { setor: "B.I.", nome: "A", url: "https://x.com", pastaId: "a/b" });
   checa(
-    "soltos primeiro, depois as pastas em ordem",
-    pbi.pastas.map((p) => p.pasta).join("|") === "|Acadêmico|Financeiro",
-    pbi.pastas.map((p) => p.pasta).join("|"),
+    "pastaId torto é descartado (o produto fica na raiz)",
+    pastaTorta !== null && pastaTorta.pastaId === undefined,
   );
-  const uso = classificacoesEmUso(ls);
-  checa("sugestões de categoria", uso.categorias.join("|") === "Automações|Power BI");
-  checa(
-    "sugestões de pasta pela categoria, sem olhar caixa",
-    uso.pastasDe("POWER BI").join("|") === "Acadêmico|Financeiro",
-  );
-  checa("a busca acha pela categoria", casaBusca(ls[3], "automacoes"));
-  checa("a busca acha pela pasta", casaBusca(ls[1], "academico"));
 }
 
 // ---------------------------------------------------------------------------
@@ -429,9 +412,9 @@ if (bloco) {
     `regra=${teto("categoria")}/${teto("pasta")} core=${LIMITE_CLASSIFICACAO}`,
   );
   checa(
-    "organizar (categoria e pasta) é só do admin",
-    /!mudou\(\['categoria', 'pasta'\]\) \|\| isAdmin\(\)/.test(b) &&
-      /hasAny\(\['categoria', 'pasta'\]\)\s*\|\| isAdmin\(\)/.test(b),
+    "organizar (a pasta, e a categoria antiga) é só do admin",
+    /!mudou\(\['categoria', 'pasta', 'pastaId'\]\) \|\| isAdmin\(\)/.test(b) &&
+      /hasAny\(\['categoria', 'pasta', 'pastaId'\]\)\s*\|\| isAdmin\(\)/.test(b),
   );
   // Alterar e apagar o link ALHEIO é só de admin — nem gestor (06/10/2026).
   const update = b.slice(b.indexOf("allow update"), b.indexOf("allow delete"));

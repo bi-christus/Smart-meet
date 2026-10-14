@@ -771,7 +771,8 @@ function Retrato({
 
 /**
  * O título na lateral, no lugar do "RACE RESULT" do cartaz: "Smart Meeting"
- * de baixo para cima, na serifa de título do app, e o "S2" na cor da marca.
+ * de baixo para cima, na mono do app (a serifa destoava da fonte limpa de
+ * código), e o "S2" na cor da marca.
  * Decorativo para o leitor de tela — o `<h1>` do cabeçalho já nomeia a tela.
  */
 function TituloLateral() {

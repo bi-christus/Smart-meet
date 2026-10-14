@@ -434,19 +434,23 @@ button.retrato:focus-visible {
   user-select: none;
   animation: desliza 360ms 160ms both cubic-bezier(0.2, 0, 0, 1);
 }
+/* Na mono do app, e não na serifa: o título é o traço de código da marca, e a
+   Plex Mono só é carregada em 400/500 — por isso 500, e não um 700 sintético. */
 .tituloGrande {
-  font-family: var(--font-serif), serif;
-  font-weight: 700;
-  font-size: clamp(40px, 5.6vh, 60px);
-  letter-spacing: -0.01em;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-weight: 500;
+  /* Um degrau abaixo do que era na serifa: a mono é mais larga, e no mesmo
+     corpo o título ficava ~20% mais comprido ao lado da lista. */
+  font-size: clamp(34px, 4.8vh, 52px);
+  letter-spacing: -0.04em;
   white-space: nowrap;
   color: var(--tx);
 }
 .tituloAcento {
   margin-top: 0.3em;
-  font-family: var(--font-serif), serif;
-  font-weight: 700;
-  font-size: clamp(30px, 4.2vh, 46px);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-weight: 500;
+  font-size: clamp(26px, 3.6vh, 40px);
   color: var(--brand);
 }
 

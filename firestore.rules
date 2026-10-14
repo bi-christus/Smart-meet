@@ -83,6 +83,11 @@ rules_version = '2';
 //  - /links: alterar e apagar passam a ser de quem cadastrou, ou de admin.
 //    Antes qualquer pessoa do setor alterava, e gestor apagava.
 //
+// O QUE MUDOU (2026-10-14, #229):
+//  - /pastasPortfolio, as pastas do explorador do Portfólio. Coleção NOVA,
+//    escrita só de admin; e /links ganhou `pastaId`, opcional e também só de
+//    admin. Nenhuma resposta antiga muda: publicar antes do app é seguro.
+//
 // Nota sobre consultas: as telas sempre filtram por setor (`==` ou `in`), e o
 // admin consulta DEFAULT_SECTORS. Por isso o escopo por setor na leitura não
 // quebra nenhuma query existente.
@@ -976,10 +981,19 @@ service cloud.firestore {
         let logo = d.get('logo', null);
         let categoria = d.get('categoria', null);
         let pasta = d.get('pasta', null);
+        let pastaId = d.get('pastaId', null);
         return d.keys().hasOnly(['setor', 'nome', 'descricao', 'url', 'icone',
-                                 'logo', 'categoria', 'pasta',
+                                 'logo', 'categoria', 'pasta', 'pastaId',
                                  'createdBy', 'createdAt',
                                  'updatedBy', 'updatedAt'])
+               // A PASTA DO EXPLORADOR (#229): o id de um doc de
+               // /pastasPortfolio. Só a forma do id — conferir que a pasta
+               // existe e é do mesmo setor custaria um `get()` por produto
+               // arrastado, e a tela já lê com desconfiança (pasta que não
+               // existe põe o produto na raiz). QUEM muda está no update.
+               && (pastaId == null
+                   || (pastaId is string
+                       && pastaId.matches('^[A-Za-z0-9_-]{1,64}$')))
                // CATEGORIA E PASTA (14/10/2026): a organização do portfólio.
                // Mesma régua do nome, com teto próprio; pasta só existe dentro
                // de uma categoria. QUEM pode mexer nelas está no create/update.
@@ -1025,13 +1039,13 @@ service cloud.firestore {
                     && request.resource.data.createdAt == request.time
                     && podeNoSetor(novo('setor'))
                     // Só o admin já cria o produto organizado.
-                    && (!request.resource.data.keys().hasAny(['categoria', 'pasta'])
+                    && (!request.resource.data.keys().hasAny(['categoria', 'pasta', 'pastaId'])
                         || isAdmin());
 
       allow update: if !mudou(['setor', 'createdBy', 'createdAt'])
-                    // Organizar o portfólio (categoria e pasta) é só do admin,
-                    // mesmo no produto que a própria pessoa cadastrou.
-                    && (!mudou(['categoria', 'pasta']) || isAdmin())
+                    // Organizar o portfólio (a pasta, e a categoria antiga) é
+                    // só do admin, mesmo no produto que a pessoa cadastrou.
+                    && (!mudou(['categoria', 'pasta', 'pastaId']) || isAdmin())
                     && linkOk()
                     && souEu(novo('updatedBy'))
                     && request.resource.data.get('updatedAt', null) == request.time
@@ -1044,6 +1058,63 @@ service cloud.firestore {
       allow delete: if souEu(cur('createdBy'))
                        ? podeNoSetor(cur('setor'))
                        : isAdmin();
+    }
+
+    // ---- as pastas do Portfólio (#229) ----
+    //
+    // O explorador do Portfólio: pasta com nome, ícone e pasta-mãe (`paiId`),
+    // e o produto aponta para ela por `pastaId`. Substitui a categoria/pasta
+    // em texto livre do #226.
+    //
+    // MESMA LEITURA DOS PRODUTOS: quem enxerga o setor, lê — a árvore do B.I.
+    // não aparece para as Cantinas. ESCRITA SÓ DE ADMIN, como organizar os
+    // produtos: o pedido foi "no acesso administrador".
+    //
+    // `setor`, `createdBy` e `createdAt` são imutáveis, pelo motivo de /links:
+    // trocar o setor seria levar a pasta para o portfólio de outro.
+    //
+    // O QUE ESTA REGRA NÃO FECHA, dito na cara: ela não confere que `paiId`
+    // existe, é do mesmo setor ou não fecha um ciclo — isso pediria um `get()`
+    // por nível da árvore. Quem impede é o cliente (`podeMoverPasta`), e quem
+    // lê trata o torto (`arvoreDoSetor` põe na raiz a pasta de mãe inválida).
+    // Como só admin escreve, o estrago possível é de quem já pode tudo.
+    match /pastasPortfolio/{pastaDoc} {
+      function pastaOk() {
+        let d = request.resource.data;
+        let nome = d.get('nome', '');
+        let icone = d.get('icone', null);
+        let paiId = d.get('paiId', null);
+        return d.keys().hasOnly(['setor', 'nome', 'icone', 'paiId',
+                                 'createdBy', 'createdAt',
+                                 'updatedBy', 'updatedAt'])
+               && nome is string
+               && nome.size() <= 40
+               && nome.matches('(?s).*[\\p{L}\\p{N}].*')
+               && (icone == null
+                   || (icone is string
+                       && icone.size() <= 24
+                       && icone.matches('^[a-z][a-z0-9-]*$')))
+               && (paiId == null
+                   || (paiId is string
+                       && paiId != pastaDoc
+                       && paiId.matches('^[A-Za-z0-9_-]{1,64}$')));
+      }
+
+      allow read: if podeNoSetor(cur('setor'));
+
+      allow create: if pastaOk()
+                    && novo('setor') != ''
+                    && souEu(novo('createdBy'))
+                    && request.resource.data.createdAt == request.time
+                    && isAdmin();
+
+      allow update: if !mudou(['setor', 'createdBy', 'createdAt'])
+                    && pastaOk()
+                    && souEu(novo('updatedBy'))
+                    && request.resource.data.get('updatedAt', null) == request.time
+                    && isAdmin();
+
+      allow delete: if isAdmin();
     }
 
     // ---- propostas de demanda geradas a partir de reuniões ----
