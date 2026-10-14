@@ -9,15 +9,35 @@ import {
   type UserProfile,
 } from "@/lib/users";
 import {
-  agruparPorCategoria,
   casaBusca,
   buscarIconeDoSite,
-  renomearClassificacao,
   definirIconeDoLinkDoSetor,
   definirLogoDoLinkDoSetor,
+  moverProdutos,
   subscribeLinksDoSetor,
   type LinkDoSetor,
 } from "@/lib/links-do-setor";
+import {
+  arvoreDoSetor,
+  caminhoDe,
+  caminhoEscrito,
+  contagemPorPasta,
+  converterOrganizacaoAntiga,
+  criarPasta,
+  definirIconeDaPasta,
+  excluirPasta,
+  filhasDe,
+  idsDaSubarvore,
+  moverPasta,
+  nomeLivre,
+  pastaCasaBusca,
+  pastaDoProduto,
+  planoDeExclusao,
+  podeMoverPasta,
+  renomearPasta,
+  subscribePastasDoPortfolio,
+  type PastaDoPortfolio,
+} from "@/lib/portfolio-pastas";
 import {
   columnsBySector,
   deliveredBySector,
@@ -38,11 +58,17 @@ import { LinkCard } from "./link-card";
 import { LinkModal, fraseDoErro, prepararLogo } from "./link-modal";
 import { ProdutoGaveta } from "./produto-gaveta";
 import {
-  RECORTE_TUDO,
-  TrilhaDoPortfolio,
-  aplicarRecorte,
-  type Recorte,
-} from "./organizacao";
+  ArvoreDePastas,
+  BlocoDePasta,
+  CaminhoDePastas,
+  MenuDeContexto,
+  PastaNova,
+  abrirSeletorDeIcone,
+  iniciarArraste,
+  pontoDoMenu,
+  type Arrastando,
+  type ItemDeMenu,
+} from "./explorador";
 import { normalizarUrl } from "@/lib/links-core";
 import styles from "./links.module.css";
 
@@ -82,6 +108,7 @@ import styles from "./links.module.css";
  * cada render, e os `useMemo` que dependem dele recalculariam sempre.
  */
 const SEM_LINKS: LinkDoSetor[] = [];
+const SEM_PASTAS: PastaDoPortfolio[] = [];
 const SEM_CARDS: Card[] = [];
 const SEM_COLS: ColumnDoc[] = [];
 const SEM_USERS: UserProfile[] = [];
@@ -95,11 +122,15 @@ export default function LinksPage() {
   const fLinks = useAsyncData<LinkDoSetor>(chaveSetores, (onData, onErro) =>
     subscribeLinksDoSetor(sectors, onData, onErro),
   );
+  const fPastas = useAsyncData<PastaDoPortfolio>(chaveSetores, (onData, onErro) =>
+    subscribePastasDoPortfolio(sectors, onData, onErro),
+  );
   const fUsers = useAsyncData<UserProfile>("todos", (onData, onErro) =>
     subscribeUsers(onData, onErro),
   );
 
   const links = fLinks.data ?? SEM_LINKS;
+  const pastas = fPastas.data ?? SEM_PASTAS;
   const users = fUsers.data ?? SEM_USERS;
   const autor = profile?.email ?? "";
 
@@ -118,15 +149,13 @@ export default function LinksPage() {
   const setorAtual = sectors.includes(setorEscolhido) ? setorEscolhido : setorPadrao;
   const [busca, setBusca] = useState("");
   /**
-   * A categoria ou pasta escolhida na trilha (14/10/2026). Guardada JUNTO do
-   * setor: trocar de portfólio volta para "Todos os produtos", em vez de abrir
-   * o outro setor recortado por uma categoria que talvez nem exista nele.
+   * A pasta aberta no explorador (#229). Guardada JUNTO do setor: trocar de
+   * portfólio abre o outro na raiz, e não numa pasta que nem existe nele.
    */
-  const [recorteGuardado, setRecorte] = useState<{ setor: string; r: Recorte }>({
+  const [abertaGuardada, setAberta] = useState<{ setor: string; id: string | null }>({
     setor: "",
-    r: RECORTE_TUDO,
+    id: null,
   });
-  const recorte = recorteGuardado.setor === setorAtual ? recorteGuardado.r : RECORTE_TUDO;
 
   /**
    * As demandas e as etapas do portfólio aberto — só para o andamento (#209).
@@ -247,7 +276,10 @@ export default function LinksPage() {
    * funcionando; fazer a grade inteira esperar seria esperar por um dado que o
    * card sabe dispensar.
    */
-  const tela = juntarFontes([fLinks]);
+  // As pastas SEGURAM a tela junto com os produtos: sem elas, tudo o que está
+  // dentro de uma pasta apareceria solto na raiz, e a tela afirmaria uma
+  // organização que não é a gravada.
+  const tela = juntarFontes([fLinks, fPastas]);
 
   /** Os produtos do portfólio aberto — a base da contagem e da busca. */
   const doSetor = useMemo(
@@ -255,26 +287,212 @@ export default function LinksPage() {
     [links, setorAtual],
   );
 
-  const visiveis = useMemo(
-    () => doSetor.filter((l) => casaBusca(l, busca)),
-    [doSetor, busca],
+  /** A árvore do portfólio aberto, já sem ciclo e sem mãe de outro setor. */
+  const arvore = useMemo(() => arvoreDoSetor(pastas, setorAtual), [pastas, setorAtual]);
+  /** Pasta apagada por outra pessoa enquanto estava aberta: volta para a raiz. */
+  const atual =
+    abertaGuardada.setor === setorAtual && arvore.some((p) => p.id === abertaGuardada.id)
+      ? abertaGuardada.id
+      : null;
+  const abrir = useCallback(
+    (id: string | null) => setAberta({ setor: setorAtual, id }),
+    [setorAtual],
+  );
+  const caminho = useMemo(() => caminhoDe(arvore, atual), [arvore, atual]);
+  const contagem = useMemo(() => contagemPorPasta(arvore, doSetor), [arvore, doSetor]);
+
+  /**
+   * O que a grade mostra. SEM BUSCA, o conteúdo da pasta aberta: as subpastas
+   * e os produtos que moram nela. COM BUSCA, o portfólio inteiro — como a
+   * busca do Windows, que procura dentro das subpastas —, e cada resultado diz
+   * onde está.
+   */
+  const buscando = busca.trim() !== "";
+  const pastasNaGrade = useMemo(
+    () => (buscando ? arvore.filter((p) => pastaCasaBusca(p, busca)) : filhasDe(arvore, atual)),
+    [arvore, atual, busca, buscando],
+  );
+  const produtosNaGrade = useMemo(
+    () =>
+      buscando
+        ? doSetor.filter((l) =>
+            casaBusca(l, busca, caminhoEscrito(arvore, pastaDoProduto(arvore, l))),
+          )
+        : doSetor.filter((l) => pastaDoProduto(arvore, l) === atual),
+    [doSetor, arvore, atual, busca, buscando],
+  );
+  const temPastas = arvore.length > 0;
+
+  // ---- organizar: só o admin ----------------------------------------------
+
+  const [arrastando, setArrastando] = useState<Arrastando | null>(null);
+  const fimDoArraste = useCallback(() => setArrastando(null), []);
+  /** A pasta com o nome sendo digitado. */
+  const [renomeando, setRenomeando] = useState<string | null>(null);
+  /** A pasta nova que está nascendo, no lugar em que vai nascer. */
+  const [nascendo, setNascendo] = useState<{ setor: string; paiId: string | null } | null>(null);
+  const nascendoAqui = nascendo?.setor === setorAtual && nascendo.paiId === atual && !buscando;
+  const [menu, setMenu] = useState<{ x: number; y: number; itens: ItemDeMenu[] } | null>(null);
+  const fecharMenu = useCallback(() => setMenu(null), []);
+  /** O resultado de uma arrumação que falhou (ou da conversão). */
+  const [aviso, setAviso] = useState<string | null>(null);
+
+  /** O destino aceita o que está vindo? É o que acende (ou não) o alvo. */
+  const aceita = useCallback(
+    (destino: string | null, a: Arrastando) => {
+      if (a.tipo === "pasta") return podeMoverPasta(arvore, a.id, destino);
+      const produto = doSetor.find((l) => l.id === a.id);
+      return !!produto && pastaDoProduto(arvore, produto) !== destino;
+    },
+    [arvore, doSetor],
   );
 
-  /** O mapa da trilha: o portfólio inteiro, sem a busca. */
-  const gruposDoSetor = useMemo(() => agruparPorCategoria(doSetor), [doSetor]);
-  /** O que a grade desenha: a busca e o recorte da trilha, já agrupados. */
-  const gruposVisiveis = useMemo(
-    () => aplicarRecorte(agruparPorCategoria(visiveis), recorte),
-    [visiveis, recorte],
-  );
-  const nVisiveis = gruposVisiveis.reduce((n, g) => n + g.total, 0);
-  /** Com uma categoria só (ou nenhuma), os títulos de seção não dizem nada. */
-  const temOrganizacao = gruposDoSetor.some((g) => g.categoria !== null);
+  async function soltar(destino: string | null, a: Arrastando) {
+    setArrastando(null);
+    if (!aceita(destino, a)) return;
+    setAviso(null);
+    try {
+      if (a.tipo === "produto") await moverProdutos([a.id], destino, autor);
+      else {
+        const pasta = arvore.find((p) => p.id === a.id);
+        if (pasta) await moverPasta(pasta, arvore, destino, autor);
+      }
+    } catch (e) {
+      console.error("Erro ao mover no portfólio:", e);
+      setAviso(fraseDoErro("Não foi possível mover.", e));
+    }
+  }
 
-  async function renomear(alvo: { categoria: string; pasta?: string }, novo: string) {
-    await renomearClassificacao(doSetor, setorAtual, alvo, novo, autor);
-    // O recorte que apontava para o nome antigo passaria a não achar nada.
-    setRecorte({ setor: setorAtual, r: RECORTE_TUDO });
+  async function criarPastaNova(nome: string) {
+    await criarPasta(setorAtual, arvore, atual, nome, autor);
+    setNascendo(null);
+  }
+
+  async function renomearPastaAberta(pasta: PastaDoPortfolio, nome: string) {
+    await renomearPasta(pasta, arvore, nome, autor);
+    setRenomeando(null);
+  }
+
+  async function trocarIcone(pasta: PastaDoPortfolio, icone: string | null) {
+    setAviso(null);
+    try {
+      await definirIconeDaPasta(pasta, icone, autor);
+    } catch (e) {
+      console.error("Erro ao trocar o ícone da pasta:", e);
+      setAviso(fraseDoErro("Não foi possível trocar o ícone.", e));
+    }
+  }
+
+  async function excluir(pasta: PastaDoPortfolio) {
+    const plano = planoDeExclusao(arvore, doSetor, pasta.id);
+    if (!plano) return;
+    const mae = pasta.paiId ? arvore.find((p) => p.id === pasta.paiId)?.nome : undefined;
+    const onde = mae ? `para a pasta “${mae}”` : "para o início do portfólio";
+    const dentro = [
+      plano.produtos.length
+        ? `${plano.produtos.length} ${plano.produtos.length === 1 ? "produto" : "produtos"}`
+        : "",
+      plano.pastas.length ? `${plano.pastas.length} ${plano.pastas.length === 1 ? "pasta" : "pastas"}` : "",
+    ]
+      .filter(Boolean)
+      .join(" e ");
+    if (
+      !confirm(
+        dentro
+          ? `Excluir a pasta “${pasta.nome}”? O que está nela (${dentro}) vai ${onde}. Nenhum produto é apagado.`
+          : `Excluir a pasta “${pasta.nome}”? Ela está vazia.`,
+      )
+    )
+      return;
+    setAviso(null);
+    try {
+      await excluirPasta(pasta, arvore, doSetor, autor);
+      if (atual !== null && idsDaSubarvore(arvore, pasta.id).has(atual)) abrir(pasta.paiId);
+    } catch (e) {
+      console.error("Erro ao excluir a pasta:", e);
+      setAviso(fraseDoErro("Não foi possível excluir a pasta.", e));
+    }
+  }
+
+  /** Abrir pela grade limpa a busca: dentro da pasta, a busca já não diz nada. */
+  function abrirPasta(id: string | null) {
+    setBusca("");
+    setRenomeando(null);
+    abrir(id);
+  }
+
+  /**
+   * Renomear e trocar o ícone acontecem NA PASTA DA GRADE. Pelo menu da
+   * árvore a pasta pode estar em outro nível — então a grade abre a mãe dela
+   * primeiro, e a pasta aparece no lugar.
+   */
+  function renomearNaGrade(pasta: PastaDoPortfolio) {
+    if (buscando || pasta.paiId !== atual) abrirPasta(pasta.paiId);
+    setNascendo(null);
+    setRenomeando(pasta.id);
+  }
+  function trocarIconeNaGrade(pasta: PastaDoPortfolio) {
+    if (buscando || pasta.paiId !== atual) abrirPasta(pasta.paiId);
+    // O seletor mora no canto da pasta, que só existe depois do próximo
+    // desenho quando a grade acabou de trocar de pasta.
+    requestAnimationFrame(() => abrirSeletorDeIcone(pasta.id));
+  }
+
+  function menuDaPasta(pasta: PastaDoPortfolio, ponto: { x: number; y: number }) {
+    setMenu({
+      ...ponto,
+      itens: [
+        { rotulo: "Abrir", icone: "pasta", onEscolher: () => abrirPasta(pasta.id) },
+        { rotulo: "Renomear", icone: "edit", atalho: "F2", onEscolher: () => renomearNaGrade(pasta) },
+        { rotulo: "Trocar ícone", icone: "imagem", onEscolher: () => trocarIconeNaGrade(pasta) },
+        {
+          rotulo: "Excluir",
+          icone: "trash",
+          atalho: "Del",
+          perigo: true,
+          onEscolher: () => void excluir(pasta),
+        },
+      ],
+    });
+  }
+
+  function novaPasta() {
+    setBusca("");
+    setRenomeando(null);
+    setNascendo({ setor: setorAtual, paiId: atual });
+  }
+
+  /** O botão direito no VAZIO da grade: o menu do Windows, "Nova pasta". */
+  function menuDoVazio(ponto: { x: number; y: number }) {
+    setMenu({
+      ...ponto,
+      itens: [
+        { rotulo: "Nova pasta", icone: "pasta", onEscolher: novaPasta },
+        { rotulo: "Novo produto", icone: "plus", onEscolher: () => setAberto("novo") },
+      ],
+    });
+  }
+
+  /** Produtos com a organização antiga (#226), em texto, ainda por converter. */
+  const comOrganizacaoAntiga = useMemo(
+    () => doSetor.filter((l) => l.categoria && pastaDoProduto(arvore, l) === null).length,
+    [doSetor, arvore],
+  );
+  const [convertendo, setConvertendo] = useState(false);
+  async function converter() {
+    setConvertendo(true);
+    setAviso(null);
+    try {
+      const n = await converterOrganizacaoAntiga(setorAtual, arvore, doSetor, autor);
+      setAviso(
+        `Pronto: as categorias antigas viraram ${n} ${n === 1 ? "pasta" : "pastas"}. Agora é só arrastar para arrumar.`,
+      );
+    } catch (e) {
+      console.error("Erro ao converter a organização antiga:", e);
+      setAviso(fraseDoErro("Não foi possível converter a organização antiga.", e));
+    } finally {
+      setConvertendo(false);
+    }
   }
 
   /**
@@ -353,10 +571,7 @@ export default function LinksPage() {
     }
   }
 
-  const contagem =
-    nVisiveis === doSetor.length
-      ? `${doSetor.length} ${doSetor.length === 1 ? "produto" : "produtos"}`
-      : `${nVisiveis} de ${doSetor.length} produtos`;
+  const contagemTexto = `${doSetor.length} ${doSetor.length === 1 ? "produto" : "produtos"}`;
 
   if (!profile) return null;
 
@@ -388,7 +603,7 @@ export default function LinksPage() {
           <p>
             O que o setor desenvolveu — painéis, aplicativos, planilhas e pastas
             —, com acesso rápido
-            {tela.carregando || tela.erro ? "." : ` — ${contagem}.`}
+            {tela.carregando || tela.erro ? "." : ` — ${contagemTexto}.`}
           </p>
         </div>
 
@@ -397,7 +612,7 @@ export default function LinksPage() {
             <Icon name="search" size={15} />
             <input
               className={styles.search}
-              placeholder="Buscar por nome, categoria, pasta ou serviço…"
+              placeholder="Buscar em todas as pastas…"
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
               aria-label="Buscar no portfólio"
@@ -464,10 +679,16 @@ export default function LinksPage() {
 
       <div className={styles.corpo} aria-busy={tela.carregando || undefined}>
         {tela.erro ? (
-          <ErrorState error={tela.erro} onRetry={() => fLinks.tentarDeNovo()} />
+          <ErrorState
+            error={tela.erro}
+            onRetry={() => {
+              fLinks.tentarDeNovo();
+              fPastas.tentarDeNovo();
+            }}
+          />
         ) : tela.carregando ? (
           <SkeletonCard cards={6} texto="Carregando o portfólio…" />
-        ) : doSetor.length === 0 ? (
+        ) : doSetor.length === 0 && !temPastas ? (
           <EmptyState
             icon="links"
             title={`O portfólio ${setorAtual} ainda está vazio`}
@@ -487,77 +708,225 @@ export default function LinksPage() {
           />
         ) : (
           <div className={styles.layout}>
-            {temOrganizacao && (
-              <TrilhaDoPortfolio
-                grupos={gruposDoSetor}
+            {/* A árvore aparece quando há pasta — ou para o admin, que é quem
+                cria a primeira e precisa de onde soltar. Para os outros, um
+                portfólio sem pasta nenhuma continua sendo só a grade. */}
+            {(temPastas || ehAdmin) && (
+              <ArvoreDePastas
+                raiz={`Portfólio ${setorAtual}`}
                 total={doSetor.length}
-                recorte={recorte}
-                onRecorte={(r) => setRecorte({ setor: setorAtual, r })}
+                arvore={arvore}
+                contagem={contagem}
+                atual={buscando ? null : atual}
+                caminhoAtual={caminho}
                 podeOrganizar={ehAdmin}
-                onRenomear={renomear}
+                arrastando={arrastando}
+                aceita={aceita}
+                onSoltar={(d, a) => void soltar(d, a)}
+                onArrastar={setArrastando}
+                onFimDoArraste={fimDoArraste}
+                onAbrir={abrirPasta}
+                onMenu={menuDaPasta}
               />
             )}
-            <div className={styles.conteudo}>
-              {nVisiveis === 0 && (
-                <EmptyState
-                  size="compact"
-                  icon="search"
-                  title="Nenhum produto aqui com essa busca"
-                  description={
-                    <>
-                      Os {doSetor.length} produtos deste portfólio continuam lá —
-                      é a busca ou a categoria escolhida que está apertando a
-                      peneira.
-                    </>
-                  }
-                />
-              )}
-              {/* As seções ficam montadas mesmo com zero resultados: trocá-las
-                  pelo painel de vazio a cada tecla reexecutaria a entrada. */}
-              <div className={classeAparece}>
-                {gruposVisiveis.map((g) => (
-                  <section key={g.categoria ?? "__sem__"} className={styles.secaoCategoria}>
-                    {temOrganizacao && (
-                      <h2 className={styles.tituloCategoria}>
-                        {g.categoria ?? "Sem categoria"}
-                        <span>{g.total}</span>
-                      </h2>
-                    )}
-                    {g.pastas.map((p) => (
-                      <div key={p.pasta ?? "__solto__"} className={styles.blocoPasta}>
-                        {p.pasta !== null && (
-                          <h3 className={styles.tituloPasta}>
-                            <Icon name="pasta" size={14} />
-                            {p.pasta}
-                            <span>{p.links.length}</span>
-                          </h3>
-                        )}
-                        <div className={styles.grid}>
-                          {p.links.map((link) => (
-                            <LinkCard
-                              key={link.id}
-                              link={link}
-                              nomeDe={nomeDe}
-                              anoAtual={anoAtual}
-                              salvando={salvando === link.id}
-                              erro={erroIcone?.id === link.id ? erroIcone.texto : null}
-                              podeAlterar={podeAlterar(link)}
-                              andamento={andamentos.get(link.id)}
-                              onAbrirAndamento={() => setGavetaDe(link.id)}
-                              onEscolherIcone={(nome) => void escolherIcone(link, nome)}
-                              onEditar={() => setAberto(link)}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </section>
-                ))}
+            <div
+              className={styles.conteudo}
+              onContextMenu={
+                ehAdmin && !buscando
+                  ? (e) => {
+                      // Só o VAZIO: o menu da pasta e o do navegador sobre um
+                      // produto (abrir link em nova aba…) continuam os deles.
+                      if ((e.target as HTMLElement).closest("a, button, input, [data-produto]")) return;
+                      e.preventDefault();
+                      menuDoVazio(pontoDoMenu(e));
+                    }
+                  : undefined
+              }
+            >
+              <div className={styles.barraExplorador}>
+                {buscando ? (
+                  <p className={styles.resultadoBusca} role="status">
+                    {pastasNaGrade.length + produtosNaGrade.length === 0
+                      ? "Nada encontrado"
+                      : `${[
+                          pastasNaGrade.length
+                            ? `${pastasNaGrade.length} ${pastasNaGrade.length === 1 ? "pasta" : "pastas"}`
+                            : "",
+                          produtosNaGrade.length
+                            ? `${produtosNaGrade.length} ${produtosNaGrade.length === 1 ? "produto" : "produtos"}`
+                            : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" e ")}`}{" "}
+                    em todo o portfólio {setorAtual}
+                  </p>
+                ) : (
+                  <CaminhoDePastas
+                    raiz={`Portfólio ${setorAtual}`}
+                    caminho={caminho}
+                    arrastando={arrastando}
+                    aceita={aceita}
+                    onSoltar={(d, a) => void soltar(d, a)}
+                    onAbrir={abrirPasta}
+                  />
+                )}
+                {ehAdmin && !buscando && (
+                  <button type="button" className={styles.btnGhost} onClick={novaPasta}>
+                    <Icon name="pasta" size={14} /> Nova pasta
+                  </button>
+                )}
               </div>
+
+              {aviso && (
+                <div className={styles.avisoLote} role="status">
+                  {aviso}
+                  <button type="button" className={styles.editar} onClick={() => setAviso(null)} aria-label="Fechar aviso">
+                    <Icon name="x" size={14} />
+                  </button>
+                </div>
+              )}
+
+              {/* A organização antiga (#226) não some sozinha: o admin vê o
+                  convite para transformá-la em pastas, e os produtos ficam no
+                  início do portfólio até lá — nada se perde. */}
+              {ehAdmin && comOrganizacaoAntiga > 0 && (
+                <div className={styles.conversao}>
+                  <Icon name="pasta" size={15} />
+                  <span>
+                    {comOrganizacaoAntiga}{" "}
+                    {comOrganizacaoAntiga === 1 ? "produto ainda tem" : "produtos ainda têm"} a
+                    categoria digitada no formulário antigo.
+                  </span>
+                  <button
+                    type="button"
+                    className={styles.btnGhost}
+                    onClick={() => void converter()}
+                    disabled={convertendo}
+                  >
+                    {convertendo ? "Convertendo…" : "Transformar em pastas"}
+                  </button>
+                </div>
+              )}
+
+              {(pastasNaGrade.length > 0 || nascendoAqui) && (
+                <div className={styles.gradePastas}>
+                  {nascendoAqui && (
+                    <PastaNova
+                      nome={nomeLivre(filhasDe(arvore, atual))}
+                      onConfirmar={criarPastaNova}
+                      onDesistir={() => setNascendo(null)}
+                    />
+                  )}
+                  {pastasNaGrade.map((p) => (
+                    <BlocoDePasta
+                      key={p.id}
+                      pasta={p}
+                      conta={contagem.get(p.id) ?? 0}
+                      local={
+                        buscando
+                          ? caminhoEscrito(arvore, p.paiId) || `Portfólio ${setorAtual}`
+                          : undefined
+                      }
+                      podeOrganizar={ehAdmin}
+                      renomeando={renomeando === p.id}
+                      arrastando={arrastando}
+                      aceita={(a) => aceita(p.id, a)}
+                      onSoltar={(a) => void soltar(p.id, a)}
+                      onArrastar={setArrastando}
+                      onFimDoArraste={fimDoArraste}
+                      onAbrir={() => abrirPasta(p.id)}
+                      onMenu={(ponto) => menuDaPasta(p, ponto)}
+                      onRenomear={() => renomearNaGrade(p)}
+                      onConfirmarNome={(nome) => renomearPastaAberta(p, nome)}
+                      onDesistirDoNome={() => setRenomeando(null)}
+                      onExcluir={() => void excluir(p)}
+                      onIcone={(icone) => void trocarIcone(p, icone)}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {produtosNaGrade.length > 0 ? (
+                <div className={`${styles.grid} ${classeAparece}`}>
+                  {produtosNaGrade.map((link) => {
+                    const onde = buscando
+                      ? caminhoEscrito(arvore, pastaDoProduto(arvore, link))
+                      : "";
+                    return (
+                      <div
+                        key={link.id}
+                        data-produto
+                        className={`${styles.produto} ${arrastando?.tipo === "produto" && arrastando.id === link.id ? styles.arrastado : ""}`}
+                        draggable={ehAdmin}
+                        onDragStart={
+                          ehAdmin
+                            ? (e) => iniciarArraste(e, { tipo: "produto", id: link.id }, setArrastando)
+                            : undefined
+                        }
+                        onDragEnd={fimDoArraste}
+                      >
+                        {onde && (
+                          <button
+                            type="button"
+                            className={styles.produtoLocal}
+                            onClick={() => abrirPasta(pastaDoProduto(arvore, link))}
+                            title="Abrir a pasta"
+                          >
+                            <Icon name="pasta" size={12} /> {onde}
+                          </button>
+                        )}
+                        <LinkCard
+                          link={link}
+                          nomeDe={nomeDe}
+                          anoAtual={anoAtual}
+                          salvando={salvando === link.id}
+                          erro={erroIcone?.id === link.id ? erroIcone.texto : null}
+                          podeAlterar={podeAlterar(link)}
+                          andamento={andamentos.get(link.id)}
+                          onAbrirAndamento={() => setGavetaDe(link.id)}
+                          onEscolherIcone={(nome) => void escolherIcone(link, nome)}
+                          onEditar={() => setAberto(link)}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : buscando ? (
+                pastasNaGrade.length === 0 && (
+                  <EmptyState
+                    size="compact"
+                    icon="search"
+                    title="Nada com essa busca"
+                    description={
+                      <>
+                        A busca procura em todas as pastas, pelo nome, pela
+                        descrição, pelo endereço e pelo nome da pasta. Os{" "}
+                        {doSetor.length} produtos continuam lá.
+                      </>
+                    }
+                  />
+                )
+              ) : (
+                pastasNaGrade.length === 0 &&
+                !nascendoAqui && (
+                  <EmptyState
+                    size="compact"
+                    icon="pasta"
+                    title={atual === null ? "Nenhum produto por aqui" : "Esta pasta está vazia"}
+                    description={
+                      ehAdmin
+                        ? "Para encher esta pasta, abra a pasta onde os produtos estão e arraste-os até ela na árvore à esquerda. O botão direito aqui cria uma subpasta."
+                        : "Os produtos deste portfólio estão nas pastas ao lado."
+                    }
+                  />
+                )
+              )}
             </div>
           </div>
         )}
       </div>
+
+      {menu && <MenuDeContexto x={menu.x} y={menu.y} itens={menu.itens} onFechar={fecharMenu} />}
 
       {(() => {
         // A gaveta só abre com o produto E o andamento em mãos: se a última
@@ -578,15 +947,12 @@ export default function LinksPage() {
           existentes={links}
           autor={autor}
           podeApagar={aberto !== "novo" && podeAlterar(aberto)}
-          organizar={ehAdmin}
-          classificacaoInicial={
-            // Produto novo criado com uma categoria/pasta aberta na trilha
-            // já nasce nela.
-            recorte.tipo === "pasta"
-              ? { categoria: recorte.categoria, pasta: recorte.pasta }
-              : recorte.tipo === "categoria" && recorte.categoria
-                ? { categoria: recorte.categoria, pasta: "" }
-                : undefined
+          pastaDestino={
+            // Produto novo criado com uma pasta aberta já nasce nela — só pelo
+            // admin, que é quem a regra deixa gravar `pastaId`.
+            ehAdmin && caminho.length
+              ? { id: caminho[caminho.length - 1].id, nome: caminho[caminho.length - 1].nome }
+              : undefined
           }
           onClose={() => setAberto(null)}
         />

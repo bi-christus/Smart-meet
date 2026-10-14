@@ -647,6 +647,58 @@ for (const quem of Object.keys(PESSOAS)) {
     updatedAt: QUANDO,
   });
   caso(quem, "por pasta sem categoria", "update", LK, LINK, editado({ pasta: "Financeiro" }));
+  // A pasta do explorador (#229): `pastaId` segue a mesma tranca da categoria
+  // — so admin mexe, mesmo no proprio produto. Nascem mudando de resposta
+  // para o admin: na versao anterior o campo nem era aceito.
+  caso(quem, "cadastrar link ja numa pasta", "create", LK, null, meuLink({ pastaId: "pasta1" }));
+  caso(quem, "arrastar o proprio link para uma pasta", "update", LK, meuLink(), {
+    ...meuLink(),
+    pastaId: "pasta1",
+    updatedBy: PESSOAS[quem].email,
+    updatedAt: QUANDO,
+  });
+  caso(quem, "arrastar link alheio para uma pasta", "update", LK, LINK, editado({ nome: LINK.nome, pastaId: "pasta1" }));
+  caso(quem, "por pastaId torto", "update", LK, LINK, editado({ pastaId: "a/b" }));
+
+  // ---- as pastas do Portfolio (#229) ----
+  // Colecao NOVA: na `main` o caminho cai na negacao final, entao todos estes
+  // nascem mudando de resposta. O que tem de mudar e exatamente isto — quem
+  // enxerga o setor le; criar, alterar e excluir e so de admin.
+  const PT = doc("pastasPortfolio/pasta1");
+  const PASTA = {
+    setor: "B.I.",
+    nome: "Financeiro",
+    createdBy: "outra@px.com.br",
+    createdAt: QUANDO,
+  };
+  caso(quem, "ler pasta do portfolio", "get", PT, PASTA, null);
+  caso(quem, "listar pastas do portfolio", "list", PT, PASTA, null);
+  caso(quem, "criar pasta", "create", PT, null, { ...PASTA, createdBy: PESSOAS[quem].email });
+  caso(quem, "criar pasta com icone dentro de outra", "create", PT, null, {
+    ...PASTA,
+    icone: "dinheiro",
+    paiId: "pasta0",
+    createdBy: PESSOAS[quem].email,
+  });
+  caso(quem, "criar pasta dentro de si mesma", "create", PT, null, {
+    ...PASTA,
+    paiId: "pasta1",
+    createdBy: PESSOAS[quem].email,
+  });
+  caso(quem, "criar pasta sem nome", "create", PT, null, { ...PASTA, nome: " ", createdBy: PESSOAS[quem].email });
+  caso(quem, "renomear pasta", "update", PT, PASTA, {
+    ...PASTA,
+    nome: "Financeiro 2026",
+    updatedBy: PESSOAS[quem].email,
+    updatedAt: QUANDO,
+  });
+  caso(quem, "levar a pasta para outro setor", "update", PT, PASTA, {
+    ...PASTA,
+    setor: "RH",
+    updatedBy: PESSOAS[quem].email,
+    updatedAt: QUANDO,
+  });
+  caso(quem, "excluir pasta", "delete", PT, PASTA, null);
 
   caso(
     quem,

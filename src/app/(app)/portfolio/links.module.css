@@ -900,10 +900,9 @@
     transition: none;
   }
 }
-/* ---------- categorias e pastas (14/10/2026) ---------- */
+/* ---------- o explorador de pastas (#229) ---------- */
 
-/* A trilha à esquerda e a grade à direita. Sem categoria nenhuma a trilha não
-   existe e a grade ocupa a largura toda, como antes. */
+/* A árvore à esquerda e o conteúdo à direita, como o Explorador do Windows. */
 .layout {
   display: flex;
   align-items: flex-start;
@@ -912,227 +911,478 @@
 .conteudo {
   flex: 1;
   min-width: 0;
+  min-height: 320px;
   padding-bottom: 24px;
 }
+.conteudo .avisoLote {
+  margin: 0 0 12px;
+}
 
-/* A trilha: lista de texto, sem caixa — o mesmo desenho das abas de setor,
-   deitado. Presa ao topo enquanto a grade rola, para o mapa não sumir. */
-.trilha {
+/* O destino aceso durante o arraste. Sem transição, de propósito: arrastar é
+   interação de alta frequência (AGENTS.md §3), e o alvo tem de responder no
+   quadro em que o cursor chega. */
+.alvoAceso,
+.alvoAceso:hover {
+  background: var(--brand-soft) !important;
+  outline: 2px dashed var(--brand);
+  outline-offset: -2px;
+}
+/* O que está sendo arrastado fica esmaecido no lugar de origem. */
+.arrastado {
+  opacity: 0.45;
+}
+
+/* ---- a árvore ---- */
+/* Presa ao topo enquanto a grade rola, para o mapa (e o destino de soltar)
+   não sumir de vista no meio de um arraste. */
+.arvore {
   position: sticky;
   top: 12px;
   flex: none;
-  width: 220px;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
+  width: 236px;
   max-height: calc(100vh - 140px);
   overflow-y: auto;
   scrollbar-width: thin;
 }
-.trilhaGrupo {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  margin-top: 6px;
+.arvore ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
-.trilhaLinha {
-  position: relative;
+.arvoreLinha {
   display: flex;
   align-items: center;
+  gap: 2px;
+  border-radius: 8px;
 }
-.trilhaRecuo {
-  padding-left: 16px;
+.arvoreLinha:hover {
+  background: var(--s2);
 }
-.trilhaItem {
+.arvoreOn,
+.arvoreOn:hover {
+  background: var(--brand-soft);
+}
+.arvoreSeta,
+.arvoreSetaVazia {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 30px;
+}
+.arvoreSeta {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--tx-3);
+  cursor: pointer;
+}
+.arvoreSeta:hover {
+  color: var(--tx);
+}
+.arvoreItem {
   flex: 1;
   min-width: 0;
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 32px;
-  padding: 0 10px;
+  height: 30px;
+  padding: 0 8px 0 2px;
   border: none;
-  border-radius: 8px;
   background: none;
   color: var(--tx-2);
   font-family: inherit;
   font-size: 13px;
   text-align: left;
   cursor: pointer;
-  transition: background-color 0.15s, color 0.15s;
 }
-.trilhaItem svg {
+.arvoreItem svg {
   flex: none;
   color: var(--tx-3);
 }
-.trilhaItem:hover {
-  background: var(--s2);
+.arvoreOn .arvoreItem {
   color: var(--tx);
 }
-.trilhaItem:focus-visible {
-  outline: 2px solid var(--brand);
-  outline-offset: -2px;
-}
-.trilhaOn,
-.trilhaOn:hover {
-  background: var(--brand-soft);
-  color: var(--tx);
-}
-.trilhaOn svg {
+.arvoreOn .arvoreItem svg {
   color: var(--brand);
 }
-.trilhaForte {
+.arvoreItem:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: -2px;
+  border-radius: 6px;
+}
+.arvoreForte {
   font-weight: 600;
 }
-.trilhaApagado {
-  color: var(--tx-3);
-}
-.trilhaNome {
+.arvoreNome {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.trilhaConta {
+.arvoreConta {
   flex: none;
   font-size: 11px;
   color: var(--tx-3);
   font-variant-numeric: tabular-nums;
 }
-/* O lápis do admin aparece no hover (e no foco do teclado), por cima da
-   contagem — trinta lápis sempre visíveis seriam ruído numa lista de nomes. */
-.trilhaLapis {
+
+/* ---- a barra do topo: caminho e "Nova pasta" ---- */
+.barraExplorador {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.caminho {
+  flex: 1;
+  min-width: 0;
+}
+.caminho ol {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.caminhoItem {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--tx-3);
+}
+.caminhoBotao {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 240px;
+  height: 30px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  color: var(--tx-2);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.caminhoBotao span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.caminhoBotao:hover {
+  background: var(--s2);
+  color: var(--tx);
+}
+.caminhoBotao:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: -2px;
+}
+.caminhoAtual {
+  color: var(--tx);
+  font-weight: 600;
+}
+.resultadoBusca {
+  flex: 1;
+  margin: 0;
+  font-size: 13px;
+  color: var(--tx-2);
+}
+
+/* O convite para converter as categorias digitadas do formulário antigo. */
+.conversao {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 9px 10px 9px 13px;
+  border: 1px solid var(--brand-line);
+  border-radius: 9px;
+  background: var(--brand-soft);
+  font-size: 12.5px;
+  color: var(--tx);
+}
+.conversao span {
+  flex: 1;
+}
+.conversao svg {
+  flex: none;
+  color: var(--brand);
+}
+
+/* ---- as pastas na grade ---- */
+.gradePastas {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 8px;
+  margin-bottom: 18px;
+}
+.pasta {
+  position: relative;
+  border-radius: var(--r);
+}
+.pasta:hover {
+  background: var(--s2);
+}
+.pastaCorpo {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 8px 10px;
+  border: none;
+  border-radius: var(--r);
+  background: none;
+  color: var(--tx);
+  font-family: inherit;
+  text-align: center;
+  cursor: pointer;
+}
+div.pastaCorpo {
+  cursor: default;
+}
+.pastaCorpo:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: -2px;
+}
+/* A pasta desenhada: o corpo no tom da marca, e o ícone escolhido no meio. A
+   cor vem dos tokens, então segue claro, escuro, alto contraste e o acento
+   escolhido sem regra nenhuma por tema. */
+.pastaArte {
+  position: relative;
+  display: block;
+  width: 72px;
+  height: 54px;
+}
+.pastaFundo {
+  width: 100%;
+  height: 100%;
+  fill: var(--brand-soft);
+  stroke: var(--brand-line);
+  stroke-width: 1.5;
+}
+.pastaFrente {
+  fill: var(--brand-soft);
+}
+.pastaIcone {
   position: absolute;
-  right: 4px;
+  inset: 16px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--brand);
+}
+.pastaNome {
+  max-width: 100%;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  word-break: break-word;
+}
+.pastaConta {
+  max-width: 100%;
+  font-size: 11px;
+  color: var(--tx-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Os dois comandos do canto aparecem no hover e no foco — doze pastas com doze
+   pares de botões sempre à vista seriam ruído em volta do que se quer ver. */
+.pastaTrocaIcone,
+.pastaMais {
+  position: absolute;
+  top: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
   width: 24px;
   height: 24px;
-  border: none;
+  padding: 0;
+  border: 1px solid var(--line);
   border-radius: 6px;
-  background: var(--s2);
+  background: var(--s1);
   color: var(--tx-2);
+  font-family: inherit;
+  font-size: 15px;
+  line-height: 1;
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.15s;
 }
-.trilhaLinha:hover .trilhaLapis,
-.trilhaLapis:focus-visible {
+.pastaTrocaIcone {
+  left: 6px;
+}
+.pastaMais {
+  right: 6px;
+}
+.pasta:hover .pastaTrocaIcone,
+.pasta:hover .pastaMais,
+.pasta:focus-within .pastaTrocaIcone,
+.pasta:focus-within .pastaMais,
+.pastaTrocaIcone[aria-expanded="true"] {
   opacity: 1;
 }
-.trilhaLapis:hover {
+.pastaTrocaIcone:hover,
+.pastaMais:hover {
   color: var(--tx);
+  border-color: var(--brand-line);
 }
-.trilhaInput {
+.pastaNascendo {
+  background: var(--s2);
+}
+
+/* O nome sendo digitado — "Nova pasta" e Renomear. */
+.campoNome {
   width: 100%;
-  height: 32px;
-  padding: 0 10px;
-  border: 1px solid var(--brand-line);
-  border-radius: 8px;
-  background: var(--s1);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.campoNomeInput {
+  width: 100%;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--brand);
+  border-radius: 6px;
+  background: var(--field);
   color: var(--tx);
   font-family: inherit;
   font-size: 13px;
+  text-align: center;
 }
-.trilhaInput:focus {
+.campoNomeInput:focus {
   outline: none;
-  border-color: var(--brand);
 }
-.trilhaErro {
-  display: block;
-  margin-top: 4px;
-  font-size: 11.5px;
+.campoNomeErro {
+  font-size: 11px;
+  line-height: 1.35;
   color: var(--danger);
 }
-.trilhaDica {
-  margin: 10px 10px 0;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--tx-3);
-}
 
-/* As seções da grade: o nome da categoria como título, e cada pasta com o
-   ícone de pasta. Títulos de texto com um fio embaixo — sem caixa em volta. */
-.secaoCategoria + .secaoCategoria {
-  margin-top: 26px;
-}
-.tituloCategoria {
+/* ---- os produtos ---- */
+.produto {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
-  margin: 0 0 12px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--line-soft);
-  font-size: 15px;
-  font-weight: 600;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.produto[draggable="true"] {
+  cursor: grab;
+}
+.produto[draggable="true"]:active {
+  cursor: grabbing;
+}
+/* Na busca, onde o produto mora — e um clique leva até a pasta. */
+.produtoLocal {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 0 4px;
+  border: none;
+  background: none;
+  color: var(--tx-3);
+  font-family: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.produtoLocal:hover {
   color: var(--tx);
 }
-.tituloCategoria span,
-.tituloPasta span {
-  font-size: 11.5px;
-  font-weight: 500;
-  color: var(--tx-3);
-  font-variant-numeric: tabular-nums;
-}
-.blocoPasta + .blocoPasta {
-  margin-top: 16px;
-}
-.tituloPasta {
+
+/* No formulário: onde o produto novo vai ficar. */
+.destinoPasta {
   display: flex;
   align-items: center;
-  gap: 7px;
-  margin: 0 0 10px;
-  font-size: 13px;
-  font-weight: 600;
+  gap: 6px;
+  margin: 0;
+  font-size: 12.5px;
   color: var(--tx-2);
 }
-.tituloPasta svg {
+.destinoPasta svg {
+  color: var(--brand);
+}
+
+/* ---- o menu do botão direito ---- */
+.menu {
+  position: fixed;
+  z-index: 95;
+  min-width: 190px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--s1);
+  box-shadow: var(--shadow);
+}
+.menuItem {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 32px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  color: var(--tx);
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.menuItem span {
+  flex: 1;
+}
+.menuItem svg {
+  color: var(--tx-3);
+}
+.menuItem:hover,
+.menuItem:focus-visible {
+  outline: none;
+  background: var(--s3);
+}
+.menuPerigo,
+.menuPerigo svg {
+  color: var(--danger);
+}
+.menuAtalho {
+  font-family: inherit;
+  font-size: 11px;
   color: var(--tx-3);
 }
 
-/* Categoria e pasta lado a lado no formulário do admin. */
-.linhaOrganizar {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
-
-/* No telefone a trilha deita: vira uma fileira de nomes que rola de lado,
-   acima da grade, e as pastas perdem o recuo. */
+/* No telefone a árvore sai do lado e o caminho do topo vira o único mapa —
+   duzentos e tantos pixels de árvore deixariam a grade com uma coluna magra. */
 @media (max-width: 900px) {
   .layout {
     flex-direction: column;
-    gap: 12px;
+    gap: 0;
   }
-  .trilha {
-    position: static;
-    width: 100%;
-    max-height: none;
-    flex-direction: row;
-    overflow-x: auto;
-    overflow-y: hidden;
-    padding-bottom: 4px;
-  }
-  .trilhaGrupo {
-    flex-direction: row;
-    margin-top: 0;
-  }
-  .trilhaRecuo {
-    padding-left: 0;
-  }
-  .trilhaItem {
-    flex: none;
-    white-space: nowrap;
-  }
-  .trilhaNome {
-    overflow: visible;
-  }
-  .trilhaLapis {
+  .arvore {
     display: none;
   }
-  .linhaOrganizar {
-    grid-template-columns: 1fr;
+  .barraExplorador {
+    flex-wrap: wrap;
+  }
+  /* Sem hover no toque, os comandos do canto ficam sempre à vista. */
+  .pastaTrocaIcone,
+  .pastaMais {
+    opacity: 1;
   }
 }
