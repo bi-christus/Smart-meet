@@ -653,6 +653,26 @@
 .levadaChip svg {
   opacity: 0.85;
 }
+/* Chip e "Desfazer" lidos como uma peça só: o gap menor que o de `.demandaRot`
+   é o que diz que um fala do outro. */
+.levadaGrupo {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+/* NEUTRO e vazado, ao lado do chip azul: é a saída, e não pode disputar o olho
+   com o que o chip informa. Pede atenção só no hover, pelo mesmo gesto de
+   `.origemLink` que a pauta inteira usa para dizer "isto é clicável". */
+.desfazerChip {
+  background: transparent;
+  color: var(--tx-3);
+}
+/* O que sai junto com a cópia, no modal de "Desfazer". */
+.perdasLista {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  list-style: disc;
+}
 
 .demanda h3 {
   font-size: 14.5px;

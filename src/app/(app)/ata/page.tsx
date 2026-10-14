@@ -31,8 +31,11 @@ import {
   STATUS_TAREFA,
   STATUS_TAREFA_LABEL,
   abrirProxima,
+  ataDaLevada,
   conferirAssuntoNovo,
   conferirTitulo,
+  desfazerLevada,
+  haPerdas,
   LIMITE_ASSUNTO_CHARS,
   LIMITE_TEXTO_CHARS,
   deleteAta,
@@ -329,6 +332,12 @@ export default function AtaPage() {
   const [gerarAberta, setGerarAberta] = useState(false);
   const [puxarAberta, setPuxarAberta] = useState(false);
   const [levando, setLevando] = useState<ItemDaPauta | null>(null);
+  // O destino vai junto com a linha porque é ele que o modal confere: a linha
+  // sozinha não diz para onde foi quando quem a levou foi "Abrir a próxima".
+  const [desfazendo, setDesfazendo] = useState<{
+    linha: ItemDaPauta;
+    destinoId: string;
+  } | null>(null);
   const [proximaAberta, setProximaAberta] = useState(false);
   const [cabecalhoAberto, setCabecalhoAberto] = useState(false);
   const [apagando, setApagando] = useState(false);
@@ -739,13 +748,18 @@ export default function AtaPage() {
    * nenhum. A diferença é que aqui SUMIR é a resposta certa, e não um rótulo
    * genérico — sem a ata de destino, a linha voltou a ser um assunto que não foi
    * levado a lugar nenhum, e o botão "Levar" tem de estar disponível de novo.
+   *
+   * Recebe o id do destino, e não o item: quem descobre o destino é
+   * `destinoDaLevada`, que também acha a cópia deixada por "Abrir a próxima
+   * reunião" — caminho que não grava ponteiro nenhum. A ata SEM DATA é destino
+   * legítimo de `levarAssunto`, e antes sumia com o chip; agora diz o que dá.
    */
   const rotuloDaLevada = useMemo(() => {
     const dataDe = new Map(atas.map((a) => [a.id, a.data]));
-    return (item: ItemDeAta) => {
-      if (!item.levadaParaAtaId) return null;
-      const data = dataDe.get(item.levadaParaAtaId);
-      return data ? `levado para ${fmtDayMonth(data)}` : null;
+    return (destinoId: string) => {
+      if (!destinoId || !dataDe.has(destinoId)) return null;
+      const data = dataDe.get(destinoId);
+      return data ? `levado para ${fmtDayMonth(data)}` : "levado para outra reunião";
     };
   }, [atas]);
 
@@ -884,6 +898,47 @@ export default function AtaPage() {
     );
     return destino;
   }
+
+  /**
+   * Para qual ata cada linha desta pauta foi levada — ver `ataDaLevada`.
+   *
+   * Memo e não chamada solta porque o caminho antigo PROCURA a cópia nas atas
+   * do setor, e a pauta redesenha a cada tecla digitada numa decisão.
+   */
+  const destinoDaLevada = useMemo(
+    () => (item: ItemDeAta) => ataDaLevada(ataId, item, atas),
+    [atas, ataId],
+  );
+
+  /**
+   * O inverso de `levar`, e pela mesma escrita: as duas atas no mesmo lote.
+   *
+   * Em duas escritas soltas, a falha da segunda deixaria a linha daqui sem o
+   * chip e a cópia ainda lá — e o próximo "Levar" encontraria a recusa "já está
+   * na pauta daquela reunião" sem nada na tela explicando por quê.
+   */
+  async function desfazerLevar(linha: ItemDaPauta, destinoId: string) {
+    if (!ata) throw new Error("Nenhuma ata aberta.");
+    const destino = atas.find((a) => a.id === destinoId);
+    if (!destino) {
+      throw new Error("A reunião para onde o assunto foi levado não existe mais.");
+    }
+    const conferido = desfazerLevada(ata, destino, linha.item.id);
+    if (!conferido.ok) throw new Error(conferido.motivo);
+    await escrever(() =>
+      moverItensEntreAtas(
+        { id: ata.id, itens: conferido.valor.origem },
+        { id: destino.id, itens: conferido.valor.destino },
+      ),
+    );
+    return { destino, copiaEncontrada: conferido.valor.copiaEncontrada };
+  }
+
+  // A ata de destino pode ser apagada por outra pessoa com o modal aberto; aí
+  // o modal fecha sozinho, em vez de conferir contra uma ata que não existe.
+  const destinoDesfazendo = desfazendo
+    ? atas.find((a) => a.id === desfazendo.destinoId)
+    : undefined;
 
   /**
    * O assunto vira demanda no quadro — em UMA escrita, e não em duas.
@@ -1477,18 +1532,27 @@ export default function AtaPage() {
                      o botão não nasce — ver `onMover`. */
                   onMover={atas.length > 1 ? () => setMovendo(linha) : null}
                   origemRotulo={rotuloDaOrigem(linha.item)}
-                  levadaRotulo={rotuloDaLevada(linha.item)}
+                  levadaRotulo={rotuloDaLevada(destinoDaLevada(linha.item))}
                   /* Só na linha que perdeu o card: `tituloDoCard` lê os cards
                      crus, lixeira inclusive — ver o comentário dele. */
                   tituloDeReserva={
                     linha.foraDoQuadro ? tituloDoCard(linha.item.cardId) : ""
                   }
-                  /* Mesma regra do chip de origem: a ata de destino pode ter
-                     sido apagada, e um link que não leva a lugar nenhum é pior
-                     do que texto. */
+                  /* `destinoDaLevada` já devolve vazio quando a ata de destino
+                     foi apagada: sem destino, nem link nem "Desfazer" — um
+                     botão que não leva a lugar nenhum é pior do que texto. */
                   onAbrirLevada={
-                    atas.some((a) => a.id === linha.item.levadaParaAtaId)
-                      ? () => setAtaSel(linha.item.levadaParaAtaId)
+                    destinoDaLevada(linha.item)
+                      ? () => setAtaSel(destinoDaLevada(linha.item))
+                      : null
+                  }
+                  onDesfazerLevada={
+                    destinoDaLevada(linha.item)
+                      ? () =>
+                          setDesfazendo({
+                            linha,
+                            destinoId: destinoDaLevada(linha.item),
+                          })
                       : null
                   }
                   /* A ata de origem pode ter sido apagada — aí o chip continua
@@ -1620,6 +1684,26 @@ export default function AtaPage() {
             setLevando(null);
             setAviso(
               `"${levando.titulo}" foi levado para ${rotuloDaAta(destino)}. Ele continua nesta ata, com a decisão de hoje.`,
+            );
+          }}
+        />
+      )}
+
+      {desfazendo && ata && destinoDesfazendo && (
+        <ModalDeDesfazerLevar
+          setor={setor}
+          ata={ata}
+          destino={destinoDesfazendo}
+          linha={desfazendo.linha}
+          atas={atas}
+          onFechar={() => setDesfazendo(null)}
+          onDesfazer={async () => {
+            const r = await desfazerLevar(desfazendo.linha, destinoDesfazendo.id);
+            setDesfazendo(null);
+            setAviso(
+              r.copiaEncontrada
+                ? `"${desfazendo.linha.titulo}" saiu da pauta de ${rotuloDaAta(r.destino)}. Nesta ata ele continua, e pode ser levado de novo.`
+                : `A marca de "${desfazendo.linha.titulo}" foi retirada. A cópia já não estava na pauta de ${rotuloDaAta(r.destino)}.`,
             );
           }}
         />
@@ -1866,6 +1950,7 @@ function BlocoDaDemanda({
   levadaRotulo,
   tituloDeReserva,
   onAbrirLevada,
+  onDesfazerLevada,
   temProxima,
   onLevar,
 }: {
@@ -1946,6 +2031,8 @@ function BlocoDaDemanda({
    * mais. Mesma degradação de `onAbrirOrigem`.
    */
   onAbrirLevada: (() => void) | null;
+  /** Abrir a confirmação de "Desfazer" o levar — nulo nas mesmas condições. */
+  onDesfazerLevada: (() => void) | null;
   /**
    * Existe reunião futura neste setor?
    *
@@ -2088,20 +2175,38 @@ function BlocoDaDemanda({
                 16/09". Levar aceita demanda do quadro de propósito (é o caso
                 mais comum do botão), então esconder o chip onde há card
                 esconderia o aviso justo na maioria das linhas. */}
-            {levadaRotulo &&
-              (onAbrirLevada ? (
-                <button
-                  className={`${styles.origemChip} ${styles.origemLink} ${styles.levadaChip}`}
-                  onClick={onAbrirLevada}
-                  title="Abrir a reunião para onde este assunto foi levado"
-                >
-                  <Icon name="calendar" size={11} /> {levadaRotulo}
-                </button>
-              ) : (
-                <span className={`${styles.origemChip} ${styles.levadaChip}`}>
-                  <Icon name="calendar" size={11} /> {levadaRotulo}
-                </span>
-              ))}
+            {/* "Desfazer" MORA COLADO NO CHIP, e não no botão "Levar" lá
+                embaixo: o chip é o que diz que o bastão foi passado, e é ao
+                lado dele que se procura o caminho de volta. No botão, ele
+                competiria com "Levar para outra reunião", que continua valendo
+                para levar a uma segunda reunião. */}
+            {levadaRotulo && (
+              <span className={styles.levadaGrupo}>
+                {onAbrirLevada ? (
+                  <button
+                    className={`${styles.origemChip} ${styles.origemLink} ${styles.levadaChip}`}
+                    onClick={onAbrirLevada}
+                    title="Abrir a reunião para onde este assunto foi levado"
+                  >
+                    <Icon name="calendar" size={11} /> {levadaRotulo}
+                  </button>
+                ) : (
+                  <span className={`${styles.origemChip} ${styles.levadaChip}`}>
+                    <Icon name="calendar" size={11} /> {levadaRotulo}
+                  </span>
+                )}
+                {onDesfazerLevada && (
+                  <button
+                    className={`${styles.origemChip} ${styles.origemLink} ${styles.desfazerChip}`}
+                    onClick={onDesfazerLevada}
+                    title="Tirar este assunto da pauta da outra reunião"
+                    aria-label={`Desfazer: ${levadaRotulo}`}
+                  >
+                    <Icon name="x" size={11} /> Desfazer
+                  </button>
+                )}
+              </span>
+            )}
           </div>
           {/* A RESERVA VEM ANTES DO `titulo`, e não depois — é a regra da casa
               aplicada onde ela ainda não valia. Onde há card, quem responde pelo
@@ -2929,6 +3034,140 @@ function ModalDeLevar({
           }}
         >
           {salvando ? "Levando…" : "Levar para a reunião"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/**
+ * "Desfazer" o levar — a confirmação, com o que vai junto escrito na cara.
+ *
+ * POR QUE CONFIRMA, se o gesto é desfazer um engano: ele apaga uma linha de
+ * OUTRA ata, e alguém pode ter escrito nela — a decisão daquela reunião, uma
+ * tarefa nova. A pessoa olhando esta pauta não vê nada disso. `desfazerLevada`
+ * conta o que se perde, e esta tela mostra ANTES do clique; quando não há nada a
+ * perder, a frase é curta e o botão é o comum.
+ *
+ * A conferência roda aqui, a cada render, contra as atas da assinatura: se
+ * alguém escrever na cópia com o modal aberto, a lista acompanha. O clique
+ * confere de novo no caminho (`desfazerLevar`), que é quem grava.
+ */
+function ModalDeDesfazerLevar({
+  setor,
+  ata,
+  destino,
+  linha,
+  atas,
+  onFechar,
+  onDesfazer,
+}: {
+  setor: string;
+  ata: Ata;
+  destino: Ata;
+  linha: ItemDaPauta;
+  atas: Ata[];
+  onFechar: () => void;
+  onDesfazer: () => Promise<void>;
+}) {
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  const previa = desfazerLevada(ata, destino, linha.item.id);
+  const perdas = previa.ok ? previa.valor.perdas : null;
+  const adiante = perdas?.levadaAdiante
+    ? atas.find((a) => a.id === perdas.levadaAdiante)
+    : undefined;
+  const plural = (n: number, um: string, varios: string) =>
+    n === 1 ? um : `${n} ${varios}`;
+
+  return (
+    <Modal
+      onClose={onFechar}
+      podeFechar={() => !salvando}
+      ariaLabel="Desfazer o levar"
+      overlayClassName={styles.overlay}
+      className={styles.modal}
+      width={480}
+    >
+      <div className={styles.mhead}>
+        <span className={styles.mchip}>
+          <Icon name="calendar" size={12} /> Desfazer levar
+        </span>
+        <span className={styles.mchip}>{setor}</span>
+      </div>
+      <h2 className={styles.mtitulo}>{linha.titulo}</h2>
+      <p className={styles.confirma}>
+        O assunto <strong>sai da pauta de {rotuloDaAta(destino)}</strong>. Nesta
+        ata a linha continua como está, com a decisão de hoje, e volta a poder
+        ser levada.
+      </p>
+
+      {previa.ok && !previa.valor.copiaEncontrada && (
+        <p className={styles.avisoModal}>
+          A cópia não foi encontrada naquela reunião — pode ter sido renomeada
+          ou movida lá. Só a marca desta linha será retirada.
+        </p>
+      )}
+
+      {perdas && haPerdas(perdas) && (
+        <div className={styles.avisoModal}>
+          <strong>Vai junto o que foi escrito lá:</strong>
+          <ul className={styles.perdasLista}>
+            {perdas.decisao && <li>a decisão registrada naquela reunião</li>}
+            {perdas.objetivoEditado && <li>o objetivo, que foi reescrito lá</li>}
+            {perdas.tarefasNovas > 0 && (
+              <li>
+                {plural(perdas.tarefasNovas, "a tarefa criada lá", "tarefas criadas lá")}
+              </li>
+            )}
+            {perdas.tarefasConcluidas > 0 && (
+              <li>
+                {plural(
+                  perdas.tarefasConcluidas,
+                  "a tarefa marcada como concluída lá",
+                  "tarefas marcadas como concluídas lá",
+                )}
+              </li>
+            )}
+            {perdas.virouDemanda && (
+              <li>a ligação com a demanda aberta lá — o card continua no quadro</li>
+            )}
+            {perdas.levadaAdiante && (
+              <li>
+                a marca de que ela foi levada para{" "}
+                {adiante ? rotuloDaAta(adiante) : "outra reunião"} — aquela
+                cópia continua lá
+              </li>
+            )}
+          </ul>
+        </div>
+      )}
+
+      {(erro || !previa.ok) && (
+        <p className={styles.erroModal}>{erro ?? (previa.ok ? "" : previa.motivo)}</p>
+      )}
+      <div className={styles.macoes}>
+        <button className={styles.btnGhost} onClick={onFechar} disabled={salvando} autoFocus>
+          Manter
+        </button>
+        <button
+          className={perdas && haPerdas(perdas) ? styles.btnPerigo : styles.btnPrim}
+          disabled={salvando || !previa.ok}
+          onClick={async () => {
+            setSalvando(true);
+            setErro(null);
+            try {
+              await onDesfazer();
+            } catch (e) {
+              // O erro fica no modal, como no "Levar": a pessoa ainda está
+              // olhando para cá, e a tarja do topo estaria atrás do overlay.
+              setErro(e instanceof Error ? e.message : "Não foi possível desfazer.");
+              setSalvando(false);
+            }
+          }}
+        >
+          {salvando ? "Desfazendo…" : "Desfazer"}
         </button>
       </div>
     </Modal>
