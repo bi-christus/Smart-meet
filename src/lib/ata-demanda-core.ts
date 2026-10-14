@@ -541,7 +541,7 @@ export function levarAssunto(
 export function acharCopiaLevada(
   origemId: string,
   item: Pick<ItemDeAta, "cardId" | "assunto">,
-  destinoItens: readonly ItemDeAta[],
+  destinoItens: readonly Pick<ItemDeAta, "origemAtaId" | "cardId" | "assunto">[],
 ): number {
   const chave = chaveDeAssunto(item.assunto);
   return destinoItens.findIndex(
@@ -697,4 +697,35 @@ export function desfazerLevada(
       perdas,
     },
   };
+}
+
+/**
+ * O item da ORIGEM que deixou esta cópia — o caminho de volta visto do destino.
+ *
+ * POR QUE PRECISOU EXISTIR (#231). O "Desfazer" nasceu só na reunião de origem,
+ * ao lado de "levado para 14/10". Só que quem quer desfazer abre a reunião onde
+ * o assunto indesejado APARECE, que é a de destino — e lá o chip dizia "veio de
+ * 26/08" sem botão nenhum. O dado de produção estava certo; o botão estava do
+ * lado em que ninguém o procurava.
+ *
+ * O CASAMENTO É O MESMO de `acharCopiaLevada`, de trás para a frente, e com uma
+ * exigência a mais: a linha de origem tem de dizer que foi levada PARA CÁ (o
+ * ponteiro) ou, no caminho antigo sem ponteiro, ainda ter a marca acesa. Sem
+ * isso, a herança de uma linha que já foi desfeita por outro caminho — ou que
+ * foi levada para outra reunião — ofereceria um "Desfazer" que `desfazerLevada`
+ * recusaria depois do clique.
+ */
+export function itemDeOrigemDaCopia(
+  copia: Pick<ItemDeAta, "origem" | "origemAtaId" | "cardId" | "assunto">,
+  origem: { id: string; itens: readonly ItemDeAta[] },
+  destinoId: string,
+): ItemDeAta | null {
+  if (copia.origem !== "herdado" || copia.origemAtaId !== origem.id) return null;
+  return (
+    origem.itens.find(
+      (i) =>
+        (i.levadaParaAtaId ? i.levadaParaAtaId === destinoId : i.proximaReuniao) &&
+        acharCopiaLevada(origem.id, i, [copia]) === 0,
+    ) ?? null
+  );
 }
