@@ -44,6 +44,10 @@
  * (`vincularCard`). Os quatro dividem a mesma conferência de título e o mesmo
  * `Conferido`; em quatro arquivos, seriam quatro lugares para a régua deixar
  * de valer — e o quarto ninguém lembraria de mudar.
+ *
+ * Depois vieram levar a linha adiante (`levarAssunto`) e o caminho de volta
+ * (`desfazerLevada`), que moram juntos porque um é o inverso do outro: o campo
+ * que um grava é o que o outro limpa, e separados eles se afastariam calados.
  */
 
 import type { ItemDeAta } from "./ata-core.ts";
@@ -516,6 +520,181 @@ export function levarAssunto(
           // que herdasse aquele card. Mesma renumeração de `vincularCard`.
           [...origem.itens, { ...marcado, id: proximoIdDeItem(origem.itens) }],
       destino: [...destino.itens, copia],
+    },
+  };
+}
+
+/**
+ * A cópia que uma linha deixou em outra reunião — a posição dela em
+ * `destinoItens`, ou -1.
+ *
+ * O CASAMENTO É O MESMO DE `levarAssunto` ("já está lá"), mais a procedência:
+ * a cópia aponta de volta com `origemAtaId`. Sem a procedência, desfazer
+ * apagaria do destino uma linha homônima que alguém lançou lá à mão — o mesmo
+ * nome não é a mesma linha. Sem o casamento, a ata que levou três assuntos para
+ * a mesma reunião não saberia qual dos três é este.
+ *
+ * Linha com card casa pelo card, e só por ele: o nome dela é o do card, e o
+ * `assunto` costuma estar vazio. Linha sem card casa pelo nome — e a cópia que
+ * virou demanda LÁ continua casando, porque ganhou `cardId` sem perder o nome.
+ */
+export function acharCopiaLevada(
+  origemId: string,
+  item: Pick<ItemDeAta, "cardId" | "assunto">,
+  destinoItens: readonly ItemDeAta[],
+): number {
+  const chave = chaveDeAssunto(item.assunto);
+  return destinoItens.findIndex(
+    (i) =>
+      i.origemAtaId === origemId &&
+      (item.cardId ? i.cardId === item.cardId : !!chave && chaveDeAssunto(i.assunto) === chave),
+  );
+}
+
+/**
+ * Para qual ata ESTA linha foi levada — o id, ou vazio.
+ *
+ * DOIS CAMINHOS DEIXAM CÓPIA, e só um deixa ponteiro. `levarAssunto` grava
+ * `levadaParaAtaId`; "Abrir a próxima reunião" (`herdarParaProxima`) cria a ata
+ * nova e deixa a marca `proximaReuniao` acesa na origem, sem dizer onde a cópia
+ * foi parar. Para esse segundo caso a resposta é procurar: a ata do setor que
+ * tem uma cópia herdada desta linha. Sem isso, o assunto colhido pelo caminho
+ * antigo não teria chip nem "Desfazer" — e com reunião futura no setor o botão
+ * deixa de ser interruptor, então a marca não teria como ser desligada.
+ *
+ * Ponteiro para uma ata que não existe mais devolve vazio: a linha voltou a ser
+ * um assunto não levado, e é o que a tela já faz com o chip.
+ */
+export function ataDaLevada(
+  origemId: string,
+  item: Pick<ItemDeAta, "cardId" | "assunto" | "levadaParaAtaId" | "proximaReuniao">,
+  atas: readonly { id: string; itens: readonly ItemDeAta[] }[],
+): string {
+  if (item.levadaParaAtaId) {
+    return atas.some((a) => a.id === item.levadaParaAtaId) ? item.levadaParaAtaId : "";
+  }
+  if (!item.proximaReuniao) return "";
+  const achada = atas.find(
+    (a) => a.id !== origemId && acharCopiaLevada(origemId, item, a.itens) >= 0,
+  );
+  return achada?.id ?? "";
+}
+
+/**
+ * O que foi escrito NA CÓPIA, lá na outra reunião, e sai junto com ela.
+ *
+ * Desfazer apaga uma linha de outra ata — a única coisa nesta aba, fora excluir
+ * a ata, que tira o que alguém escreveu. A régua da casa é que o que humano
+ * escreveu não some calado; aqui não dá para preservar (a linha inteira sai), então
+ * a régua vira AVISO: a tela mostra isto antes do clique que confirma.
+ */
+export type PerdasDaLevada = {
+  /** Alguém escreveu a decisão naquela reunião. */
+  decisao: boolean;
+  /** O objetivo de lá não é mais o daqui. */
+  objetivoEditado: boolean;
+  /** Tarefas que nasceram lá — não vieram desta linha. */
+  tarefasNovas: number;
+  /** Tarefas que vieram daqui e foram concluídas lá. */
+  tarefasConcluidas: number;
+  /** A cópia virou demanda lá. O card continua no quadro; só a linha sai. */
+  virouDemanda: boolean;
+  /** A cópia já foi levada adiante, para esta ata. A cópia de lá NÃO é desfeita. */
+  levadaAdiante: string;
+};
+
+/** Há algo na lista que a pessoa precisa ler antes de confirmar? */
+export function haPerdas(p: PerdasDaLevada): boolean {
+  return (
+    p.decisao ||
+    p.objetivoEditado ||
+    p.tarefasNovas > 0 ||
+    p.tarefasConcluidas > 0 ||
+    p.virouDemanda ||
+    !!p.levadaAdiante
+  );
+}
+
+/**
+ * "Desfazer" o levar — a linha volta a não ter ido para lugar nenhum.
+ *
+ * O QUE ISTO CONSERTA: levar era gesto de mão única. A pauta não tem "remover
+ * assunto", e o chip "levado para 16/09" só sumia se a ata de destino fosse
+ * excluída — o que é de gestor e apaga a reunião inteira. Quem levou para a
+ * reunião errada, ou levou sem querer, não tinha saída (#227).
+ *
+ * É O INVERSO DE `levarAssunto`, campo por campo:
+ *   - na origem, a linha FICA, com a decisão de hoje — só perde o ponteiro e a
+ *     marca. As duas, e não só o ponteiro: a marca acesa é o que
+ *     `herdarParaProxima` colhe, e deixá-la faria o assunto desfeito voltar
+ *     sozinho na próxima vez que alguém clicar em "Abrir a próxima reunião";
+ *   - no destino, a cópia SAI, e as outras linhas ficam com os ids que têm.
+ *     Renumerar para fechar o buraco reescreveria a chave de linhas onde alguém
+ *     pode estar digitando agora.
+ *
+ * A CÓPIA QUE NÃO ESTÁ MAIS LÁ não é recusa. Ela pode ter sido renomeada lá,
+ * movida para outra ata, ou a pessoa está desfazendo o que outra já desfez. Em
+ * todos os casos o ponteiro daqui é que está mentindo, e tirá-lo é o certo; a
+ * tela diz que não achou, para ninguém concluir que a cópia sumiu por causa
+ * deste clique. Recusar deixaria a linha presa a um chip sem saída — o defeito
+ * que esta função existe para fechar.
+ */
+export function desfazerLevada(
+  origem: Pick<AtaEmMovimento, "id" | "setor" | "itens">,
+  destino: Pick<AtaEmMovimento, "id" | "setor" | "itens">,
+  itemId: string,
+): Conferido<{
+  origem: ItemDeAta[];
+  destino: ItemDeAta[];
+  copiaEncontrada: boolean;
+  perdas: PerdasDaLevada;
+}> {
+  if (origem.id === destino.id) {
+    return { ok: false, motivo: "A reunião de destino é esta mesma." };
+  }
+  if (origem.setor !== destino.setor) {
+    return { ok: false, motivo: "As duas reuniões precisam ser do mesmo setor." };
+  }
+  const item = origem.itens.find((i) => i.id === itemId);
+  if (!item) {
+    return {
+      ok: false,
+      motivo:
+        "Este assunto não está mais na pauta desta ata. Feche e abra a ata para ver como ela está agora.",
+    };
+  }
+  if (!item.levadaParaAtaId && !item.proximaReuniao) {
+    return { ok: false, motivo: "Este assunto não foi levado para outra reunião." };
+  }
+  if (item.levadaParaAtaId && item.levadaParaAtaId !== destino.id) {
+    return {
+      ok: false,
+      motivo:
+        "Este assunto foi levado para outra reunião. Feche e abra a ata para ver como ela está agora.",
+    };
+  }
+
+  const pos = acharCopiaLevada(origem.id, item, destino.itens);
+  const copia = pos >= 0 ? destino.itens[pos] : null;
+  const idsDaqui = new Set(item.tarefas.map((t) => t.id));
+  const perdas: PerdasDaLevada = {
+    decisao: !!copia?.decisao.trim(),
+    objetivoEditado: !!copia && copia.objetivo.trim() !== item.objetivo.trim(),
+    tarefasNovas: copia?.tarefas.filter((t) => !idsDaqui.has(t.id)).length ?? 0,
+    tarefasConcluidas:
+      copia?.tarefas.filter((t) => idsDaqui.has(t.id) && t.status === "concluida").length ?? 0,
+    virouDemanda: !!copia?.cardId && !item.cardId,
+    levadaAdiante: copia?.levadaParaAtaId ?? "",
+  };
+
+  const desmarcado = { ...item, proximaReuniao: false, levadaParaAtaId: "" };
+  return {
+    ok: true,
+    valor: {
+      origem: origem.itens.map((i) => (i.id === item.id ? desmarcado : i)),
+      destino: destino.itens.filter((_, i) => i !== pos),
+      copiaEncontrada: !!copia,
+      perdas,
     },
   };
 }

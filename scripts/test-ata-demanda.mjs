@@ -28,6 +28,10 @@
  *    resultado desenha perfeitamente — duas linhas, os dois nomes certos — e só
  *    quebra quando alguém escreve numa delas e o texto aparece na outra. Por
  *    isso a ata de destino do teste JÁ TEM um item com o id que vem chegando.
+ *
+ * 6. QUE DESFAZER O LEVAR SEJA O INVERSO EXATO DE LEVAR (#227). Desfazer apaga
+ *    uma linha de OUTRA ata; casar a cópia errada apagaria o assunto que alguém
+ *    lançou lá à mão com o mesmo nome, e nada na tela daqui mostraria o estrago.
  */
 import {
   conferirAssuntoNovo,
@@ -36,9 +40,12 @@ import {
   editarAssunto,
   moverAssunto,
   vincularCard,
+  ataDaLevada,
+  desfazerLevada,
+  haPerdas,
   LIMITE_ASSUNTO_CHARS,
 } from "../src/lib/ata-demanda-core.ts";
-import { montarPauta } from "../src/lib/ata-core.ts";
+import { herdarParaProxima, montarPauta } from "../src/lib/ata-core.ts";
 
 let falhas = 0;
 function checa(rotulo, condicao, detalhe = "") {
@@ -587,6 +594,149 @@ checa(
     { ...L_DESTINO, itens: [item("7", { cardId: "c8", assunto: "" })] },
     item("5", { cardId: "c9", assunto: "" }),
   ).ok === true,
+);
+
+/**
+ * DESFAZER O LEVAR (#227) — levar era gesto de mão única.
+ *
+ * A pauta não tem "remover assunto", e o chip "levado para 09/09" só sumia
+ * excluindo a ata de destino. O que estes `checa` cobram é que desfazer seja o
+ * INVERSO exato de levar: a origem volta a ser o que era (sem ponteiro E sem a
+ * marca, senão "Abrir a próxima" colhe o assunto de volta), e o destino volta a
+ * ser o que era — sem tocar nas linhas que já moravam lá.
+ */
+console.log("\n— desfazer o levar —");
+
+const D_ORIGEM = { ...L_ORIGEM, itens: lv_levado.valor.origem };
+const D_DESTINO = { ...L_DESTINO, itens: lv_levado.valor.destino };
+const desfeito = desfazerLevada(D_ORIGEM, D_DESTINO, "2");
+checa("desfazer passa", desfeito.ok === true, desfeito.motivo);
+checa(
+  "a origem volta sem o ponteiro E sem a marca",
+  desfeito.valor.origem.find((i) => i.id === "2").levadaParaAtaId === "" &&
+    desfeito.valor.origem.find((i) => i.id === "2").proximaReuniao === false,
+);
+checa(
+  "e com a decisão de hoje — desfazer não é apagar a linha daqui",
+  desfeito.valor.origem.find((i) => i.id === "2").decisao === "separar sistema de totem" &&
+    desfeito.valor.origem.length === 2,
+);
+checa(
+  "o destino volta a ser exatamente o que era",
+  JSON.stringify(desfeito.valor.destino) === JSON.stringify(L_DESTINO.itens),
+);
+checa("a cópia foi achada", desfeito.valor.copiaEncontrada === true);
+checa(
+  "cópia intocada não tem nada a avisar",
+  haPerdas(desfeito.valor.perdas) === false,
+  JSON.stringify(desfeito.valor.perdas),
+);
+checa(
+  "e a linha volta a poder ser levada",
+  levarAssunto(
+    { ...L_ORIGEM, itens: desfeito.valor.origem },
+    { ...L_DESTINO, itens: desfeito.valor.destino },
+    desfeito.valor.origem.find((i) => i.id === "2"),
+  ).ok === true,
+);
+
+// O QUE FOI ESCRITO LÁ sai junto com a cópia, e a tela tem de avisar antes.
+const trabalhada = D_DESTINO.itens.map((i) =>
+  i.id === "3"
+    ? {
+        ...i,
+        decisao: "fechar com o fornecedor B",
+        objetivo: "outro objetivo",
+        tarefas: [
+          { ...i.tarefas[0], status: "concluida" },
+          { id: "9", texto: "nasceu lá", responsavel: "", prazo: "", status: "pendente", observacao: "" },
+        ],
+        levadaParaAtaId: "ata-16-09",
+      }
+    : i,
+);
+const perdas = desfazerLevada(D_ORIGEM, { ...D_DESTINO, itens: trabalhada }, "2").valor.perdas;
+checa("avisa a decisão escrita lá", perdas.decisao === true);
+checa("avisa o objetivo editado lá", perdas.objetivoEditado === true);
+checa("conta a tarefa que nasceu lá", perdas.tarefasNovas === 1, String(perdas.tarefasNovas));
+checa(
+  "conta a tarefa concluída lá",
+  perdas.tarefasConcluidas === 1,
+  String(perdas.tarefasConcluidas),
+);
+checa("avisa que a cópia já foi levada adiante", perdas.levadaAdiante === "ata-16-09");
+
+// LINHA COM CARD casa pelo card, e o homônimo lançado à mão lá NÃO é a cópia.
+const C_ORIGEM = { ...L_ORIGEM, itens: [item("5", { cardId: "c9", assunto: "" })] };
+const C_DESTINO = { ...L_DESTINO, itens: [item("1", { assunto: "" })] };
+const cLevado = levarAssunto(C_ORIGEM, C_DESTINO, C_ORIGEM.itens[0]);
+const cDesfeito = desfazerLevada(
+  { ...C_ORIGEM, itens: cLevado.valor.origem },
+  { ...C_DESTINO, itens: cLevado.valor.destino },
+  "5",
+);
+checa(
+  "linha com card: a cópia sai pelo card, e o vizinho sem nome fica",
+  cDesfeito.ok === true &&
+    cDesfeito.valor.destino.length === 1 &&
+    cDesfeito.valor.destino[0].id === "1",
+);
+const homonimo = desfazerLevada(
+  D_ORIGEM,
+  {
+    ...L_DESTINO,
+    itens: [item("1", { assunto: "Sistema Connect e totens", origem: "manual" })],
+  },
+  "2",
+);
+checa(
+  "o homônimo lançado à mão lá NÃO é apagado — o mesmo nome não é a mesma linha",
+  homonimo.ok === true &&
+    homonimo.valor.copiaEncontrada === false &&
+    homonimo.valor.destino.length === 1,
+);
+checa(
+  "e mesmo sem achar a cópia, o ponteiro daqui sai — senão o chip fica sem saída",
+  homonimo.valor.origem.find((i) => i.id === "2").levadaParaAtaId === "",
+);
+
+// O CAMINHO ANTIGO: "Abrir a próxima reunião" cria a ata e deixa só a marca.
+const marcada = {
+  ...L_ORIGEM,
+  itens: L_ORIGEM.itens.map((i) => (i.id === "2" ? { ...i, proximaReuniao: true } : i)),
+};
+const aberta = { id: "ata-02-09", setor: "Cantinas", data: "2026-09-02", itens: herdarParaProxima(marcada) };
+checa(
+  "o item colhido por 'Abrir a próxima' é achado pela procura",
+  ataDaLevada(marcada.id, marcada.itens[1], [marcada, L_DESTINO, aberta]) === "ata-02-09",
+);
+checa(
+  "linha nunca levada não aponta para lugar nenhum",
+  ataDaLevada(marcada.id, marcada.itens[0], [marcada, aberta]) === "",
+);
+checa(
+  "ponteiro para ata apagada não aponta para lugar nenhum",
+  ataDaLevada(D_ORIGEM.id, D_ORIGEM.itens[1], [D_ORIGEM]) === "",
+);
+const antigo = desfazerLevada(marcada, aberta, "2");
+checa(
+  "desfazer o caminho antigo apaga a marca e a cópia herdada",
+  antigo.ok === true &&
+    antigo.valor.origem.find((i) => i.id === "2").proximaReuniao === false &&
+    antigo.valor.destino.length === 0,
+);
+
+// AS RECUSAS
+checa("mesma ata recusa", desfazerLevada(D_ORIGEM, D_ORIGEM, "2").ok === false);
+checa(
+  "setores diferentes recusa",
+  desfazerLevada(D_ORIGEM, { ...D_DESTINO, setor: "B.I." }, "2").ok === false,
+);
+checa("linha que não está na origem recusa", desfazerLevada(D_ORIGEM, D_DESTINO, "99").ok === false);
+checa("linha nunca levada recusa", desfazerLevada(D_ORIGEM, D_DESTINO, "1").ok === false);
+checa(
+  "levada para OUTRA reunião recusa — não apaga a linha errada",
+  desfazerLevada(D_ORIGEM, { ...D_DESTINO, id: "ata-16-09" }, "2").ok === false,
 );
 
 console.log(
