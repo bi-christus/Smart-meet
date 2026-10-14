@@ -629,6 +629,24 @@ for (const quem of Object.keys(PESSOAS)) {
   caso(quem, "por logo no link", "update", LK, LINK, editado({ logo: FOTO_NO_TETO }));
   caso(quem, "apagar link de outra pessoa", "delete", LK, LINK, null);
   caso(quem, "apagar o proprio link", "delete", LK, meuLink(), null);
+  // Categoria e pasta (14/10/2026): organizar o portfólio é só do admin, mesmo
+  // no produto que a própria pessoa cadastrou. Estes casos NASCEM mudando de
+  // resposta para o admin: na versão anterior o campo nem existia.
+  caso(quem, "cadastrar link ja com categoria", "create", LK, null, meuLink({ categoria: "Power BI" }));
+  caso(quem, "por categoria e pasta no proprio link", "update", LK, meuLink(), {
+    ...meuLink(),
+    categoria: "Power BI",
+    pasta: "Financeiro",
+    updatedBy: PESSOAS[quem].email,
+    updatedAt: QUANDO,
+  });
+  caso(quem, "editar o proprio link sem mexer na categoria", "update", LK, meuLink({ categoria: "Power BI" }), {
+    ...meuLink({ categoria: "Power BI" }),
+    nome: "Painel de vendas por unidade",
+    updatedBy: PESSOAS[quem].email,
+    updatedAt: QUANDO,
+  });
+  caso(quem, "por pasta sem categoria", "update", LK, LINK, editado({ pasta: "Financeiro" }));
 
   caso(
     quem,

@@ -9,8 +9,10 @@ import {
   type UserProfile,
 } from "@/lib/users";
 import {
+  agruparPorCategoria,
   casaBusca,
   buscarIconeDoSite,
+  renomearClassificacao,
   definirIconeDoLinkDoSetor,
   definirLogoDoLinkDoSetor,
   subscribeLinksDoSetor,
@@ -35,6 +37,12 @@ import { SkeletonCard, classeAparece } from "@/components/skeleton";
 import { LinkCard } from "./link-card";
 import { LinkModal, fraseDoErro, prepararLogo } from "./link-modal";
 import { ProdutoGaveta } from "./produto-gaveta";
+import {
+  RECORTE_TUDO,
+  TrilhaDoPortfolio,
+  aplicarRecorte,
+  type Recorte,
+} from "./organizacao";
 import { normalizarUrl } from "@/lib/links-core";
 import styles from "./links.module.css";
 
@@ -109,6 +117,16 @@ export default function LinksPage() {
     (profile?.sectors ?? []).find((s) => sectors.includes(s)) || sectors[0] || "";
   const setorAtual = sectors.includes(setorEscolhido) ? setorEscolhido : setorPadrao;
   const [busca, setBusca] = useState("");
+  /**
+   * A categoria ou pasta escolhida na trilha (14/10/2026). Guardada JUNTO do
+   * setor: trocar de portfólio volta para "Todos os produtos", em vez de abrir
+   * o outro setor recortado por uma categoria que talvez nem exista nele.
+   */
+  const [recorteGuardado, setRecorte] = useState<{ setor: string; r: Recorte }>({
+    setor: "",
+    r: RECORTE_TUDO,
+  });
+  const recorte = recorteGuardado.setor === setorAtual ? recorteGuardado.r : RECORTE_TUDO;
 
   /**
    * As demandas e as etapas do portfólio aberto — só para o andamento (#209).
@@ -206,6 +224,11 @@ export default function LinksPage() {
    * a clicar para ler "sem permissão", que é a pior forma de descobrir o que se
    * pode fazer.
    */
+  /** Organizar (categoria e pasta) é só do admin — o espelho da regra de `/links`. */
+  const ehAdmin =
+    !!profile &&
+    (profile.email.toLowerCase() === SUPER_ADMIN_EMAIL || profile.role === "admin");
+
   const podeAlterar = useCallback(
     (l: LinkDoSetor) => {
       if (!profile) return false;
@@ -236,6 +259,23 @@ export default function LinksPage() {
     () => doSetor.filter((l) => casaBusca(l, busca)),
     [doSetor, busca],
   );
+
+  /** O mapa da trilha: o portfólio inteiro, sem a busca. */
+  const gruposDoSetor = useMemo(() => agruparPorCategoria(doSetor), [doSetor]);
+  /** O que a grade desenha: a busca e o recorte da trilha, já agrupados. */
+  const gruposVisiveis = useMemo(
+    () => aplicarRecorte(agruparPorCategoria(visiveis), recorte),
+    [visiveis, recorte],
+  );
+  const nVisiveis = gruposVisiveis.reduce((n, g) => n + g.total, 0);
+  /** Com uma categoria só (ou nenhuma), os títulos de seção não dizem nada. */
+  const temOrganizacao = gruposDoSetor.some((g) => g.categoria !== null);
+
+  async function renomear(alvo: { categoria: string; pasta?: string }, novo: string) {
+    await renomearClassificacao(doSetor, setorAtual, alvo, novo, autor);
+    // O recorte que apontava para o nome antigo passaria a não achar nada.
+    setRecorte({ setor: setorAtual, r: RECORTE_TUDO });
+  }
 
   /**
    * Quantos produtos cada portfólio tem, para a aba dizer antes do clique.
@@ -314,9 +354,9 @@ export default function LinksPage() {
   }
 
   const contagem =
-    visiveis.length === doSetor.length
+    nVisiveis === doSetor.length
       ? `${doSetor.length} ${doSetor.length === 1 ? "produto" : "produtos"}`
-      : `${visiveis.length} de ${doSetor.length} produtos`;
+      : `${nVisiveis} de ${doSetor.length} produtos`;
 
   if (!profile) return null;
 
@@ -357,7 +397,7 @@ export default function LinksPage() {
             <Icon name="search" size={15} />
             <input
               className={styles.search}
-              placeholder="Buscar por nome, descrição ou serviço…"
+              placeholder="Buscar por nome, categoria, pasta ou serviço…"
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
               aria-label="Buscar no portfólio"
@@ -446,44 +486,76 @@ export default function LinksPage() {
             }
           />
         ) : (
-          <>
-            {visiveis.length === 0 && (
-              <EmptyState
-                size="compact"
-                icon="search"
-                title="Nenhum produto com essa busca"
-                description={
-                  <>
-                    Nenhum dos {doSetor.length} produtos deste portfólio casa
-                    com a busca — eles continuam lá, é a peneira que está
-                    apertada.
-                  </>
-                }
+          <div className={styles.layout}>
+            {temOrganizacao && (
+              <TrilhaDoPortfolio
+                grupos={gruposDoSetor}
+                total={doSetor.length}
+                recorte={recorte}
+                onRecorte={(r) => setRecorte({ setor: setorAtual, r })}
+                podeOrganizar={ehAdmin}
+                onRenomear={renomear}
               />
             )}
-            {/* A grade fica montada assim que os dados chegam, mesmo com zero
-                resultados na peneira. Trocá-la pelo painel de vazio a cada
-                filtro reexecutaria o crossfade de entrada a cada tecla
-                digitada — e animar interação de alta frequência é lentidão
-                percebida, que é o oposto do que a animação serve aqui. */}
-            <div className={`${styles.grid} ${classeAparece}`}>
-              {visiveis.map((link) => (
-                <LinkCard
-                  key={link.id}
-                  link={link}
-                  nomeDe={nomeDe}
-                  anoAtual={anoAtual}
-                  salvando={salvando === link.id}
-                  erro={erroIcone?.id === link.id ? erroIcone.texto : null}
-                  podeAlterar={podeAlterar(link)}
-                  andamento={andamentos.get(link.id)}
-                  onAbrirAndamento={() => setGavetaDe(link.id)}
-                  onEscolherIcone={(nome) => void escolherIcone(link, nome)}
-                  onEditar={() => setAberto(link)}
+            <div className={styles.conteudo}>
+              {nVisiveis === 0 && (
+                <EmptyState
+                  size="compact"
+                  icon="search"
+                  title="Nenhum produto aqui com essa busca"
+                  description={
+                    <>
+                      Os {doSetor.length} produtos deste portfólio continuam lá —
+                      é a busca ou a categoria escolhida que está apertando a
+                      peneira.
+                    </>
+                  }
                 />
-              ))}
+              )}
+              {/* As seções ficam montadas mesmo com zero resultados: trocá-las
+                  pelo painel de vazio a cada tecla reexecutaria a entrada. */}
+              <div className={classeAparece}>
+                {gruposVisiveis.map((g) => (
+                  <section key={g.categoria ?? "__sem__"} className={styles.secaoCategoria}>
+                    {temOrganizacao && (
+                      <h2 className={styles.tituloCategoria}>
+                        {g.categoria ?? "Sem categoria"}
+                        <span>{g.total}</span>
+                      </h2>
+                    )}
+                    {g.pastas.map((p) => (
+                      <div key={p.pasta ?? "__solto__"} className={styles.blocoPasta}>
+                        {p.pasta !== null && (
+                          <h3 className={styles.tituloPasta}>
+                            <Icon name="pasta" size={14} />
+                            {p.pasta}
+                            <span>{p.links.length}</span>
+                          </h3>
+                        )}
+                        <div className={styles.grid}>
+                          {p.links.map((link) => (
+                            <LinkCard
+                              key={link.id}
+                              link={link}
+                              nomeDe={nomeDe}
+                              anoAtual={anoAtual}
+                              salvando={salvando === link.id}
+                              erro={erroIcone?.id === link.id ? erroIcone.texto : null}
+                              podeAlterar={podeAlterar(link)}
+                              andamento={andamentos.get(link.id)}
+                              onAbrirAndamento={() => setGavetaDe(link.id)}
+                              onEscolherIcone={(nome) => void escolherIcone(link, nome)}
+                              onEditar={() => setAberto(link)}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </section>
+                ))}
+              </div>
             </div>
-          </>
+          </div>
         )}
       </div>
 
@@ -506,6 +578,16 @@ export default function LinksPage() {
           existentes={links}
           autor={autor}
           podeApagar={aberto !== "novo" && podeAlterar(aberto)}
+          organizar={ehAdmin}
+          classificacaoInicial={
+            // Produto novo criado com uma categoria/pasta aberta na trilha
+            // já nasce nela.
+            recorte.tipo === "pasta"
+              ? { categoria: recorte.categoria, pasta: recorte.pasta }
+              : recorte.tipo === "categoria" && recorte.categoria
+                ? { categoria: recorte.categoria, pasta: "" }
+                : undefined
+          }
           onClose={() => setAberto(null)}
         />
       )}

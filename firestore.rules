@@ -974,10 +974,24 @@ service cloud.firestore {
         let url = d.get('url', '');
         let icone = d.get('icone', null);
         let logo = d.get('logo', null);
+        let categoria = d.get('categoria', null);
+        let pasta = d.get('pasta', null);
         return d.keys().hasOnly(['setor', 'nome', 'descricao', 'url', 'icone',
-                                 'logo',
+                                 'logo', 'categoria', 'pasta',
                                  'createdBy', 'createdAt',
                                  'updatedBy', 'updatedAt'])
+               // CATEGORIA E PASTA (14/10/2026): a organização do portfólio.
+               // Mesma régua do nome, com teto próprio; pasta só existe dentro
+               // de uma categoria. QUEM pode mexer nelas está no create/update.
+               && (categoria == null
+                   || (categoria is string
+                       && categoria.size() <= 40
+                       && categoria.matches('(?s).*[\\p{L}\\p{N}].*')))
+               && (pasta == null
+                   || (pasta is string
+                       && categoria != null
+                       && pasta.size() <= 40
+                       && pasta.matches('(?s).*[\\p{L}\\p{N}].*')))
                // O LOGO (06/10/2026) usa o teto e o alfabeto de `fotoOk()`, sem
                // conversão: é data URI no próprio documento, vira `src` de um
                // `<img>` na tela de todo o setor, e SVG carrega script.
@@ -1009,9 +1023,15 @@ service cloud.firestore {
                     && novo('setor') != ''
                     && souEu(novo('createdBy'))
                     && request.resource.data.createdAt == request.time
-                    && podeNoSetor(novo('setor'));
+                    && podeNoSetor(novo('setor'))
+                    // Só o admin já cria o produto organizado.
+                    && (!request.resource.data.keys().hasAny(['categoria', 'pasta'])
+                        || isAdmin());
 
       allow update: if !mudou(['setor', 'createdBy', 'createdAt'])
+                    // Organizar o portfólio (categoria e pasta) é só do admin,
+                    // mesmo no produto que a própria pessoa cadastrou.
+                    && (!mudou(['categoria', 'pasta']) || isAdmin())
                     && linkOk()
                     && souEu(novo('updatedBy'))
                     && request.resource.data.get('updatedAt', null) == request.time
