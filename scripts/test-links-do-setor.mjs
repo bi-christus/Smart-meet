@@ -18,6 +18,10 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import {
+  LIMITE_CLASSIFICACAO,
+  agruparPorCategoria,
+  classificacoesEmUso,
+  conferirClassificacao,
   LIMITE_DESCRICAO_LINK,
   LIMITE_LOGO_BYTES,
   LIMITE_LOGO_CHARS,
@@ -334,6 +338,49 @@ checa("nada de firebase dentro do core (AGENTS.md §4)", !/from\s+["']firebase/.
 checa("nada de react dentro do core", !/from\s+["']react["']/.test(fonte));
 
 // ---------------------------------------------------------------------------
+console.log("\n— categorias e pastas (14/10/2026) —");
+{
+  checa("vazio é sem categoria", conferirClassificacao("  ").ok);
+  checa("só símbolo é recusado", !conferirClassificacao("--").ok);
+  checa(
+    "o teto vale",
+    conferirClassificacao("a".repeat(LIMITE_CLASSIFICACAO)).ok &&
+      !conferirClassificacao("a".repeat(LIMITE_CLASSIFICACAO + 1)).ok,
+  );
+  const lido = normalizarLinkDoSetor("x", { setor: "B.I.", nome: "A", url: "https://x.com", pasta: "Vendas" });
+  checa("pasta sem categoria é descartada na leitura", lido && lido.pasta === undefined);
+
+  const ls = [
+    link("1", "Painel A", "https://a.com", "B.I.", { categoria: "Power BI", pasta: "Financeiro" }),
+    link("2", "Painel B", "https://b.com", "B.I.", { categoria: "power bi", pasta: "Acadêmico" }),
+    link("3", "Painel C", "https://c.com", "B.I.", { categoria: "Power BI" }),
+    link("4", "Sistema D", "https://d.com", "B.I.", { categoria: "Automações" }),
+    link("5", "Avulso", "https://e.com", "B.I."),
+  ];
+  const g = agruparPorCategoria(ls);
+  checa(
+    "categorias em ordem alfabética, Sem categoria por último",
+    g.map((x) => x.categoria).join("|") === "Automações|Power BI|",
+    g.map((x) => x.categoria).join("|"),
+  );
+  const pbi = g[1];
+  checa("caixa diferente não faz duas categorias", pbi.total === 3);
+  checa(
+    "soltos primeiro, depois as pastas em ordem",
+    pbi.pastas.map((p) => p.pasta).join("|") === "|Acadêmico|Financeiro",
+    pbi.pastas.map((p) => p.pasta).join("|"),
+  );
+  const uso = classificacoesEmUso(ls);
+  checa("sugestões de categoria", uso.categorias.join("|") === "Automações|Power BI");
+  checa(
+    "sugestões de pasta pela categoria, sem olhar caixa",
+    uso.pastasDe("POWER BI").join("|") === "Acadêmico|Financeiro",
+  );
+  checa("a busca acha pela categoria", casaBusca(ls[3], "automacoes"));
+  checa("a busca acha pela pasta", casaBusca(ls[1], "academico"));
+}
+
+// ---------------------------------------------------------------------------
 console.log("\n— o TypeScript e a regra do Firestore concordam —");
 
 const rules = readFileSync(join(raiz, "firestore.rules"), "utf8");
@@ -376,6 +423,16 @@ if (bloco) {
     /!mudou\(\['setor', 'createdBy', 'createdAt'\]\)/.test(b),
   );
   checa("a forma do documento é travada", /keys\(\)\.hasOnly\(/.test(b));
+  checa(
+    "o teto de categoria e pasta é o mesmo dos dois lados",
+    teto("categoria") === LIMITE_CLASSIFICACAO && teto("pasta") === LIMITE_CLASSIFICACAO,
+    `regra=${teto("categoria")}/${teto("pasta")} core=${LIMITE_CLASSIFICACAO}`,
+  );
+  checa(
+    "organizar (categoria e pasta) é só do admin",
+    /!mudou\(\['categoria', 'pasta'\]\) \|\| isAdmin\(\)/.test(b) &&
+      /hasAny\(\['categoria', 'pasta'\]\)\s*\|\| isAdmin\(\)/.test(b),
+  );
   // Alterar e apagar o link ALHEIO é só de admin — nem gestor (06/10/2026).
   const update = b.slice(b.indexOf("allow update"), b.indexOf("allow delete"));
   const del = b.slice(b.indexOf("allow delete"));

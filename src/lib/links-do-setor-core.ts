@@ -97,6 +97,8 @@ export function conferirLogo(
 export const LIMITE_NOME_LINK = 80;
 export const LIMITE_DESCRICAO_LINK = 300;
 export const LIMITE_URL_LINK = 2048;
+/** Teto do nome de uma categoria ou de uma pasta (14/10/2026). */
+export const LIMITE_CLASSIFICACAO = 40;
 
 export type LinkDoSetor = {
   /** id do documento. */
@@ -112,6 +114,14 @@ export type LinkDoSetor = {
   icone?: string;
   /** O logo enviado (data URI JPEG/PNG). Quando existe, vence o ícone no selo. */
   logo?: string;
+  /**
+   * A organização do portfólio (14/10/2026): categoria e, dentro dela, pasta.
+   * Só o ADMIN escreve (a regra de `/links` confere); ausente = sem categoria.
+   * Não há cadastro de categorias à parte — a lista é a dos valores em uso, e
+   * renomear uma categoria é regravar os produtos dela (`renomearClassificacao`).
+   */
+  categoria?: string;
+  pasta?: string;
   /** E-mail de quem cadastrou. */
   createdBy: string;
   /** Milissegundos; `null` só no instante entre a gravação e o eco do servidor. */
@@ -310,6 +320,12 @@ export function normalizarLinkDoSetor(id: string, bruto: unknown): LinkDoSetor |
   // porque o console e o Admin SDK escrevem sem passar pela regra. Logo que não
   // passa some do card — o selo volta ao ícone, que é a falha certa.
   if (typeof d.logo === "string" && conferirLogo(d.logo).ok) link.logo = d.logo.trim();
+  // Categoria e pasta passam pela mesma régua da gravação: valor torto (vindo
+  // do console) vira "sem categoria", que é a falha que não esconde o produto.
+  const categoria = texto(d.categoria);
+  if (categoria && conferirClassificacao(categoria).ok) link.categoria = categoria;
+  const pasta = texto(d.pasta);
+  if (link.categoria && pasta && conferirClassificacao(pasta).ok) link.pasta = pasta;
   const updatedBy = texto(d.updatedBy);
   if (updatedBy) link.updatedBy = updatedBy;
   if (d.updatedAt !== undefined) link.updatedAt = instante(d.updatedAt);
@@ -354,6 +370,10 @@ export function casaBusca(link: LinkDoSetor, busca: string): boolean {
   const campos = [
     link.nome,
     link.descricao,
+    // A organização também é procurável: "financeiro" acha a categoria e a
+    // pasta inteiras, não só os produtos com a palavra no nome.
+    link.categoria ?? "",
+    link.pasta ?? "",
     dominioDe(link.url),
     servico === "generico" ? "" : SERVICO_ROTULO[servico],
   ];
@@ -365,4 +385,104 @@ function semAcento(s: string): string {
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
     .toLowerCase();
+}
+
+// ---------------------------------------------------------------------------
+// Categorias e pastas (14/10/2026)
+// ---------------------------------------------------------------------------
+
+/**
+ * O nome de uma categoria ou pasta cabe e diz alguma coisa? Vazio é aceito:
+ * é "sem categoria" / "fora de pasta". O `motivo` é texto de tela.
+ */
+export function conferirClassificacao(
+  bruto: unknown,
+): { ok: true; valor: string } | { ok: false; motivo: string } {
+  const valor = typeof bruto === "string" ? bruto.trim() : "";
+  if (!valor) return { ok: true, valor: "" };
+  if (!TEM_CONTEUDO.test(valor)) {
+    return { ok: false, motivo: "O nome precisa ter pelo menos uma letra ou um número." };
+  }
+  if (valor.length > LIMITE_CLASSIFICACAO) {
+    return { ok: false, motivo: `O nome passa de ${LIMITE_CLASSIFICACAO} caracteres.` };
+  }
+  return { ok: true, valor };
+}
+
+/** Uma pasta dentro de uma categoria. `pasta: null` = os produtos soltos na categoria. */
+export type GrupoDePasta = { pasta: string | null; links: LinkDoSetor[] };
+/** Uma categoria e as pastas dela. `categoria: null` = "Sem categoria". */
+export type GrupoDeCategoria = {
+  categoria: string | null;
+  total: number;
+  pastas: GrupoDePasta[];
+};
+
+function compararNomes(a: string, b: string): number {
+  return a.localeCompare(b, "pt-BR", { sensitivity: "base" });
+}
+
+/**
+ * A grade organizada: categorias em ordem alfabética, com "Sem categoria" por
+ * último; dentro de cada uma, primeiro os produtos soltos e depois as pastas,
+ * também em ordem alfabética. Os produtos mantêm a ordem que já tinham
+ * (`ordenarLinks`, por nome).
+ *
+ * Caixa e acento não fazem duas categorias: "Financeiro" e "financeiro" caem
+ * juntas, com o rótulo da primeira que aparecer.
+ */
+export function agruparPorCategoria(links: readonly LinkDoSetor[]): GrupoDeCategoria[] {
+  const cats = new Map<string, { rotulo: string | null; pastas: Map<string, GrupoDePasta> }>();
+  for (const l of links) {
+    const chaveCat = l.categoria ? chaveDeNome(l.categoria) : "";
+    let cat = cats.get(chaveCat);
+    if (!cat) {
+      cat = { rotulo: l.categoria ?? null, pastas: new Map() };
+      cats.set(chaveCat, cat);
+    }
+    const chavePasta = l.pasta ? chaveDeNome(l.pasta) : "";
+    let pasta = cat.pastas.get(chavePasta);
+    if (!pasta) {
+      pasta = { pasta: l.pasta ?? null, links: [] };
+      cat.pastas.set(chavePasta, pasta);
+    }
+    pasta.links.push(l);
+  }
+  return [...cats.values()]
+    .map((c) => {
+      const pastas = [...c.pastas.values()].sort((a, b) =>
+        a.pasta === null ? -1 : b.pasta === null ? 1 : compararNomes(a.pasta, b.pasta),
+      );
+      return {
+        categoria: c.rotulo,
+        total: pastas.reduce((n, p) => n + p.links.length, 0),
+        pastas,
+      };
+    })
+    .sort((a, b) =>
+      a.categoria === null ? 1 : b.categoria === null ? -1 : compararNomes(a.categoria, b.categoria),
+    );
+}
+
+/**
+ * As categorias em uso, e as pastas de cada uma — as sugestões do formulário
+ * do admin. Sem repetição de caixa ou acento, em ordem alfabética.
+ */
+export function classificacoesEmUso(
+  links: readonly LinkDoSetor[],
+): { categorias: string[]; pastasDe: (categoria: string) => string[] } {
+  const grupos = agruparPorCategoria(links).filter((g) => g.categoria !== null);
+  const categorias = grupos.map((g) => g.categoria as string);
+  return {
+    categorias,
+    pastasDe: (categoria) => {
+      const g = grupos.find((x) => chaveDeNome(x.categoria as string) === chaveDeNome(categoria));
+      return g ? g.pastas.flatMap((p) => (p.pasta ? [p.pasta] : [])) : [];
+    },
+  };
+}
+
+/** O mesmo nome de categoria ou pasta, sem olhar caixa nem espaço sobrando. */
+export function mesmaClassificacao(a: string | undefined | null, b: string | undefined | null): boolean {
+  return chaveDeNome(a ?? "") === chaveDeNome(b ?? "");
 }

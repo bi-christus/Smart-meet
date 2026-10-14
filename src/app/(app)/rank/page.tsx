@@ -46,19 +46,7 @@ import { ErrorState } from "@/components/error-state";
 import { SkeletonAvatar } from "@/components/skeleton";
 import { Select, type SelectOption } from "@/components/select";
 import { Icon } from "@/components/icons";
-import { Space_Mono } from "next/font/google";
 import styles from "./rank.module.css";
-
-/**
- * A fonte do título lateral (13/10/2026): monoespaçada de exibição, no estilo
- * terminal que o setor escolheu como referência. Carregada SÓ nesta tela —
- * fora do layout raiz de propósito, para nenhuma outra tela pagar o download.
- */
-const monoTitulo = Space_Mono({
-  subsets: ["latin"],
-  weight: "700",
-  variable: "--fonte-titulo",
-});
 
 /**
  * Rank — quem entregou, e quanto, TEMPORADA a temporada.
@@ -271,7 +259,7 @@ export default function RankPage() {
 
 
   return (
-    <div className={`${styles.page} ${monoTitulo.variable}`}>
+    <div className={styles.page}>
       <Cabecalho
         sub={
           fontes.carregando || fontes.erro
@@ -542,7 +530,7 @@ function Cena({
             campea={campea}
             indice={i}
             retrato={tamanhoDoRetrato(c.posicao, colocacoes.length)}
-            /* `ENTRADA_DA_CENA` espera o véu da tela abrir (ver `.page::after`). */
+            /* `ENTRADA_DA_CENA` espera o cabeçalho descer. */
             atraso={ENTRADA_DA_CENA + (ATRASO_POR_POSICAO[c.posicao] ?? i * 24)}
           />
         ))}
@@ -558,8 +546,8 @@ function Cena({
  */
 const ATRASO_POR_POSICAO: Record<number, number> = { 1: 240, 2: 180, 3: 120 };
 
-/** As barras começam a subir quando o véu da entrada já está abrindo. */
-const ENTRADA_DA_CENA = 320;
+/** As barras começam a subir logo depois de o cabeçalho descer. */
+const ENTRADA_DA_CENA = 120;
 
 /**
  * Quanto tempo a contagem leva para chegar ao número.
@@ -783,15 +771,14 @@ function Retrato({
 
 /**
  * O título na lateral, no lugar do "RACE RESULT" do cartaz: "Smart Meeting"
- * de baixo para cima, em monoespaçada de terminal, e o "S2" na cor da marca
- * com o asterisco do prompt. Decorativo para o leitor de tela — o `<h1>` do
- * cabeçalho já nomeia a tela.
+ * de baixo para cima, na serifa de título do app, e o "S2" na cor da marca.
+ * Decorativo para o leitor de tela — o `<h1>` do cabeçalho já nomeia a tela.
  */
 function TituloLateral() {
   return (
     <div className={styles.tituloLateral} aria-hidden="true">
       <span className={styles.tituloGrande}>Smart Meeting</span>
-      <span className={styles.tituloAcento}>*S2</span>
+      <span className={styles.tituloAcento}>S2</span>
     </div>
   );
 }
