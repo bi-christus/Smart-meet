@@ -43,6 +43,7 @@ import {
   ataDaLevada,
   desfazerLevada,
   haPerdas,
+  itemDeOrigemDaCopia,
   LIMITE_ASSUNTO_CHARS,
 } from "../src/lib/ata-demanda-core.ts";
 import { herdarParaProxima, montarPauta } from "../src/lib/ata-core.ts";
@@ -737,6 +738,36 @@ checa("linha nunca levada recusa", desfazerLevada(D_ORIGEM, D_DESTINO, "1").ok =
 checa(
   "levada para OUTRA reunião recusa — não apaga a linha errada",
   desfazerLevada(D_ORIGEM, { ...D_DESTINO, id: "ata-16-09" }, "2").ok === false,
+);
+
+// VISTO DO DESTINO (#231): é lá que a pessoa procura o "Desfazer", porque é lá
+// que o assunto indesejado aparece.
+console.log("\n— desfazer visto do destino —");
+const copiaLa = D_DESTINO.itens[2];
+checa(
+  "a cópia acha a linha de origem que a deixou",
+  itemDeOrigemDaCopia(copiaLa, D_ORIGEM, D_DESTINO.id)?.id === "2",
+);
+checa(
+  "e desfazer por esse item tira a própria cópia",
+  desfazerLevada(D_ORIGEM, D_DESTINO, itemDeOrigemDaCopia(copiaLa, D_ORIGEM, D_DESTINO.id).id)
+    .valor.destino.every((i) => i.origemAtaId !== D_ORIGEM.id),
+);
+checa(
+  "linha que mora lá desde sempre não tem origem a desfazer",
+  itemDeOrigemDaCopia(D_DESTINO.itens[0], D_ORIGEM, D_DESTINO.id) === null,
+);
+checa(
+  "cópia de uma linha levada para OUTRA reunião não oferece desfazer aqui",
+  itemDeOrigemDaCopia(copiaLa, D_ORIGEM, "ata-16-09") === null,
+);
+checa(
+  "cópia cuja origem já foi desfeita não oferece desfazer de novo",
+  itemDeOrigemDaCopia(copiaLa, { ...D_ORIGEM, itens: desfeito.valor.origem }, D_DESTINO.id) === null,
+);
+checa(
+  "caminho antigo: a herança de 'Abrir a próxima' acha a origem pela marca",
+  itemDeOrigemDaCopia(aberta.itens[0], marcada, aberta.id)?.id === "2",
 );
 
 console.log(

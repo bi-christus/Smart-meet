@@ -36,6 +36,7 @@ import {
   conferirTitulo,
   desfazerLevada,
   haPerdas,
+  itemDeOrigemDaCopia,
   LIMITE_ASSUNTO_CHARS,
   LIMITE_TEXTO_CHARS,
   deleteAta,
@@ -332,11 +333,14 @@ export default function AtaPage() {
   const [gerarAberta, setGerarAberta] = useState(false);
   const [puxarAberta, setPuxarAberta] = useState(false);
   const [levando, setLevando] = useState<ItemDaPauta | null>(null);
-  // O destino vai junto com a linha porque é ele que o modal confere: a linha
-  // sozinha não diz para onde foi quando quem a levou foi "Abrir a próxima".
+  // As DUAS atas vão no estado, e não "esta ata + destino": o desfazer é
+  // oferecido dos dois lados (#231), e visto do destino a ata aberta é a que
+  // perde a linha, não a que a levou. `itemId` é sempre o da ORIGEM.
   const [desfazendo, setDesfazendo] = useState<{
-    linha: ItemDaPauta;
+    origemId: string;
     destinoId: string;
+    itemId: string;
+    titulo: string;
   } | null>(null);
   const [proximaAberta, setProximaAberta] = useState(false);
   const [cabecalhoAberto, setCabecalhoAberto] = useState(false);
@@ -911,31 +915,46 @@ export default function AtaPage() {
   );
 
   /**
+   * A linha da ORIGEM que deixou esta herança aqui — ou `null`.
+   *
+   * O par de `destinoDaLevada`, visto do outro lado (#231): é na reunião de
+   * destino que o assunto indesejado aparece, e é lá que se procura o
+   * "Desfazer". A régua é `itemDeOrigemDaCopia`.
+   */
+  const origemDaHeranca = useMemo(() => {
+    const porId = new Map(atas.map((a) => [a.id, a]));
+    return (item: ItemDeAta) => {
+      if (item.origem !== "herdado") return null;
+      const origem = porId.get(item.origemAtaId);
+      const daOrigem = origem ? itemDeOrigemDaCopia(item, origem, ataId) : null;
+      return origem && daOrigem ? { origemId: origem.id, itemId: daOrigem.id } : null;
+    };
+  }, [atas, ataId]);
+
+  /**
    * O inverso de `levar`, e pela mesma escrita: as duas atas no mesmo lote.
    *
-   * Em duas escritas soltas, a falha da segunda deixaria a linha daqui sem o
-   * chip e a cópia ainda lá — e o próximo "Levar" encontraria a recusa "já está
-   * na pauta daquela reunião" sem nada na tela explicando por quê.
+   * Em duas escritas soltas, a falha da segunda deixaria a linha de origem sem
+   * o chip e a cópia ainda no destino — e o próximo "Levar" encontraria a
+   * recusa "já está na pauta daquela reunião" sem nada na tela explicando.
    */
-  async function desfazerLevar(linha: ItemDaPauta, destinoId: string) {
-    if (!ata) throw new Error("Nenhuma ata aberta.");
-    const destino = atas.find((a) => a.id === destinoId);
-    if (!destino) {
-      throw new Error("A reunião para onde o assunto foi levado não existe mais.");
-    }
-    const conferido = desfazerLevada(ata, destino, linha.item.id);
+  async function desfazerLevar(origem: Ata, destino: Ata, itemId: string) {
+    const conferido = desfazerLevada(origem, destino, itemId);
     if (!conferido.ok) throw new Error(conferido.motivo);
     await escrever(() =>
       moverItensEntreAtas(
-        { id: ata.id, itens: conferido.valor.origem },
+        { id: origem.id, itens: conferido.valor.origem },
         { id: destino.id, itens: conferido.valor.destino },
       ),
     );
-    return { destino, copiaEncontrada: conferido.valor.copiaEncontrada };
+    return conferido.valor.copiaEncontrada;
   }
 
-  // A ata de destino pode ser apagada por outra pessoa com o modal aberto; aí
+  // Uma das duas atas pode ser apagada por outra pessoa com o modal aberto; aí
   // o modal fecha sozinho, em vez de conferir contra uma ata que não existe.
+  const origemDesfazendo = desfazendo
+    ? atas.find((a) => a.id === desfazendo.origemId)
+    : undefined;
   const destinoDesfazendo = desfazendo
     ? atas.find((a) => a.id === desfazendo.destinoId)
     : undefined;
@@ -1550,8 +1569,20 @@ export default function AtaPage() {
                     destinoDaLevada(linha.item)
                       ? () =>
                           setDesfazendo({
-                            linha,
+                            origemId: ataId,
                             destinoId: destinoDaLevada(linha.item),
+                            itemId: linha.item.id,
+                            titulo: linha.titulo,
+                          })
+                      : null
+                  }
+                  onDesfazerHeranca={
+                    origemDaHeranca(linha.item)
+                      ? () =>
+                          setDesfazendo({
+                            ...origemDaHeranca(linha.item)!,
+                            destinoId: ataId,
+                            titulo: linha.titulo,
                           })
                       : null
                   }
@@ -1689,21 +1720,29 @@ export default function AtaPage() {
         />
       )}
 
-      {desfazendo && ata && destinoDesfazendo && (
+      {desfazendo && origemDesfazendo && destinoDesfazendo && (
         <ModalDeDesfazerLevar
           setor={setor}
-          ata={ata}
+          origem={origemDesfazendo}
           destino={destinoDesfazendo}
-          linha={desfazendo.linha}
+          itemId={desfazendo.itemId}
+          titulo={desfazendo.titulo}
+          vistoDoDestino={destinoDesfazendo.id === ataId}
           atas={atas}
           onFechar={() => setDesfazendo(null)}
           onDesfazer={async () => {
-            const r = await desfazerLevar(desfazendo.linha, destinoDesfazendo.id);
+            const achou = await desfazerLevar(
+              origemDesfazendo,
+              destinoDesfazendo,
+              desfazendo.itemId,
+            );
             setDesfazendo(null);
             setAviso(
-              r.copiaEncontrada
-                ? `"${desfazendo.linha.titulo}" saiu da pauta de ${rotuloDaAta(r.destino)}. Nesta ata ele continua, e pode ser levado de novo.`
-                : `A marca de "${desfazendo.linha.titulo}" foi retirada. A cópia já não estava na pauta de ${rotuloDaAta(r.destino)}.`,
+              destinoDesfazendo.id === ataId
+                ? `"${desfazendo.titulo}" saiu desta pauta. Na reunião de ${rotuloDaAta(origemDesfazendo)} ele continua, e pode ser levado de novo.`
+                : achou
+                  ? `"${desfazendo.titulo}" saiu da pauta de ${rotuloDaAta(destinoDesfazendo)}. Nesta ata ele continua, e pode ser levado de novo.`
+                  : `A marca de "${desfazendo.titulo}" foi retirada. A cópia já não estava na pauta de ${rotuloDaAta(destinoDesfazendo)}.`,
             );
           }}
         />
@@ -1951,6 +1990,7 @@ function BlocoDaDemanda({
   tituloDeReserva,
   onAbrirLevada,
   onDesfazerLevada,
+  onDesfazerHeranca,
   temProxima,
   onLevar,
 }: {
@@ -2033,6 +2073,8 @@ function BlocoDaDemanda({
   onAbrirLevada: (() => void) | null;
   /** Abrir a confirmação de "Desfazer" o levar — nulo nas mesmas condições. */
   onDesfazerLevada: (() => void) | null;
+  /** O mesmo desfazer, oferecido na linha herdada — visto do destino (#231). */
+  onDesfazerHeranca: (() => void) | null;
   /**
    * Existe reunião futura neste setor?
    *
@@ -2159,13 +2201,31 @@ function BlocoDaDemanda({
 
                 A linha fora do quadro também não recebe: ela FOI demanda, e o
                 que ela precisa dizer é justamente isso — a frase logo abaixo já
-                faz esse trabalho, e um segundo rótulo ali competiria com ela. */}
-            {!card && !foraDoQuadro && (
-              <OrigemDoAssunto
-                origem={item.origem}
-                rotulo={origemRotulo}
-                onAbrir={onAbrirOrigem}
-              />
+                faz esse trabalho, e um segundo rótulo ali competiria com ela.
+
+                A EXCEÇÃO É O DESFAZER (#231): a demanda levada de outra reunião
+                também precisa do caminho de volta, e um "Desfazer" solto, sem
+                dizer de onde a linha veio, não diria o que está desfazendo. Aí o
+                chip aparece, e o que ele afirma ("veio de 26/08") é verdade
+                sobre a linha da ata — foi aquela reunião que a pôs aqui. */}
+            {((!card && !foraDoQuadro) || onDesfazerHeranca) && (
+              <span className={styles.levadaGrupo}>
+                <OrigemDoAssunto
+                  origem={item.origem}
+                  rotulo={origemRotulo}
+                  onAbrir={onAbrirOrigem}
+                />
+                {onDesfazerHeranca && (
+                  <button
+                    className={`${styles.origemChip} ${styles.origemLink} ${styles.desfazerChip}`}
+                    onClick={onDesfazerHeranca}
+                    title="Tirar desta pauta o assunto que foi levado da outra reunião"
+                    aria-label={`Desfazer: ${origemRotulo}`}
+                  >
+                    <Icon name="x" size={11} /> Desfazer
+                  </button>
+                )}
+              </span>
             )}
             {/* O CHIP DO BASTÃO JÁ PASSADO, e este aparece TAMBÉM na linha com
                 card — ao contrário do de origem.
@@ -3052,20 +3112,29 @@ function ModalDeLevar({
  * A conferência roda aqui, a cada render, contra as atas da assinatura: se
  * alguém escrever na cópia com o modal aberto, a lista acompanha. O clique
  * confere de novo no caminho (`desfazerLevar`), que é quem grava.
+ *
+ * SERVE AOS DOS DOIS LADOS (#231). Aberto na origem, "lá" é a reunião de
+ * destino; aberto no destino, a linha que sai é a que a pessoa está olhando, e
+ * as frases trocam de ponto de vista — "sai desta pauta", "escrito aqui".
  */
 function ModalDeDesfazerLevar({
   setor,
-  ata,
+  origem,
   destino,
-  linha,
+  itemId,
+  titulo,
+  vistoDoDestino,
   atas,
   onFechar,
   onDesfazer,
 }: {
   setor: string;
-  ata: Ata;
+  origem: Ata;
   destino: Ata;
-  linha: ItemDaPauta;
+  /** O id da linha na ORIGEM, de qualquer lado que o modal seja aberto. */
+  itemId: string;
+  titulo: string;
+  vistoDoDestino: boolean;
   atas: Ata[];
   onFechar: () => void;
   onDesfazer: () => Promise<void>;
@@ -3073,13 +3142,14 @@ function ModalDeDesfazerLevar({
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
-  const previa = desfazerLevada(ata, destino, linha.item.id);
+  const previa = desfazerLevada(origem, destino, itemId);
   const perdas = previa.ok ? previa.valor.perdas : null;
   const adiante = perdas?.levadaAdiante
     ? atas.find((a) => a.id === perdas.levadaAdiante)
     : undefined;
   const plural = (n: number, um: string, varios: string) =>
     n === 1 ? um : `${n} ${varios}`;
+  const onde = vistoDoDestino ? "aqui" : "lá";
 
   return (
     <Modal
@@ -3096,12 +3166,20 @@ function ModalDeDesfazerLevar({
         </span>
         <span className={styles.mchip}>{setor}</span>
       </div>
-      <h2 className={styles.mtitulo}>{linha.titulo}</h2>
-      <p className={styles.confirma}>
-        O assunto <strong>sai da pauta de {rotuloDaAta(destino)}</strong>. Nesta
-        ata a linha continua como está, com a decisão de hoje, e volta a poder
-        ser levada.
-      </p>
+      <h2 className={styles.mtitulo}>{titulo}</h2>
+      {vistoDoDestino ? (
+        <p className={styles.confirma}>
+          O assunto <strong>sai desta pauta</strong>. Na reunião de{" "}
+          {rotuloDaAta(origem)}, de onde ele veio, a linha continua como está,
+          com a decisão daquele dia, e volta a poder ser levada.
+        </p>
+      ) : (
+        <p className={styles.confirma}>
+          O assunto <strong>sai da pauta de {rotuloDaAta(destino)}</strong>. Nesta
+          ata a linha continua como está, com a decisão de hoje, e volta a poder
+          ser levada.
+        </p>
+      )}
 
       {previa.ok && !previa.valor.copiaEncontrada && (
         <p className={styles.avisoModal}>
@@ -3112,26 +3190,34 @@ function ModalDeDesfazerLevar({
 
       {perdas && haPerdas(perdas) && (
         <div className={styles.avisoModal}>
-          <strong>Vai junto o que foi escrito lá:</strong>
+          <strong>Vai junto o que foi escrito {onde}:</strong>
           <ul className={styles.perdasLista}>
-            {perdas.decisao && <li>a decisão registrada naquela reunião</li>}
-            {perdas.objetivoEditado && <li>o objetivo, que foi reescrito lá</li>}
+            {perdas.decisao && (
+              <li>
+                a decisão registrada {vistoDoDestino ? "nesta" : "naquela"} reunião
+              </li>
+            )}
+            {perdas.objetivoEditado && <li>o objetivo, que foi reescrito {onde}</li>}
             {perdas.tarefasNovas > 0 && (
               <li>
-                {plural(perdas.tarefasNovas, "a tarefa criada lá", "tarefas criadas lá")}
+                {plural(
+                  perdas.tarefasNovas,
+                  `a tarefa criada ${onde}`,
+                  `tarefas criadas ${onde}`,
+                )}
               </li>
             )}
             {perdas.tarefasConcluidas > 0 && (
               <li>
                 {plural(
                   perdas.tarefasConcluidas,
-                  "a tarefa marcada como concluída lá",
-                  "tarefas marcadas como concluídas lá",
+                  `a tarefa marcada como concluída ${onde}`,
+                  `tarefas marcadas como concluídas ${onde}`,
                 )}
               </li>
             )}
             {perdas.virouDemanda && (
-              <li>a ligação com a demanda aberta lá — o card continua no quadro</li>
+              <li>a ligação com a demanda aberta {onde} — o card continua no quadro</li>
             )}
             {perdas.levadaAdiante && (
               <li>
