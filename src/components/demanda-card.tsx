@@ -365,33 +365,41 @@ function DemandaCardBase({
         </div>
       )}
       <div className={styles.ktop}>
-        {knownType && (
-          <span
-            className={styles.kType}
-            style={{
-              background: `color-mix(in srgb, ${typeColor} 15%, transparent)`,
-              color: `color-mix(in srgb, ${typeColor} 60%, var(--tx))`,
-            }}
-          >
-            <span className={styles.kTypeDot} style={{ background: typeColor }} />
-            {DEMAND_TYPE_LABEL[card.type as DemandType]}
-          </span>
-        )}
-        {knownPrio && (
-          <span className={`${styles.prio} ${styles["prio_" + card.priority]}`}>
-            {PRIORITY_LABEL[card.priority as Priority]}
-          </span>
-        )}
-        {/* Neutro, sem cor própria: tipo e prioridade já pintam esta linha, e
-            uma terceira cor competiria com as duas. O nome inteiro vai no
-            `title` — no card ele é cortado pela elipse. */}
-        {produto && (
-          <span className={styles.kProduto} title={`Produto: ${produto}`}>
-            <Icon name="links" size={11} />
-            <span className={styles.kProdutoNome}>{produto}</span>
-          </span>
-        )}
-        <div style={{ flex: 1 }} />
+        {/* As etiquetas num grupo que QUEBRA LINHA, e o histórico e o
+            arrastador fora dele, presos ao canto. Numa linha só, a coluna
+            estreita não comportava "NOVA IMPLEMENTAÇÃO" + prioridade + produto,
+            e o que saía pela borda direita do card eram justamente os dois
+            controles do canto (relatado em 15/10/2026). */}
+        <div className={styles.kEtiquetas}>
+          {knownType && (
+            <span
+              className={styles.kType}
+              style={{
+                background: `color-mix(in srgb, ${typeColor} 15%, transparent)`,
+                color: `color-mix(in srgb, ${typeColor} 60%, var(--tx))`,
+              }}
+            >
+              <span className={styles.kTypeDot} style={{ background: typeColor }} />
+              <span className={styles.kTypeNome}>
+                {DEMAND_TYPE_LABEL[card.type as DemandType]}
+              </span>
+            </span>
+          )}
+          {knownPrio && (
+            <span className={`${styles.prio} ${styles["prio_" + card.priority]}`}>
+              {PRIORITY_LABEL[card.priority as Priority]}
+            </span>
+          )}
+          {/* Neutro, sem cor própria: tipo e prioridade já pintam esta linha, e
+              uma terceira cor competiria com as duas. O nome inteiro vai no
+              `title` — no card ele é cortado pela elipse. */}
+          {produto && (
+            <span className={styles.kProduto} title={`Produto: ${produto}`}>
+              <Icon name="links" size={11} />
+              <span className={styles.kProdutoNome}>{produto}</span>
+            </span>
+          )}
+        </div>
         {/* Canto superior direito: a porta do histórico. Fica no card, e não
             só dentro do modal, porque a pergunta que ela responde ("quando isto
             mudou de dono?") nasce olhando para o quadro, não editando a
