@@ -4,7 +4,7 @@ import {
   createContext,
   useContext,
   useEffect,
-  useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 
@@ -73,52 +73,88 @@ function apply(theme: Theme, accent: Accent) {
   r.dataset.accent = accent;
 }
 
-export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>("dark");
-  const [accent, setAccentState] = useState<Accent>("preto");
-  const [fundoAnimado, setFundoState] = useState(true);
+/**
+ * As preferências moram no `localStorage`, e é DE LÁ que a tela lê — como
+ * fonte externa (`useSyncExternalStore`), e não copiadas para um estado.
+ *
+ * Até 15/10/2026 elas eram `useState` com o padrão e um efeito que, na
+ * montagem, lia o `localStorage` e chamava três `setState`. Funcionava, mas
+ * é o desenho que o lint do projeto reprova (setState síncrono em efeito, um
+ * render a mais em cascata) — e era um dos erros que deixavam `npm run lint`
+ * vermelho. Lido como fonte externa, o servidor responde o padrão, o navegador
+ * responde o guardado, e o React concilia os dois sem efeito nenhum.
+ *
+ * `memoria` é a reserva para quando o `localStorage` recusa (janela anônima
+ * em alguns navegadores, cota cheia): a escolha vale até recarregar, que era
+ * exatamente o comportamento do estado de antes.
+ */
+const memoria = new Map<string, string>();
+const ouvintes = new Set<() => void>();
 
-  // Sincroniza com o que o script anti-flash já aplicou / localStorage.
+function ler(chave: string): string | null {
+  try {
+    const v = localStorage.getItem(chave);
+    if (v !== null) return v;
+  } catch {
+    /* sem localStorage: vale a memória */
+  }
+  return memoria.get(chave) ?? null;
+}
+
+function gravar(chave: string, valor: string) {
+  memoria.set(chave, valor);
+  try {
+    localStorage.setItem(chave, valor);
+  } catch {
+    /* ignore */
+  }
+  ouvintes.forEach((f) => f());
+}
+
+/** Avisa também quando OUTRA aba troca o tema — o evento `storage` é dela. */
+function assinar(aviso: () => void) {
+  ouvintes.add(aviso);
+  window.addEventListener("storage", aviso);
+  return () => {
+    ouvintes.delete(aviso);
+    window.removeEventListener("storage", aviso);
+  };
+}
+
+const semValorNoServidor = () => null;
+
+export function ThemeProvider({ children }: { children: ReactNode }) {
+  const theme = temaValido(
+    useSyncExternalStore(assinar, () => ler("sm_theme"), semValorNoServidor),
+  );
+  const accent = acentoValido(
+    useSyncExternalStore(assinar, () => ler("sm_accent"), semValorNoServidor),
+  );
+  // Só "off" desliga: ausente é o padrão de sempre, com a onda ligada.
+  const fundoAnimado =
+    useSyncExternalStore(assinar, () => ler("sm_fundo"), semValorNoServidor) !== "off";
+
+  /**
+   * Na montagem, confirma no `<html>` o que o script anti-flash já aplicou.
+   * Lê do `localStorage` DIRETO, e não de `theme`: no primeiro desenho
+   * (hidratação) `theme` ainda é o padrão do servidor, e aplicá-lo pintaria o
+   * tema escuro por um quadro em quem escolheu o claro.
+   */
   useEffect(() => {
-    try {
-      const t = temaValido(localStorage.getItem("sm_theme"));
-      const a = acentoValido(localStorage.getItem("sm_accent"));
-      setThemeState(t);
-      setAccentState(a);
-      // Só "off" desliga: ausente é o padrão de sempre, com a onda ligada.
-      setFundoState(localStorage.getItem("sm_fundo") !== "off");
-      apply(t, a);
-    } catch {
-      /* ignore */
-    }
+    apply(temaValido(ler("sm_theme")), acentoValido(ler("sm_accent")));
   }, []);
 
   function setFundoAnimado(ligado: boolean) {
-    setFundoState(ligado);
-    try {
-      localStorage.setItem("sm_fundo", ligado ? "on" : "off");
-    } catch {
-      /* ignore */
-    }
+    gravar("sm_fundo", ligado ? "on" : "off");
   }
 
   function setTheme(t: Theme) {
-    setThemeState(t);
-    try {
-      localStorage.setItem("sm_theme", t);
-    } catch {
-      /* ignore */
-    }
+    gravar("sm_theme", t);
     apply(t, accent);
   }
 
   function setAccent(a: Accent) {
-    setAccentState(a);
-    try {
-      localStorage.setItem("sm_accent", a);
-    } catch {
-      /* ignore */
-    }
+    gravar("sm_accent", a);
     apply(theme, a);
   }
 
