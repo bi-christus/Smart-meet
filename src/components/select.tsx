@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { OverlayPortal } from "./overlay-portal";
 import styles from "./select.module.css";
 
 export type SelectOption = {
@@ -69,6 +70,8 @@ export function Select({
     maxHeight: number;
   } | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  /** O menu mora num portal: "clicou fora" precisa conhecer os DOIS nós. */
+  const menuRef = useRef<HTMLDivElement>(null);
   const baseId = useId();
   const listId = `${baseId}-list`;
 
@@ -77,9 +80,9 @@ export function Select({
   useEffect(() => {
     if (!open) return;
     function onDoc(e: MouseEvent) {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+      const alvo = e.target as Node;
+      if (rootRef.current?.contains(alvo) || menuRef.current?.contains(alvo)) return;
+      setOpen(false);
     }
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
@@ -262,55 +265,66 @@ export function Select({
         </svg>
       </button>
 
+      {/* NUM PORTAL, e não dentro do `.root` (15/10/2026). O `fixed` já
+          escapava do RECORTE de quem tem `overflow`, mas não do EMPILHAMENTO:
+          o z-index 90 vale dentro do contexto do ancestral mais próximo que
+          cria um. A coluna do Kanban cria — e a lista de produto da criação
+          rápida abria POR TRÁS dos cards da coluna seguinte. No `<body>` o
+          menu compete na raiz, como o modal e o seletor de ícone. Os eventos
+          sintéticos continuam subindo pela árvore do React: o clique numa
+          opção dentro de um modal não vira "clique fora" do modal. */}
       {open && pos && (
-        <div
-          className={`${styles.menu} ${up ? styles.up : ""}`}
-          role="listbox"
-          id={listId}
-          style={{
-            top: pos.top,
-            left: pos.left,
-            width: pos.width,
-            maxHeight: pos.maxHeight,
-          }}
-        >
-          {options.map((o, i) => (
-            <button
-              key={o.value}
-              type="button"
-              id={`${baseId}-opt-${i}`}
-              role="option"
-              aria-selected={o.value === value}
-              className={`${styles.option} ${o.value === value ? styles.sel : ""} ${i === active ? styles.active : ""}`}
-              onClick={() => choose(o.value)}
-              onMouseEnter={() => setActive(i)}
-              // Fora da ordem de tabulação: o padrão aqui é
-              // `aria-activedescendant`, e o foco fica no gatilho. Sem isto o
-              // Tab entrava na lista e o Escape de dentro dela fechava o modal
-              // anfitrião — ver `onKey`.
-              tabIndex={-1}
-            >
-              {o.color && (
-                <span className={styles.dot} style={{ background: o.color }} />
-              )}
-              {o.prefixo && <span className={styles.prefixo}>{o.prefixo}</span>}
-              <span className={styles.optLabel}>{o.label}</span>
-              {o.value === value && (
-                <svg
-                  className={styles.check}
-                  viewBox="0 0 24 24"
-                  width="14"
-                  height="14"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.2"
-                >
-                  <path d="M20 6L9 17l-5-5" />
-                </svg>
-              )}
-            </button>
-          ))}
-        </div>
+        <OverlayPortal>
+          <div
+            ref={menuRef}
+            className={`${styles.menu} ${up ? styles.up : ""}`}
+            role="listbox"
+            id={listId}
+            style={{
+              top: pos.top,
+              left: pos.left,
+              width: pos.width,
+              maxHeight: pos.maxHeight,
+            }}
+          >
+            {options.map((o, i) => (
+              <button
+                key={o.value}
+                type="button"
+                id={`${baseId}-opt-${i}`}
+                role="option"
+                aria-selected={o.value === value}
+                className={`${styles.option} ${o.value === value ? styles.sel : ""} ${i === active ? styles.active : ""}`}
+                onClick={() => choose(o.value)}
+                onMouseEnter={() => setActive(i)}
+                // Fora da ordem de tabulação: o padrão aqui é
+                // `aria-activedescendant`, e o foco fica no gatilho. Sem isto o
+                // Tab entrava na lista e o Escape de dentro dela fechava o modal
+                // anfitrião — ver `onKey`.
+                tabIndex={-1}
+              >
+                {o.color && (
+                  <span className={styles.dot} style={{ background: o.color }} />
+                )}
+                {o.prefixo && <span className={styles.prefixo}>{o.prefixo}</span>}
+                <span className={styles.optLabel}>{o.label}</span>
+                {o.value === value && (
+                  <svg
+                    className={styles.check}
+                    viewBox="0 0 24 24"
+                    width="14"
+                    height="14"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.2"
+                  >
+                    <path d="M20 6L9 17l-5-5" />
+                  </svg>
+                )}
+              </button>
+            ))}
+          </div>
+        </OverlayPortal>
       )}
     </div>
   );

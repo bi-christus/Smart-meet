@@ -21,8 +21,10 @@ const DB_VERSION = 1;
 const STORE_RECORDINGS = "recordings";
 const STORE_CHUNKS = "chunks";
 const BLOCK_UNIT = 256 * 1024;
+// Só o teto do envio DIRETO: em modo proxy o worker sai antes de enviar (ver
+// `pumpOne`), então o teto do proxy — que vive em `uploader.ts` — não tem uso
+// aqui.
 const MAX_BLOCK_DIRECT = 32 * BLOCK_UNIT;
-const MAX_BLOCK_PROXY = 16 * BLOCK_UNIT;
 /** Orçamento por evento: o navegador mata o worker se ele demorar demais. */
 const BUDGET_MS = 90000;
 

@@ -20,6 +20,11 @@ const plexMono = IBM_Plex_Mono({
   variable: "--font-mono",
   subsets: ["latin"],
   weight: ["400", "500"],
+  // Sem pré-carga (15/10/2026): a mono só aparece em rótulos pequenos e no
+  // título do Rank, e pré-carregá-la em TODA página baixava dois arquivos que
+  // a maioria nunca usa — o navegador avisava no console a cada carga. Ela
+  // entra quando a página pede, com a troca de fonte do `display: swap`.
+  preload: false,
 });
 
 export const metadata: Metadata = {

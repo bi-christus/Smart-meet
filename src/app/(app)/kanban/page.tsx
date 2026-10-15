@@ -174,13 +174,29 @@ const SEM_PRODUTO = "__sem_produto__";
 
 type ColEditState = { mode: "new" } | { mode: "edit"; col: ColumnDoc } | null;
 
+/** Um parâmetro da URL, ou `""` — no servidor não há URL. */
+function daUrl(chave: string): string {
+  if (typeof window === "undefined") return "";
+  return new URLSearchParams(window.location.search).get(chave) ?? "";
+}
+
 export default function KanbanPage() {
   const { profile } = useAuth();
   const canManage = profile?.role === "admin" || profile?.role === "gestor";
 
   const sectors = useSetoresDaPessoa(profile);
 
-  const [sector, setSector] = useState("");
+  /**
+   * O setor e o card vêm da URL quando outra tela leva até aqui
+   * (`/kanban?setor=B.I.&card=<id>` — Cronograma e Recorrências). Lidos no
+   * VALOR INICIAL do estado, e não num efeito de montagem: o efeito chamava
+   * `setState` no próprio corpo, que é o render em cascata que o lint reprova.
+   * `window.location` e não `useSearchParams` porque o hook obriga a página a
+   * virar dinâmica e a ter Suspense no prerender. No servidor não há URL, mas
+   * também não há divergência de hidratação: sem `profile` a página devolve
+   * `null` dos dois lados.
+   */
+  const [sector, setSector] = useState(() => daUrl("setor"));
 
   /**
    * As cinco assinaturas do quadro.
@@ -349,7 +365,7 @@ export default function KanbanPage() {
    */
   const [perfilDe, setPerfilDe] = useState<UserProfile | null>(null);
   /** Card que outra tela pediu para abrir, enquanto o setor não carregou. */
-  const [alvoDireto, setAlvoDireto] = useState<string | null>(null);
+  const [alvoDireto, setAlvoDireto] = useState<string | null>(() => daUrl("card") || null);
   const [colEdit, setColEdit] = useState<ColEditState>(null);
   const [relatorio, setRelatorio] = useState(false);
   const [lixeiraAberta, setLixeiraAberta] = useState(false);
@@ -392,9 +408,10 @@ export default function KanbanPage() {
   const seededRef = useRef<Set<string>>(new Set());
   const boardRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (sectors.length && !sectors.includes(sector)) setSector(sectors[0]);
-  }, [sectors, sector]);
+  // Setor fora da lista da pessoa (o da URL, ou um que ela perdeu) cai no
+  // primeiro dela. Ajustado no render, com guarda, e não em efeito — o mesmo
+  // padrão de eco da Ata: o efeito custava um render com o setor errado.
+  if (sectors.length && !sectors.includes(sector)) setSector(sectors[0]);
 
   /**
    * As saídas do menu do card e do modo de fusão.
@@ -475,29 +492,15 @@ export default function KanbanPage() {
     }
   }, [colsLoaded, fireColumns.length, sector, canManage]);
 
-  /**
-   * Abertura direta vinda de outra tela (`/kanban?setor=B.I.&card=<id>`) — é
-   * assim que o Cronograma e as Recorrências levam para o card.
-   *
-   * Lido de `window.location` e não de `useSearchParams` porque o hook obriga a
-   * página a virar dinâmica e a ter Suspense no prerender; aqui o valor só
-   * interessa uma vez, na montagem.
-   */
-  useEffect(() => {
-    const q = new URLSearchParams(window.location.search);
-    const setorQ = q.get("setor");
-    const cardQ = q.get("card");
-    if (setorQ) setSector(setorQ);
-    if (cardQ) setAlvoDireto(cardQ);
-  }, []);
-
-  useEffect(() => {
-    if (!alvoDireto) return;
+  // O card pedido pela URL abre assim que o setor certo carrega. No render,
+  // com guarda, pelo mesmo motivo do setor acima.
+  if (alvoDireto) {
     const c = cardsVivos.find((x) => x.id === alvoDireto);
-    if (!c) return; // ainda carregando o setor certo
-    setEdit({ mode: "edit", card: c });
-    setAlvoDireto(null);
-  }, [alvoDireto, cardsVivos]);
+    if (c) {
+      setAlvoDireto(null);
+      setEdit({ mode: "edit", card: c });
+    }
+  }
 
   const usersMap = useMemo(() => {
     const m: Record<string, UserProfile> = {};

@@ -17,6 +17,7 @@
  */
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { SelectOption } from "./select";
+import { OverlayPortal } from "./overlay-portal";
 import styles from "./combobox.module.css";
 
 function chave(s: string): string {
@@ -252,62 +253,68 @@ export function Combobox({
         </svg>
       </div>
 
+      {/* Num portal pelo motivo escrito no `<Select>`: o `fixed` escapa do
+          recorte, mas não do empilhamento da coluna do Kanban. O fechamento
+          aqui é pelo `blur` do campo, e as opções já prevenem o `mousedown`,
+          então o portal não muda nada no "clicou fora". */}
       {open && pos && (
-        <div
-          className={`${styles.menu} ${up ? styles.up : ""}`}
-          role="listbox"
-          id={listId}
-          style={{
-            top: pos.top,
-            left: pos.left,
-            width: pos.width,
-            maxHeight: pos.maxHeight,
-          }}
-        >
-          {filtradas.length === 0 ? (
-            <div className={styles.vazio}>{vazioTexto}</div>
-          ) : (
-            filtradas.map((o, i) => (
-              <button
-                key={o.value || `__vazio-${i}`}
-                type="button"
-                id={`${baseId}-opt-${i}`}
-                role="option"
-                aria-selected={o.value === value}
-                className={`${styles.option} ${o.value === value ? styles.sel : ""} ${i === idx ? styles.active : ""}`}
-                // `onMouseDown` prevenido: sem isso o blur do campo fecha a
-                // lista antes de o clique chegar, e escolher com o mouse
-                // simplesmente não funciona.
-                onMouseDown={(e) => e.preventDefault()}
-                onMouseEnter={() => setAtiva(i)}
-                onClick={() => escolher(o.value)}
-              >
-                {o.color && (
-                  <span className={styles.dot} style={{ background: o.color }} />
-                )}
-                {o.prefixo && <span className={styles.prefixo}>{o.prefixo}</span>}
-                <span className={styles.optTexto}>
-                  <span className={styles.optLabel}>{o.label}</span>
-                  {o.hint && <span className={styles.optHint}>{o.hint}</span>}
-                </span>
-                {o.value === value && (
-                  <svg
-                    className={styles.check}
-                    viewBox="0 0 24 24"
-                    width="14"
-                    height="14"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.2"
-                    aria-hidden="true"
-                  >
-                    <path d="M20 6L9 17l-5-5" />
-                  </svg>
-                )}
-              </button>
-            ))
-          )}
-        </div>
+        <OverlayPortal>
+          <div
+            className={`${styles.menu} ${up ? styles.up : ""}`}
+            role="listbox"
+            id={listId}
+            style={{
+              top: pos.top,
+              left: pos.left,
+              width: pos.width,
+              maxHeight: pos.maxHeight,
+            }}
+          >
+            {filtradas.length === 0 ? (
+              <div className={styles.vazio}>{vazioTexto}</div>
+            ) : (
+              filtradas.map((o, i) => (
+                <button
+                  key={o.value || `__vazio-${i}`}
+                  type="button"
+                  id={`${baseId}-opt-${i}`}
+                  role="option"
+                  aria-selected={o.value === value}
+                  className={`${styles.option} ${o.value === value ? styles.sel : ""} ${i === idx ? styles.active : ""}`}
+                  // `onMouseDown` prevenido: sem isso o blur do campo fecha a
+                  // lista antes de o clique chegar, e escolher com o mouse
+                  // simplesmente não funciona.
+                  onMouseDown={(e) => e.preventDefault()}
+                  onMouseEnter={() => setAtiva(i)}
+                  onClick={() => escolher(o.value)}
+                >
+                  {o.color && (
+                    <span className={styles.dot} style={{ background: o.color }} />
+                  )}
+                  {o.prefixo && <span className={styles.prefixo}>{o.prefixo}</span>}
+                  <span className={styles.optTexto}>
+                    <span className={styles.optLabel}>{o.label}</span>
+                    {o.hint && <span className={styles.optHint}>{o.hint}</span>}
+                  </span>
+                  {o.value === value && (
+                    <svg
+                      className={styles.check}
+                      viewBox="0 0 24 24"
+                      width="14"
+                      height="14"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.2"
+                      aria-hidden="true"
+                    >
+                      <path d="M20 6L9 17l-5-5" />
+                    </svg>
+                  )}
+                </button>
+              ))
+            )}
+          </div>
+        </OverlayPortal>
       )}
     </div>
   );

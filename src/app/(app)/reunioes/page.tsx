@@ -193,9 +193,9 @@ export default function ReunioesPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const recording = rec.recording;
 
-  useEffect(() => {
-    if (sectors.length && !sectors.includes(sector)) setSector(sectors[0]);
-  }, [sectors, sector]);
+  // Ajustado no render, com guarda, e não em efeito (lint: setState em
+  // cascata) — o mesmo do Kanban.
+  if (sectors.length && !sectors.includes(sector)) setSector(sectors[0]);
 
   // Reflete o trabalho do Cowork: pergunta ao servidor se algum áudio já virou
   // "Transcrito". Dispara ao abrir a aba, ao focá-la e a cada 45s — mas só
@@ -226,8 +226,14 @@ export default function ReunioesPage() {
 
   // A gravação encerrou (aqui ou pelo mini player em outra aba): abre o modal
   // para completar os dados. O aviso de fechar a aba agora vive no shell.
-  useEffect(() => {
-    if (!pendingConfirm) return;
+  //
+  // O modal abre no RENDER, guardado pelo eco do pedido — e não num efeito
+  // com `setConfirm`, que o lint reprova. Limpar o pedido continua num efeito
+  // porque é estado de OUTRO componente (o provedor da gravação), e o React
+  // não deixa atualizar outro componente durante este render.
+  const [pedidoAtendido, setPedidoAtendido] = useState<typeof pendingConfirm>(null);
+  if (pendingConfirm && pendingConfirm !== pedidoAtendido) {
+    setPedidoAtendido(pendingConfirm);
     setConfirm({
       send: "mic",
       title: pendingConfirm.title || `Gravação — ${fmtDate(todayStr())}`,
@@ -235,7 +241,9 @@ export default function ReunioesPage() {
       recordingId: pendingConfirm.recordingId,
       meetingId: pendingConfirm.meetingId,
     });
-    clearPendingConfirm();
+  }
+  useEffect(() => {
+    if (pendingConfirm) clearPendingConfirm();
   }, [pendingConfirm, clearPendingConfirm]);
 
   const activeUsers = useMemo(() => users.filter((u) => u.active), [users]);
