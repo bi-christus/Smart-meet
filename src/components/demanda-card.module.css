@@ -50,9 +50,20 @@
 }
 .ktop {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 6px;
   margin-bottom: 7px;
+}
+/* O grupo das etiquetas ocupa a sobra e quebra linha quando não cabe; o
+   histórico e o arrastador ficam fora dele, com largura própria, e por isso
+   nunca são empurrados para fora do card. */
+.kEtiquetas {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
 }
 .ktitle {
   font-size: 13.5px;
@@ -82,6 +93,7 @@
   margin-top: 9px;
 }
 .grip {
+  flex: none;
   color: var(--tx-3);
   display: inline-flex;
   cursor: grab;
@@ -225,6 +237,7 @@
   align-items: center;
   gap: 4px;
   min-width: 0;
+  max-width: 100%;
   flex: 0 1 auto;
   padding: 2px 7px;
   border-radius: 6px;
@@ -254,8 +267,21 @@
   font-weight: 700;
   letter-spacing: 0.3px;
   text-transform: uppercase;
+  /* Uma linha só: quebrada, "NOVA / IMPLEMENTAÇÃO" virava um bloco de duas
+     linhas que empurrava o resto. Sem caber, ela desce inteira no grupo. */
+  white-space: nowrap;
+  max-width: 100%;
+  min-width: 0;
+}
+/* No limite (coluna estreita, zoom alto) quem cede é o TEXTO, com reticências
+   — o ponto da cor é o que identifica o tipo de longe, e encolhia até sumir. */
+.kTypeNome {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .kTypeDot {
+  flex: none;
   width: 6px;
   height: 6px;
   border-radius: 50%;
@@ -290,6 +316,7 @@
    canto com o grip de arrastar, e não pode competir com o título. Ganha cor no
    hover do card inteiro: é assim que se descobre que ele existe. */
 .kHist {
+  flex: none;
   display: inline-flex;
   align-items: center;
   gap: 3px;
