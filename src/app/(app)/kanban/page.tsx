@@ -88,6 +88,12 @@ import { Avatar } from "@/components/avatar";
 import { PerfilModal } from "@/components/perfil-modal";
 import { Select, type SelectOption } from "@/components/select";
 import { Modal } from "@/components/modal";
+import {
+  BotaoFiltros,
+  PainelFiltros,
+  PilulasFiltro,
+  SecaoFiltro,
+} from "@/components/filtros";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
 import { SkeletonCard, SkeletonRow } from "@/components/skeleton";
@@ -135,16 +141,6 @@ function dataHora(ts: number): string {
   const p = (n: number) => String(n).padStart(2, "0");
   return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
-/**
- * Quantos chips de tag a barra mostra antes de precisar ser aberta.
- *
- * OITO, e o número foi MEDIDO, não estimado: com os controles de modo à
- * direita, sobram cerca de 950px para os chips em um monitor de 1440, e doze
- * deles já quebram para a segunda linha. Isso não é só estética — a segunda
- * linha empurra o quadro para baixo, e o quadro é a tela.
- */
-const VISIVEIS = 8;
-
 /** Lista vazia constante — ver o comentário em `tagsF`. */
 const SEM_TAGS: string[] = [];
 
@@ -339,8 +335,8 @@ export default function KanbanPage() {
    * continua ali para quando a marcação é a única coisa que interessa.
    */
   const [acaoTags, setAcaoTags] = useState<"destacar" | "filtrar">("destacar");
-  /** O catálogo cresce; a barra não. Isto abre o resto dele. */
-  const [tagsAbertas, setTagsAbertas] = useState(false);
+  /** O pop-up de busca e filtros (#239). Fechá-lo não desfaz filtro nenhum. */
+  const [filtrosAbertos, setFiltrosAbertos] = useState(false);
   const [edit, setEdit] = useState<EditState>(null);
   /** A coluna com a linha de criação rápida aberta (#210). Uma por vez. */
   const [rapidaEm, setRapidaEm] = useState<string | null>(null);
@@ -671,19 +667,6 @@ export default function KanbanPage() {
    * estável em vez da ordem de chegada do Firestore.
    */
   const tagsDoQuadro = useMemo(() => catalogoDeTags(cardsVivos), [cardsVivos]);
-
-  /**
-   * As tags que cabem na barra: as mais usadas, mais as marcadas.
-   *
-   * A ordem do catálogo é preservada — reordenar para trazer a marcada para a
-   * frente faria os chips dançarem embaixo do dedo a cada clique, e o segundo
-   * clique cairia em outra tag.
-   */
-  const tagsVisiveis = useMemo(() => {
-    if (tagsAbertas) return tagsDoQuadro;
-    const marcadas = new Set(tagsF);
-    return tagsDoQuadro.filter((t, i) => i < VISIVEIS || marcadas.has(t.tag));
-  }, [tagsDoQuadro, tagsAbertas, tagsF]);
 
   /** As demandas do quadro, para o "#" citar uma existente pelo título. */
   const demandasDoQuadro = useMemo(
@@ -1030,6 +1013,21 @@ export default function KanbanPage() {
     setOverCol(null);
   }
 
+  /** Quantos filtros estão ligados — o número no botão. As tags contam como um. */
+  const filtrosAtivos =
+    (search.trim() ? 1 : 0) +
+    (prio ? 1 : 0) +
+    (assigneeF ? 1 : 0) +
+    (produtoF ? 1 : 0) +
+    (tagsF.length ? 1 : 0);
+  const limparFiltros = () => {
+    setSearch("");
+    setPrio("");
+    setAssigneeF("");
+    setProdutoF("");
+    limparTags();
+  };
+
   const prioFilterOptions: SelectOption[] = [
     { value: "", label: "Qualquer prioridade" },
     { value: "alta", label: "Alta", color: PRIORITY_COLOR.alta },
@@ -1042,7 +1040,6 @@ export default function KanbanPage() {
       <div className={styles.head}>
         <div className={styles.headMain}>
           <h1>Quadro — {sector}</h1>
-          <p>Demandas do setor: crie, priorize e acompanhe até a entrega.</p>
         </div>
       </div>
 
@@ -1058,67 +1055,10 @@ export default function KanbanPage() {
             </button>
           ))}
         </div>
-        <div className={styles.searchwrap}>
-          <Icon name="search" size={15} />
-          <input
-            className={styles.search}
-            placeholder="Buscar por título ou tag…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-        <div style={{ width: 200 }}>
-          <Select
-            value={prio}
-            options={prioFilterOptions}
-            onChange={(v) => setPrio(v as "" | Priority)}
-            placeholder="Qualquer prioridade"
-            ariaLabel="Filtrar por prioridade"
-          />
-        </div>
-        <div style={{ width: 210 }}>
-          <Select
-            value={assigneeF}
-            options={assigneeFilterOptions}
-            onChange={setAssigneeF}
-            placeholder="Qualquer responsável"
-            ariaLabel="Filtrar por responsável"
-          />
-        </div>
-        {/* Só aparece quando o quadro tem alguma demanda com produto: com
-            todas sem, o seletor teria uma opção só, e ela não filtra nada. O
-            `produtoF` na conta é a saída de emergência, como no Portfólio. */}
-        {(produtoFilterOptions.length > 1 || produtoF) && (
-          <div style={{ width: 210 }}>
-            <Select
-              value={produtoF}
-              options={produtoFilterOptions}
-              onChange={setProdutoF}
-              placeholder="Todos os produtos"
-              ariaLabel="Filtrar por produto do portfólio"
-            />
-          </div>
-        )}
-        {profile.email &&
-          cards.some((c) => c.assignee === profile.email) &&
-          assigneeF !== profile.email && (
-            <button
-              className={styles.filterBtn}
-              onClick={() => setAssigneeF(profile.email)}
-              title="Ver apenas as minhas demandas"
-            >
-              Minhas demandas
-            </button>
-          )}
-        {assigneeF && (
-          <button
-            className={styles.filterBtn}
-            onClick={() => setAssigneeF("")}
-            title="Remover o filtro de responsável"
-          >
-            Limpar filtro
-          </button>
-        )}
+        <BotaoFiltros
+          ativos={filtrosAtivos}
+          onClick={() => setFiltrosAbertos(true)}
+        />
 
         {/**
          * QUANTAS ESPERAM REVISÃO — a primeira pergunta da daily.
@@ -1211,93 +1151,85 @@ export default function KanbanPage() {
       </div>
 
       {/**
-       * A BARRA DE TAGS — o filtro rápido do quadro.
+       * O POP-UP DE BUSCA E FILTROS (#239) — onde moram a busca, os seletores
+       * e as tags, que antes ocupavam duas linhas fixas em cima do quadro.
        *
-       * Fica numa linha própria, abaixo dos filtros, e não entre eles. Os
-       * outros quatro controles são campos de largura fixa; este é uma lista
-       * que cresce com o quadro, e enfiá-la na mesma linha faria a barra de
-       * filtros mudar de altura conforme o setor — o cabeçalho inteiro subindo
-       * e descendo ao trocar de aba.
-       *
-       * SÓ APARECE SE HOUVER TAG. Uma barra vazia com o rótulo "Tags" em um
-       * quadro que não usa tags é uma pergunta sem resposta ocupando 40px em
-       * cima do trabalho de todo dia.
-       *
-       * A LISTA É CORTADA em `VISIVEIS`. O catálogo de um quadro de dois anos
-       * passa de setenta entradas, e mostrar as mais usadas (que é a ordem do
-       * catálogo) deixa a barra caber numa linha no caso comum. As marcadas
-       * entram sempre, mesmo fora do corte: chip marcado que some é filtro
-       * ativo e invisível.
-       *
-       * O CORTE NÃO É O QUE PROTEGE O QUADRO — quem protege é o teto de altura
-       * de `.tagChips`, na folha. Enquanto o corte era a única defesa, abrir o
-       * "+N" empurrava as colunas inteiras para fora da janela, e marcar quinze
-       * tags fazia o mesmo com a barra fechada, porque a marcada fura o corte
-       * por decisão. É o painel rolável do Obsidian, e o motivo inteiro está
-       * escrito em cima da classe.
+       * As tags vêm TODAS, sem o corte de oito que a barra tinha: o corte
+       * existia para a barra caber numa linha sem empurrar as colunas, e
+       * dentro do pop-up quem segura a altura é a rolagem de `.tagGrade`.
        */}
-      {tagsDoQuadro.length > 0 && (
-        <div className={styles.tagbar}>
-          <span className={styles.tagbarRot}>
-            <Icon name="tag" size={13} /> Tags
-          </span>
-          <div className={styles.tagChips}>
-            {tagsVisiveis.map((t) => {
-              const on = tagsF.includes(t.tag);
-              return (
-                <button
-                  key={t.tag}
-                  className={`${styles.tagFiltro} ${on ? styles.tagFiltroOn : ""}`}
-                  style={
-                    on
-                      ? {
-                          borderColor: tagColor(t.tag),
-                          background: `color-mix(in srgb, ${tagColor(t.tag)} 18%, transparent)`,
-                        }
-                      : undefined
-                  }
-                  onClick={() => alternarTag(t.tag)}
-                  aria-pressed={on}
-                  title={
-                    t.nivel > 0
-                      ? `${t.tag} — ${t.n} demanda(s)`
-                      : `${t.tag} — ${t.n} demanda(s), contando as tags derivadas`
-                  }
-                >
-                  <span
-                    className={styles.tagFiltroDot}
-                    style={{ background: tagColor(t.tag) }}
-                  />
-                  {/* A mãe já está escrita no chip ao lado; repeti-la em cada
-                      filha gastaria metade da largura da barra dizendo a mesma
-                      palavra. O caminho inteiro fica no `title`. */}
-                  {t.nivel > 0 ? t.tag.slice(t.tag.indexOf("/") + 1) : t.tag}
-                  <span className={styles.tagFiltroN}>{t.n}</span>
-                </button>
-              );
-            })}
-            {tagsDoQuadro.length > tagsVisiveis.length && (
-              <button
-                className={styles.tagMais}
-                onClick={() => setTagsAbertas(true)}
-              >
-                +{tagsDoQuadro.length - tagsVisiveis.length}
-              </button>
-            )}
-            {tagsAbertas && tagsDoQuadro.length > VISIVEIS && (
-              <button
-                className={styles.tagMais}
-                onClick={() => setTagsAbertas(false)}
-              >
-                Mostrar menos
-              </button>
-            )}
-          </div>
+      {filtrosAbertos && (
+        <PainelFiltros
+          busca={search}
+          onBusca={setSearch}
+          placeholder="Buscar por título ou tag…"
+          ativos={filtrosAtivos}
+          onLimpar={limparFiltros}
+          resultado={`${filtered.length} de ${cardsVivos.length} demanda${cardsVivos.length === 1 ? "" : "s"}`}
+          onClose={() => setFiltrosAbertos(false)}
+        >
+          <SecaoFiltro titulo="Prioridade">
+            <PilulasFiltro
+              valor={prio}
+              opcoes={prioFilterOptions.map((o) => ({
+                value: o.value as "" | Priority,
+                label: o.value ? o.label : "Qualquer",
+                color: o.color,
+              }))}
+              onChange={setPrio}
+            />
+          </SecaoFiltro>
 
-          {/* Os controles do modo só existem depois de haver o que modular.
-              Antes da primeira tag marcada eles decidem sobre nada. */}
-          {tagsF.length > 0 && (
-            <div className={styles.tagbarAcoes}>
+          <SecaoFiltro
+            titulo="Responsável"
+            acoes={
+              profile.email &&
+              cards.some((c) => c.assignee === profile.email) && (
+                <button
+                  type="button"
+                  className={`${styles.filterBtn} ${assigneeF === profile.email ? styles.filterBtnOn : ""}`}
+                  onClick={() =>
+                    setAssigneeF(assigneeF === profile.email ? "" : profile.email)
+                  }
+                  aria-pressed={assigneeF === profile.email}
+                >
+                  Minhas demandas
+                </button>
+              )
+            }
+          >
+            <Select
+              value={assigneeF}
+              options={assigneeFilterOptions}
+              onChange={setAssigneeF}
+              placeholder="Qualquer responsável"
+              ariaLabel="Filtrar por responsável"
+            />
+          </SecaoFiltro>
+
+          {/* Só quando o quadro tem demanda com produto: com todas sem, o
+              seletor teria uma opção só, e ela não filtra nada. O `produtoF`
+              na conta é a saída de emergência, como no Portfólio. */}
+          {(produtoFilterOptions.length > 1 || produtoF) && (
+            <SecaoFiltro titulo="Produto do portfólio">
+              <Select
+                value={produtoF}
+                options={produtoFilterOptions}
+                onChange={setProdutoF}
+                placeholder="Todos os produtos"
+                ariaLabel="Filtrar por produto do portfólio"
+              />
+            </SecaoFiltro>
+          )}
+
+          {tagsDoQuadro.length > 0 && (
+            <SecaoFiltro
+              titulo="Tags"
+              acoes={
+                // Os controles do modo só existem depois de haver o que
+                // modular. Antes da primeira tag marcada eles decidem sobre nada.
+                tagsF.length > 0 && (
+                  <div className={styles.tagbarAcoes}>
               <div className={styles.tagModo} role="group" aria-label="O que fazer com as tags marcadas">
                 {(["destacar", "filtrar"] as const).map((m) => (
                   <button
@@ -1338,12 +1270,49 @@ export default function KanbanPage() {
                 </div>
                 </>
               )}
-              <button className={styles.filterBtn} onClick={limparTags}>
-                <Icon name="x" size={13} /> Limpar tags
-              </button>
-            </div>
+                  </div>
+                )
+              }
+            >
+              <div className={styles.tagGrade}>
+            {tagsDoQuadro.map((t) => {
+              const on = tagsF.includes(t.tag);
+              return (
+                <button
+                  key={t.tag}
+                  className={`${styles.tagFiltro} ${on ? styles.tagFiltroOn : ""}`}
+                  style={
+                    on
+                      ? {
+                          borderColor: tagColor(t.tag),
+                          background: `color-mix(in srgb, ${tagColor(t.tag)} 18%, transparent)`,
+                        }
+                      : undefined
+                  }
+                  onClick={() => alternarTag(t.tag)}
+                  aria-pressed={on}
+                  title={
+                    t.nivel > 0
+                      ? `${t.tag} — ${t.n} demanda(s)`
+                      : `${t.tag} — ${t.n} demanda(s), contando as tags derivadas`
+                  }
+                >
+                  <span
+                    className={styles.tagFiltroDot}
+                    style={{ background: tagColor(t.tag) }}
+                  />
+                  {/* A mãe já está escrita no chip ao lado; repeti-la em cada
+                      filha gastaria metade da largura da barra dizendo a mesma
+                      palavra. O caminho inteiro fica no `title`. */}
+                  {t.nivel > 0 ? t.tag.slice(t.tag.indexOf("/") + 1) : t.tag}
+                  <span className={styles.tagFiltroN}>{t.n}</span>
+                </button>
+              );
+            })}
+              </div>
+            </SecaoFiltro>
           )}
-        </div>
+        </PainelFiltros>
       )}
 
       {auxiliares.erro && (

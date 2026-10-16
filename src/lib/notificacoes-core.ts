@@ -8,8 +8,8 @@
  *  - a demanda em que ela é a responsável (`assignee`) ou que ela criou
  *    (`createdBy`) — os dois campos de card que guardam e-mail de usuário;
  *    `requester` é um nome cadastrado, não uma conta, e não serve de chave;
- *  - a reunião que ela registrou (`createdBy` do `/meetings`), e as propostas
- *    de demanda que a IA tirou dela.
+ *  - a reunião que ela registrou (`createdBy` do `/meetings`) — que só entra
+ *    como pendência de validação.
  * O resto do setor não entra. A lateral de quem tem dez colegas viraria o
  * mural do setor inteiro, e o que é dela se perderia no meio.
  *
@@ -89,24 +89,12 @@ export function ehMinha(card: CardNot, email: string): boolean {
 }
 
 const ACAO_TEXTO: Record<string, string> = {
-  criada: "criou a demanda",
-  editada: "editou a demanda",
   movida: "moveu a demanda",
-  excluida: "mandou a demanda para a lixeira",
-  restaurada: "restaurou a demanda",
-  "conclusao-pedida": "pediu a conclusão",
-  "conclusao-aprovada": "aprovou a conclusão",
-  "conclusao-recusada": "recusou a conclusão",
   transferida: "transferiu a demanda de setor",
-  fundida: "juntou outra demanda a esta",
-  absorvida: "juntou esta demanda a outra",
 };
 
 const ACAO_ICONE: Record<string, string> = {
   movida: "kanban",
-  "conclusao-aprovada": "check",
-  "conclusao-recusada": "x",
-  excluida: "trash",
   transferida: "users",
 };
 
@@ -177,7 +165,23 @@ export function pendencias(
 }
 
 /**
- * O que os OUTROS fizeram nas coisas da pessoa, mais recente primeiro.
+ * Por quanto tempo uma novidade fica na lateral. Passou disso, some — vista ou
+ * não. Não há arquivo: a lateral responde "o que mudou nesta semana", e quem
+ * quer a história inteira de um card abre o histórico dele.
+ */
+export const JANELA_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * SÓ MOVIMENTAÇÃO (16/10/2026, #240). Edição de título, tag ou checklist é o
+ * dia a dia do card e, na lateral, virava uma fila de "editou a demanda" que
+ * ninguém lia. O que a pessoa precisa saber sem abrir o quadro é que a demanda
+ * dela ANDOU: mudou de coluna ou de setor.
+ */
+const ACOES_DE_MOVIMENTO = new Set(["movida", "transferida"]);
+
+/**
+ * As movimentações que OUTRAS pessoas fizeram nos cards desta pessoa, dos
+ * últimos sete dias, mais recente primeiro.
  *
  * `nomeDe` traduz o e-mail do autor para o nome — fica do lado de quem chama
  * porque o cadastro de pessoas vem do banco.
@@ -186,20 +190,21 @@ export function novidades(args: {
   email: string;
   cards: CardNot[];
   eventos: Map<string, EventoNot[]>;
-  reunioes: ReuniaoNot[];
-  propostas: PropostaNot[];
   nomeDe: (email: string) => string;
+  agora: number;
 }): Notificacao[] {
-  const { email, cards, eventos, reunioes, propostas, nomeDe } = args;
+  const { email, cards, eventos, nomeDe, agora } = args;
   const out: Notificacao[] = [];
 
   for (const c of cards) {
     if (!ehMinha(c, email)) continue;
     for (const e of eventos.get(c.id) ?? []) {
+      if (!ACOES_DE_MOVIMENTO.has(e.acao)) continue;
       if (mesmoEmail(e.autor, email)) continue;
+      if (agora - e.em > JANELA_MS) continue;
       out.push({
         id: `evento:${c.id}:${e.id}`,
-        icone: ACAO_ICONE[e.acao] ?? "edit",
+        icone: ACAO_ICONE[e.acao] ?? "kanban",
         titulo: c.title || "Demanda sem título",
         detalhe: `${nomeDe(e.autor)} ${textoDoEvento(e)}`,
         em: e.em,
@@ -208,36 +213,38 @@ export function novidades(args: {
     }
   }
 
-  // A proposta tirada da reunião da pessoa foi decidida por OUTRA pessoa: é
-  // assim que quem registrou a reunião fica sabendo que o assunto virou
-  // demanda — o card nasce com `createdBy` de quem aceitou, e não dela.
-  const minhas = new Set(
-    reunioes.filter((r) => mesmoEmail(r.createdBy, email)).map((r) => r.id),
-  );
-  for (const p of propostas) {
-    if (!minhas.has(p.meetingId) || !p.decisao) continue;
-    if (p.status !== "aceita" && p.status !== "recusada") continue;
-    if (mesmoEmail(p.decisao.por, email)) continue;
-    const aceita = p.status === "aceita";
-    out.push({
-      id: `proposta:${p.id}`,
-      icone: aceita ? "check" : "x",
-      titulo: p.proposta.title || "Demanda proposta",
-      detalhe: `${nomeDe(p.decisao.por)} ${aceita ? "aceitou a demanda da sua reunião" : "recusou a demanda da sua reunião"}`,
-      em: p.decisao.em ?? 0,
-      href:
-        aceita && p.decisao.cardId
-          ? hrefDoCard({ id: p.decisao.cardId, sector: p.sectorAlvo })
-          : `/relatorios?reuniao=${encodeURIComponent(p.meetingId)}`,
-    });
-  }
-
   return out.sort((a, b) => b.em - a.em).slice(0, LIMITE_NOVIDADES);
 }
 
-/** Quantas novidades chegaram depois da última vez que a pessoa olhou. */
-export function naoVistas(lista: Notificacao[], vistoAte: number): number {
-  return lista.filter((n) => n.em > vistoAte).length;
+/**
+ * O que a pessoa já viu. Duas formas, e as duas valem: "marcar todas como
+ * vistas" move o marco `ate`; abrir uma notificação guarda o id dela. Sem o id,
+ * clicar numa só obrigaria a dar todas por vistas.
+ */
+export type Vistas = { ate: number; ids: string[] };
+
+export function foiVista(n: Notificacao, v: Vistas): boolean {
+  return n.em <= v.ate || v.ids.includes(n.id);
+}
+
+/** Separa a lista principal (não vistas) da sub-visão (vistas). */
+export function separarVistas(
+  lista: Notificacao[],
+  v: Vistas,
+): { novas: Notificacao[]; vistas: Notificacao[] } {
+  const novas: Notificacao[] = [];
+  const vistas: Notificacao[] = [];
+  for (const n of lista) (foiVista(n, v) ? vistas : novas).push(n);
+  return { novas, vistas };
+}
+
+/**
+ * Tira dos ids guardados os que já saíram da janela. Sem isto a lista do
+ * `localStorage` só cresceria: cada clique da vida da pessoa, para sempre.
+ */
+export function podarVistas(v: Vistas, lista: Notificacao[]): Vistas {
+  const vivos = new Set(lista.map((n) => n.id));
+  return { ate: v.ate, ids: v.ids.filter((id) => vivos.has(id)) };
 }
 
 /** "agora", "há 5 min", "há 3 h", "ontem", "há 4 dias", "12/09". */

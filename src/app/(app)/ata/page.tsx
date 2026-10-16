@@ -74,6 +74,7 @@ import { useAsyncData } from "@/lib/use-async-data";
 import { Icon } from "@/components/icons";
 import { Avatar } from "@/components/avatar";
 import { Select, type SelectOption } from "@/components/select";
+import { BotaoFiltros, PainelFiltros, SecaoFiltro } from "@/components/filtros";
 import { Combobox } from "@/components/combobox";
 import { Modal } from "@/components/modal";
 import { EmptyState } from "@/components/empty-state";
@@ -361,6 +362,7 @@ export default function AtaPage() {
   const [busca, setBusca] = useState("");
   const [fEstado, setFEstado] = useState<"" | EstadoNaAta>("");
   const [fResp, setFResp] = useState("");
+  const [filtrosAbertos, setFiltrosAbertos] = useState(false);
   const [recolhidos, setRecolhidos] = useState<Set<string>>(new Set());
   /** Quais blocos da pauta estão fechados — ver `SECOES` e `SECOES_FECHADAS`. */
   const [secoesFechadas, setSecoesFechadas] = useState<Set<SecaoDaPauta>>(
@@ -1100,10 +1102,6 @@ export default function AtaPage() {
       <div className={styles.head}>
         <div className={styles.headMain}>
           <h1>Ata — {setor}</h1>
-          <p>
-            A reunião organizada por demanda: o que foi decidido, o que fica de
-            tarefa e o que vai para a próxima. A pauta sai da reunião gravada.
-          </p>
         </div>
         {/* O estado da escrita fica ao lado do botão principal, no cabeçalho:
             é a única parte da tela que não rola, e a pergunta "isso foi
@@ -1381,45 +1379,60 @@ export default function AtaPage() {
 
           <main className={styles.principal}>
             <div className={styles.filtros}>
-              <div className={styles.buscawrap}>
-                <Icon name="search" size={15} />
-                <input
-                  className={styles.busca}
+              <BotaoFiltros
+                ativos={
+                  (busca.trim() ? 1 : 0) + (fEstado ? 1 : 0) + (fResp ? 1 : 0)
+                }
+                onClick={() => setFiltrosAbertos(true)}
+              />
+              {filtrosAbertos && (
+                <PainelFiltros
+                  busca={busca}
+                  onBusca={setBusca}
                   placeholder="Buscar demanda ou tarefa…"
-                  value={busca}
-                  onChange={(e) => setBusca(e.target.value)}
-                />
-              </div>
-              <div className={styles.filtro}>
-                <Select
-                  value={fEstado}
-                  options={[
-                    { value: "", label: "Todas as demandas" },
-                    ...ESTADOS_NA_ATA.map((e) => ({
-                      value: e,
-                      label: `${ESTADO_LABEL[e]} (${resumo.porEstado[e]})`,
-                      color: COR_ESTADO[e],
-                    })),
-                  ]}
-                  onChange={(v) => setFEstado(v as "" | EstadoNaAta)}
-                  ariaLabel="Estado da demanda"
-                />
-              </div>
-              <div className={styles.filtro}>
-                <Select
-                  value={fResp}
-                  options={[
-                    { value: "", label: "Todos os responsáveis" },
-                    ...responsaveis.map((e) => ({
-                      value: e,
-                      label: nomeDe(e),
-                      color: usersMap[e]?.color,
-                    })),
-                  ]}
-                  onChange={setFResp}
-                  ariaLabel="Responsável"
-                />
-              </div>
+                  ativos={
+                    (busca.trim() ? 1 : 0) + (fEstado ? 1 : 0) + (fResp ? 1 : 0)
+                  }
+                  onLimpar={() => {
+                    setBusca("");
+                    setFEstado("");
+                    setFResp("");
+                  }}
+                  resultado={`${pautaFiltrada.length} de ${pauta.length} na pauta`}
+                  onClose={() => setFiltrosAbertos(false)}
+                >
+                  <SecaoFiltro titulo="Estado da demanda">
+                    <Select
+                      value={fEstado}
+                      options={[
+                        { value: "", label: "Todas as demandas" },
+                        ...ESTADOS_NA_ATA.map((e) => ({
+                          value: e,
+                          label: `${ESTADO_LABEL[e]} (${resumo.porEstado[e]})`,
+                          color: COR_ESTADO[e],
+                        })),
+                      ]}
+                      onChange={(v) => setFEstado(v as "" | EstadoNaAta)}
+                      ariaLabel="Estado da demanda"
+                    />
+                  </SecaoFiltro>
+                  <SecaoFiltro titulo="Responsável">
+                    <Select
+                      value={fResp}
+                      options={[
+                        { value: "", label: "Todos os responsáveis" },
+                        ...responsaveis.map((e) => ({
+                          value: e,
+                          label: nomeDe(e),
+                          color: usersMap[e]?.color,
+                        })),
+                      ]}
+                      onChange={setFResp}
+                      ariaLabel="Responsável"
+                    />
+                  </SecaoFiltro>
+                </PainelFiltros>
+              )}
               {/* No fim da barra de filtros, e não no cabeçalho da página: o
                   cabeçalho fala da ATA (qual reunião, gerar outra), e isto fala
                   da PAUTA — que é o que está logo abaixo. */}

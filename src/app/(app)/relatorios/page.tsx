@@ -173,10 +173,6 @@ export default function RelatoriosPage() {
     <div className={styles.page}>
       <div className={styles.head}>
         <h1>Relatórios IA</h1>
-        <p>
-          O que saiu de cada reunião: transcrição, atas e as demandas propostas.
-          Abra para conferir e transformar em trabalho.
-        </p>
       </div>
 
       {/* A busca substitui os três filtros. Com o arquivo dentro de pastas,

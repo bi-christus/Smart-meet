@@ -28,11 +28,19 @@
   flex-direction: column;
 }
 
+.brandRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-bottom: 18px;
+}
 .brand {
   display: flex;
   align-items: center;
   gap: 11px;
-  padding: 0 6px 18px;
+  min-width: 0;
+  flex: 1;
+  padding: 0 6px;
   user-select: none;
   text-decoration: none;
   flex: none;
@@ -113,6 +121,28 @@
   outline-offset: 2px;
 }
 
+.ocultar {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--tx-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.ocultar:hover {
+  background: var(--s2);
+  color: var(--topbar-fg-strong);
+}
+.ocultar:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
 /* Ocupa o vão entre as divisões e o pé da lateral. É o lugar das
    notificações, e é ele que empurra Configurações e a conta para baixo. */
 .sideFill {
@@ -120,8 +150,10 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  margin: 14px 0 8px;
-  border-top: 1px solid var(--topbar-line);
+  /* O respiro de 36px é pedido de desenho (#240): sem ele as notificações
+     colavam nas divisões e liam como mais uma porta da lista. A distância é
+     o que diz "isto é outra coisa", sem precisar de mais uma linha. */
+  margin: 36px 0 8px;
 }
 
 /* ---------- topo: os módulos da divisão aberta ---------- */
@@ -496,6 +528,43 @@
   padding: 56px 22px;
 }
 
+/* Lateral oculta pelo botão (#240): o mesmo trilho da tela estreita, logo
+   abaixo, por escolha em vez de por largura. A marca some e o botão fica no
+   lugar dela, porque é ele que traz a lateral de volta. */
+.sideOculta {
+  width: 64px;
+  padding: 14px 8px 10px;
+  align-items: center;
+}
+.sideOculta .wm,
+.sideOculta .navLbl,
+.sideOculta .uMeta,
+.sideOculta .brand {
+  display: none;
+}
+.sideOculta .brandRow {
+  padding-bottom: 14px;
+}
+.sideOculta .navBtn {
+  width: 44px;
+  justify-content: center;
+  padding: 0;
+}
+.sideOculta .navBtn span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.sideOculta .userBtn {
+  justify-content: center;
+  padding: 0;
+}
+.sideOculta .sideFill {
+  margin-top: 20px;
+}
+
 /* Tela estreita: a lateral vira um trilho só de ícones. O nome de cada porta
    continua no `title` e no texto escondido para leitor de tela — some da
    vista, não da árvore de acessibilidade. */
@@ -510,8 +579,23 @@
   .uMeta {
     display: none;
   }
+  .brandRow {
+    padding-bottom: 14px;
+  }
   .brand {
-    padding: 0 0 14px;
+    flex: none;
+    padding: 0;
+  }
+  /* Na tela estreita o trilho é obrigatório: um botão de mostrar a lateral
+     que não tem largura para mostrá-la seria uma promessa vazia. */
+  .ocultar {
+    display: none;
+  }
+  .sideOculta .brand {
+    display: flex;
+  }
+  .sideFill {
+    margin-top: 20px;
   }
   .navBtn {
     width: 44px;

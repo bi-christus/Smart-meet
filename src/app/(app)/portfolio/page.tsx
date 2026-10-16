@@ -581,7 +581,6 @@ export default function LinksPage() {
         <div className={styles.head}>
           <div className={styles.headMain}>
             <h1>Portfólio</h1>
-            <p>O que o setor desenvolveu, com acesso rápido, num lugar só.</p>
           </div>
         </div>
         <div className={styles.vazioTela}>
@@ -600,11 +599,7 @@ export default function LinksPage() {
           {/* A contagem só entra depois da resposta: "0 produtos" antes de
               saber é a mesma afirmação falsa da mensagem de vazio, dita com a
               autoridade de um número. */}
-          <p>
-            O que o setor desenvolveu — painéis, aplicativos, planilhas e pastas
-            —, com acesso rápido
-            {tela.carregando || tela.erro ? "." : ` — ${contagemTexto}.`}
-          </p>
+          {!tela.carregando && !tela.erro && <p>{contagemTexto}</p>}
         </div>
 
         <div className={styles.headTools}>

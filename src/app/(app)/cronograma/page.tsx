@@ -681,7 +681,6 @@ export default function CronogramaPage() {
         <div className={styles.head}>
           <div className={styles.headMain}>
             <h1>Cronograma</h1>
-            <p>Reuniões e prazos das demandas.</p>
           </div>
         </div>
         <div className={styles.vazioTela}>
@@ -786,12 +785,12 @@ export default function CronogramaPage() {
           {/* A contagem só entra depois da resposta: "0 compromissos no
               período" antes de saber é a mesma afirmação falsa da mensagem de
               vazio, dita com a autoridade de um número. */}
-          <p>
-            Reuniões e prazos de demandas
-            {grade.carregando || grade.erro
-              ? "."
-              : ` — ${noPeriodo} ${noPeriodo === 1 ? "compromisso" : "compromissos"} no período.`}
-          </p>
+          {!grade.carregando && !grade.erro && (
+            <p>
+              {noPeriodo} {noPeriodo === 1 ? "compromisso" : "compromissos"} no
+              período
+            </p>
+          )}
         </div>
 
         <div className={styles.headTools}>

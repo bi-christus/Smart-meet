@@ -358,52 +358,6 @@
   gap: 9px;
   flex-wrap: wrap;
 }
-.buscawrap {
-  position: relative;
-  display: flex;
-  align-items: center;
-  flex: 1;
-  min-width: 220px;
-}
-.buscawrap svg {
-  position: absolute;
-  left: 10px;
-  color: var(--tx-3);
-  pointer-events: none;
-}
-.busca {
-  width: 100%;
-  height: 34px;
-  padding: 0 12px 0 32px;
-  background: var(--s1);
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  color: var(--tx);
-  font-family: inherit;
-  font-size: 12.5px;
-}
-/* O foco é um OUTLINE, e não uma troca de cor de borda.
-
-   As quatro regras que zeravam o outline devolviam só `border-color:
-   var(--brand-line)` no lugar. Medido contra a borda em repouso (`--line`), isso
-   dá 1,60:1 no tema escuro e 1,26:1 no claro — o WCAG 2.4.11 pede 3:1 para o
-   indicador de foco, e na prática ninguém enxerga a diferença. Quem navega esta
-   tela por teclado não sabia em que campo estava.
-
-   `:focus-visible` e não `:focus`: o anel aparece para o teclado e some para o
-   mouse, que é o comportamento que o `select.module.css` já usa. A mudança de
-   borda fica como reforço, nunca como indicador único. */
-.busca:focus-visible {
-  outline: 2px solid var(--brand);
-  outline-offset: 1px;
-}
-.busca:focus {
-  border-color: var(--brand-line);
-}
-.filtro {
-  width: 200px;
-}
-
 /**
  * OS TRÊS BLOCOS DA PAUTA — ver `SECOES` em `page.tsx` para o porquê deles.
  *

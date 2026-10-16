@@ -12,33 +12,51 @@ import { useAsyncData } from "@/lib/use-async-data";
 import { juntarFontes } from "@/lib/async-data-core";
 import {
   cardsParaConsultar,
-  naoVistas,
   novidades,
   pendencias,
+  podarVistas,
   quando,
+  separarVistas,
   type Notificacao,
+  type Vistas,
 } from "@/lib/notificacoes-core";
 import { Icon } from "./icons";
 import { SkeletonRow } from "./skeleton";
 import { ErrorState } from "./error-state";
 import styles from "./notificacoes.module.css";
 
-/** Eventos lidos por card. Três cobrem "o que aconteceu desde ontem". */
-const EVENTOS_POR_CARD = 3;
+/**
+ * Eventos lidos por card. Só as movimentações entram na lista, e as edições
+ * vêm no meio delas; cinco cobrem a semana de um card que anda.
+ */
+const EVENTOS_POR_CARD = 5;
 
 /**
- * "Visto até" mora no navegador, e não no banco. É conveniência de quem olha
- * (o pontinho de não lida), não estado que precise atravessar aparelhos — e
- * guardá-lo no Firestore pediria regra nova em `users/{email}/prefs`, que hoje
- * só aceita o documento do relatório do gestor.
+ * O que a pessoa já viu mora no navegador, e não no banco. É conveniência de
+ * quem olha, não estado que precise atravessar aparelhos — e não há arquivo a
+ * guardar: a novidade some sozinha depois de sete dias (`JANELA_MS`), vista ou
+ * não. Gravar isso no Firestore pediria regra nova em `users/{email}/prefs`
+ * para guardar algo que expira em uma semana.
  */
-const CHAVE_VISTO = "sm_notif_visto";
+const CHAVE_VISTAS = "sm_notif_vistas";
 
-function lerVisto(): number {
+function lerVistas(): Vistas {
   try {
-    return Number(localStorage.getItem(CHAVE_VISTO)) || 0;
+    const v = JSON.parse(localStorage.getItem(CHAVE_VISTAS) ?? "null");
+    if (v && typeof v.ate === "number" && Array.isArray(v.ids)) {
+      return { ate: v.ate, ids: v.ids.filter((i: unknown) => typeof i === "string") };
+    }
   } catch {
-    return 0;
+    // valor torto ou navegador sem armazenamento: começa do zero.
+  }
+  return { ate: 0, ids: [] };
+}
+
+function gravarVistas(v: Vistas) {
+  try {
+    localStorage.setItem(CHAVE_VISTAS, JSON.stringify(v));
+  } catch {
+    // sem armazenamento: as vistas voltam a ser novas na próxima carga, só isso.
   }
 }
 
@@ -49,8 +67,11 @@ const SEM_USERS: UserProfile[] = [];
 
 export function Notificacoes({
   pessoa,
+  compacto,
 }: {
   pessoa: { email: string; role: string; sectors?: string[] };
+  /** Lateral oculta: vira o sino, como no trilho de tela estreita. */
+  compacto?: boolean;
 }) {
   const sectors = useSetoresDaPessoa(pessoa);
   const chave = sectors.join("|");
@@ -118,8 +139,10 @@ export function Notificacoes({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chaveEventos, fCards.data === undefined]);
 
-  const [vistoAte, setVistoAte] = useState(lerVisto);
+  const [vistasGuardadas, setVistas] = useState(lerVistas);
   const [aberto, setAberto] = useState(false);
+  /** A sub-visão das já vistas. Fica fora da lista principal até ser pedida. */
+  const [verVistas, setVerVistas] = useState(false);
   // O relógio do "há 5 min" é lido uma vez por render. Não há timer: a lateral
   // se redesenha a cada snapshot, e um "há 4 min" que fica parado alguns
   // minutos não engana ninguém.
@@ -154,27 +177,36 @@ export function Notificacoes({
   );
 
   const pend = pendencias(pessoa.email, meetings, propostasNot);
-  const novas = carregando
+  const todas = carregando
     ? []
     : novidades({
         email: pessoa.email,
         cards,
         eventos: eventos!.porCard,
-        reunioes: meetings,
-        propostas: propostasNot,
         nomeDe,
+        agora,
       });
-  const contador = carregando ? 0 : pend.length + naoVistas(novas, vistoAte);
+  const { novas, vistas } = separarVistas(todas, vistasGuardadas);
+  const contador = carregando ? 0 : pend.length + novas.length;
 
-  const marcarVistas = () => {
-    const t = Date.now();
-    setVistoAte(t);
-    try {
-      localStorage.setItem(CHAVE_VISTO, String(t));
-    } catch {
-      // navegador sem armazenamento: o pontinho volta na próxima carga, só isso.
-    }
+  const guardar = (v: Vistas) => {
+    // Poda na escrita: os ids de notificação que já saíram da janela de sete
+    // dias não têm por que continuar no armazenamento.
+    const podada = carregando ? v : podarVistas(v, todas);
+    setVistas(podada);
+    gravarVistas(podada);
   };
+  // O marco vai até a mais nova DA LISTA, e não até o relógio: o que chegar
+  // depois do clique continua novo, mesmo que o servidor tenha carimbado o
+  // evento um instante antes do relógio desta máquina.
+  const marcarTodas = () =>
+    guardar({
+      ate: Math.max(vistasGuardadas.ate, ...novas.map((n) => n.em)),
+      ids: vistasGuardadas.ids,
+    });
+  const marcarUma = (id: string) =>
+    !vistasGuardadas.ids.includes(id) &&
+    guardar({ ate: vistasGuardadas.ate, ids: [...vistasGuardadas.ids, id] });
 
   const tentarDeNovo = () => {
     fCards.tentarDeNovo();
@@ -189,6 +221,7 @@ export function Notificacoes({
         className={styles.item}
         onClick={(e) => {
           setAberto(false);
+          if (!pendente) marcarUma(n.id);
           // Já na mesma tela (outro card do Kanban, outra reunião em
           // Relatórios), a navegação do Next só troca a query: a página não
           // remonta e não relê a URL, que ela só lê no estado inicial. A carga
@@ -207,16 +240,13 @@ export function Notificacoes({
           <span className={styles.tit}>{n.titulo}</span>
           <span className={styles.det}>{n.detalhe}</span>
         </span>
-        {!pendente && n.em > vistoAte && (
-          <span className={styles.nova} aria-label="não lida" />
-        )}
         {!pendente && <span className={styles.quando}>{quando(n.em, agora)}</span>}
       </Link>
     </li>
   );
 
   return (
-    <div className={styles.wrap}>
+    <div className={`${styles.wrap} ${compacto ? styles.compacto : ""}`}>
       {/* No trilho estreito a lista não cabe: vira um sino que abre o painel. */}
       <button
         type="button"
@@ -235,15 +265,27 @@ export function Notificacoes({
         aria-label="Notificações"
       >
         <div className={styles.head}>
-          <span className={styles.lbl}>Notificações</span>
-          {contador > 0 && <span className={styles.badge}>{contador}</span>}
-          {naoVistas(novas, vistoAte) > 0 && (
+          {verVistas ? (
+            <button
+              type="button"
+              className={styles.voltar}
+              onClick={() => setVerVistas(false)}
+            >
+              ← Notificações
+            </button>
+          ) : (
+            <span className={styles.lbl}>Notificações</span>
+          )}
+          {!verVistas && contador > 0 && (
+            <span className={styles.badge}>{contador}</span>
+          )}
+          {!verVistas && novas.length > 0 && (
             <button
               type="button"
               className={styles.marcar}
-              onClick={marcarVistas}
+              onClick={marcarTodas}
             >
-              Marcar como lidas
+              Marcar como vistas
             </button>
           )}
         </div>
@@ -253,10 +295,16 @@ export function Notificacoes({
             <ErrorState error={tela.erro} onRetry={tentarDeNovo} size="compact" />
           ) : carregando ? (
             <SkeletonRow rows={3} texto="Carregando as notificações…" />
+          ) : verVistas ? (
+            vistas.length === 0 ? (
+              <p className={styles.vazio}>Nenhuma notificação vista nos últimos 7 dias.</p>
+            ) : (
+              <ul className={styles.lista}>{vistas.map((n) => item(n, false))}</ul>
+            )
           ) : pend.length === 0 && novas.length === 0 ? (
             <p className={styles.vazio}>
-              Nada novo nas suas demandas. Quando alguém mexer numa demanda sua,
-              ou uma reunião sua ficar pronta para validar, aparece aqui.
+              Tudo em dia. Quando alguém mover uma demanda sua, ou uma reunião
+              sua ficar pronta para validar, aparece aqui.
             </p>
           ) : (
             <>
@@ -270,7 +318,7 @@ export function Notificacoes({
               )}
               {novas.length > 0 && (
                 <>
-                  {pend.length > 0 && <div className={styles.sub}>Atualizações</div>}
+                  {pend.length > 0 && <div className={styles.sub}>Movimentações</div>}
                   <ul className={styles.lista}>
                     {novas.map((n) => item(n, false))}
                   </ul>
@@ -279,6 +327,18 @@ export function Notificacoes({
             </>
           )}
         </div>
+
+        {/* A porta da sub-visão fica no pé, discreta, e só existe quando há o
+            que mostrar atrás dela: as vistas não disputam espaço com as novas. */}
+        {!verVistas && !carregando && !tela.erro && vistas.length > 0 && (
+          <button
+            type="button"
+            className={styles.verVistas}
+            onClick={() => setVerVistas(true)}
+          >
+            Vistas nos últimos 7 dias ({vistas.length})
+          </button>
+        )}
       </section>
       {aberto && (
         <div

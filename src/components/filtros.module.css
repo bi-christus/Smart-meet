@@ -1,0 +1,232 @@
+.botao {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--s1);
+  color: var(--tx-2);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.botao:hover {
+  color: var(--tx);
+  border-color: var(--brand-line);
+}
+.botao:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+/* Filtro ligado muda o botão inteiro, e não só o número: de canto de olho, a
+   borda acesa é o que avisa que o quadro na tela não é o quadro inteiro. */
+.botaoAtivo {
+  border-color: var(--brand);
+  color: var(--tx);
+  background: var(--brand-soft);
+}
+.n {
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  border-radius: 10px;
+  background: var(--brand);
+  color: #fff;
+  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ---------- o pop-up ---------- */
+
+/* O véu é leve, e não o preto de 60% dos outros diálogos: o filtro é aplicado
+   em tempo real, e a pessoa precisa ver o quadro mudar atrás dele. */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: grid;
+  place-items: start center;
+  padding: 12vh 16px 16px;
+  z-index: 60;
+  animation: filtrosVeu 0.18s ease-out backwards;
+}
+.painel {
+  width: min(600px, 100%);
+  max-height: 76vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--s1);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  animation: filtrosEntra 0.18s cubic-bezier(0.32, 0.72, 0, 1) backwards;
+}
+@keyframes filtrosVeu {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes filtrosEntra {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.985);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .overlay,
+  .painel {
+    animation: none;
+  }
+}
+
+.buscaLinha {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+  height: 56px;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--tx-3);
+}
+.busca {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  background: none;
+  outline: none;
+  color: var(--tx);
+  font-family: inherit;
+  font-size: 15px;
+}
+.titulo {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--tx);
+}
+.busca::placeholder {
+  color: var(--tx-3);
+}
+.limparBusca {
+  border: none;
+  background: var(--s3);
+  color: var(--tx-2);
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.corpo {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px 16px 10px;
+}
+.secao {
+  padding: 12px 0;
+}
+.secao + .secao {
+  border-top: 1px solid var(--line-soft);
+}
+.secaoHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 9px;
+  min-height: 24px;
+}
+.secaoTit {
+  font-family: var(--font-display), ui-monospace, monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--tx-3);
+  margin-right: auto;
+}
+
+.pilulas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.pilula {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 13px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--s2);
+  color: var(--tx-2);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.pilula:hover {
+  border-color: var(--brand-line);
+  color: var(--tx);
+}
+.pilulaOn,
+.pilulaOn:hover {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+  color: var(--tx);
+}
+.ponto {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.pe {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--line-soft);
+}
+.resultado {
+  font-size: 12.5px;
+  color: var(--tx-3);
+}
+.grow {
+  flex: 1;
+}
+.limpar,
+.pronto {
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 9px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.limpar {
+  border: 1px solid var(--line);
+  background: none;
+  color: var(--tx-2);
+}
+.limpar:hover {
+  color: var(--tx);
+}
+.pronto {
+  border: 1px solid var(--tx);
+  background: var(--tx);
+  color: var(--bg);
+}

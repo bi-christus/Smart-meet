@@ -47,6 +47,7 @@ import { subscribeLinksDoSetor, type LinkDoSetor } from "@/lib/links-do-setor";
 import { juntarFontes, type Fonte } from "@/lib/async-data-core";
 import { useAsyncData } from "@/lib/use-async-data";
 import { Icon } from "@/components/icons";
+import { BotaoFiltros, PainelFiltros, SecaoFiltro } from "@/components/filtros";
 import { Select, type SelectOption } from "@/components/select";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
@@ -162,6 +163,7 @@ export default function DashboardPage() {
   const [quadroSel, setQuadroSel] = useState("");
   const [fPessoa, setFPessoa] = useState("");
   const [fResp, setFResp] = useState("");
+  const [filtrosAbertos, setFiltrosAbertos] = useState(false);
   /** Cada coluna do gráfico de acúmulo é um dia ou uma semana. */
   const [gran, setGran] = useState<Granularidade>("semana");
 
@@ -421,7 +423,6 @@ export default function DashboardPage() {
     { value: "", label: vazio },
     ...pessoas.map((e) => ({ value: e, label: nomeDe(e) })),
   ];
-  const sujo = !!(fPessoaAtivo || fRespAtivo);
 
   /**
    * A janela por extenso, para ir no rodapé dos indicadores.
@@ -457,9 +458,6 @@ export default function DashboardPage() {
       <div className={styles.head}>
         <div className={styles.headMain}>
           <h1>Dashboard — {quadro}</h1>
-          <p>
-            Os números abaixo são deste quadro, no período escolhido ao lado.
-          </p>
         </div>
       </div>
 
@@ -541,43 +539,55 @@ export default function DashboardPage() {
             </button>
           </>
         )}
-        <span className={styles.separador} aria-hidden="true" />
-        <Icon name="filter" size={15} />
-        <div className={styles.filtro}>
-          <Select
-            value={fPessoaAtivo}
-            options={opcoesPessoa("Todas as pessoas")}
-            onChange={setFPessoa}
-            ariaLabel="Pessoa (autor ou responsável)"
-          />
-        </div>
-        <div className={styles.filtro}>
-          <Select
-            value={fRespAtivo}
-            options={opcoesPessoa("Todos os responsáveis")}
-            onChange={setFResp}
-            ariaLabel="Responsável"
-          />
-        </div>
-        {sujo && (
-          <button
-            className={styles.limpar}
-            onClick={() => {
-              setFPessoa("");
-              setFResp("");
-            }}
-          >
-            <Icon name="x" size={13} /> Limpar
-          </button>
-        )}
+        {/* Pessoa e responsável moram no pop-up (#239). O período fica na
+            linha: ele não recorta a tela, ele a define — todo número abaixo
+            é daquele período, e escondê-lo esconderia de que intervalo são. */}
+        <BotaoFiltros
+          rotulo="Filtrar"
+          ativos={(fPessoaAtivo ? 1 : 0) + (fRespAtivo ? 1 : 0)}
+          onClick={() => setFiltrosAbertos(true)}
+        />
         {!kpiSemResposta && (
           <span className={styles.contagem}>
             {abertos.length}{" "}
             {abertos.length === 1 ? "demanda em aberto" : "demandas em aberto"}
-            {fPessoaAtivo ? " · pessoa = autor ou responsável" : ""}
           </span>
         )}
       </div>
+
+      {filtrosAbertos && (
+        <PainelFiltros
+          titulo="Filtrar o Dashboard"
+          ativos={(fPessoaAtivo ? 1 : 0) + (fRespAtivo ? 1 : 0)}
+          onLimpar={() => {
+            setFPessoa("");
+            setFResp("");
+          }}
+          resultado={
+            kpiSemResposta
+              ? undefined
+              : `${abertos.length} ${abertos.length === 1 ? "demanda em aberto" : "demandas em aberto"}`
+          }
+          onClose={() => setFiltrosAbertos(false)}
+        >
+          <SecaoFiltro titulo="Pessoa (autora ou responsável)">
+            <Select
+              value={fPessoaAtivo}
+              options={opcoesPessoa("Todas as pessoas")}
+              onChange={setFPessoa}
+              ariaLabel="Pessoa (autor ou responsável)"
+            />
+          </SecaoFiltro>
+          <SecaoFiltro titulo="Responsável">
+            <Select
+              value={fRespAtivo}
+              options={opcoesPessoa("Todos os responsáveis")}
+              onChange={setFResp}
+              ariaLabel="Responsável"
+            />
+          </SecaoFiltro>
+        </PainelFiltros>
+      )}
 
       <div className={styles.kstrip}>
         <Kpi
