@@ -30,6 +30,7 @@ import {
   query,
   serverTimestamp,
   where,
+  type QueryDocumentSnapshot,
   type Timestamp,
   type WriteBatch,
 } from "firebase/firestore";
@@ -152,21 +153,7 @@ export async function carregarHistorico(
     ),
   );
   return snap.docs
-    .map((d) => {
-      const dados = d.data() as {
-        autor?: string;
-        em?: Timestamp | null;
-        acao?: Acao;
-        mudancas?: Mudanca[];
-      };
-      return {
-        id: d.id,
-        autor: dados.autor ?? "",
-        em: dados.em?.toMillis?.() ?? 0,
-        acao: dados.acao ?? "editada",
-        mudancas: dados.mudancas ?? [],
-      };
-    })
+    .map(eventoDoDoc)
     .filter((e) => e.em > 0);
 }
 
@@ -188,3 +175,47 @@ export async function carregarHistorico(
  * estas regras e pode varrer a subcoleção sem teto nenhum. O lugar certo dessa
  * varrida sempre foi o servidor; o navegador só não tinha como saber.
  */
+
+/**
+ * Os últimos `n` eventos de um card, só do setor ATUAL dele.
+ *
+ * É a leitura das notificações da lateral, e não da timeline. Por isso só o
+ * setor atual: o que interessa à lateral é o que aconteceu há pouco, e o que
+ * aconteceu há pouco aconteceu no setor onde o card está. Pedir os setores
+ * anteriores, como `carregarHistorico` faz, recusaria a consulta inteira de
+ * quem não tem todos eles — e a lateral perderia o card por causa de um evento
+ * velho que ela nem ia mostrar. Usa o mesmo índice `sector + em`.
+ */
+export async function ultimosEventos(
+  cardId: string,
+  sector: string,
+  n: number,
+): Promise<Evento[]> {
+  const snap = await getDocs(
+    query(
+      refHistorico(cardId),
+      where("sector", "==", sector),
+      orderBy("em", "desc"),
+      limit(n),
+    ),
+  );
+  return snap.docs
+    .map(eventoDoDoc)
+    .filter((e) => e.em > 0);
+}
+
+function eventoDoDoc(d: QueryDocumentSnapshot): Evento {
+  const dados = d.data() as {
+    autor?: string;
+    em?: Timestamp | null;
+    acao?: Acao;
+    mudancas?: Mudanca[];
+  };
+  return {
+    id: d.id,
+    autor: dados.autor ?? "",
+    em: dados.em?.toMillis?.() ?? 0,
+    acao: dados.acao ?? "editada",
+    mudancas: dados.mudancas ?? [],
+  };
+}

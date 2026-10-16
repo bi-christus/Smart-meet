@@ -47,6 +47,8 @@ export type Proposta = {
     motivo?: string;
     cardId?: string;
     camposEditados?: string[];
+    /** Gravado pelo servidor na decisão (`api/demandas/decidir`). */
+    em?: { toMillis(): number } | null;
   };
 };
 

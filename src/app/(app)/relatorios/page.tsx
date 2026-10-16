@@ -102,7 +102,16 @@ export default function RelatoriosPage() {
   };
 
   const [busca, setBusca] = useState("");
-  const [view, setView] = useState<string | null>(null);
+  /**
+   * A reunião aberta pode vir da URL (`/relatorios?reuniao=<id>`): é por onde
+   * a notificação "para você validar" da lateral chega aqui (#237). Lida no
+   * valor inicial, como `daUrl` no Kanban, pelo mesmo motivo escrito lá.
+   */
+  const [view, setView] = useState<string | null>(() =>
+    typeof window === "undefined"
+      ? null
+      : new URLSearchParams(window.location.search).get("reuniao"),
+  );
 
   /** Propostas de cada reunião, para o card e para o modal. */
   const porReuniao = useMemo(() => {

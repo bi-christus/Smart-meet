@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Sans, IBM_Plex_Serif, IBM_Plex_Mono } from "next/font/google";
+import { IBM_Plex_Sans, Space_Mono } from "next/font/google";
 import { AuthProvider } from "@/lib/auth-context";
 import { ThemeProvider } from "@/lib/theme";
 import "./globals.css";
@@ -10,21 +10,27 @@ const plexSans = IBM_Plex_Sans({
   weight: ["400", "500", "600", "700"],
 });
 
-const plexSerif = IBM_Plex_Serif({
-  variable: "--font-serif",
+/**
+ * A fonte de display — títulos, rótulos e a lateral (16/10/2026, #237).
+ *
+ * A referência pedida foi a Inky Mono, da Mabütype. Ela é comercial e não está
+ * no Google Fonts; a Space Mono é a livre mais próxima dela (o "I" de serifa
+ * reta, a geometria larga, a cara de display), e é servida pelo `next/font`
+ * daqui mesmo, sem arquivo de fonte no repositório.
+ *
+ * O TEXTO CORRIDO NÃO É MONO. Card, descrição, ata e formulário continuam em
+ * IBM Plex Sans: mono em parágrafo é lento de ler, e este app é lido o dia
+ * inteiro. A mono entra onde se lê de relance — e substitui também a Plex Mono
+ * dos rótulos pequenos, para não haver duas monos disputando a mesma tela.
+ *
+ * Pré-carregada, ao contrário da Plex Mono que ela substitui: agora ela está
+ * na lateral de TODA página, e sem pré-carga a marca pisca na troca de fonte a
+ * cada entrada no app.
+ */
+const spaceMono = Space_Mono({
+  variable: "--font-display",
   subsets: ["latin"],
-  weight: ["500", "600", "700"],
-});
-
-const plexMono = IBM_Plex_Mono({
-  variable: "--font-mono",
-  subsets: ["latin"],
-  weight: ["400", "500"],
-  // Sem pré-carga (15/10/2026): a mono só aparece em rótulos pequenos e no
-  // título do Rank, e pré-carregá-la em TODA página baixava dois arquivos que
-  // a maioria nunca usa — o navegador avisava no console a cada carga. Ela
-  // entra quando a página pede, com a troca de fonte do `display: swap`.
-  preload: false,
+  weight: ["400", "700"],
 });
 
 export const metadata: Metadata = {
@@ -41,7 +47,7 @@ export default function RootLayout({
   return (
     <html
       lang="pt-BR"
-      className={`${plexSans.variable} ${plexSerif.variable} ${plexMono.variable}`}
+      className={`${plexSans.variable} ${spaceMono.variable}`}
       suppressHydrationWarning
     >
       <body>
