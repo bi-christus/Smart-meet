@@ -7,6 +7,8 @@ import {
   updateDoc,
   deleteDoc,
   doc,
+  getDoc,
+  getDocs,
   increment,
   serverTimestamp,
   writeBatch,
@@ -29,6 +31,12 @@ export type { ContextoHistorico };
 // em cada um apodrece calado no primeiro caminho novo que alguém abrir. Aqui é
 // impossível gravar sem avisar, porque é a mesma função.
 import { avisarDiscord } from "./discord";
+import {
+  formatarCodigo,
+  precisaDeCodigo,
+  proximoNumero,
+  type CardCodigo,
+} from "./codigo-core";
 
 // A regra da lixeira é pura e o SERVIDOR também precisa dela — as rotas que
 // leem `/cards` pelo Admin SDK não conseguem importar este arquivo, que carrega
@@ -151,6 +159,14 @@ export type Card = {
    * (`mover-setor-core`).
    */
   produtoId?: string | null;
+  /**
+   * O código de versão (M0001, C0001) — ver `codigo-core.ts` (#242). Gravado
+   * pelo app, nunca digitado. `codigoProduto` é o produto de quando foi dado:
+   * é por ele que um código que ficou para trás numa troca de produto deixa de
+   * aparecer sem deixar de ocupar o seu número.
+   */
+  codigo?: string | null;
+  codigoProduto?: string | null;
   startDate?: string | null; // data de início (yyyy-mm-dd)
   due?: string | null; // prazo de entrega (yyyy-mm-dd)
   priority?: Priority;
@@ -405,6 +421,47 @@ export type Proveniencia = {
  * conhecer a ata, e aí ela conheceria a próxima tela também. Quem passa a
  * função é sempre um módulo de `lib/` (nunca uma página): é lá que o SDK mora.
  */
+/**
+ * O código que este card deve ganhar agora, ou `null` — ver `codigo-core.ts`.
+ *
+ * Lê os cards do MESMO SETOR e do mesmo produto, lixeira inclusive (o número
+ * não volta). Duas consultas, e não uma: a segunda pega quem saiu do produto
+ * mas continua dono de um número dele (`codigoProduto`). As duas são só de
+ * igualdades, que o Firestore serve juntando os índices de campo único, sem
+ * índice composto — e carregam o `sector` que a regra de leitura exige.
+ *
+ * A CORRIDA ESTÁ ACEITA. Duas pessoas criando, no mesmo segundo, melhorias do
+ * mesmo app leriam o mesmo máximo e gravariam o mesmo número. Fechar isso pede
+ * um contador transacional num documento com regra própria, para um caso que
+ * num setor de dez pessoas não acontece; `migrar-codigos.mjs` acusa número
+ * repetido se um dia acontecer.
+ */
+async function codigoPara(
+  sector: string,
+  card: CardCodigo,
+): Promise<{ codigo: string; codigoProduto: string } | null> {
+  const prefixo = precisaDeCodigo(card);
+  if (!prefixo || !card.produtoId) return null;
+  const doSetor = collection(db, "cards");
+  const [porProduto, porCodigo] = await Promise.all([
+    getDocs(
+      query(doSetor, where("sector", "==", sector), where("produtoId", "==", card.produtoId)),
+    ),
+    getDocs(
+      query(
+        doSetor,
+        where("sector", "==", sector),
+        where("codigoProduto", "==", card.produtoId),
+      ),
+    ),
+  ]);
+  const todos = [...porProduto.docs, ...porCodigo.docs].map(
+    (d) => ({ id: d.id, ...d.data() }) as CardCodigo,
+  );
+  const n = proximoNumero(todos, card.produtoId, prefixo);
+  return { codigo: formatarCodigo(prefixo, n), codigoProduto: card.produtoId };
+}
+
 export async function createCard(
   sector: string,
   input: CardInput,
@@ -418,6 +475,11 @@ export async function createCard(
   // card para entrar no MESMO lote — e o lote é o que garante que a demanda
   // nunca nasça sem o registro de que nasceu.
   const ref = doc(collection(db, "cards"));
+  const codigo = await codigoPara(sector, {
+    id: ref.id,
+    type: input.type,
+    produtoId: input.produtoId || null,
+  });
   const batch = writeBatch(db);
   batch.set(ref, {
     sector,
@@ -442,6 +504,7 @@ export async function createCard(
     createdAt: serverTimestamp(),
     createdBy,
     histCount: 1,
+    ...(codigo ?? {}),
     // Espalhado no fim, e só com o que veio: `undefined` num campo do Firestore
     // é erro de escrita, não campo ausente.
     ...(extras?.origem ? { origem: extras.origem } : {}),
@@ -484,6 +547,20 @@ export async function updateCard(
   registro: { ctx: ContextoHistorico; acao: Acao; mudancas: Mudanca[] },
 ): Promise<void> {
   const ref = doc(db, "cards", id);
+  // Só quando a edição mexe no que decide o código: ler o card a cada
+  // reordenação de checklist seria uma leitura por clique para nada.
+  let codigo: Awaited<ReturnType<typeof codigoPara>> = null;
+  if ("type" in patch || "produtoId" in patch) {
+    const atual = await getDoc(ref);
+    if (atual.exists()) {
+      const dados = atual.data() as Omit<Card, "id">;
+      codigo = await codigoPara(dados.sector, {
+        id,
+        ...dados,
+        ...patch,
+      } as CardCodigo);
+    }
+  }
   const batch = writeBatch(db);
   const eventoId = anexarEvento(
     batch,
@@ -495,7 +572,11 @@ export async function updateCard(
   // O incremento entra no MESMO update do card: duas escritas no mesmo
   // documento dentro de um lote não são combinadas, e a segunda mandaria um
   // patch sem os campos da primeira.
-  batch.update(ref, eventoId ? { ...patch, histCount: increment(1) } : patch);
+  const comCodigo = codigo ? { ...patch, ...codigo } : patch;
+  batch.update(
+    ref,
+    eventoId ? { ...comCodigo, histCount: increment(1) } : comCodigo,
+  );
   await batch.commit();
   avisarDiscord(id, eventoId);
 }

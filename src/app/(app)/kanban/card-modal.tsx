@@ -6,6 +6,7 @@
  * Saiu de `page.tsx` quando o arquivo passou de 3300 linhas. Nada além do
  * endereço mudou: as mesmas props, os mesmos hooks na mesma ordem.
  */
+import { codigoVisivel } from "@/lib/codigo-core";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   camposMudados,
@@ -1541,6 +1542,14 @@ export function CardModal({
           </span>
         )}
         <span className={styles.mchip}>{sector}</span>
+        {/* O código do card salvo, e não o que o formulário teria: ele só
+            existe depois de gravado, e uma prévia aqui prometeria um número
+            que outra pessoa pode ocupar antes do Salvar. */}
+        {card && codigoVisivel(card) && (
+          <span className={`${styles.mchip} ${styles.mcodigo}`}>
+            {codigoVisivel(card)}
+          </span>
+        )}
       </div>
 
       <input

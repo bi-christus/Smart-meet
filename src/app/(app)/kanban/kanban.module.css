@@ -2626,3 +2626,9 @@
 .etapaSugestao:hover {
   text-decoration: underline;
 }
+/* O código de versão no cabeçalho do modal (#242), na mono do card. */
+.mcodigo {
+  font-family: var(--font-display), ui-monospace, monospace;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
