@@ -7,11 +7,13 @@ import { useAuth } from "@/lib/auth-context";
 import { ROLE_LABEL, pickColor, type MeuCadastro } from "@/lib/users";
 import { usePermissoes } from "@/lib/permissoes";
 import { abaDaRota, abasVisiveis, podeVerAba } from "@/lib/permissoes-core";
+import { divisaoDaAba, divisoesVisiveis } from "@/lib/navegacao-core";
 import { useTheme } from "@/lib/theme";
 import { Icon } from "@/components/icons";
 import { Avatar } from "@/components/avatar";
 import { EmptyState } from "@/components/empty-state";
 import { PerfilModal } from "@/components/perfil-modal";
+import { Notificacoes } from "@/components/notificacoes";
 import { RecoveryBanner } from "@/components/recovery-banner";
 import { RecordingProvider } from "@/lib/audio/recording-context";
 import { MiniPlayer } from "@/components/mini-player";
@@ -28,7 +30,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
    * demorada (é um `onAuthStateChanged` mais um `getDoc` de perfil, contra a
    * leitura de um documento só). Esperar as duas juntas custa, na prática, os
    * milissegundos em que a segunda ainda não voltou — e compra o que importa:
-   * a barra do topo nunca desenha oito abas para recolher três meio segundo
+   * a barra lateral nunca desenha cinco divisões para recolher três meio segundo
    * depois. Isso seria a mesma mentira que os esqueletos deste projeto existem
    * para tirar da tela, agora na navegação.
    *
@@ -76,13 +78,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const nav = abasVisiveis(profile, permissoes);
-
-  const isActive = (href: string) =>
-    href === "/" ? pathname === "/" : pathname.startsWith(href);
+  const divisoes = divisoesVisiveis(abasVisiveis(profile, permissoes));
 
   /**
-   * O GUARDA DE ROTA — a metade que a barra do topo não faz.
+   * O GUARDA DE ROTA — a metade que a barra lateral não faz.
    *
    * Tirar o botão esconde o caminho, não fecha a porta: a URL continua sendo
    * digitável, o histórico do navegador continua guardando a visita de ontem, e
@@ -99,6 +98,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   const eu = { ...profile, ...meuLocal };
 
+  /**
+   * A divisão aberta é a da aba da rota, e não a última clicada na lateral:
+   * quem chega por um link colado em `/ata` precisa ver a divisão Reuniões
+   * acesa e as pílulas dela no topo, sem ter passado pela lateral.
+   */
+  const idDivisao = abaAtual ? divisaoDaAba(abaAtual.id)?.id : undefined;
+  const divisaoAtual = divisoes.find((d) => d.id === idDivisao);
+  const pilulas =
+    divisaoAtual && divisaoAtual.visiveis.length > 1
+      ? divisaoAtual.visiveis
+      : [];
+
   return (
     <RecordingProvider ownerEmail={profile.email}>
       <div className={styles.shell}>
@@ -106,7 +117,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           Desligada no menu do perfil (#214), ela nem monta: o canvas deixa de
           ser redesenhado, e não só de aparecer. */}
       {fundoAnimado && <Waveform variant="ambient" />}
-      <header className={styles.topbar}>
+      <aside className={styles.side}>
         <Link href="/" className={styles.brand}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logo-uh-white.png" alt="Smart Meeting" />
@@ -116,18 +127,40 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </span>
         </Link>
 
-        <nav className={styles.nav}>
-          {nav.map((n) => (
+        <nav className={styles.nav} aria-label="Divisões">
+          <div className={styles.navLbl}>Menu</div>
+          {divisoes.filter((d) => !d.rodape).map((d) => (
             <Link
-              key={n.id}
-              href={n.href}
-              className={`${styles.navBtn} ${isActive(n.href) ? styles.on : ""}`}
+              key={d.id}
+              href={d.href}
+              title={d.label}
+              aria-current={d.id === idDivisao ? "page" : undefined}
+              className={`${styles.navBtn} ${d.id === idDivisao ? styles.on : ""}`}
             >
-              <Icon name={n.id} size={16} />
-              <span>{n.label}</span>
+              <Icon name={d.icone} size={18} />
+              <span>{d.label}</span>
             </Link>
           ))}
         </nav>
+
+        {/* No lugar dos "membros" da referência: o que mudou nas demandas desta
+            pessoa e o que espera a validação dela (#237). */}
+        <div className={styles.sideFill}>
+          <Notificacoes pessoa={eu} />
+        </div>
+
+        {divisoes.filter((d) => d.rodape).map((d) => (
+          <Link
+            key={d.id}
+            href={d.href}
+            title={d.label}
+            aria-current={d.id === idDivisao ? "page" : undefined}
+            className={`${styles.navBtn} ${d.id === idDivisao ? styles.on : ""}`}
+          >
+            <Icon name={d.icone} size={18} />
+            <span>{d.label}</span>
+          </Link>
+        ))}
 
         <div className={styles.user}>
           <button
@@ -142,7 +175,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           >
             {/* alt vazio: o nome já está escrito ao lado, e no celular quem
                 identifica o botão é o aria-label acima. */}
-            <Avatar pessoa={eu} size={30} fotoDoGoogle={user.photoURL} alt="" />
+            <Avatar pessoa={eu} size={32} fotoDoGoogle={user.photoURL} alt="" />
             <span className={styles.uMeta}>
               <span className={styles.uName}>{eu.name?.split(" ")[0]}</span>
               <span className={styles.uRole}>{ROLE_LABEL[profile.role]}</span>
@@ -258,7 +291,30 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </>
           )}
         </div>
-      </header>
+      </aside>
+
+      <div className={styles.col}>
+      {/* Só aparece quando a divisão tem mais de um módulo: o título de cada
+          tela já está no `<h1>` dela, e repeti-lo aqui seria a mesma palavra
+          duas vezes, uma em cima da outra. */}
+      {pilulas.length > 0 && (
+        <header className={styles.topbar}>
+          <span className={styles.divNome}>{divisaoAtual?.label}</span>
+          <nav className={styles.pills} aria-label={`Módulos de ${divisaoAtual?.label}`}>
+            {pilulas.map((a) => (
+              <Link
+                key={a.id}
+                href={a.href}
+                aria-current={a.id === abaAtual?.id ? "page" : undefined}
+                className={`${styles.pill} ${a.id === abaAtual?.id ? styles.pillOn : ""}`}
+              >
+                <Icon name={a.id} size={15} />
+                <span>{a.label}</span>
+              </Link>
+            ))}
+          </nav>
+        </header>
+      )}
 
       <main className={styles.content}>
         {/* Fica no shell — assim a bomba de envio segue viva mesmo quando o
@@ -274,6 +330,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           )}
         </div>
       </main>
+      </div>
       </div>
       <MiniPlayer />
       {perfilAberto && (
@@ -294,7 +351,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
  *
  * É um caso DIFERENTE de `AccessPending`, e por isso é outra tela: lá a conta
  * ainda não entrou no app e não há nada a fazer além de esperar o
- * administrador; aqui a pessoa está dentro, com barra do topo e todas as outras
+ * administrador; aqui a pessoa está dentro, com a barra lateral e todas as outras
  * abas funcionando, e o que falta é o acesso a uma delas. Dizer "acesso
  * pendente" nos dois casos mandaria metade das pessoas pedir a coisa errada.
  *
@@ -312,7 +369,7 @@ function SemAcesso({ aba }: { aba: string }) {
           <>
             O acesso a esta aba é definido por setor e por pessoa, na tela de
             Admin. Peça ao administrador para incluir você — ou o seu setor — na
-            aba <strong>{aba}</strong>. As outras abas da barra do topo
+            aba <strong>{aba}</strong>. As outras abas da barra lateral
             continuam disponíveis.
           </>
         }

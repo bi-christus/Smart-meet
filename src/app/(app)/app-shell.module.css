@@ -1,111 +1,205 @@
+/* A navegação mudou de lugar em 16/10/2026 (#237): as dez abas saíram da
+   barra do topo e viraram cinco divisões numa lateral. No topo fica só o
+   seletor dos módulos da divisão aberta. */
 .shell {
   height: 100vh;
   display: flex;
-  flex-direction: column;
   overflow: hidden;
 }
 
-.topbar {
+.side {
   flex: none;
-  height: 56px;
+  width: 232px;
   display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 18px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 18px 12px 12px;
   background: var(--topbar-bg);
-  border-bottom: 1px solid var(--topbar-line);
+  border-right: 1px solid var(--topbar-line);
   /* sem position o z-index era inerte, e o fundo animado passava por cima */
   position: relative;
   z-index: 40;
+}
+
+.col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .brand {
   display: flex;
   align-items: center;
   gap: 11px;
-  margin-right: 12px;
+  padding: 0 6px 18px;
   user-select: none;
   text-decoration: none;
   flex: none;
 }
 .brand img {
-  height: 34px;
+  height: 32px;
   width: auto;
   display: block;
 }
 .wm {
-  line-height: 1.05;
+  line-height: 1.1;
+  min-width: 0;
 }
 .wm b {
   display: block;
-  font-size: 14.5px;
+  font-family: var(--font-display), ui-monospace, monospace;
+  font-size: 14px;
   font-weight: 700;
-  letter-spacing: 0.2px;
+  letter-spacing: -0.2px;
   color: var(--topbar-fg-strong);
+  white-space: nowrap;
 }
 .wm span {
+  font-family: var(--font-display), ui-monospace, monospace;
   font-size: 10px;
   color: var(--tx-3);
-  font-weight: 500;
   letter-spacing: 0.3px;
+  text-transform: uppercase;
 }
 
 .nav {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 2px;
-  height: 100%;
-  flex: 1;
-  overflow-x: auto;
-  scrollbar-width: none;
 }
-.nav::-webkit-scrollbar {
-  display: none;
+.navLbl {
+  font-family: var(--font-display), ui-monospace, monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--tx-3);
+  padding: 4px 10px 8px;
 }
 .navBtn {
-  height: 100%;
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 0 14px;
-  background: none;
-  border: none;
+  gap: 11px;
+  height: 40px;
+  padding: 0 10px;
+  border-radius: 10px;
   color: var(--topbar-fg);
-  font-family: inherit;
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 500;
-  cursor: pointer;
-  border-bottom: 2px solid transparent;
   white-space: nowrap;
   text-decoration: none;
+  flex: none;
 }
 .navBtn svg {
-  width: 15px;
-  height: 15px;
+  flex: none;
   opacity: 0.85;
 }
 .navBtn:hover {
   color: var(--topbar-fg-strong);
+  background: var(--s2);
 }
 .navBtn.on {
   color: var(--topbar-fg-strong);
-  border-bottom-color: var(--brand);
+  background: var(--s3);
+  font-weight: 600;
 }
 .navBtn.on svg {
   color: var(--accent);
   opacity: 1;
 }
+.navBtn:focus-visible,
+.pill:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
 
-.user {
+/* Ocupa o vão entre as divisões e o pé da lateral. É o lugar das
+   notificações, e é ele que empurra Configurações e a conta para baixo. */
+.sideFill {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin: 14px 0 8px;
+  border-top: 1px solid var(--topbar-line);
+}
+
+/* ---------- topo: os módulos da divisão aberta ---------- */
+
+.topbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 22px 0;
   position: relative;
+  z-index: 30;
+}
+.divNome {
+  font-family: var(--font-display), ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--tx-3);
   flex: none;
 }
-.userBtn {
+.pills {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.pills::-webkit-scrollbar {
+  display: none;
+}
+.pill {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   height: 38px;
-  padding: 0 8px 0 5px;
+  padding: 0 16px;
+  border-radius: 11px;
+  background: var(--s1);
+  border: 1px solid var(--line);
+  color: var(--tx-2);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-decoration: none;
+  flex: none;
+}
+.pill:hover {
+  color: var(--tx);
+  border-color: var(--brand-line);
+}
+/* A pílula ativa é cheia, como o "Board" da referência: no topo há poucas, e
+   o contraste de fundo inteiro lê mais rápido do que um sublinhado. */
+.pillOn,
+.pillOn:hover {
+  background: var(--tx);
+  border-color: var(--tx);
+  color: var(--bg);
+}
+.pillOn svg {
+  color: var(--bg);
+}
+
+.user {
+  position: relative;
+  flex: none;
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--topbar-line);
+}
+.userBtn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 46px;
+  padding: 0 8px 0 6px;
   background: none;
   border: none;
   border-radius: 9px;
@@ -139,10 +233,11 @@
   text-transform: uppercase;
 }
 
+/* Abre para CIMA: a conta mora no pé da lateral, e para baixo não há tela. */
 .pop {
   position: absolute;
-  right: 0;
-  top: 48px;
+  left: 0;
+  bottom: 54px;
   width: 244px;
   background: var(--s2);
   border: 1px solid var(--line);
@@ -401,11 +496,43 @@
   padding: 56px 22px;
 }
 
-@media (max-width: 680px) {
+/* Tela estreita: a lateral vira um trilho só de ícones. O nome de cada porta
+   continua no `title` e no texto escondido para leitor de tela — some da
+   vista, não da árvore de acessibilidade. */
+@media (max-width: 900px) {
+  .side {
+    width: 64px;
+    padding: 14px 8px 10px;
+    align-items: center;
+  }
+  .wm,
+  .navLbl,
   .uMeta {
     display: none;
   }
-  .wm span {
+  .brand {
+    padding: 0 0 14px;
+  }
+  .navBtn {
+    width: 44px;
+    justify-content: center;
+    padding: 0;
+  }
+  .navBtn span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .userBtn {
+    justify-content: center;
+    padding: 0;
+  }
+  .topbar {
+    padding: 12px 14px 0;
+  }
+  .divNome {
     display: none;
   }
 }

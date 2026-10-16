@@ -1,3 +1,11 @@
+/* `--font-serif` e `--font-mono` agora apontam para a mesma display, a Space
+   Mono (#237). Ficam como apelido, e não renomeadas nas folhas que as usam,
+   para um PR de navegação não virar um PR que toca o CSS do app inteiro. */
+:root {
+  --font-serif: var(--font-display);
+  --font-mono: var(--font-display);
+}
+
 :root,
 [data-theme="dark"] {
   --brand: #ff6a2b;
