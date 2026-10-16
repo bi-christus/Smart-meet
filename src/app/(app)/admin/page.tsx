@@ -149,7 +149,6 @@ export default function AdminPage() {
     <div className={styles.page}>
       <div className={styles.head}>
         <h1>Admin</h1>
-        <p>Gerencie usuários, setores e permissões do Smart Meeting.</p>
       </div>
 
       <div className={styles.subnav}>

@@ -116,9 +116,6 @@
   padding: 14px 22px 0;
   color: var(--tx-3);
 }
-.filtro {
-  min-width: 178px;
-}
 .limpar {
   display: inline-flex;
   align-items: center;
@@ -1123,17 +1120,6 @@
 .quadroOn:hover {
   background: var(--brand);
   color: #fff;
-}
-
-/* O período e os filtros dividem a mesma barra, e são perguntas diferentes:
-   um recorta QUANDO, os outros recortam QUEM. O traço vertical é o que impede
-   que se leiam como uma lista só de cinco campos. */
-.separador {
-  width: 1px;
-  align-self: stretch;
-  min-height: 22px;
-  background: var(--line);
-  margin: 0 3px;
 }
 
 /* Alternador de duas opções — a espessura da coluna do gráfico de fluxo. */

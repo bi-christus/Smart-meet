@@ -23,7 +23,6 @@ export default function Inicio() {
       <div className={styles.page}>
         <div className={styles.head}>
           <h1>Olá, {primeiro} 👋</h1>
-          <p>Bem-vindo ao Smart Meeting. Escolha por onde começar.</p>
         </div>
 
         {profile && <AtalhosDeSistemas profile={profile} />}

@@ -139,16 +139,6 @@
   color: var(--tx-3);
   padding-top: 1px;
 }
-.nova {
-  position: absolute;
-  left: 3px;
-  top: 50%;
-  width: 6px;
-  height: 6px;
-  margin-top: -3px;
-  border-radius: 50%;
-  background: var(--brand);
-}
 .vazio {
   margin: 0;
   padding: 4px 10px;
@@ -187,6 +177,40 @@
   display: none;
 }
 
+.voltar {
+  border: none;
+  background: none;
+  padding: 0;
+  font-family: var(--font-display), ui-monospace, monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--tx-2);
+  cursor: pointer;
+}
+.voltar:hover {
+  color: var(--tx);
+}
+.verVistas {
+  flex: none;
+  align-self: flex-start;
+  margin: 6px 10px 0;
+  border: none;
+  background: none;
+  padding: 2px 0;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--tx-3);
+  cursor: pointer;
+}
+.verVistas:hover {
+  color: var(--tx);
+  text-decoration: underline;
+}
+
+/* O sino: no trilho de tela estreita (media query) e na lateral oculta
+   (`.compacto`). As duas regras são iguais, e repetidas porque CSS não deixa
+   uma media query e uma classe dividirem o mesmo bloco. */
 @media (max-width: 900px) {
   .wrap {
     align-items: center;
@@ -218,4 +242,34 @@
     inset: 0;
     z-index: 60;
   }
+}
+.compacto {
+  align-items: center;
+  padding-top: 8px;
+}
+.compacto .sino {
+  display: inline-flex;
+}
+.compacto .painel {
+  display: none;
+}
+.compacto .painelAberto {
+  display: flex;
+  position: fixed;
+  left: 72px;
+  top: 12px;
+  bottom: 12px;
+  width: min(320px, calc(100vw - 84px));
+  background: var(--s2);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  box-shadow: var(--shadow);
+  padding: 0 6px 6px;
+  z-index: 61;
+}
+.compacto .veu {
+  display: block;
+  position: fixed;
+  inset: 0;
+  z-index: 60;
 }

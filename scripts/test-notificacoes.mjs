@@ -10,9 +10,11 @@
  */
 import {
   LIMITE_CARDS_CONSULTADOS,
+  JANELA_MS,
   cardsParaConsultar,
-  naoVistas,
   novidades,
+  separarVistas,
+  podarVistas,
   pendencias,
   quando,
   textoDoEvento,
@@ -59,25 +61,53 @@ const propostas = [
   { id: "p4", meetingId: "r4", status: "aceita", proposta: { title: "Da reunião da Ana" }, sectorAlvo: "B.I.", decisao: { por: "bob@x", em: 8000 } },
 ];
 
-// --- novidades: só o que é meu, e só o que os outros fizeram ----------------
-const lista = novidades({ email: EU, cards, eventos, reunioes, propostas, nomeDe });
+// --- novidades: só movimentação, só do que é meu, só dos outros -----------
+const AGORA = 10_000;
+const lista = novidades({ email: EU, cards, eventos, nomeDe, agora: AGORA });
 const ids = lista.map((n) => n.id);
 
-checa("card de outra pessoa não entra", !ids.some((i) => i.includes(":c3:")), ids.join(", "));
+checa("movimentação de outra pessoa no meu card entra", ids.includes("evento:c1:e1"), ids.join(", "));
+checa("card de outra pessoa não entra", !ids.some((i) => i.includes(":c3:")));
 checa("o que eu mesmo fiz não entra", !ids.includes("evento:c1:e2"));
-checa("createdBy vale com caixa e espaço diferentes", ids.includes("evento:c2:e3"));
-checa("proposta da minha reunião aceita por outro entra", ids.includes("proposta:p2"));
-checa("proposta que eu mesmo decidi não entra", !ids.includes("proposta:p3"));
-checa("proposta de reunião alheia não entra", !ids.includes("proposta:p4"));
-checa("mais recente primeiro", lista[0]?.id === "proposta:p2", ids.join(", "));
 checa(
-  "aceita leva ao card que nasceu",
-  lista[0]?.href === "/kanban?setor=B.I.&card=c9",
-  lista[0]?.href,
+  "o que não é movimentação não entra (conclusão aprovada, edição)",
+  !ids.includes("evento:c2:e3") && !ids.includes("evento:c3:e4"),
 );
 checa(
   "movida diz para onde",
   textoDoEvento(eventos.get("c1")[0]) === "moveu a demanda para Em andamento",
+);
+
+const velho = new Map([
+  ["c1", [ev("v1", ANA, 0, "movida", [{ campo: "coluna", de: "A", para: "B" }])]],
+]);
+checa(
+  "movimentação com mais de sete dias some",
+  novidades({ email: EU, cards, eventos: velho, nomeDe, agora: JANELA_MS + 1 }).length === 0,
+);
+checa(
+  "createdBy vale com caixa e espaço diferentes",
+  novidades({
+    email: EU,
+    cards,
+    eventos: new Map([["c2", [ev("t1", ANA, 9000, "transferida", [{ campo: "setor", de: "B.I.", para: "RH" }])]]]),
+    nomeDe,
+    agora: AGORA,
+  }).length === 1,
+);
+
+// --- vistas: saem da lista principal para a sub-visão ----------------------
+const duas = [
+  { id: "a", em: 5000 }, { id: "b", em: 3000 }, { id: "c", em: 8000 },
+].map((n) => ({ ...n, icone: "", titulo: "", detalhe: "", href: "" }));
+const sep = separarVistas(duas, { ate: 4000, ids: ["c"] });
+checa(
+  "vista pelo marco ou pelo clique vai para a sub-visão",
+  sep.novas.map((n) => n.id).join() === "a" && sep.vistas.map((n) => n.id).join() === "b,c",
+);
+checa(
+  "ids que saíram da janela são podados",
+  podarVistas({ ate: 0, ids: ["a", "zumbi"] }, duas).ids.join() === "a",
 );
 
 // --- pendências: a mesma conta da tela de Relatórios IA --------------------
@@ -102,7 +132,6 @@ checa(
   alvo.length === LIMITE_CARDS_CONSULTADOS && alvo[0].id === "m39",
 );
 
-checa("não vistas conta só depois do marco", naoVistas(lista, 5000) === 1);
 checa("quando: minutos", quando(0 + 5 * 60000, 10 * 60000) === "há 5 min");
 checa("quando: sem data é vazio", quando(0, 1000) === "");
 

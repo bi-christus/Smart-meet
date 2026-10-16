@@ -45,6 +45,28 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [perfilAberto, setPerfilAberto] = useState(false);
   /**
+   * Lateral oculta = o mesmo trilho de ícones da tela estreita, por escolha
+   * (#240). Lembrada no navegador: é preferência de quem olha, como o tema. O
+   * valor lido no servidor é sempre `false`, e não há divergência de
+   * hidratação porque o servidor só desenha o "Carregando…", nunca a lateral.
+   */
+  const [lateralOculta, setLateralOculta] = useState(() => {
+    try {
+      return localStorage.getItem("sm_lateral_oculta") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const alternarLateral = () => {
+    const nova = !lateralOculta;
+    setLateralOculta(nova);
+    try {
+      localStorage.setItem("sm_lateral_oculta", nova ? "1" : "0");
+    } catch {
+      // sem armazenamento: vale até recarregar, só isso.
+    }
+  };
+  /**
    * O que a pessoa acabou de mudar no próprio perfil, campo a campo.
    *
    * O perfil é lido UMA vez, no login (`auth-context`), e não tem assinatura em
@@ -117,7 +139,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           Desligada no menu do perfil (#214), ela nem monta: o canvas deixa de
           ser redesenhado, e não só de aparecer. */}
       {fundoAnimado && <Waveform variant="ambient" />}
-      <aside className={styles.side}>
+      <aside
+        className={`${styles.side} ${lateralOculta ? styles.sideOculta : ""}`}
+      >
+        <div className={styles.brandRow}>
         <Link href="/" className={styles.brand}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logo-uh-white.png" alt="Smart Meeting" />
@@ -126,6 +151,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <span>Rede Christus</span>
           </span>
         </Link>
+        <button
+          type="button"
+          className={styles.ocultar}
+          onClick={alternarLateral}
+          aria-label={lateralOculta ? "Mostrar a barra lateral" : "Ocultar a barra lateral"}
+          aria-pressed={lateralOculta}
+          title={lateralOculta ? "Mostrar a barra lateral" : "Ocultar a barra lateral"}
+        >
+          <Icon name="lateral" size={17} />
+        </button>
+        </div>
 
         <nav className={styles.nav} aria-label="Divisões">
           <div className={styles.navLbl}>Menu</div>
@@ -146,7 +182,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         {/* No lugar dos "membros" da referência: o que mudou nas demandas desta
             pessoa e o que espera a validação dela (#237). */}
         <div className={styles.sideFill}>
-          <Notificacoes pessoa={eu} />
+          <Notificacoes pessoa={eu} compacto={lateralOculta} />
         </div>
 
         {divisoes.filter((d) => d.rodape).map((d) => (
