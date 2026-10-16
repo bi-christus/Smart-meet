@@ -553,3 +553,17 @@
 .fusao_alvo .kFusao {
   color: var(--ok-tx);
 }
+
+/* O código de versão (#242). Neutro e em mono, como uma placa: a cor da linha
+   já é do tipo, e o código diz o mesmo que o tipo (M ou C) mais o número. */
+.kCodigo {
+  flex: none;
+  font-family: var(--font-display), ui-monospace, monospace;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  color: var(--tx-2);
+  background: var(--s3);
+  border-radius: 5px;
+  padding: 2px 6px;
+}

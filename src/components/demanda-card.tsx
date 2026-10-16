@@ -1,6 +1,7 @@
 "use client";
 
 import { memo } from "react";
+import { codigoVisivel } from "@/lib/codigo-core";
 import { GripDots, Icon } from "@/components/icons";
 import { Avatar } from "@/components/avatar";
 import { agingDays, dueInfo, fmtShort, parseDue } from "@/lib/prazo-core.ts";
@@ -224,6 +225,7 @@ function DemandaCardBase({
    */
   const mudou = Math.max(0, (card.histCount ?? 0) - 1);
 
+  const codigo = codigoVisivel(card);
   const knownType =
     !!card.type && DEMAND_TYPES.includes(card.type as DemandType);
   const typeColor = knownType ? DEMAND_TYPE_COLOR[card.type as DemandType] : "";
@@ -371,6 +373,9 @@ function DemandaCardBase({
             e o que saía pela borda direita do card eram justamente os dois
             controles do canto (relatado em 15/10/2026). */}
         <div className={styles.kEtiquetas}>
+          {/* O código vem primeiro, em mono: é o nome curto da demanda ("a
+              C0012"), e é por ele que o olho procura numa coluna cheia. */}
+          {codigo && <span className={styles.kCodigo}>{codigo}</span>}
           {knownType && (
             <span
               className={styles.kType}
