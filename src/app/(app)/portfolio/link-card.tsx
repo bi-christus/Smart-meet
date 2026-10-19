@@ -27,7 +27,6 @@ import styles from "./links.module.css";
 
 export function LinkCard({
   link,
-  nomeDe,
   anoAtual,
   salvando,
   erro,
@@ -38,7 +37,6 @@ export function LinkCard({
   onEditar,
 }: {
   link: LinkDoSetor;
-  nomeDe: (e: string | null | undefined) => string;
   anoAtual: number;
   salvando: boolean;
   erro: string | null;
@@ -66,11 +64,6 @@ export function LinkCard({
   // abre nada, que é a falha certa para um endereço em que não se pode confiar.
   const destino = normalizarUrl(link.url) || undefined;
   const dominio = dominioDe(link.url);
-
-  const editadoPor =
-    link.updatedBy && link.updatedAt
-      ? `Editado por ${nomeDe(link.updatedBy)} em ${dataDe(link.updatedAt, anoAtual)}`
-      : undefined;
 
   return (
     <div className={styles.card}>
@@ -168,10 +161,12 @@ export function LinkCard({
             {rotuloDoSelo(andamento)}
           </button>
         )}
-        <span className={styles.autoria} title={editadoPor}>
-          {nomeDe(link.createdBy)}
-          {link.createdAt ? ` · ${dataDe(link.createdAt, anoAtual)}` : ""}
-        </span>
+        {/* Sem o nome de quem cadastrou (#244): lido no rodapé, ele parecia
+            dizer quem fez o sistema, e quem cadastra quase nunca é quem
+            desenvolveu. `createdBy` segue gravado — decide quem pode alterar. */}
+        {link.createdAt && (
+          <span className={styles.autoria}>{dataDe(link.createdAt, anoAtual)}</span>
+        )}
       </div>
     </div>
   );
