@@ -3,11 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useSetoresDaPessoa } from "@/lib/setores";
-import {
-  SUPER_ADMIN_EMAIL,
-  subscribeUsers,
-  type UserProfile,
-} from "@/lib/users";
+import { SUPER_ADMIN_EMAIL } from "@/lib/users";
 import {
   casaBusca,
   buscarIconeDoSite,
@@ -111,7 +107,6 @@ const SEM_LINKS: LinkDoSetor[] = [];
 const SEM_PASTAS: PastaDoPortfolio[] = [];
 const SEM_CARDS: Card[] = [];
 const SEM_COLS: ColumnDoc[] = [];
-const SEM_USERS: UserProfile[] = [];
 
 export default function LinksPage() {
   const { profile } = useAuth();
@@ -125,13 +120,9 @@ export default function LinksPage() {
   const fPastas = useAsyncData<PastaDoPortfolio>(chaveSetores, (onData, onErro) =>
     subscribePastasDoPortfolio(sectors, onData, onErro),
   );
-  const fUsers = useAsyncData<UserProfile>("todos", (onData, onErro) =>
-    subscribeUsers(onData, onErro),
-  );
 
   const links = fLinks.data ?? SEM_LINKS;
   const pastas = fPastas.data ?? SEM_PASTAS;
-  const users = fUsers.data ?? SEM_USERS;
   const autor = profile?.email ?? "";
 
   /**
@@ -233,17 +224,6 @@ export default function LinksPage() {
     [autor],
   );
 
-  const usersMap = useMemo(() => {
-    const m: Record<string, UserProfile> = {};
-    users.forEach((u) => (m[u.email] = u));
-    return m;
-  }, [users]);
-  const nomeDe = useCallback(
-    (email: string | null | undefined) =>
-      email ? (usersMap[email]?.name ?? email) : "—",
-    [usersMap],
-  );
-
   /**
    * Quem pode ALTERAR e REMOVER um link — o espelho, na tela, do `update` e do
    * `delete` de `/links`: quem cadastrou, ou admin.
@@ -268,14 +248,6 @@ export default function LinksPage() {
     [profile],
   );
 
-  /**
-   * Uma fonte só decide o estado da tela.
-   *
-   * `fUsers` fica de fora de propósito: ela só troca e-mail por nome no rodapé
-   * do card. Enquanto ela não chega, o rodapé mostra o e-mail e continua
-   * funcionando; fazer a grade inteira esperar seria esperar por um dado que o
-   * card sabe dispensar.
-   */
   // As pastas SEGURAM a tela junto com os produtos: sem elas, tudo o que está
   // dentro de uma pasta apareceria solto na raiz, e a tela afirmaria uma
   // organização que não é a gravada.
@@ -872,7 +844,6 @@ export default function LinksPage() {
                         )}
                         <LinkCard
                           link={link}
-                          nomeDe={nomeDe}
                           anoAtual={anoAtual}
                           salvando={salvando === link.id}
                           erro={erroIcone?.id === link.id ? erroIcone.texto : null}
