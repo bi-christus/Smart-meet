@@ -14,7 +14,7 @@
  *    soam igual). Quem valida é quem decide. As datas são opcionais para a
  *    fila andar; o card avisa quando entra sem prazo.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   DEMAND_TYPE_LABEL,
   PRIORITY_LABEL,
@@ -42,11 +42,9 @@ const uid = () => `it${++seq}`;
 export function PropostaForm({
   proposta: p,
   sector,
-  onErro,
 }: {
   proposta: Proposta;
   sector: string;
-  onErro: (e: string | null) => void;
 }) {
   const [title, setTitle] = useState(p.proposta.title);
   const [description, setDescription] = useState(p.proposta.description);
@@ -74,6 +72,15 @@ export function PropostaForm({
   const [motivo, setMotivo] = useState("");
   const [recusando, setRecusando] = useState(false);
   const [ocupado, setOcupado] = useState(false);
+  // O erro é DESTA proposta e mora junto do botão dela. Antes ele subia para o
+  // topo do modal, muitas telas acima de "Criar demanda": quem clicava via o
+  // botão voltar de "Salvando…" e mais nada, e lia isso como "não funcionou"
+  // sem saber por quê (Issue #246).
+  const [erro, setErro] = useState<string | null>(null);
+  const erroRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (erro) erroRef.current?.scrollIntoView({ block: "nearest" });
+  }, [erro]);
 
   const [colunas, setColunas] = useState<ColumnDoc[]>([]);
   const [usuarios, setUsuarios] = useState<UserProfile[]>([]);
@@ -132,13 +139,13 @@ export function PropostaForm({
   }
 
   async function decidir(decisao: "aceitar" | "recusar") {
-    onErro(null);
+    setErro(null);
     if (decisao === "recusar" && !recusando) {
       setRecusando(true);
       return;
     }
     if (decisao === "aceitar" && !title.trim()) {
-      onErro("A demanda precisa de um título.");
+      setErro("A demanda precisa de um título.");
       return;
     }
     setOcupado(true);
@@ -168,7 +175,7 @@ export function PropostaForm({
             : undefined,
       });
     } catch (e) {
-      onErro(e instanceof Error ? e.message : "Não foi possível decidir.");
+      setErro(e instanceof Error ? e.message : "Não foi possível decidir.");
       setOcupado(false);
     }
   }
@@ -408,6 +415,12 @@ export function PropostaForm({
           onChange={(e) => setMotivo(e.target.value)}
           maxLength={500}
         />
+      )}
+
+      {erro && (
+        <p ref={erroRef} className={styles.erroProposta} role="alert">
+          {erro}
+        </p>
       )}
 
       <footer className={styles.propAcoes}>

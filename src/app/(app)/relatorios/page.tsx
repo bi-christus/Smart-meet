@@ -523,7 +523,6 @@ function ReportModal({
                       key={p.id}
                       proposta={p}
                       sector={meeting.sector}
-                      onErro={setErro}
                     />
                   ))}
                   {decididas.length > 0 && (

@@ -161,6 +161,12 @@ export async function decidirProposta(args: {
     status?: string;
     cardId?: string;
   };
-  if (!r.ok) throw new Error(body.error || "Não foi possível registrar a decisão.");
+  // Sem mensagem (um 504 da Vercel devolve HTML), o código HTTP é a única pista
+  // que sobra para quem for investigar.
+  if (!r.ok) {
+    throw new Error(
+      body.error || `Não foi possível registrar a decisão (erro ${r.status}). Tente de novo.`,
+    );
+  }
   return { status: body.status ?? "", cardId: body.cardId };
 }

@@ -102,7 +102,11 @@ export async function POST(req: Request) {
     const agora = new Date();
     const motivo = limpo(body.motivo, 500);
 
-    const loteRef = db.collection("demandLotes").doc(p.loteId as string);
+    // `undefined` é erro de escrita no Admin SDK, não campo ausente: proposta
+    // sem lote ou sem reunião faria o aceite cair com 500 em vez de criar o card.
+    const loteId = typeof p.loteId === "string" ? p.loteId : "";
+    const meetingId = typeof p.meetingId === "string" ? p.meetingId : "";
+    const loteRef = loteId ? db.collection("demandLotes").doc(loteId) : null;
 
     /**
      * Fecha a decisão. Relê a proposta DENTRO da transação: entre o clique de
@@ -120,8 +124,8 @@ export async function POST(req: Request) {
         if (atual.data()?.status !== "pendente") {
           throw new HttpError(409, "Alguém acabou de decidir esta proposta.");
         }
-        const lote = await tx.get(loteRef);
-        const t = (lote.data()?.totais ?? {}) as Record<string, number>;
+        const lote = loteRef ? await tx.get(loteRef) : null;
+        const t = (lote?.data()?.totais ?? {}) as Record<string, number>;
         const pendentes = Math.max(0, (t.pendentes ?? 1) - 1);
 
         criarCard?.(tx);
@@ -130,19 +134,24 @@ export async function POST(req: Request) {
           status: novoStatus,
           decisao: { por: caller.email, em: agora, motivo, ...extraProposta },
         });
-        tx.update(loteRef, {
-          totais: {
-            propostas: t.propostas ?? 0,
-            pendentes,
-            aceitas: (t.aceitas ?? 0) + (novoStatus === "aceita" ? 1 : 0),
-            recusadas: (t.recusadas ?? 0) + (novoStatus === "recusada" ? 1 : 0),
-          },
-          status: pendentes === 0 ? "resolvido" : "parcial",
-        });
+        // O lote é só o placar da fila. `update` em lote que não existe mais
+        // derruba a transação inteira com NOT_FOUND — e aí a decisão humana,
+        // que é o que importa, não entra por causa de um contador (Issue #246).
+        if (loteRef && lote?.exists) {
+          tx.update(loteRef, {
+            totais: {
+              propostas: t.propostas ?? 0,
+              pendentes,
+              aceitas: (t.aceitas ?? 0) + (novoStatus === "aceita" ? 1 : 0),
+              recusadas: (t.recusadas ?? 0) + (novoStatus === "recusada" ? 1 : 0),
+            },
+            status: pendentes === 0 ? "resolvido" : "parcial",
+          });
+        }
         tx.create(db.collection("logs").doc(), {
           propostaId,
-          loteId: p.loteId,
-          meetingId: p.meetingId,
+          loteId: loteId || null,
+          meetingId: meetingId || null,
           sector: sectorAlvo,
           por: caller.email,
           em: agora,
@@ -279,7 +288,7 @@ export async function POST(req: Request) {
           // Proveniência: de onde este card veio, para quem abrir daqui a meses.
           origem: "reuniao",
           propostaId,
-          meetingIds: [p.meetingId],
+          meetingIds: meetingId ? [meetingId] : [],
           histCount: 1,
         });
         // Primeira linha da timeline do card. Sem ela, a demanda nascida de uma
