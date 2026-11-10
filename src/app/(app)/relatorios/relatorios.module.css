@@ -822,6 +822,14 @@
   color: var(--brand);
 }
 
+.erroProposta {
+  margin: 16px 0 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--danger, #fb7185);
+  background: rgba(251, 113, 133, 0.1);
+  font-size: 13px;
+}
 .propAcoes {
   display: flex;
   justify-content: flex-end;
