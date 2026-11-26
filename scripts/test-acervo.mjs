@@ -226,6 +226,13 @@ console.log("\n— a busca —");
   checa("palavra do título com a do setor sem pontos", h.encontradas === 1, String(h.encontradas));
   const i = montarAcervo(real, { busca: "-" });
   checa("palavra só de pontuação não acha o acervo inteiro", i.encontradas === 0, String(i.encontradas));
+  // Setor de duas palavras: a chave sem espaços juntava "livros"+"escolares",
+  // e "sesc" achava o setor pela emenda. Palavra a palavra, não acha mais.
+  const duasPalavras = [...real, r("Livros Escolares", "2026-11-20", "Adoção 2027")];
+  const j = montarAcervo(duasPalavras, { busca: "sesc" });
+  checa('"sesc" não acha Livros Escolares pela emenda das palavras', j.encontradas === 0, String(j.encontradas));
+  const k = montarAcervo(duasPalavras, { busca: "escolares" });
+  checa("palavra inteira do setor de duas palavras ainda acha", k.encontradas === 1, String(k.encontradas));
 }
 
 console.log(falhas === 0 ? "\n✅ acervo de reuniões: ok" : `\n❌ acervo de reuniões: ${falhas} falha(s)`);

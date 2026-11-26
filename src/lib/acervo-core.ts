@@ -178,7 +178,13 @@ export function porMes<T extends ReuniaoDoAcervo>(itens: readonly T[]): MesDoAce
  */
 function casaAcervo(r: ReuniaoDoAcervo, termo: string): boolean {
   const palavras = normalizar(termo).split(/\s+/).filter(Boolean);
-  const setor = chaveDoSetor(r.sector);
+  // Chave PALAVRA A PALAVRA, com os espaços guardados: `chaveDoSetor` sozinha
+  // tira também os espaços, e "Livros Escolares" virava "livrosescolares" —
+  // "sesc" acharia o setor pela emenda das duas palavras.
+  const setor = normalizar(r.sector ?? "")
+    .split(/\s+/)
+    .map(chaveDoSetor)
+    .join(" ");
   return palavras.every((p) => {
     if (casaBusca(r, p)) return true;
     const chave = chaveDoSetor(p);

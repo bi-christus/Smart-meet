@@ -157,14 +157,20 @@ export function Acervo({
    * novo de outro setor fechava a seção que a pessoa lia e abria outra sem
    * clique. Sai de `setores`, e não de `secoes`, que a busca filtra. Fixada no
    * render com guarda, e não num efeito — o `set-state-in-effect` do lint.
+   *
+   * Se o setor fixado perde todas as reuniões, fixa de novo UMA vez: só cair
+   * para `primeira` sem gravar devolveria a escolha à posição, e o defeito
+   * acima voltaria até o fim da sessão. A guarda `padrao !== primeira` impede
+   * o laço — depois do set, o padrão volta a valer.
    */
   const [padrao, setPadrao] = useState<string | null>(null);
   const primeira = acervo.setores[0]?.chave ?? null;
-  if (padrao === null && primeira !== null) setPadrao(primeira);
-  const chavePadrao =
-    padrao !== null && acervo.setores.some((s) => s.chave === padrao)
-      ? padrao
-      : primeira;
+  const padraoVale =
+    padrao !== null && acervo.setores.some((s) => s.chave === padrao);
+  if (!padraoVale && primeira !== null && padrao !== primeira) {
+    setPadrao(primeira);
+  }
+  const chavePadrao = padraoVale ? padrao : primeira;
   const buscando = busca.trim() !== "";
   // Com um setor só não há o que trocar: a visão é a de meses, qualquer que
   // seja a escolha guardada — e a escolha fica guardada para quando houver.
