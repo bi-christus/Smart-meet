@@ -491,7 +491,10 @@
   flex: none;
   margin-top: 1px;
   border-radius: 6px;
-  border: 1.5px solid var(--line);
+  /* --tx-2, e não --line: a caixa vazia é o que diz "dá para marcar", e com
+     --line ela ficava em 1,2–1,3:1 sobre o cartão — abaixo dos 3:1 que um
+     controle precisa. --tx-3 passaria no escuro, mas não no claro. */
+  border: 1.5px solid var(--tx-2);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -530,7 +533,11 @@
   padding: 8px 12px;
   border: 1px solid var(--danger);
   border-radius: 9px;
-  background: var(--danger-bg);
+  /* Opaco: o --danger-bg é translúcido, e por baixo está o --brand-soft da
+     área de envio, que muda com o acento. Misturados, o texto caía para
+     4,1:1 no claro/café. Com o --s1 por baixo, o contraste deixa de depender
+     da cor da marca. */
+  background: linear-gradient(var(--danger-bg), var(--danger-bg)), var(--s1);
   color: var(--danger-tx);
   font-size: 12.5px;
   line-height: 1.45;

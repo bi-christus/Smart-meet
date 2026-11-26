@@ -9,16 +9,22 @@
  * têm de concordar: a tela (`handleFile`), o início do envio
  * (`startFileUpload`) e o servidor (`api/drive/upload-url`).
  *
- * A tela e o servidor NÃO aplicam a mesma régua, e é de propósito:
+ * A tela e o servidor quase aplicam a mesma régua; a diferença é uma só, e é
+ * de propósito:
  *
- * - A TELA é estrita: só passa extensão da lista. Ela olha um arquivo que a
- *   pessoa escolheu, e dizer "isto não é aceito" antes de qualquer envio é o
- *   jeito mais barato de errar.
- * - O SERVIDOR só recusa o que é claramente documento, imagem ou texto. Ele
- *   também recebe a gravação do microfone, e essa pode chegar como ".audio"
- *   com MIME vazio (`extFromMime` em use-recorder.ts, quando o navegador não
- *   diz o formato). Exigir a lista ali barraria uma reunião gravada de verdade
- *   — perder áudio é pior do que deixar passar um formato estranho.
+ * - A TELA só passa extensão da lista. Ela olha um arquivo que a pessoa
+ *   escolheu, e dizer "isto não é aceito" antes de qualquer envio é o jeito
+ *   mais barato de errar.
+ * - O SERVIDOR passa a mesma lista E mais ".audio". Ele também recebe a
+ *   gravação do microfone, e essa sai como ".audio" com MIME vazio quando o
+ *   navegador não diz o formato (`extFromMime` em use-recorder.ts). Barrar
+ *   isso perderia uma reunião gravada de verdade.
+ *
+ * A primeira versão do servidor era lista de RECUSA (só barrava o que é
+ * claramente documento), e foi descartada: "contrato.pdf.", "contrato.pdf1",
+ * "contrato" sem extensão e a extensão em letra larga ("ｐｄｆ") passavam por
+ * ela. Com lista de aceite, o que não está na lista não passa, escrito do
+ * jeito que for.
  */
 
 /**
@@ -66,9 +72,18 @@ const FORMATOS_LEGIVEIS =
   "MP3, M4A, MP4 do WhatsApp, WAV, WebM, OGG, OPUS, AAC, FLAC, AIFF, WMA, AMR ou 3GP";
 
 /**
- * Extensões que são documento, imagem, texto ou pacote — nunca áudio. Lista
- * de RECUSA (e não de aceite) porque é o que o servidor pode aplicar sem
- * barrar a gravação do microfone; ver o topo do arquivo.
+ * A extensão da gravação do microfone quando o navegador não informa o
+ * formato (`extFromMime`). Só o servidor a aceita: na tela, um arquivo do
+ * disco com esse nome não é formato que o transcritor conheça, e fica de fora
+ * como qualquer outro.
+ */
+const EXTENSAO_DO_MICROFONE_SEM_FORMATO = "audio";
+
+/**
+ * Extensões que são documento, imagem, texto ou pacote — nunca áudio. Não é a
+ * régua de aceite (essa é `EXTENSOES_DE_AUDIO`): serve para a mensagem dizer
+ * "não é um áudio" em vez de "formato não aceito", que é o erro de verdade de
+ * quem arrastou um PDF.
  */
 const EXTENSOES_DE_DOCUMENTO = new Set([
   // texto e escritório
@@ -164,16 +179,32 @@ export type Veredito =
       mensagem: string;
     };
 
-function mb(bytes: number): number {
-  return Math.round(bytes / (1024 * 1024));
-}
+const MIB = 1024 * 1024;
 
 function recusaPorTamanho(nome: string, bytes: number): Veredito {
+  // Para cima, e não arredondado: com `round`, um arquivo logo acima do
+  // limite saía "tem 500 MB, e o limite é 500 MB" — a mensagem se desmentia.
+  // Quem foi recusado está acima do limite, e o número tem de mostrar isso.
+  const tem = Math.ceil(bytes / MIB);
   return {
     ok: false,
     motivo: "grande",
-    mensagem: `“${nome}” tem ${mb(bytes)} MB, e o limite é ${mb(LIMITE_DE_BYTES)} MB. Divida o áudio em partes menores e envie cada uma.`,
+    mensagem: `“${nome}” tem ${tem} MB, e o limite é ${LIMITE_DE_BYTES / MIB} MB. Divida o áudio em partes menores e envie cada uma.`,
   };
+}
+
+function recusaPorFormato(nome: string, ext: string): Veredito {
+  return {
+    ok: false,
+    motivo: "formato",
+    mensagem: ext
+      ? `Arquivos .${ext} não são aceitos. Envie o áudio em ${FORMATOS_LEGIVEIS}.`
+      : `Não reconheci o formato de “${nome}”: o nome não termina em .mp3, .m4a ou outro formato de áudio. Envie o áudio em ${FORMATOS_LEGIVEIS}.`,
+  };
+}
+
+function ehExtensaoDeAudio(ext: string): boolean {
+  return (EXTENSOES_DE_AUDIO as readonly string[]).includes(ext);
 }
 
 function recusaPorDocumento(nome: string): Veredito {
@@ -194,15 +225,7 @@ export function conferirArquivoDeAudio(a: ArquivoParaConferir): Veredito {
   if (ehDocumento(nome, a.tipo)) return recusaPorDocumento(nome);
 
   const ext = extensaoDe(nome);
-  if (!(EXTENSOES_DE_AUDIO as readonly string[]).includes(ext)) {
-    return {
-      ok: false,
-      motivo: "formato",
-      mensagem: ext
-        ? `Arquivos .${ext} não são aceitos. Envie o áudio em ${FORMATOS_LEGIVEIS}.`
-        : `Não reconheci o formato de “${nome}”: o nome não termina em .mp3, .m4a ou outro formato de áudio. Envie o áudio em ${FORMATOS_LEGIVEIS}.`,
-    };
-  }
+  if (!ehExtensaoDeAudio(ext)) return recusaPorFormato(nome, ext);
 
   if (typeof a.bytes === "number") {
     if (a.bytes <= 0) {
@@ -218,13 +241,17 @@ export function conferirArquivoDeAudio(a: ArquivoParaConferir): Veredito {
 }
 
 /**
- * A régua do SERVIDOR (só o que é claramente não-áudio). O tamanho só é
- * conferido quando o cliente o declara: na gravação do microfone a sessão
+ * A régua do SERVIDOR: a lista da tela mais ".audio" (ver o topo). O tamanho
+ * só é conferido quando o cliente o declara: na gravação do microfone a sessão
  * abre antes de existir um total.
  */
 export function recusaDoServidor(a: ArquivoParaConferir): Veredito {
   const nome = a.nome || "arquivo";
   if (ehDocumento(nome, a.tipo)) return recusaPorDocumento(nome);
+  const ext = extensaoDe(nome);
+  if (ext !== EXTENSAO_DO_MICROFONE_SEM_FORMATO && !ehExtensaoDeAudio(ext)) {
+    return recusaPorFormato(nome, ext);
+  }
   if (typeof a.bytes === "number" && a.bytes > LIMITE_DE_BYTES) {
     return recusaPorTamanho(nome, a.bytes);
   }

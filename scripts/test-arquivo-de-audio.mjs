@@ -10,10 +10,14 @@
  *
  * 2. QUE A GRAVAÇÃO DO MICROFONE NUNCA É BARRADA NO SERVIDOR. Quando o
  *    navegador não informa o formato, a gravação sai como ".audio" com MIME
- *    vazio. Uma régua de servidor "mais segura", que exigisse a lista de
- *    extensões, recusaria a sessão de envio de uma reunião real — e o áudio
- *    ficaria preso no computador da pessoa. O teste fixa a assimetria: a tela
- *    é estrita, o servidor só recusa o que é claramente não-áudio.
+ *    vazio. O servidor exige a lista de extensões, como a tela, MAS aceita
+ *    ".audio" também. Quem "arrumar" o servidor para usar só a lista da tela
+ *    recusa a sessão de envio de uma reunião real — e o áudio fica preso no
+ *    computador da pessoa. O teste fixa essa única diferença.
+ *
+ * 2b. QUE O SERVIDOR É LISTA DE ACEITE. A primeira versão era lista de
+ *    recusa, e "contrato.pdf.", "contrato.pdf1" ou "contrato" sem extensão
+ *    passavam por ela. Os casos estão aqui para que ela não volte.
  *
  * 3. O .MP4 DO WHATSAPP. É o formato em que mais chega áudio de celular, tem
  *    MIME de vídeo, e já ficou dois dias invisível para o motor uma vez.
@@ -76,7 +80,7 @@ checa(
   !pdf.ok && pdf.mensagem.includes("não é um áudio") && pdf.mensagem.includes("MP3"),
   pdf.ok ? "" : pdf.mensagem,
 );
-checa("PDF é recusado no servidor (portão real)", !servidor("Relatório.pdf", "application/pdf").ok);
+checa("PDF é recusado no servidor (a terceira porta)", !servidor("Relatório.pdf", "application/pdf").ok);
 checa("PDF sem MIME é recusado pelo nome", !servidor("Relatório.pdf", "").ok);
 checa(
   "documento disfarçado (.mp3 com MIME de PDF) é recusado pelo MIME",
@@ -95,6 +99,15 @@ for (const [nome, tipo] of [
   checa(`${nome} é recusado no servidor`, !servidor(nome, tipo).ok);
 }
 checa("ehDocumento ignora os parâmetros do MIME", ehDocumento("x", "text/plain; charset=utf-8"));
+// Pelo MIME sozinho, sem extensão que denuncie: é o que prova cada peça da
+// leitura do MIME (o prefixo image/, o corte no ";" e a minúscula). Com nome
+// "foto.jpg" a extensão recusava antes, e tirar a peça passava despercebido.
+checa("imagem sem extensão é documento pelo MIME (image/heic)", ehDocumento("foto", "image/heic"));
+checa(
+  "PDF com parâmetro no MIME é documento",
+  ehDocumento("x", "application/pdf; charset=binary"),
+);
+checa("PDF com MIME em maiúsculas é documento", ehDocumento("x", "APPLICATION/PDF"));
 
 console.log("\n— o microfone passa no servidor —");
 
@@ -109,12 +122,34 @@ for (const [nome, tipo] of [
   checa(`servidor aceita ${nome.slice(-6)} (${tipo || "MIME vazio"})`, v.ok, v.ok ? "" : v.mensagem);
 }
 checa("servidor sem tamanho declarado não confere tamanho", servidor("g.webm", "audio/webm").ok);
+checa(
+  "a tela recusa .audio (só o microfone sem formato usa, e só no servidor)",
+  !tela("x.audio", "").ok,
+);
 
-console.log("\n— formatos que o servidor deixa e a tela não —");
+console.log("\n— o servidor é lista de aceite —");
 
 const mov = tela("reuniao.mov", "video/quicktime");
 checa("tela recusa .mov (fora da lista)", !mov.ok && mov.motivo === "formato");
-checa("servidor aceita .mov (não é documento)", servidor("reuniao.mov", "video/quicktime").ok);
+const movServ = servidor("reuniao.mov", "video/quicktime");
+checa(
+  "servidor também recusa .mov (o transcritor não aceita), com 'formato'",
+  !movServ.ok && movServ.motivo === "formato",
+);
+for (const [nome, tipo] of [
+  ["contrato.pdf.", ""],
+  ["contrato.pdf​", ""],
+  ["contrato.ｐｄｆ", ""],
+  ["contrato.pdf1", ""],
+  ["contrato", ""],
+  ["x.mp3.exe", "application/octet-stream"],
+]) {
+  checa(`servidor recusa ${JSON.stringify(nome)}`, !servidor(nome, tipo).ok);
+}
+checa(
+  "e as extensões da lista passam no servidor, como na tela",
+  EXTENSOES_DE_AUDIO.every((e) => servidor(`r.${e}`, "").ok),
+);
 const semExt = tela("gravacao", "audio/mpeg");
 checa(
   "tela recusa nome sem extensão, explicando",
@@ -135,7 +170,12 @@ const grande = tela("longa.mp3", "audio/mpeg", LIMITE_DE_BYTES + 1);
 checa("1 byte acima de 500 MB é recusado", !grande.ok && grande.motivo === "grande");
 checa(
   "a mensagem dá o tamanho e o limite",
-  !grande.ok && grande.mensagem.includes("500 MB"),
+  !grande.ok && grande.mensagem.includes("o limite é 500 MB"),
+  grande.ok ? "" : grande.mensagem,
+);
+checa(
+  "logo acima do limite a mensagem não se desmente ('tem 500 MB')",
+  !grande.ok && !grande.mensagem.includes("tem 500 MB") && grande.mensagem.includes("tem 501 MB"),
   grande.ok ? "" : grande.mensagem,
 );
 checa("servidor recusa tamanho declarado acima do limite", !servidor("a.mp3", "audio/mpeg", 600 * MB).ok);

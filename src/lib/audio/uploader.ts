@@ -20,6 +20,7 @@ import {
   putChunkProxied,
   queryOffset,
   renameDriveFile,
+  ArquivoRecusadoError,
   CorsBlockedError,
   type ChunkOutcome,
 } from "../drive-upload";
@@ -108,6 +109,8 @@ type Listener = (rec: RecordingRecord) => void;
 
 class UploadManagerImpl {
   private pumping = new Set<string>();
+  /** registros em `finalizePending` agora, nesta aba (ver o método) */
+  private finalizing = new Set<string>();
   private listeners = new Set<Listener>();
   private lastFirestoreWrite = new Map<string, number>();
   private booted = false;
@@ -173,6 +176,10 @@ class UploadManagerImpl {
         continue;
       }
       if (rec.status === "failed") {
+        // O servidor disse que o arquivo não é áudio (ou é grande demais):
+        // outra chance daria a mesma resposta, e reviver aqui repetia as 12
+        // tentativas a cada abertura do app. Fica parado até ser descartado.
+        if (rec.recusado) continue;
         // nova sessão do usuário = nova chance; o áudio continua no disco
         await patchRecording(rec.id, { status: "uploading", error: null });
       }
@@ -187,24 +194,42 @@ class UploadManagerImpl {
    * própria URL), mas não com o Firestore nem com as nossas rotas, que exigem o
    * token do Firebase. Então ele marca `done` e deixa o resto aqui: atualizar a
    * reunião, aplicar o título definitivo e só então descartar o registro.
+   *
+   * Com trava, porque agora isto fala com a rede (a pendência do título) e
+   * `resumeAll` roda várias vezes ao mesmo tempo — na abertura, 2,5 s depois,
+   * a cada aviso do worker, na volta da aba. Sem ela, todas viam a mesma
+   * pendência e cada uma a mandava ao Drive. O conjunto em memória barra a
+   * repetição nesta aba sem enfileirar; a trava do navegador, a de outra aba.
+   * Dentro dela o registro é relido, porque o que `resumeAll` leu pode já ter
+   * sido aplicado e apagado por quem segurava a trava antes.
    */
-  private async finalizePending(rec: RecordingRecord): Promise<void> {
-    await this.writeFirestore(rec, true);
-    await deleteChunks(rec.id);
-    // O modal pode ter confirmado o título enquanto o worker enviava: a
-    // pendência vai ao Drive antes de o registro sumir, senão sumiria com ele.
-    const semPendencia = await this.applyPendingRename(rec);
-    // Ainda pode haver um formulário aberto esperando o título definitivo.
-    // Passado esse prazo consideramos abandonado e ficamos com o nome provisório.
-    const stale = Date.now() - rec.createdAt > TITLE_GRACE_MS;
-    if (stale && !semPendencia) {
-      console.error(
-        "Desistindo de levar o título ao Drive depois de 6 h de tentativas:",
-        rec.id,
-      );
-    }
-    if ((rec.titleConfirmed && semPendencia) || stale) {
-      await deleteRecording(rec.id);
+  private async finalizePending(lido: RecordingRecord): Promise<void> {
+    if (this.finalizing.has(lido.id)) return;
+    this.finalizing.add(lido.id);
+    try {
+      await withLock(`smartmeet-fin-${lido.id}`, async () => {
+        const rec = await getRecording(lido.id);
+        if (!rec || rec.status !== "done") return;
+        await this.writeFirestore(rec, true);
+        await deleteChunks(rec.id);
+        // O modal pode ter confirmado o título enquanto o worker enviava: a
+        // pendência vai ao Drive antes de o registro sumir, senão sumiria com ele.
+        const semPendencia = await this.applyPendingRename(rec);
+        // Ainda pode haver um formulário aberto esperando o título definitivo.
+        // Passado esse prazo consideramos abandonado e ficamos com o nome provisório.
+        const stale = Date.now() - rec.createdAt > TITLE_GRACE_MS;
+        if (stale && !semPendencia) {
+          console.error(
+            "Desistindo de levar o título ao Drive depois de 6 h de tentativas:",
+            rec.id,
+          );
+        }
+        if ((rec.titleConfirmed && semPendencia) || stale) {
+          await deleteRecording(rec.id);
+        }
+      });
+    } finally {
+      this.finalizing.delete(lido.id);
     }
   }
 
@@ -462,6 +487,22 @@ class UploadManagerImpl {
         attempt = 0;
         directFailures = 0;
       } catch (e) {
+        // Recusa do servidor não é falha de rede: falha na hora, sem as 12
+        // tentativas, e a reunião passa a dizer "falha" em vez de esperar por
+        // um áudio que nunca vai chegar.
+        if (e instanceof ArquivoRecusadoError) {
+          const recusado = await patchRecording(recordingId, {
+            status: "failed",
+            error: e.message,
+            recusado: true,
+          });
+          if (recusado) {
+            this.emit(recusado);
+            await this.writeFirestore(recusado, true);
+          }
+          return;
+        }
+
         // Preflight barrado e queda de rede chegam iguais ao JavaScript. Se
         // estamos online e o envio direto falhou duas vezes seguidas, é CORS —
         // passamos a repassar os blocos pelo nosso servidor.

@@ -57,6 +57,21 @@ export type ChunkOutcome =
   | { state: "complete"; file: DriveResult }
   | { state: "expired" };
 
+/**
+ * O servidor recusou o arquivo pelo que ele É (tipo, 415; tamanho, 413), e não
+ * por uma falha que passa. Repetir o pedido dá a mesma resposta. Com um
+ * `Error` comum, o uploader tratava a recusa como queda de rede: 12
+ * tentativas, e mais 12 a cada abertura do app, para sempre.
+ */
+export class ArquivoRecusadoError extends Error {
+  readonly status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ArquivoRecusadoError";
+    this.status = status;
+  }
+}
+
 /** Abre a sessão de upload; o servidor cuida da pasta e das permissões. */
 export async function createUploadSession(params: {
   name: string;
@@ -81,7 +96,11 @@ export async function createUploadSession(params: {
   });
   if (!res.ok) {
     const e = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(e.error || "Falha ao preparar o upload no Drive.");
+    const message = e.error || "Falha ao preparar o upload no Drive.";
+    if (res.status === 413 || res.status === 415) {
+      throw new ArquivoRecusadoError(message, res.status);
+    }
+    throw new Error(message);
   }
   return (await res.json()) as { uploadUrl: string; folderId?: string };
 }

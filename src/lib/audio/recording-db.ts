@@ -96,6 +96,16 @@ export type RecordingRecord = {
    * `Object.assign` sobre o registro, e o campo atravessa intacto.
    */
   pendingRename?: PendingRename | null;
+  /**
+   * true quando o servidor recusou o arquivo pelo que ele é (não é áudio, ou
+   * passa do limite). Distingue esta "falha" da falha de rede: a de rede volta
+   * a ser tentada a cada abertura do app, esta não — a resposta seria a mesma.
+   * O registro fica até a pessoa descartá-lo, para que a recusa apareça na
+   * faixa de recuperação em vez de sumir calada. O service worker não precisa
+   * conhecer o campo: ele só envia registros "uploading" com sessão aberta, e
+   * um recusado nunca teve sessão.
+   */
+  recusado?: boolean;
 };
 
 export type PendingRename = {

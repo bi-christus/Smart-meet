@@ -56,12 +56,15 @@ export async function POST(req: Request) {
       throw new HttpError(403, "Você não participa deste setor.");
     }
 
-    // O PORTÃO REAL do tipo de arquivo. A tela já confere antes de abrir o
-    // modal, mas abas antigas continuam abertas com o código velho, e esta
-    // rota pode ser chamada direto — foi assim que um PDF virou reunião.
-    // Aqui a régua é a frouxa (só recusa o que é claramente documento,
-    // imagem ou texto): a gravação do microfone também passa por esta rota e
-    // pode chegar como ".audio" sem MIME. Ver `arquivo-de-audio-core.ts`.
+    // A terceira porta do tipo de arquivo. A tela já confere antes de abrir o
+    // modal, mas abas antigas continuam abertas com o código velho — foi
+    // assim que um PDF virou reunião. É barreira contra ENGANO (aba antiga,
+    // arquivo arrastado), não contra quem chama de propósito: o nome e o MIME
+    // são o que o cliente declara, e quem quiser mentir neles passa. O dano
+    // de passar fica na pasta da própria pessoa. Régua: a lista de áudio da
+    // tela, mais ".audio" para o microfone sem formato
+    // (`arquivo-de-audio-core.ts`). 413 e 415, e não 400, porque o cliente
+    // trata os dois como recusa definitiva e não tenta de novo.
     const veredito = recusaDoServidor({
       nome: name,
       tipo: body.mimeType,

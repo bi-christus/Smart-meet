@@ -423,7 +423,12 @@ export default function ReunioesPage() {
                 <button
                   key={id}
                   className={`${styles.modeTab} ${mode === id ? styles.on : ""}`}
-                  onClick={() => setMode(id)}
+                  onClick={() => {
+                    setMode(id);
+                    // A recusa é de um arquivo que já saiu da tela: ao voltar
+                    // para "Enviar arquivo", ela reapareceria sem motivo.
+                    setFileError(null);
+                  }}
                   disabled={recording}
                 >
                   <Icon name={ic} size={14} />
@@ -1013,17 +1018,6 @@ function NewMeetingModal({
           output: escolha,
           ...(obs ? { aiNotes: obs } : {}),
         });
-        if (confirm.recordingId) {
-          // A sessão de upload abriu antes de o campo existir, então as
-          // observações — e a escolha, que abriu com o padrão — só chegam ao
-          // arquivo agora (ou quando o envio terminar, se ainda não terminou).
-          await uploadManager.applyTitle(
-            confirm.recordingId,
-            clean,
-            obs,
-            escolha,
-          );
-        }
       } else if (confirm.file) {
         // Arquivo: o envio começa agora e segue em segundo plano, retomável.
         // A escolha vai na abertura da sessão, que grava o `smGerar`.
@@ -1040,6 +1034,7 @@ function NewMeetingModal({
           });
         }
       } else {
+        // Online, ou microfone cujo rascunho não pôde ser criado no início.
         await createMeeting(
           {
             title: clean,
@@ -1048,12 +1043,29 @@ function NewMeetingModal({
             participants: [],
             ...(obs ? { aiNotes: obs } : {}),
             send: confirm.send,
-            output: escolha,
+            // O padrão com a detalhada é para áudio. A online não mostra a
+            // lista, e gravar a escolha que ninguém viu contaria como pedido
+            // da detalhada — justo o número de adesão que motivou a #248.
+            output: temAudio ? escolha : normalizarEscolha([]),
             durationMin: confirm.durationMin,
             driveFileId: null,
             driveLink: null,
           },
           actorEmail,
+        );
+      }
+      if (confirm.recordingId) {
+        // Microfone: a sessão de upload abriu antes de o campo existir, então
+        // as observações — e a escolha, que abriu com o padrão — só chegam ao
+        // arquivo agora (ou quando o envio terminar, se ainda não terminou).
+        // Fora do if/else de propósito: quando o rascunho falhou no início
+        // da gravação, o caminho é o `createMeeting`, e dentro do primeiro
+        // ramo o áudio ficava com o título provisório e a escolha padrão.
+        await uploadManager.applyTitle(
+          confirm.recordingId,
+          clean,
+          obs,
+          escolha,
         );
       }
       onClose();
@@ -1089,7 +1101,10 @@ function NewMeetingModal({
                 ? "O envio ao Drive começa ao confirmar e continua em segundo plano, retomando sozinho se a rede cair."
                 : ""}
             {temAudio
-              ? " Depois, a transcrição com quem falou e os documentos marcados abaixo chegam por e-mail."
+              ? // "Da lista", e não "marcados": os de cadeado não têm marca e
+                // também vêm. O hífen de e‑mail é o inseparável (U+2011), para
+                // a linha não quebrar em "e-" / "mail".
+                " Depois, a transcrição e os documentos da lista abaixo aparecem na reunião e chegam por e‑mail."
               : ""}
           </div>
 
@@ -1361,9 +1376,13 @@ function MeetingModal({
 
           <div className={styles.hint}>
             🎧 Origem: <b>{SEND_LABEL[meeting.send ?? "file"]}</b>
-            {meeting.durationMin ? ` · ${meeting.durationMin} min` : ""}. A
-            transcrição e a ata automáticas chegam na <b>Fase 4</b> — por ora você
-            pode colá-las abaixo.
+            {meeting.durationMin ? ` · ${meeting.durationMin} min` : ""}.{" "}
+            {/* O "Fase 4" que estava aqui prometia um futuro que já chegou e
+                desmentia o modal de registro, que diz o que acontece hoje. A
+                online não tem áudio, então nada chega sozinho para ela. */}
+            {meeting.send === "online"
+              ? "Reunião online não tem áudio no Drive: se tiver a transcrição ou a ata, cole abaixo."
+              : "A transcrição e os documentos chegam depois e aparecem aqui quando ficam prontos; se precisar, cole abaixo."}
           </div>
 
           {meeting.driveLink && canSeeAudio && (

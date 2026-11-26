@@ -104,6 +104,16 @@ checa(
   igual(alternarAta(alternarAta(padrao, "didatica"), "didatica"), padrao),
 );
 checa("resumo tem cadeado: alternar não o tira", igual(alternarAta(padrao, "resumo"), padrao));
+// Desmarcar e remarcar a detalhada depois da didática: sem a normalização no
+// alternar, a lista sairia na ordem do clique (didatica antes de detalhada),
+// e é ela que vai para `meeting.output`.
+checa(
+  "alternar devolve a ordem da lista, não a do clique",
+  igual(
+    alternarAta(alternarAta(alternarAta(padrao, "detalhada"), "didatica"), "detalhada"),
+    ["resumo", "detalhada", "didatica"],
+  ),
+);
 checa(
   "alternar não muta a lista recebida",
   igual(padrao, ["resumo", "detalhada"]),
