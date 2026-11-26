@@ -1,0 +1,55 @@
+/* O selo é um pedaço de LINHA DE TEXTO: ele entra no meio de "B.I. · 25 nov"
+   e tem de alinhar com o texto em volta. Fonte, peso e cor do nome vêm de quem
+   o usa — no cabeçalho da seção ele é título, na linha da esteira é detalhe
+   cinza, e o selo não decide isso.
+
+   O ALINHAMENTO É PELA LINHA DE BASE DO NOME, e não `vertical-align: middle`.
+   Com `middle` a caixa inteira descia (medido: o nome 1,6 px abaixo do "· 24
+   nov" ao lado, na esteira). Com o nome em `align-self: baseline`, a linha de
+   base do selo passa a ser a dele — a mesma do texto em volta, porque a fonte
+   é herdada —, e o glifo centraliza na altura do nome. */
+.selo {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  vertical-align: baseline;
+}
+.glifo {
+  display: block;
+  flex: none;
+}
+.nome {
+  align-self: baseline;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Um seletor por tom, escritos à mão: são os que o guarda e o teste
+   (`scripts/test-selo-setor.mjs`) conseguem conferir. Tom sem regra aqui
+   pintaria o glifo com a cor do texto — legível, mas mentindo que o setor não
+   tem cor. */
+.glifo[data-tom="1"] {
+  color: var(--setor-1);
+}
+.glifo[data-tom="2"] {
+  color: var(--setor-2);
+}
+.glifo[data-tom="3"] {
+  color: var(--setor-3);
+}
+.glifo[data-tom="4"] {
+  color: var(--setor-4);
+}
+.glifo[data-tom="5"] {
+  color: var(--setor-5);
+}
+.glifo[data-tom="6"] {
+  color: var(--setor-6);
+}
+.glifo[data-tom="7"] {
+  color: var(--setor-7);
+}

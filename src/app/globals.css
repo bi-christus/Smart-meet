@@ -409,6 +409,89 @@
   outline-offset: 2px;
 }
 
+/* ---------------------------------------------------------------------------
+   SELO DO SETOR (#249) — o tom do glifo que vai ao lado do nome do setor.
+
+   Quem escolhe o tom de cada setor é `lib/selo-setor-core.ts`; aqui mora só a
+   tinta. Ela pinta o GLIFO e nada mais: fundo ou borda de card na cor do setor,
+   ao lado dos chips de status, faria "Processado" e "Cantinas" disputarem a
+   mesma leitura.
+
+   Um bloco só para eles, e não sete linhas dentro de cada tema lá em cima,
+   porque os acentos NÃO mexem aqui: café e Entre Aulas herdam o escuro e o
+   claro. O selo é o mesmo em todo acento — e foi validado contra as superfícies
+   de todos (abaixo).
+
+   COMO OS VALORES FORAM ESCOLHIDOS. Partiram das famílias da paleta do
+   Dashboard (`--serie-*`) e foram medidos com o validador da skill dataviz,
+   em OKLab ×100, contra as superfícies reais (s1, card e fundo):
+     escuro    #151517 #1c1c1f #0d0d0f + café #1f1712 #271e17 #17110d
+               + Entre Aulas #1f1613 #281d19 #17100e  → todos ≥ 3,5:1
+     claro     #f6f5f1 #ffffff #f1f0ec + café #f5ecdf #fdf8ef #efe5d5
+               + Entre Aulas #f7f5ee #fffdf8 #efe9df  → todos ≥ 3,1:1
+     contraste #000000 #0b0b0b                         → todos ≥ 5,8:1
+   (3:1 é o piso do WCAG para elemento gráfico.) Por isso o selo nunca senta em
+   `--s3` nem em `--brand-soft`: no café claro, os dois derrubam o violeta e o
+   âmbar para 2,8–3,0:1. O chip marcado do filtro se distingue pela borda.
+
+   Os tons 1 a 4 são os dos quatro setores que têm reunião, e passam em TODOS
+   os pares nos três temas: daltonismo ≥ 9,4 e visão normal ≥ 18,3. Os sete
+   juntos não passam (não achei paleta de sete que passe com esse piso de
+   contraste nos três temas), e é por isso que o selo nunca é só cor: a forma
+   desempata e o nome está sempre escrito. Os pares que se confundem estão em
+   `TONS_PARECIDOS`, e a tabela de setores nunca os põe em formas parecidas.
+
+   Dois degraus de luz, de propósito: violeta, âmbar e verde-água são os claros
+   e rosa, azul, laranja e verde os escuros, nos três temas. Com azul e violeta
+   na mesma luz o deuteranope não os separa (ΔE 0,6 no escuro).
+
+   O contraste sai da faixa de luz do validador (L 0,48–0,70), e é escolha: a
+   faixa existe para gráfico em tema escuro comum, e este tema clareia tudo de
+   propósito — três dos status dele (--ok, --warn, --susp) ficam entre L 0,80
+   e 0,86, e o selo segue o mesmo degrau.
+
+   COLISÕES ACEITAS COM A MARCA E OS STATUS (revisão do #249). As medidas acima
+   eram contra as superfícies e entre os próprios tons; contra --brand,
+   --accent e os cinco status, cada tom fica a menos de 8 (OKLab ×100) da
+   família de status do seu matiz em algum tema, e o âmbar e o laranja
+   encostam na marca dos acentos quentes. As que pesam: âmbar (Diretoria) ×
+   --brand do café escuro 4,7 e × --warn do Entre Aulas claro 2,0; laranja
+   (Serve-cy) × --warn-tx do claro 1,7 e × --accent do claro 2,5. Ficam porque
+   o selo pinta só o glifo, sempre com forma e nome, e nunca o fundo, a borda
+   ou o chip, que é onde status e marca se leem — e porque sete matizes num
+   app que já gasta cinco em status não têm para onde fugir. A lista completa,
+   e a regra de que um tom só encosta na família DELE, estão em
+   `scripts/test-selo-setor.mjs`: mexeu num hex aqui ou num acento lá em cima,
+   o teste mede de novo. */
+:root,
+[data-theme="dark"] {
+  --setor-1: #a787f6; /* violeta */
+  --setor-2: #c4486d; /* rosa */
+  --setor-3: #0482c0; /* azul */
+  --setor-4: #c88f03; /* âmbar */
+  --setor-5: #03aa8e; /* verde-água */
+  --setor-6: #c4530f; /* laranja */
+  --setor-7: #3d9028; /* verde */
+}
+[data-theme="light"] {
+  --setor-1: #8f6edb;
+  --setor-2: #a12751;
+  --setor-3: #066494;
+  --setor-4: #a97908;
+  --setor-5: #088f77;
+  --setor-6: #b84b03;
+  --setor-7: #1f7101;
+}
+[data-theme="contraste"] {
+  --setor-1: #c8b7ff;
+  --setor-2: #db6686;
+  --setor-3: #069ce4;
+  --setor-4: #f2b438;
+  --setor-5: #0bd5b2;
+  --setor-6: #db703b;
+  --setor-7: #5ba84a;
+}
+
 * {
   box-sizing: border-box;
   padding: 0;

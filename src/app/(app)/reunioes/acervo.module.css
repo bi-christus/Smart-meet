@@ -1,0 +1,375 @@
+/* ---------- acervo de reuniões (#249) ----------
+   Nenhuma regra desta folha tem `animation`, e é de propósito: buscar, filtrar,
+   trocar de visão e abrir seção são gestos de alta frequência, e a versão
+   anterior reanimava a lista inteira (fade de 0,3 s em cada card) a cada
+   clique de filtro. As únicas transições são de ESTADO de um elemento só — o
+   giro do chevron, a borda no hover —, as mesmas da tela de Relatórios IA. */
+.acervo {
+  margin-top: 26px;
+}
+.head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.head h2 {
+  font-size: 15px;
+  font-weight: 700;
+  margin-right: 4px;
+}
+
+/* ---------- busca ---------- */
+.buscaCampo {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 12px;
+  flex: 1;
+  min-width: 200px;
+  max-width: 360px;
+  border: 1px solid var(--line-soft);
+  background: var(--card);
+  border-radius: 9px;
+  color: var(--tx-3);
+  transition: border-color 0.18s;
+}
+.buscaCampo:focus-within {
+  border-color: var(--brand);
+}
+/* O `search` nativo já traz o X de limpar e responde ao Escape — melhor que um
+   botão nosso, e é o mesmo campo de Relatórios IA. */
+.buscaInput {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  color: var(--tx);
+  font-family: inherit;
+  font-size: 13px;
+  padding: 0;
+}
+.buscaInput:focus {
+  outline: none;
+}
+.buscaConta {
+  font-size: 12px;
+  color: var(--tx-3);
+  margin: -4px 0 12px;
+}
+
+/* ---------- Por setor | Por data ----------
+   O mesmo desenho das abas da captura, na mesma tela (`.modeTabs`): dois
+   controles segmentados com cara diferente a 300 px um do outro fariam
+   parecer que um deles faz outra coisa. */
+.visoes {
+  display: inline-flex;
+  background: var(--s2);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 3px;
+  gap: 2px;
+  margin-left: auto;
+}
+.visaoBtn {
+  padding: 5px 12px;
+  border: none;
+  background: none;
+  border-radius: 6px;
+  color: var(--tx-2);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.visaoBtn:hover {
+  color: var(--tx);
+}
+.visaoOn,
+.visaoOn:hover {
+  background: var(--brand);
+  color: #fff;
+}
+
+/* ---------- filtro de setor (visão por data) ----------
+   O chip marcado se distingue pela BORDA, e o fundo fica em `--card`. O padrão
+   da casa (`--brand-soft` de fundo) derrubava o glifo violeta e o âmbar para
+   2,8:1 no café claro — abaixo do piso de 3:1 que o selo foi validado para
+   ter. */
+.filtros {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.filtroBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 11px;
+  border: 1px solid var(--line-soft);
+  background: var(--s1);
+  color: var(--tx-2);
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.filtroBtn:hover {
+  border-color: var(--line);
+  color: var(--tx);
+}
+.filtroOn,
+.filtroOn:hover {
+  border-color: var(--brand);
+  box-shadow: inset 0 0 0 1px var(--brand);
+  background: var(--card);
+  color: var(--tx);
+  font-weight: 600;
+}
+.filtroConta {
+  font-size: 11px;
+  color: var(--tx-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- seções por setor ---------- */
+.secoes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.secao {
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  background: var(--card);
+  overflow: hidden;
+}
+/* O marcador nativo sai nos dois dialetos: `::marker` e o
+   `::-webkit-details-marker` do Safari. Ficando um, o triângulo do navegador
+   aparece ao lado do nosso chevron. */
+.secaoHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 15px;
+  cursor: pointer;
+  list-style: none;
+  color: var(--tx);
+}
+.secaoHead::-webkit-details-marker {
+  display: none;
+}
+.secaoHead::marker {
+  content: "";
+}
+/* O anel de foco vai para DENTRO do cabeçalho. A `.secao` recorta
+   (`overflow: hidden`, para o fundo da gaveta respeitar o canto redondo), e o
+   anel do tema contraste — 2 px afastado 2 px da caixa — caía inteiro do lado
+   de fora: some com a seção fechada, e só a borda de baixo aparecia com ela
+   aberta. Justamente no tema de quem navega pelo teclado. O seletor tem duas
+   classes para vencer a regra global sem depender da ordem das folhas, e o
+   `!important` de lá vale só para `outline`, não para o afastamento. O raio
+   (os 12 px da seção menos a borda) é para o anel acompanhar a curva: reto,
+   os quatro cantos dele caíam fora do recorte redondo e sumiam. */
+.secao > .secaoHead:focus-visible {
+  outline-offset: -3px;
+  border-radius: 11px;
+}
+.secao[open] > .secaoHead:focus-visible {
+  border-radius: 11px 11px 0 0;
+}
+/* Hover em `--s1`, e não em `--s3` como em Relatórios: sobre `--s3` o glifo
+   violeta e o âmbar do café claro caem para 2,97:1, abaixo do piso, e o hover
+   é justamente quando a pessoa está olhando para ele. */
+.secaoHead:hover {
+  background: var(--s1);
+}
+/* Girar a seta é transição de ESTADO (a seção abriu), não enfeite. A altura da
+   gaveta NÃO anima: B.I. tem 68 reuniões, e animar isso é custo sem
+   informação. */
+.secaoHead > svg:first-child {
+  color: var(--tx-3);
+  flex: none;
+  transition: transform 0.18s cubic-bezier(0.2, 0, 0, 1);
+}
+.secao[open] .secaoHead > svg:first-child {
+  transform: rotate(90deg);
+}
+.secaoNome {
+  flex: 1;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.secaoConta {
+  flex: none;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--tx-2);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 20px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+/* A gaveta desce para `--bg`, o fundo da página: os cards de dentro (`--s1`)
+   voltam a ser cards contra ela. Com o mesmo `--card` da seção, eles sumiam —
+   foi o que Relatórios IA aprendeu primeiro. */
+.gaveta {
+  padding: 4px 15px 15px;
+  background: var(--bg);
+  border-top: 1px solid var(--line-soft);
+}
+
+/* ---------- meses ---------- */
+.mes {
+  margin-top: 14px;
+}
+.porData > .mes:first-child {
+  margin-top: 0;
+}
+/* Cabeçalho ESTÁTICO: não abre nem fecha. Recolher em dois níveis (setor e
+   mês) seria dois cliques para chegar numa reunião, e o mês só existe para a
+   pessoa saber onde está na rolagem. */
+.mesTitulo {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--tx-3);
+  margin-bottom: 8px;
+}
+.mesConta {
+  font-weight: 600;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+.lista {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 8px;
+}
+@media (max-width: 560px) {
+  .lista {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---------- a reunião ---------- */
+.item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 12px 11px 14px;
+  background: var(--s1);
+  border: 1px solid var(--line-soft);
+  border-radius: 11px;
+  cursor: pointer;
+  transition: border-color 0.12s;
+}
+.item:hover {
+  border-color: var(--line);
+}
+.itemMain {
+  flex: 1;
+  min-width: 0;
+}
+/* O título é o botão de abrir (o card inteiro abre com o mouse; o teclado
+   precisa de um alvo de verdade). Sem cara de botão: ele É o título. */
+.itemTitulo {
+  display: block;
+  max-width: 100%;
+  border: 0;
+  background: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--tx);
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+/* O SEPARADOR MORA NO VÃO, e não no texto. Escrito como "· via arquivo", ele
+   ia junto quando a linha quebrava, e a segunda linha começava com um ponto
+   solto (era assim no acervo antigo, e acontece em todo card estreito e no
+   celular). Aqui cada pedaço desenha o seu "·" 9 px à ESQUERDA de si, dentro
+   do `column-gap` — que só existe entre itens da mesma linha. No começo de
+   uma linha não há vão: o ponto cai fora da caixa e o recorte o some. A
+   margem de recorte é de 4 px: os 2 do anel mais os 2 de afastamento do tema
+   contraste, para o foco do link "Áudio no Drive" aparecer inteiro — com 3,
+   metade dele sumia em cima e embaixo. O ponto, a 9 px, continua de fora. */
+.itemMeta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  column-gap: 13px;
+  row-gap: 2px;
+  margin-top: 4px;
+  color: var(--tx-3);
+  font-size: 12px;
+  overflow: hidden;
+  overflow: clip;
+  overflow-clip-margin: 4px;
+}
+.itemMeta > * {
+  position: relative;
+}
+/* O ponto é desenho, e o texto alternativo vazio (`"·" / ""`) o tira do que o
+   leitor de tela lê — inclusive o do primeiro item, que nem aparece. A
+   primeira linha é a reserva para navegador que não entende a barra: sem ela,
+   a declaração inteira seria descartada e o ponto sumiria da tela também. */
+.itemMeta > *::before {
+  content: "·";
+  content: "·" / "";
+  position: absolute;
+  left: -9px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--tx-3);
+  font-weight: 400;
+}
+.badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  padding: 3px 9px;
+  border-radius: 20px;
+  flex: none;
+}
+
+/* Fora da tela, presente para o leitor: o aviso da contagem da busca e o
+   setor dentro do título de cada mês. */
+.soLeitor {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .secaoHead > svg:first-child {
+    transition: none;
+  }
+}
