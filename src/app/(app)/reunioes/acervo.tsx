@@ -24,6 +24,7 @@ import {
   type MeetingStatus,
 } from "@/lib/meetings";
 import { diaDaReuniao, montarAcervo, type MesDoAcervo } from "@/lib/acervo-core";
+import { chaveDoSetor } from "@/lib/selo-setor-core";
 import { Icon } from "@/components/icons";
 import { SeloSetor } from "@/components/selo-setor";
 import { EmptyState } from "@/components/empty-state";
@@ -136,6 +137,16 @@ export function Acervo({
   const acervo = useMemo(
     () => montarAcervo(meetings, { busca, setor: filtro }),
     [meetings, busca, filtro],
+  );
+  /**
+   * O nome do GRUPO de cada setor, para o selo de cada reunião na visão por
+   * data. Com `m.sector` cru, a reunião gravada como "b.i." mostraria "b.i."
+   * logo abaixo do chip "B.I." que a filtrou — a tela afirmando que são um
+   * setor só e escrevendo dois.
+   */
+  const nomes = useMemo(
+    () => new Map(acervo.setores.map((s) => [s.chave, s.setor])),
+    [acervo.setores],
   );
 
   /**
@@ -279,7 +290,10 @@ export function Acervo({
           icon="search"
           title="Nenhuma reunião com esse termo"
           description={
-            acervo.filtro !== null
+            // O filtro sobrevive à troca de visão, mas só a visão por data o
+            // aplica (e mostra o "Todas" para voltar): na por setor, falar dele
+            // seria mandar a pessoa procurar um botão que não está na tela.
+            visao === "data" && acervo.filtro !== null
               ? "A busca olha o título e o setor, só no setor escolhido. Tente outra palavra, ou volte para Todas."
               : "A busca olha o título e o setor. Tente uma palavra do assunto, ou limpe o campo para ver tudo."
           }
@@ -292,13 +306,22 @@ export function Acervo({
             const aberta = buscando || (mexidas[s.chave] ?? s.chave === chavePadrao);
             return (
               <details
-                key={s.chave}
+                // A chave troca ao entrar e ao sair da busca, e a seção nasce
+                // de novo no estado certo. Com a mesma chave, o React só mexe
+                // no `open` quando o valor PEDIDO muda — compara com o desenho
+                // anterior, nunca com a tela: a seção padrão fechada à mão
+                // durante a busca seguia pedindo "aberta", o React não a
+                // reabria ao limpar, e na busca seguinte ela ficava fechada
+                // com resultado dentro. Nascer de novo também deixa o chevron
+                // quieto ao buscar (transição não roda no primeiro estilo de
+                // um elemento): só o clique da pessoa o gira.
+                key={buscando ? `${s.chave}:busca` : s.chave}
                 className={styles.secao}
                 open={aberta}
                 onToggle={(e) => {
-                  // O `toggle` também dispara quando o React muda o `open`
-                  // (a busca abriu, a busca limpou). Só vira escolha da pessoa
-                  // o que diverge do que a tela pediu — e nada durante a busca,
+                  // O `toggle` também dispara quando o React põe o `open` na
+                  // seção que acabou de nascer. Só vira escolha da pessoa o
+                  // que diverge do que a tela pediu — e nada durante a busca,
                   // que abre tudo por conta própria.
                   const agora = e.currentTarget.open;
                   if (buscando || agora === aberta) return;
@@ -325,7 +348,12 @@ export function Acervo({
         // Por data, e também a única visão de quem tem um setor só. Aí o selo
         // repetido em cada reunião não distingue nada, e sai.
         <div className={styles.porData}>
-          <Meses meses={acervo.meses} comSelo={acervo.porSetor} {...acoes} />
+          <Meses
+            meses={acervo.meses}
+            comSelo={acervo.porSetor}
+            nomes={nomes}
+            {...acoes}
+          />
         </div>
       )}
     </section>
@@ -335,11 +363,14 @@ export function Acervo({
 function Meses({
   meses,
   comSelo,
+  nomes,
   setor,
   ...acoes
 }: {
   meses: MesDoAcervo<Meeting>[];
   comSelo: boolean;
+  /** Chave do setor → nome do grupo; ver `nomes` em `Acervo`. */
+  nomes?: ReadonlyMap<string, string>;
   /**
    * O setor da seção, só para o leitor de tela. Quem pula de título em título
    * ouvia "Novembro de 2026" quatro vezes, uma por seção, sem saber de qual;
@@ -358,7 +389,13 @@ function Meses({
           </h3>
           <div className={styles.lista}>
             {mes.itens.map((m) => (
-              <Reuniao key={m.id} m={m} comSelo={comSelo} {...acoes} />
+              <Reuniao
+                key={m.id}
+                m={m}
+                comSelo={comSelo}
+                nomeDoSetor={nomes?.get(chaveDoSetor(m.sector)) ?? m.sector}
+                {...acoes}
+              />
             ))}
           </div>
         </section>
@@ -370,10 +407,11 @@ function Meses({
 function Reuniao({
   m,
   comSelo,
+  nomeDoSetor,
   onOpen,
   onDelete,
   canSeeAudio,
-}: { m: Meeting; comSelo: boolean } & Acoes) {
+}: { m: Meeting; comSelo: boolean; nomeDoSetor: string } & Acoes) {
   const dia = diaDaReuniao(m.date);
   return (
     // O card inteiro abre a reunião com o mouse; o título é o BOTÃO, para o
@@ -393,7 +431,7 @@ function Reuniao({
           {m.title}
         </button>
         <div className={styles.itemMeta}>
-          {comSelo && <SeloSetor setor={m.sector} />}
+          {comSelo && <SeloSetor setor={nomeDoSetor} />}
           <span>{dia ?? "sem data"}</span>
           <span>via {SEND_LABEL[m.send ?? "file"]}</span>
           {/* só quando alguém marcou presença no modal da reunião — o

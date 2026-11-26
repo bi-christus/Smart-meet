@@ -26,6 +26,10 @@
  *    tom que passa a encostar numa família que não é a dele. A medida é feita
  *    sobre o `globals.css` real, em todo tema e acento, com a cascata
  *    resolvida.
+ * 6. QUE A FOLHA CONTINUA DIZENDO O QUE A TABELA SUPÕE. A tabela confia em
+ *    `TONS_PARECIDOS` para saber que cor separa; se um hex for retocado e dois
+ *    tons colarem fora da lista, ou um tom sumir no fundo (menos de 3:1), a
+ *    tabela continua "certa" e a tela erra. Medido na mesma cascata do item 5.
  *
  * Roda com o strip de tipos nativo do Node sobre o .ts real — sem cópia.
  */
@@ -334,6 +338,80 @@ checa(
 // para ela continuar dizendo o que a tela faz hoje.
 const velhas = [...aceitas].filter((p) => !medidas.has(p));
 checa("e toda colisão aceita ainda existe (a lista não apodrece)", velhas.length === 0, velhas.map(rotulo).join("; "));
+
+console.log("\n— os tons entre si e contra o fundo —");
+
+// `TONS_PARECIDOS` e a tabela foram escolhidos contra os hex de hoje; sem esta
+// medida, retocar um `--setor-N` na folha deixaria o azul colado no violeta de
+// B.I. com tudo verde, porque o resto do arquivo confere a tabela contra a
+// LISTA, não contra a folha. 15 é o piso da skill dataviz para visão normal.
+// Só nessa direção: a lista também tem pares que entraram pelo daltonismo, e
+// esses passam de 15 com visão normal — exigir o contrário os tiraria dela.
+const SEPARA = 15;
+const entreTons = new Map();
+if (faltam.length === 0)
+  for (const { theme, accent, v } of combinacoes)
+    for (let a = 1; a <= TONS; a++)
+      for (let b = a + 1; b <= TONS; b++) {
+        const d = distancia(v[`--setor-${a}`], v[`--setor-${b}`]);
+        const par = `${a}|${b}`;
+        if (d < (entreTons.get(par)?.d ?? Infinity)) entreTons.set(par, { d, onde: `${theme}/${accent}` });
+      }
+const pertoDemais = [...entreTons.entries()]
+  .filter(([, m]) => m.d < SEPARA)
+  .map(([par, m]) => ({ par: par.split("|").map(Number), ...m }));
+const nomeDoPar = ({ par: [a, b], d, onde }) =>
+  `${NOME_DO_TOM[a]} (${a}) × ${NOME_DO_TOM[b]} (${b}) ${d.toFixed(1)} em ${onde}`;
+const ativosColados = pertoDemais.filter(({ par: [a, b] }) => a <= 4 && b <= 4);
+checa(
+  `os tons 1 a 4 (os setores com reunião) ficam a ${SEPARA} ou mais entre si`,
+  ativosColados.length === 0,
+  ativosColados.map(nomeDoPar).join("; "),
+);
+const foraDaLista = pertoDemais.filter(({ par: [a, b] }) => !parecido(TONS_PARECIDOS, a, b));
+checa(
+  `todo par de tons abaixo de ${SEPARA} está em TONS_PARECIDOS`,
+  foraDaLista.length === 0,
+  foraDaLista.map(nomeDoPar).join("; "),
+);
+
+// 3:1 é o piso do WCAG para elemento gráfico, e o glifo é o selo inteiro. As
+// superfícies são onde ele senta: o fundo, o card do item e o `--s1` do hover
+// da seção (não o `--s3`, que derruba violeta e âmbar — ver acervo.module.css).
+const luminancia = (hex) => {
+  const [r, g, b] = [1, 3, 5]
+    .map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+    .map((c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+const contraste = (a, b) => {
+  const [x, y] = [luminancia(a), luminancia(b)].sort((p, q) => q - p);
+  return (x + 0.05) / (y + 0.05);
+};
+const semSuperficie = [];
+const apagados = [];
+if (faltam.length === 0)
+  for (const { theme, accent, v } of combinacoes)
+    for (const sup of ["--s1", "--card", "--bg"]) {
+      if (!/^#[0-9a-f]{6}$/i.test(v[sup] ?? "")) {
+        semSuperficie.push(`${theme}/${accent} ${sup}=${v[sup]}`);
+        continue;
+      }
+      for (const t of tons) {
+        const c = contraste(v[`--setor-${t}`], v[sup]);
+        if (c < 3) apagados.push(`${NOME_DO_TOM[t]} (${t}) em ${sup} ${theme}/${accent}: ${c.toFixed(2)}:1`);
+      }
+    }
+checa(
+  "a cascata acha um hex para --s1, --card e --bg em todo tema e acento",
+  semSuperficie.length === 0,
+  semSuperficie.slice(0, 4).join("; "),
+);
+checa(
+  "todo tom fica a 3:1 ou mais de --s1, --card e --bg, em todo tema e acento",
+  apagados.length === 0,
+  apagados.slice(0, 4).join("; "),
+);
 
 console.log(falhas === 0 ? "\n✅ selo do setor: ok" : `\n❌ selo do setor: ${falhas} falha(s)`);
 process.exit(falhas === 0 ? 0 : 1);

@@ -19,12 +19,13 @@
  *
  * Por isso há DOIS caminhos, e nenhum depende do cadastro:
  *
- *  1. Uma TABELA FIXA para os setores que já existem — os do cadastro e os que
- *     aparecem nos perfis e solicitantes. Ela é escrita à mão porque o hash
- *     sozinho colide: com as 8 cores do hash de tags, B.I. e Infraestrutura
- *     saíam iguais (calculado em 26/11/2026). A tabela garante o que o hash
- *     não garante: os quatro setores que têm reunião hoje com forma E tom
- *     diferentes, e nenhum par da tabela confundível (ver `confunde`).
+ *  1. Uma TABELA FIXA para os setores que já existem — os do cadastro, os dos
+ *     perfis e parte dos solicitantes (ver `TABELA`). Ela é escrita à mão
+ *     porque o hash sozinho colide: com as 8 cores do hash de tags, B.I. e
+ *     Infraestrutura saíam iguais (calculado em 26/11/2026). A tabela garante
+ *     o que o hash não garante: os quatro setores que têm reunião hoje com
+ *     forma E tom diferentes, e nenhum par da tabela confundível (ver
+ *     `confunde`).
  *  2. Um HASH ESTÁVEL do nome para qualquer setor que nasça depois, com
  *     sondagem que pula as combinações da tabela. Setor novo já nasce com o
  *     seu selo, e ele não muda quando outro setor é cadastrado — o hash só lê o
@@ -145,8 +146,10 @@ export const FORMAS_PARECIDAS: ReadonlyArray<readonly [Forma, Forma]> = [
  * todos os pares, pior caso entre escuro, claro e contraste): visão normal
  * abaixo de 15 ou daltonismo (protan/deutan) abaixo de 8. Laranja × verde é o
  * clássico do deutan (2,7); rosa × laranja fica a 10,3 com visão normal. Se um
- * valor de `--setor-N` mudar na folha, esta lista tem de ser medida de novo —
- * o teste confere a tabela contra ela, não contra a folha.
+ * valor de `--setor-N` mudar na folha, esta lista tem de ser medida de novo.
+ * O teste mede a metade da visão normal na folha real (par abaixo de 15 fora
+ * daqui reprova); a do daltonismo, não — simular protan e deutan é outra
+ * conta, e ela continua feita à mão com o validador da skill.
  */
 export const TONS_PARECIDOS: ReadonlyArray<readonly [Tom, Tom]> = [
   [2, 5],
@@ -183,9 +186,20 @@ export function confunde(a: Selo, b: Selo): boolean {
  * os quatro tons que passam em TODOS os pares da validação, nos três temas
  * (daltonismo ≥ 9,4; visão normal ≥ 18,3). Os três seguintes fecham o
  * cadastro de `/setores`, e os sete têm forma e tom diferentes entre si. O
- * resto são os setores que já aparecem nos perfis e solicitantes (CESIU, CVU,
- * Compras, Nutrição, RH) e os outros da Rede que a decisão de 26/11/2026
- * listou; ali a forma repete, mas nenhum par confunde.
+ * resto são os setores que já aparecem nos perfis (todos os de
+ * `users.sectors`) e parte dos solicitantes (CESIU, CVU, Compras, Nutrição, RH),
+ * e os outros da Rede que a decisão de 26/11/2026 listou; ali a forma repete,
+ * mas nenhum par confunde.
+ *
+ * NEM TODO SOLICITANTE ESTÁ AQUI. Infra, Cantina, CME, Eventos e Contas a Pagar
+ * (de `/solicitanteSetores`, lidos em 26/11/2026) vão pelo hash — e Cantina e
+ * CME saem com o MESMO selo. Não entraram porque não cabem: contra a tabela
+ * inteira sobram 4 combinações que não confundem com ninguém, e são 5 nomes.
+ * Hoje nenhuma tela desenha selo de solicitante (o selo só aparece no acervo e
+ * na esteira, com o setor da reunião). No dia em que desenhar, a decisão é
+ * outra e vem antes: Infra e Cantina parecem Infraestrutura e Cantinas
+ * escritos de outro jeito, e o que eles pedem é o selo DESSES — o que esta
+ * tabela, uma combinação por nome, não sabe dizer.
  *
  * NÃO REORDENE NEM TROQUE uma entrada que já existe: o selo é o que as pessoas
  * aprenderam a reconhecer — e os sete primeiros ainda decidem o selo de todo

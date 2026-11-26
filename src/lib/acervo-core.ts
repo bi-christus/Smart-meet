@@ -24,7 +24,7 @@
  *    enviada em 02/10 é de setembro para quem procura.
  */
 
-import { ordenarRecentes, type ReuniaoNaTela } from "./relatorios-core.ts";
+import { casaBusca, ordenarRecentes, type ReuniaoNaTela } from "./relatorios-core.ts";
 import { normalizar } from "./discord-consulta-core.ts";
 import { rotuloMes } from "./temporadas-core.ts";
 import { MES_CURTO } from "./datas.ts";
@@ -70,9 +70,10 @@ export function rotuloDaChaveDoMes(chave: string): string {
  * "25 nov", ou `null` quando a data não é data.
  *
  * Sem o ano de propósito: a reunião aparece sempre debaixo do cabeçalho do mês,
- * que já diz o ano. `fmtDayMonth` de `datas.ts` não serve aqui porque devolve
- * "NaN undefined" para data vazia — e é justamente o caso que o balde existe
- * para mostrar.
+ * que já diz o ano. `fmtDayMonth` de `datas.ts` não serve aqui: para data
+ * vazia ou torta devolve "1 jan" (uma data plausível e falsa), e "NaN
+ * undefined" quando o campo nem existe — e é justamente o caso que o balde
+ * existe para mostrar.
  */
 export function diaDaReuniao(date: string): string | null {
   const p = partesDaData(date);
@@ -169,18 +170,17 @@ export function porMes<T extends ReuniaoDoAcervo>(itens: readonly T[]): MesDoAce
  *
  * `casaBusca` fica como está, e não ganha esta regra: Relatórios IA não faz a
  * promessa das grafias, e mexer nela mudaria o que a outra tela acha. Cada
- * palavra casa se cair no título ou setor escritos (a regra de lá) OU, sem
+ * palavra casa se `casaBusca` a aceitar sozinha — chamada, e não copiada, para
+ * as duas buscas não se separarem no dia em que a de lá mudar — OU, sem
  * pontuação, dentro da chave do setor. A palavra que é só pontuação ("-") vira
  * chave vazia e não vale pela segunda via — "" está contido em tudo, e um traço
  * digitado acharia o acervo inteiro.
  */
 function casaAcervo(r: ReuniaoDoAcervo, termo: string): boolean {
   const palavras = normalizar(termo).split(/\s+/).filter(Boolean);
-  if (palavras.length === 0) return true;
-  const alvo = `${normalizar(r.title)} ${normalizar(r.sector)}`;
   const setor = chaveDoSetor(r.sector);
   return palavras.every((p) => {
-    if (alvo.includes(p)) return true;
+    if (casaBusca(r, p)) return true;
     const chave = chaveDoSetor(p);
     return chave !== "" && setor.includes(chave);
   });

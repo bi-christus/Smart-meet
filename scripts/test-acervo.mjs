@@ -130,6 +130,19 @@ const real = [
   // e o teste de cima não pega isso, porque lá "B.I." já chega na frente.
   const raro = montarAcervo([r("b.i.", "2026-11-01"), r("B.I.", "2026-10-01"), r("B.I.", "2026-09-01")]);
   checa('a grafia mais usada vence mesmo chegando depois da rara', raro.secoes[0].setor === "B.I.", raro.secoes[0].setor);
+  // Empate 1×1: sem o desempate pelo nome, o sort estável devolveria a grafia
+  // de quem chegou primeiro, e a seção se rebatizaria entre um F5 e outro.
+  // Montado nas duas ordens, porque numa só a ordem de chegada pode acertar
+  // por sorte.
+  const duas = [r("infraestrutura", "2026-11-01"), r("Infraestrutura", "2026-10-01")];
+  const ida = montarAcervo(duas).setores[0].setor;
+  const volta = montarAcervo([...duas].reverse()).setores[0].setor;
+  const primeiraPtBr = ["Infraestrutura", "infraestrutura"].sort((a, b) => a.localeCompare(b, "pt-BR"))[0];
+  checa(
+    "empate de grafias (uma de cada) não depende da ordem de chegada",
+    ida === volta && ida === primeiraPtBr,
+    `${ida} × ${volta} (esperado ${primeiraPtBr})`,
+  );
   // Com a lista invertida, Diretoria chega antes de B.I.: sem o desempate pelo nome, o
   // sort estável devolveria a ordem de chegada — e o teste de cima passaria
   // mesmo assim, porque lá B.I. chega primeiro.
