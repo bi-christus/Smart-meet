@@ -45,29 +45,34 @@ type Visao = "setor" | "data";
  * esta tela for desenhada no servidor. Aqui o servidor responde o padrão, o
  * navegador o guardado, e o React concilia sem efeito nenhum.
  *
- * `memoria` segura a escolha quando o `localStorage` recusa (janela anônima,
- * cota cheia): vale até recarregar.
+ * `memoria` segura a escolha quando o `localStorage` recusa a GRAVAÇÃO
+ * (janela anônima, cota cheia), vale até recarregar, e passa na frente da
+ * leitura. Atrás dela não servia: com a cota cheia a leitura continua
+ * funcionando e devolvia a escolha antiga, e o botão "Por data" parecia não
+ * responder. Quando a gravação dá certo ela zera, e o evento `storage` de
+ * outra aba volta a valer.
  */
 const CHAVE_VISAO = "sm_acervo_visao";
 let memoria: Visao | null = null;
 const ouvintes = new Set<() => void>();
 
 function lerVisao(): Visao {
+  if (memoria !== null) return memoria;
   try {
     const v = localStorage.getItem(CHAVE_VISAO);
     if (v === "data" || v === "setor") return v;
   } catch {
-    /* sem localStorage: vale a memória */
+    /* sem localStorage: vale o padrão */
   }
-  return memoria ?? "setor";
+  return "setor";
 }
 
 function gravarVisao(v: Visao) {
-  memoria = v;
   try {
     localStorage.setItem(CHAVE_VISAO, v);
+    memoria = null;
   } catch {
-    /* sem armazenamento: vale até recarregar, só isso */
+    memoria = v;
   }
   ouvintes.forEach((f) => f());
 }
@@ -83,6 +88,9 @@ function assinarVisao(aviso: () => void) {
 
 const visaoNoServidor = (): Visao => "setor";
 
+// Cópia do de `page.tsx`, e não importado de lá: arquivo de página do Next só
+// pode exportar o que o Next conhece, e um módulo à parte para três linhas que
+// apontam para a mesma folha (`base`) custaria mais do que a repetição.
 const STATUS_CLASS: Record<MeetingStatus, string> = {
   aguardando: base.st_aguardando,
   processando: base.st_processando,
@@ -118,7 +126,7 @@ export function Acervo({
   /**
    * Seção aberta ou fechada, por chave — só o que a PESSOA mexeu.
    *
-   * Ausente quer dizer "o padrão": a primeira seção aberta, as outras
+   * Ausente quer dizer "o padrão": a seção `chavePadrao` aberta, as outras
    * fechadas. Guardar só o que foi mexido, e não o estado de todas, é o que
    * deixa uma seção nova (o primeiro áudio de um setor) nascer no padrão sem
    * efeito nenhum para inicializá-la.
@@ -129,12 +137,33 @@ export function Acervo({
     () => montarAcervo(meetings, { busca, setor: filtro }),
     [meetings, busca, filtro],
   );
+
+  /**
+   * A seção que nasce aberta, fixada pela CHAVE na primeira resposta.
+   *
+   * Pela posição (a primeira da lista) ela trocava sozinha: a ordem das seções
+   * segue a reunião mais recente, que muda com a assinatura ao vivo, e um áudio
+   * novo de outro setor fechava a seção que a pessoa lia e abria outra sem
+   * clique. Sai de `setores`, e não de `secoes`, que a busca filtra. Fixada no
+   * render com guarda, e não num efeito — o `set-state-in-effect` do lint.
+   */
+  const [padrao, setPadrao] = useState<string | null>(null);
+  const primeira = acervo.setores[0]?.chave ?? null;
+  if (padrao === null && primeira !== null) setPadrao(primeira);
+  const chavePadrao =
+    padrao !== null && acervo.setores.some((s) => s.chave === padrao)
+      ? padrao
+      : primeira;
   const buscando = busca.trim() !== "";
   // Com um setor só não há o que trocar: a visão é a de meses, qualquer que
   // seja a escolha guardada — e a escolha fica guardada para quando houver.
   const visao: Visao = acervo.porSetor ? visaoEscolhida : "data";
   const pronto = !carregando && !erro;
   const mostrar = visao === "setor" ? acervo.encontradas : acervo.naVisaoPorData;
+  const contagem =
+    pronto && buscando && acervo.totalGeral > 0
+      ? `${mostrar} ${mostrar === 1 ? "reunião encontrada" : "reuniões encontradas"}`
+      : "";
 
   return (
     <section className={styles.acervo}>
@@ -219,11 +248,19 @@ export function Acervo({
 
       {/* A contagem espera a resposta, como o resto do app: "0 reuniões"
           antes dela é a mesma afirmação falsa de "nenhuma", em número. */}
-      {pronto && buscando && acervo.totalGeral > 0 && (
-        <p className={styles.buscaConta} aria-live="polite">
-          {mostrar} {mostrar === 1 ? "reunião encontrada" : "reuniões encontradas"}
+      {contagem && (
+        <p className={styles.buscaConta} aria-hidden="true">
+          {contagem}
         </p>
       )}
+      {/* O aviso para o leitor de tela mora aqui desde a montagem, vazio, e
+          só o texto muda. Montado já preenchido junto com a contagem, ele
+          nascia com a primeira letra digitada — e área de aviso que nasce
+          cheia costuma não ser anunciada. A contagem visível sai da árvore de
+          acessibilidade para não ser lida duas vezes. */}
+      <p className={styles.soLeitor} aria-live="polite">
+        {contagem}
+      </p>
 
       {erro ? (
         <ErrorState error={erro} onRetry={onTentarDeNovo} />
@@ -249,10 +286,10 @@ export function Acervo({
         />
       ) : visao === "setor" ? (
         <div className={styles.secoes}>
-          {acervo.secoes.map((s, i) => {
+          {acervo.secoes.map((s) => {
             // Buscando, toda seção que sobrou abre: procurar e ter de abrir uma
             // a uma para ver se achou é a busca não respondendo.
-            const aberta = buscando || (mexidas[s.chave] ?? i === 0);
+            const aberta = buscando || (mexidas[s.chave] ?? s.chave === chavePadrao);
             return (
               <details
                 key={s.chave}
@@ -278,7 +315,7 @@ export function Acervo({
                   </span>
                 </summary>
                 <div className={styles.gaveta}>
-                  <Meses meses={s.meses} comSelo={false} {...acoes} />
+                  <Meses meses={s.meses} comSelo={false} setor={s.setor} {...acoes} />
                 </div>
               </details>
             );
@@ -295,17 +332,27 @@ export function Acervo({
   );
 }
 
-/** Os meses, cada um com o seu cabeçalho fixo e as reuniões dele. */
 function Meses({
   meses,
   comSelo,
+  setor,
   ...acoes
-}: { meses: MesDoAcervo<Meeting>[]; comSelo: boolean } & Acoes) {
+}: {
+  meses: MesDoAcervo<Meeting>[];
+  comSelo: boolean;
+  /**
+   * O setor da seção, só para o leitor de tela. Quem pula de título em título
+   * ouvia "Novembro de 2026" quatro vezes, uma por seção, sem saber de qual;
+   * na tela o cabeçalho da seção logo acima já diz.
+   */
+  setor?: string;
+} & Acoes) {
   return (
     <>
       {meses.map((mes) => (
         <section key={mes.chave} className={styles.mes}>
           <h3 className={styles.mesTitulo}>
+            {setor && <span className={styles.soLeitor}>{setor}, </span>}
             {mes.rotulo}
             <span className={styles.mesConta}>· {mes.itens.length}</span>
           </h3>

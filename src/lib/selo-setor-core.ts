@@ -36,8 +36,13 @@
  *
  * Ficaram de fora, e cada uma por um motivo visto na tela: o hexágono cheio
  * (a 14 px vira um círculo), a estrela (já é o ícone de favorito/Rank), ✓ ✕ !
- * (são estado, e ao lado do chip "Processado" mentiriam) e a nuvem (é o Drive,
- * o envio do áudio).
+ * (são estado, e ao lado do chip "Processado" mentiriam), a nuvem (é o Drive,
+ * o envio do áudio) e a cruz — que foi selo até a revisão do #249: é o "+" de
+ * adicionar do app inteiro, e no chip de filtro, que é um botão, "✚ Medicina
+ * Veterinária" lia como "adicionar". No lugar dela entrou o LAÇO (a gravata
+ * borboleta), e não a ampulheta, que lê "aguardando" — um dos três status da
+ * reunião — nem o trapézio, que a 14 px é um triângulo sem ponta. O laço fica
+ * no mesmo índice da cruz para o hash dos setores novos não mudar.
  */
 export const FORMAS = [
   "circulo",
@@ -48,7 +53,7 @@ export const FORMAS = [
   "pilula",
   "pentagono",
   "paralelogramo",
-  "cruz",
+  "laco",
   "meialua",
 ] as const;
 export type Forma = (typeof FORMAS)[number];
@@ -61,11 +66,29 @@ export type Forma = (typeof FORMAS)[number];
  * ΔE 8,4 do violeta com visão normal, abaixo do piso de 15 da skill de
  * dataviz). Sete bastam para os sete setores do cadastro terem tons diferentes
  * entre si, e a forma desempata o resto.
+ *
+ * OS TONS ENCOSTAM NA MARCA E NOS STATUS, e isso é decisão, não descuido
+ * (revisão do #249). Sete matizes num app que já gasta cinco em status (`--ok`
+ * a `--susp`) e um na marca trocável não têm para onde fugir: cada tom fica a
+ * menos de 8 (OKLab ×100) do status da própria família em algum tema, e o
+ * âmbar e o laranja encostam na marca dos acentos quentes. Os casos que pesam:
+ * Diretoria (âmbar, e tem reunião) × marca do café escuro, 4,7, e × `--warn`
+ * do Entre Aulas claro, 2,0; Serve-cy (laranja) × `--warn-tx` e `--accent` do
+ * claro, 1,7 e 2,5. Aceito porque o selo pinta só um glifo de 14 px, sempre
+ * com a forma e o nome, e nunca fundo, borda ou chip — que é onde status e
+ * marca se leem. Tirar Serve-cy do laranja não resolveria: o hash continua
+ * dando o tom 6 a setores novos, e todo outro tom também encosta em algum
+ * status. O que NÃO se aceita é um tom encostar numa família que não é a dele
+ * (o violeta no `--danger`, por exemplo): `test-selo-setor.mjs` mede todos os
+ * pares em todo tema e acento e reprova o que sair da lista escrita lá.
  */
 export const TONS = 7;
 export type Tom = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
-/** O nome de cada tom, para o teste e para quem lê a folha. */
+/**
+ * O nome de cada tom — o que as falhas de `test-selo-setor.mjs` escrevem, para
+ * "laranja (6) × --warn-tx" dizer alguma coisa a quem lê sem abrir a folha.
+ */
 export const NOME_DO_TOM: Record<Tom, string> = {
   1: "violeta",
   2: "rosa",
@@ -88,9 +111,10 @@ export type Selo = { forma: Forma; tom: Tom };
  * "B.I." continua com os pontos no banco e na tela; só a comparação ignora.
  */
 export function chaveDoSetor(nome: string): string {
+  // Sem um passo próprio para tirar acento: depois do NFD a marca do acento é
+  // um caractere à parte, e o `[^a-z0-9]` já a leva junto com a pontuação.
   return (nome ?? "")
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
     .toLowerCase()
     .replace(/[^a-z0-9]/g, "");
 }
@@ -101,7 +125,8 @@ export function chaveDoSetor(nome: string): string {
  * Redondo com redondo (gota, pentágono e meia-lua têm a silhueta do círculo
  * quando o olho passa rápido) e retângulo com retângulo inclinado. Quadrado e
  * losango ficam FORA: canto reto em cima × ponta em cima é a diferença que os
- * marcadores de gráfico usam há décadas, e ela sobrevive aos 14 px.
+ * marcadores de gráfico usam há décadas, e ela sobrevive aos 14 px. O laço
+ * também não tem par: a cintura côncava é a única do conjunto.
  */
 export const FORMAS_PARECIDAS: ReadonlyArray<readonly [Forma, Forma]> = [
   ["circulo", "gota"],
@@ -173,7 +198,7 @@ export const TABELA: ReadonlyArray<{ nome: string } & Selo> = [
   { nome: "Infraestrutura", forma: "quadrado", tom: 3 },
   { nome: "Diretoria", forma: "losango", tom: 4 },
   { nome: "Livros Escolares", forma: "pilula", tom: 5 },
-  { nome: "Medicina Veterinária", forma: "cruz", tom: 7 },
+  { nome: "Medicina Veterinária", forma: "laco", tom: 7 },
   { nome: "Serve-cy", forma: "gota", tom: 6 },
   { nome: "CESIU", forma: "pentagono", tom: 3 },
   { nome: "CVU", forma: "paralelogramo", tom: 1 },
@@ -182,7 +207,7 @@ export const TABELA: ReadonlyArray<{ nome: string } & Selo> = [
   { nome: "RH", forma: "losango", tom: 2 },
   { nome: "CPA", forma: "gota", tom: 5 },
   { nome: "Odonto", forma: "pilula", tom: 1 },
-  { nome: "Comercial", forma: "cruz", tom: 1 },
+  { nome: "Comercial", forma: "laco", tom: 1 },
   { nome: "UnichStore", forma: "meialua", tom: 3 },
   { nome: "Pedagógico", forma: "triangulo", tom: 3 },
   { nome: "Financeiro", forma: "pilula", tom: 4 },
@@ -220,7 +245,6 @@ function fnv1a(texto: string): number {
   return h >>> 0;
 }
 
-/** Quantas combinações forma × tom existem. */
 const COMBINACOES = FORMAS.length * TONS;
 
 function combinacao(i: number): Selo {

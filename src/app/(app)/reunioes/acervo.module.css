@@ -169,6 +169,22 @@
 .secaoHead::marker {
   content: "";
 }
+/* O anel de foco vai para DENTRO do cabeçalho. A `.secao` recorta
+   (`overflow: hidden`, para o fundo da gaveta respeitar o canto redondo), e o
+   anel do tema contraste — 2 px afastado 2 px da caixa — caía inteiro do lado
+   de fora: some com a seção fechada, e só a borda de baixo aparecia com ela
+   aberta. Justamente no tema de quem navega pelo teclado. O seletor tem duas
+   classes para vencer a regra global sem depender da ordem das folhas, e o
+   `!important` de lá vale só para `outline`, não para o afastamento. O raio
+   (os 12 px da seção menos a borda) é para o anel acompanhar a curva: reto,
+   os quatro cantos dele caíam fora do recorte redondo e sumiam. */
+.secao > .secaoHead:focus-visible {
+  outline-offset: -3px;
+  border-radius: 11px;
+}
+.secao[open] > .secaoHead:focus-visible {
+  border-radius: 11px 11px 0 0;
+}
 /* Hover em `--s1`, e não em `--s3` como em Relatórios: sobre `--s3` o glifo
    violeta e o âmbar do café claro caem para 2,97:1, abaixo do piso, e o hover
    é justamente quando a pessoa está olhando para ele. */
@@ -293,8 +309,9 @@
    celular). Aqui cada pedaço desenha o seu "·" 9 px à ESQUERDA de si, dentro
    do `column-gap` — que só existe entre itens da mesma linha. No começo de
    uma linha não há vão: o ponto cai fora da caixa e o recorte o some. A
-   margem de recorte de 3 px deixa passar o anel de foco do link, e não o
-   ponto. */
+   margem de recorte é de 4 px: os 2 do anel mais os 2 de afastamento do tema
+   contraste, para o foco do link "Áudio no Drive" aparecer inteiro — com 3,
+   metade dele sumia em cima e embaixo. O ponto, a 9 px, continua de fora. */
 .itemMeta {
   display: flex;
   align-items: center;
@@ -306,13 +323,18 @@
   font-size: 12px;
   overflow: hidden;
   overflow: clip;
-  overflow-clip-margin: 3px;
+  overflow-clip-margin: 4px;
 }
 .itemMeta > * {
   position: relative;
 }
+/* O ponto é desenho, e o texto alternativo vazio (`"·" / ""`) o tira do que o
+   leitor de tela lê — inclusive o do primeiro item, que nem aparece. A
+   primeira linha é a reserva para navegador que não entende a barra: sem ela,
+   a declaração inteira seria descartada e o ponto sumiria da tela também. */
 .itemMeta > *::before {
   content: "·";
+  content: "·" / "";
   position: absolute;
   left: -9px;
   top: 50%;
@@ -330,6 +352,20 @@
   padding: 3px 9px;
   border-radius: 20px;
   flex: none;
+}
+
+/* Fora da tela, presente para o leitor: o aviso da contagem da busca e o
+   setor dentro do título de cada mês. */
+.soLeitor {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {

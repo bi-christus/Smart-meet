@@ -23,7 +23,7 @@ import {
   mesDaReuniao,
   montarAcervo,
   porMes,
-  rotuloDoMes,
+  rotuloDaChaveDoMes,
 } from "../src/lib/acervo-core.ts";
 
 let falhas = 0;
@@ -44,8 +44,8 @@ checa("aaaa-mm-dd vira aaaa-mm", mesDaReuniao("2026-11-25") === "2026-11");
 checa("data vazia vai para o balde", mesDaReuniao("") === SEM_DATA);
 checa("data ausente (documento antigo) vai para o balde", mesDaReuniao(undefined) === SEM_DATA);
 checa("data torta vai para o balde", ["25/11/2026", "2026-13-01", "2026-11", "ontem"].every((d) => mesDaReuniao(d) === SEM_DATA));
-checa('o rótulo é "Novembro de 2026"', rotuloDoMes("2026-11") === "Novembro de 2026");
-checa('o balde chama "Sem data"', rotuloDoMes(SEM_DATA) === "Sem data");
+checa('o rótulo é "Novembro de 2026"', rotuloDaChaveDoMes("2026-11") === "Novembro de 2026");
+checa('o balde chama "Sem data"', rotuloDaChaveDoMes(SEM_DATA) === "Sem data");
 checa('o dia sai "25 nov", sem o ano', diaDaReuniao("2026-11-25") === "25 nov");
 checa("dia de data vazia é null, não lixo", diaDaReuniao("") === null && diaDaReuniao("2026-99-01") === null);
 
@@ -126,6 +126,22 @@ const real = [
 }
 
 {
+  // A grafia rara chegando PRIMEIRO: "a primeira que apareceu" daria "b.i.",
+  // e o teste de cima não pega isso, porque lá "B.I." já chega na frente.
+  const raro = montarAcervo([r("b.i.", "2026-11-01"), r("B.I.", "2026-10-01"), r("B.I.", "2026-09-01")]);
+  checa('a grafia mais usada vence mesmo chegando depois da rara', raro.secoes[0].setor === "B.I.", raro.secoes[0].setor);
+  // Com a lista invertida, Diretoria chega antes de B.I.: sem o desempate pelo nome, o
+  // sort estável devolveria a ordem de chegada — e o teste de cima passaria
+  // mesmo assim, porque lá B.I. chega primeiro.
+  const invertido = montarAcervo([...real].reverse());
+  checa(
+    "o empate de 24/11 não depende da ordem de chegada",
+    invertido.secoes.map((s) => s.setor).join(",") === "Infraestrutura,B.I.,Diretoria,Cantinas",
+    invertido.secoes.map((s) => s.setor).join(","),
+  );
+}
+
+{
   const so = montarAcervo([r("Cantinas", "", "Sem dia"), r("Diretoria", "2026-01-05", "Antiga")]);
   checa(
     "setor só com reunião sem data vai para o fim da ordem",
@@ -182,6 +198,21 @@ console.log("\n— a busca —");
   checa("busca sem acento acha título com acento", e.encontradas === 1);
   const f = montarAcervo(real, { busca: "comitê", setor: "cantinas" });
   checa("busca e filtro juntos: a interseção", f.naVisaoPorData === 0 && f.encontradas === 1);
+  // A tela diz que "B.I.", "b.i." e "BI" são um setor só (a seção e o selo
+  // agrupam pela chave); a busca tem de dizer o mesmo. Com o `normalizar` de
+  // Relatórios, que guarda os pontos, "bi" não achava nenhuma.
+  for (const termo of ["bi", "BI", "b.i.", "B.I."]) {
+    const g = montarAcervo(real, { busca: termo });
+    checa(
+      `"${termo}" acha as 4 reuniões de B.I., e só elas`,
+      g.encontradas === 4 && g.secoes.length === 1 && g.secoes[0].chave === "bi" && g.naVisaoPorData === 4,
+      `${g.encontradas} em ${g.secoes.map((s) => s.setor).join(",")}`,
+    );
+  }
+  const h = montarAcervo(real, { busca: "comite bi" });
+  checa("palavra do título com a do setor sem pontos", h.encontradas === 1, String(h.encontradas));
+  const i = montarAcervo(real, { busca: "-" });
+  checa("palavra só de pontuação não acha o acervo inteiro", i.encontradas === 0, String(i.encontradas));
 }
 
 console.log(falhas === 0 ? "\n✅ acervo de reuniões: ok" : `\n❌ acervo de reuniões: ${falhas} falha(s)`);

@@ -448,7 +448,21 @@
    O contraste sai da faixa de luz do validador (L 0,48–0,70), e é escolha: a
    faixa existe para gráfico em tema escuro comum, e este tema clareia tudo de
    propósito — três dos status dele (--ok, --warn, --susp) ficam entre L 0,80
-   e 0,86, e o selo segue o mesmo degrau. */
+   e 0,86, e o selo segue o mesmo degrau.
+
+   COLISÕES ACEITAS COM A MARCA E OS STATUS (revisão do #249). As medidas acima
+   eram contra as superfícies e entre os próprios tons; contra --brand,
+   --accent e os cinco status, cada tom fica a menos de 8 (OKLab ×100) da
+   família de status do seu matiz em algum tema, e o âmbar e o laranja
+   encostam na marca dos acentos quentes. As que pesam: âmbar (Diretoria) ×
+   --brand do café escuro 4,7 e × --warn do Entre Aulas claro 2,0; laranja
+   (Serve-cy) × --warn-tx do claro 1,7 e × --accent do claro 2,5. Ficam porque
+   o selo pinta só o glifo, sempre com forma e nome, e nunca o fundo, a borda
+   ou o chip, que é onde status e marca se leem — e porque sete matizes num
+   app que já gasta cinco em status não têm para onde fugir. A lista completa,
+   e a regra de que um tom só encosta na família DELE, estão em
+   `scripts/test-selo-setor.mjs`: mexeu num hex aqui ou num acento lá em cima,
+   o teste mede de novo. */
 :root,
 [data-theme="dark"] {
   --setor-1: #a787f6; /* violeta */

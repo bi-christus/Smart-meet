@@ -24,7 +24,8 @@
  *    enviada em 02/10 é de setembro para quem procura.
  */
 
-import { casaBusca, ordenarRecentes, type ReuniaoNaTela } from "./relatorios-core.ts";
+import { ordenarRecentes, type ReuniaoNaTela } from "./relatorios-core.ts";
+import { normalizar } from "./discord-consulta-core.ts";
 import { rotuloMes } from "./temporadas-core.ts";
 import { MES_CURTO } from "./datas.ts";
 import { chaveDoSetor } from "./selo-setor-core.ts";
@@ -54,8 +55,14 @@ export function mesDaReuniao(date: string): string {
   return partesDaData(date) ? date.slice(0, 7) : SEM_DATA;
 }
 
-/** "Novembro de 2026" — ou "Sem data" para o balde do fim. */
-export function rotuloDoMes(chave: string): string {
+/**
+ * "Novembro de 2026" — ou "Sem data" para o balde do fim.
+ *
+ * Não se chama `rotuloDoMes`, que é o de `concluidas-core.ts` e recebe um
+ * instante em ms: o mesmo nome com outro argumento é a troca de import que só o
+ * `tsc` pega — e pega tarde, depois de alguém já ter estranhado a tela.
+ */
+export function rotuloDaChaveDoMes(chave: string): string {
   return chave === SEM_DATA ? "Sem data" : rotuloMes(chave);
 }
 
@@ -134,7 +141,6 @@ function ordenarMeses<T>(meses: MesDoAcervo<T>[]): MesDoAcervo<T>[] {
   });
 }
 
-/** Reparte por mês. As reuniões de cada mês saem em `ordenarRecentes`. */
 export function porMes<T extends ReuniaoDoAcervo>(itens: readonly T[]): MesDoAcervo<T>[] {
   const meses = new Map<string, T[]>();
   for (const r of ordenarRecentes([...itens])) {
@@ -146,10 +152,38 @@ export function porMes<T extends ReuniaoDoAcervo>(itens: readonly T[]): MesDoAce
   return ordenarMeses(
     [...meses.entries()].map(([chave, lista]) => ({
       chave,
-      rotulo: rotuloDoMes(chave),
+      rotulo: rotuloDaChaveDoMes(chave),
       itens: lista,
     })),
   );
+}
+
+/**
+ * Se a reunião responde ao termo buscado — `casaBusca` de Relatórios IA, mais o
+ * setor pela CHAVE.
+ *
+ * Só `casaBusca` não basta aqui: o `normalizar` dela guarda a pontuação, então
+ * "bi" não achava nenhuma reunião de "B.I." — logo acima da seção que se chama
+ * B.I. e cujo selo é o mesmo de "BI". Esta tela afirma que as três grafias são
+ * um setor só, e a busca tem de concordar com ela.
+ *
+ * `casaBusca` fica como está, e não ganha esta regra: Relatórios IA não faz a
+ * promessa das grafias, e mexer nela mudaria o que a outra tela acha. Cada
+ * palavra casa se cair no título ou setor escritos (a regra de lá) OU, sem
+ * pontuação, dentro da chave do setor. A palavra que é só pontuação ("-") vira
+ * chave vazia e não vale pela segunda via — "" está contido em tudo, e um traço
+ * digitado acharia o acervo inteiro.
+ */
+function casaAcervo(r: ReuniaoDoAcervo, termo: string): boolean {
+  const palavras = normalizar(termo).split(/\s+/).filter(Boolean);
+  if (palavras.length === 0) return true;
+  const alvo = `${normalizar(r.title)} ${normalizar(r.sector)}`;
+  const setor = chaveDoSetor(r.sector);
+  return palavras.every((p) => {
+    if (alvo.includes(p)) return true;
+    const chave = chaveDoSetor(p);
+    return chave !== "" && setor.includes(chave);
+  });
 }
 
 /**
@@ -172,8 +206,9 @@ function grafiaMaisUsada(grafias: Map<string, number>): string {
  * As duas saem juntas porque dividem o mesmo trabalho (a busca e a ordem dos
  * setores) e porque a tela troca de uma para outra sem nova consulta.
  *
- * @param busca  termo livre; casa título OU setor (`casaBusca`, o mesmo de
- *               Relatórios IA — "a do RH" é tão comum quanto "a do orçamento").
+ * @param busca  termo livre; casa título OU setor (`casaAcervo`: a regra de
+ *               Relatórios IA — "a do RH" é tão comum quanto "a do orçamento" —
+ *               mais "bi" achando "B.I.").
  * @param setor  chave (`chaveDoSetor`) do filtro da visão por data; `null` é
  *               todas.
  */
@@ -223,7 +258,7 @@ export function montarAcervo<T extends ReuniaoDoAcervo>(
   const secoes: SecaoDoAcervo<T>[] = [];
   let encontradas = 0;
   for (const { chave, g, setor } of ordem) {
-    const achadas = g.todas.filter((r) => casaBusca(r, busca));
+    const achadas = g.todas.filter((r) => casaAcervo(r, busca));
     encontradas += achadas.length;
     if (achadas.length === 0) continue;
     secoes.push({
@@ -240,7 +275,7 @@ export function montarAcervo<T extends ReuniaoDoAcervo>(
   const daData = reunioes.filter(
     (r) =>
       (filtro === null || chaveDoSetor(r.sector) === filtro) &&
-      casaBusca(r, busca),
+      casaAcervo(r, busca),
   );
 
   return {
