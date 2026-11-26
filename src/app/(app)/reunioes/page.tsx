@@ -1318,9 +1318,19 @@ function MeetingModal({
             {/* O "Fase 4" que estava aqui prometia um futuro que já chegou e
                 desmentia o modal de registro, que diz o que acontece hoje. A
                 online não tem áudio, então nada chega sozinho para ela. */}
+            {/* "Chegam depois" só é verdade para quem ainda espera: com o envio
+                parado nada vai chegar, e com a reunião processada já chegou.
+                Dizer o mesmo nos três casos mandava esperar quem precisava
+                agir (#250). */}
             {meeting.send === "online"
               ? "Reunião online não tem áudio no Drive: se tiver a transcrição ou a ata, cole abaixo."
-              : "A transcrição e os documentos chegam depois e aparecem aqui quando ficam prontos; se precisar, cole abaixo."}
+              : meeting.uploadStatus === "falha"
+                ? `O áudio não chegou ao Drive${meeting.uploadError ? ` (${meeting.uploadError.replace(/\.$/, "")})` : ""}, então nada será gerado dele. Se ele foi enviado deste computador, a faixa no topo da tela permite tentar de novo ou baixar uma cópia.`
+                : meeting.status === "processado"
+                  ? canSeeAudio && meeting.driveOutputs?.some((o) => o.link)
+                    ? "Esta reunião já foi processada: a transcrição e os documentos estão nos botões abaixo e no seu e‑mail."
+                    : "Esta reunião já foi processada. Se precisar, cole a transcrição ou a ata abaixo."
+                  : "A transcrição e os documentos chegam depois e aparecem aqui quando ficam prontos; se precisar, cole abaixo."}
           </div>
 
           {meeting.driveLink && canSeeAudio && (
