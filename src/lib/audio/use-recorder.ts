@@ -18,6 +18,7 @@ import {
   pickMimeType,
 } from "./recorder";
 import { uploadManager } from "./uploader";
+import { conferirArquivoDeAudio } from "./arquivo-de-audio-core";
 
 export type RecorderState = {
   recording: boolean;
@@ -72,6 +73,13 @@ export type FinishResult = {
   meetingId: string | null;
   durationMin: number;
   title: string;
+  /**
+   * A escolha de documentos com que a sessão do Drive abriu. O modal do fim
+   * começa dela, e não do padrão de hoje: se o padrão mudar entre o início e
+   * o fim de uma gravação longa, o modal mostraria uma escolha que não é a do
+   * arquivo.
+   */
+  output?: string[];
 };
 
 /**
@@ -291,6 +299,7 @@ export function useRecorder(ownerEmail: string) {
       meetingId: rec?.meetingId ?? null,
       durationMin: Math.max(1, Math.round(durationMs / 60000)),
       title: rec?.title ?? "",
+      output: rec?.output,
     };
   }, [patch]);
 
@@ -315,6 +324,16 @@ export function useRecorder(ownerEmail: string) {
       observacoes?: string;
     },
     ): Promise<StartResult> => {
+      // A tela já conferiu ao escolher o arquivo; isto é a segunda porta, para
+      // quem chegar aqui por outro caminho. Falha ANTES de criar o registro
+      // local e o rascunho da reunião, para não sobrar reunião de um PDF.
+      const veredito = conferirArquivoDeAudio({
+        nome: file.name,
+        tipo: file.type,
+        bytes: file.size,
+      });
+      if (!veredito.ok) throw new Error(veredito.mensagem);
+
       const id = newRecordingId();
       const mimeType = file.type || "application/octet-stream";
       const ext = file.name.includes(".")

@@ -28,6 +28,15 @@ import { syncDrive } from "@/lib/drive-upload";
 import { useRecording } from "@/lib/audio/recording-context";
 import { uploadManager } from "@/lib/audio/uploader";
 import { fmtBytes } from "@/lib/audio/recording-db";
+import {
+  ACCEPT_DE_AUDIO,
+  conferirArquivoDeAudio,
+} from "@/lib/audio/arquivo-de-audio-core";
+import {
+  ATAS_PADRAO,
+  alternarAta,
+  normalizarEscolha,
+} from "@/lib/atas-do-envio-core";
 import styles from "./reunioes.module.css";
 
 const MES = [
@@ -76,6 +85,8 @@ type Confirm = {
   meetingId?: string | null;
   /** caminho "enviar arquivo": o envio só começa quando o usuário confirma */
   file?: File | null;
+  /** microfone: a escolha de documentos com que a sessão do Drive abriu */
+  output?: string[];
 } | null;
 
 const STATUS_CLASS: Record<MeetingStatus, string> = {
@@ -85,34 +96,46 @@ const STATUS_CLASS: Record<MeetingStatus, string> = {
 };
 
 /**
- * O que sai de cada áudio.
+ * O que sai de cada áudio — a lista que o modal "Registrar reunião" mostra.
  *
- * DOIS SÃO CADEADO e três são escolha, e a diferença é de natureza: o que tem
- * cadeado é infraestrutura do app — a ata principal, que todo mundo lê, e a
- * pauta, que a aba Ata CONSOME. As atas detalhada e didática são leitura
- * opcional, e quem envia decide se precisa delas.
+ * Esta lista responde "o que vou receber?", e por isso tem de ser HONESTA com o
+ * que a nuvem gera de fato, e não com o que o app gostaria que ela gerasse:
  *
- * A pauta aparece aqui mesmo sem ser escolhível, e é de propósito: esta lista
- * responde "o que vou receber?", e esconder um documento que é sempre gerado
- * faria a pergunta ser respondida errado. Ela é a única entrada cujo `id` não é
- * um `OutputKind` — o `smGerar` que viaja para o Cowork lista só o que é
- * escolha, e a pauta não é.
+ * - DOIS TÊM CADEADO porque saem sempre: a transcrição com quem falou (é dela
+ *   que todo o resto nasce) e os Pontos importantes. A transcrição nem é um
+ *   `OutputKind` — o motor não a procura no `smGerar` —, mas esconder da lista
+ *   um documento que sempre chega faria a pergunta ser respondida errado.
+ * - A PAUTA DA REUNIÃO SAIU. Ela estava aqui com cadeado, como "sempre
+ *   gerada", e a nuvem nunca a gerou (Issue #251): a lista prometia um
+ *   documento que não chegava. Volta quando a nuvem passar a fazê-la. O tipo
+ *   `DriveOutputKind` "pauta" e o ícone dela continuam, porque servem para
+ *   EXIBIR uma pauta que exista no Drive.
+ * - As atas detalhada e didática são escolha. A detalhada vem marcada
+ *   (`ATAS_PADRAO`, Issue #248).
+ *
+ * A escolha mora no modal, e não mais num painel ao lado da área de envio: no
+ * painel ela era feita ANTES de escolher o áudio, longe do botão que confirma,
+ * e as pessoas esqueciam de marcar.
  */
 type OpcaoDeSaida =
   | { id: OutputKind; label: string; desc: string; sempre?: false }
   | { id: DriveOutputKind; label: string; desc: string; sempre: true };
 
 const OUTPUT_OPTIONS: OpcaoDeSaida[] = [
+  // Nos dois de cadeado, a descrição É o "sempre vem". Explicar o conteúdo
+  // deles quebrava "Transcrição com quem falou" em duas linhas e crescia o
+  // modal em 34 px (medido) só para repetir o que o nome já diz — o que a
+  // pessoa precisa saber deles é que não se escolhe.
   {
-    id: "resumo",
-    label: "Pontos importantes",
-    desc: "Resumo objetivo: decisões e o essencial da reunião.",
+    id: "transcricao",
+    label: "Transcrição com quem falou",
+    desc: "Sempre vem.",
     sempre: true,
   },
   {
-    id: "pauta",
-    label: "Pauta da reunião",
-    desc: "Alimenta a aba Ata: assuntos, decisões, responsáveis e prazos.",
+    id: "resumo",
+    label: "Pontos importantes",
+    desc: "Sempre vem.",
     sempre: true,
   },
   {
@@ -146,7 +169,6 @@ export default function ReunioesPage() {
 
   const [sector, setSector] = useState("");
   const [mode, setMode] = useState<SendMethod>("file");
-  const [output, setOutput] = useState<OutputKind[]>(["resumo"]);
   /**
    * A esteira e o acervo vêm da MESMA assinatura.
    *
@@ -190,6 +212,8 @@ export default function ReunioesPage() {
   const [micError, setMicError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  /** Por que o último arquivo escolhido foi recusado (não é áudio, grande demais). */
+  const [fileError, setFileError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const recording = rec.recording;
 
@@ -240,6 +264,7 @@ export default function ReunioesPage() {
       durationMin: pendingConfirm.durationMin,
       recordingId: pendingConfirm.recordingId,
       meetingId: pendingConfirm.meetingId,
+      output: pendingConfirm.output,
     });
   }
   useEffect(() => {
@@ -267,7 +292,11 @@ export default function ReunioesPage() {
     setMicError(null);
     setBusy(true);
     try {
-      await start({ sector, output });
+      // A sessão do Drive abre AGORA, no início da gravação, e grava o
+      // `smGerar` nela — antes de existir o modal onde a escolha mora. Por
+      // isso vai o padrão, e o modal do fim corrige o arquivo se a pessoa
+      // mudar (`applyTitle` → rota rename).
+      await start({ sector, output: normalizarEscolha(ATAS_PADRAO) });
     } catch (e) {
       setMicError(e instanceof Error ? e.message : "Não foi possível gravar.");
     } finally {
@@ -294,6 +323,21 @@ export default function ReunioesPage() {
 
   function handleFile(file: File | undefined) {
     if (!file) return;
+    // Primeira porta, antes do modal: o `accept` do seletor não vale para
+    // arrastar, e um PDF solto aqui já virou reunião. Recusar agora, com a
+    // razão na tela, custa menos do que deixar a pessoa preencher o modal e
+    // errar no fim. Na própria área, e não num `alert`: o alerta some ao
+    // fechar, e a pessoa volta a olhar a área sem saber o que trocar.
+    const veredito = conferirArquivoDeAudio({
+      nome: file.name,
+      tipo: file.type,
+      bytes: file.size,
+    });
+    if (!veredito.ok) {
+      setFileError(veredito.mensagem);
+      return;
+    }
+    setFileError(null);
     setConfirm({
       send: "file",
       title: file.name.replace(/\.[^.]+$/, ""),
@@ -323,13 +367,6 @@ export default function ReunioesPage() {
     } finally {
       setDeleting(false);
     }
-  }
-
-  function toggleOutput(id: OutputKind) {
-    if (id === "resumo") return; // Pontos importantes é obrigatório (cadeado)
-    setOutput((cur) =>
-      cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id],
-    );
   }
 
   /** O áudio é visível só para quem enviou, gestores do setor e admins. */
@@ -386,7 +423,12 @@ export default function ReunioesPage() {
                 <button
                   key={id}
                   className={`${styles.modeTab} ${mode === id ? styles.on : ""}`}
-                  onClick={() => setMode(id)}
+                  onClick={() => {
+                    setMode(id);
+                    // A recusa é de um arquivo que já saiu da tela: ao voltar
+                    // para "Enviar arquivo", ela reapareceria sem motivo.
+                    setFileError(null);
+                  }}
                   disabled={recording}
                 >
                   <Icon name={ic} size={14} />
@@ -396,8 +438,7 @@ export default function ReunioesPage() {
             </div>
           </div>
 
-          <div className={styles.capGrid}>
-            <div className={`${styles.capMain} ${styles.capBody}`} key={mode}>
+          <div className={styles.capBody} key={mode}>
             {mode === "file" && (
               <div
                 className={`${styles.dropzone} ${dragOver ? styles.dropOver : ""}`}
@@ -420,14 +461,26 @@ export default function ReunioesPage() {
                   Arraste o áudio aqui ou clique para selecionar
                 </div>
                 <div className={styles.dropSub}>
-                  MP3, WAV, WebM, M4A · até 500 MB
+                  MP3, M4A, MP4 do WhatsApp, WAV, WebM, OGG… · até 500 MB
                 </div>
+                {fileError && (
+                  <div className={styles.dropErr} role="alert">
+                    <Icon name="warn" size={14} />
+                    <span>{fileError}</span>
+                  </div>
+                )}
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept="audio/*"
+                  accept={ACCEPT_DE_AUDIO}
                   hidden
-                  onChange={(e) => handleFile(e.target.files?.[0] ?? undefined)}
+                  onChange={(e) => {
+                    handleFile(e.target.files?.[0] ?? undefined);
+                    // Sem limpar, escolher de novo o MESMO arquivo (depois de
+                    // cancelar o modal) não dispara `change`, e o clique
+                    // parece não fazer nada.
+                    e.target.value = "";
+                  }}
                 />
               </div>
             )}
@@ -589,51 +642,6 @@ export default function ReunioesPage() {
                 </div>
               </div>
             )}
-            </div>
-
-            <aside className={styles.capSide}>
-              <div className={styles.outLbl}>
-                O que gerar a partir da transcrição?
-              </div>
-              <div className={styles.outOptions}>
-                {OUTPUT_OPTIONS.map((o) => {
-                  const locked = o.sempre === true;
-                  const on = locked || output.includes(o.id as OutputKind);
-                  const frozen = recording && !locked;
-                  return (
-                    <button
-                      key={o.id}
-                      type="button"
-                      className={`${styles.outOption} ${on ? styles.on : ""} ${locked ? styles.outLocked : ""}`}
-                      onClick={() => {
-                        // `!o.sempre` estreita a união e devolve o `OutputKind`
-                        // — é o que dispensa um cast aqui e faz o compilador
-                        // recusar, no dia em que alguém tentar alternar a pauta,
-                        // um `smGerar` com um valor que o Cowork não conhece.
-                        if (!o.sempre && !recording) toggleOutput(o.id);
-                      }}
-                      disabled={frozen}
-                      aria-pressed={on}
-                      title={
-                        locked
-                          ? "Sempre gerado"
-                          : frozen
-                            ? "Não é possível alterar durante a gravação"
-                            : undefined
-                      }
-                    >
-                      <span className={styles.outCheck}>
-                        <Icon name={locked ? "lock" : "check"} size={12} />
-                      </span>
-                      <span className={styles.outText}>
-                        <span className={styles.outName}>{o.label}</span>
-                        <span className={styles.outDesc}>{o.desc}</span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </aside>
           </div>
         </div>
 
@@ -835,7 +843,6 @@ export default function ReunioesPage() {
           confirm={confirm}
           sector={sector}
           sectors={sectors}
-          output={output}
           actorEmail={profile.email}
           startFileUpload={startFileUpload}
           onClose={() => setConfirm(null)}
@@ -945,7 +952,6 @@ function NewMeetingModal({
   confirm,
   sector,
   sectors,
-  output,
   actorEmail,
   startFileUpload,
   onClose,
@@ -953,7 +959,6 @@ function NewMeetingModal({
   confirm: NonNullable<Confirm>;
   sector: string;
   sectors: string[];
-  output: OutputKind[];
   actorEmail: string;
   startFileUpload: (
     file: File,
@@ -970,12 +975,22 @@ function NewMeetingModal({
   const [sec, setSec] = useState(sector);
   const [date, setDate] = useState(todayStr());
   const [observacoes, setObservacoes] = useState("");
+  // Nasce do que a gravação usou ao abrir a sessão (microfone) ou do padrão,
+  // com a Ata detalhada marcada (arquivo). Estado DESTE modal, e não da
+  // página: a escolha vale para um áudio, e herdar a do envio anterior faria
+  // a pessoa receber o que pediu para outra reunião.
+  const [escolha, setEscolha] = useState<OutputKind[]>(() =>
+    normalizarEscolha(confirm.output ?? ATAS_PADRAO),
+  );
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   // A gravação já está indo para /{setor}/{e-mail} no Drive — trocar o setor
   // aqui deixaria o arquivo numa pasta e o registro em outra.
   const sectorLocked = !!confirm.recordingId;
+  // "Online" ainda não tem áudio: mostrar o que será gerado dele prometeria
+  // documentos de uma gravação que não existe.
+  const temAudio = !!confirm.recordingId || !!confirm.file;
 
   // Participantes NÃO são pedidos aqui: registrar a reunião tem que ser rápido.
   // Quem quiser marcar quem estava presente faz isso depois, no modal da
@@ -1000,18 +1015,15 @@ function NewMeetingModal({
         await updateMeeting(confirm.meetingId, {
           title: clean,
           date,
+          output: escolha,
           ...(obs ? { aiNotes: obs } : {}),
         });
-        if (confirm.recordingId) {
-          // A sessão de upload abriu antes de o campo existir, então as
-          // observações só chegam ao arquivo agora.
-          await uploadManager.applyTitle(confirm.recordingId, clean, obs);
-        }
       } else if (confirm.file) {
         // Arquivo: o envio começa agora e segue em segundo plano, retomável.
+        // A escolha vai na abertura da sessão, que grava o `smGerar`.
         const { meetingId } = await startFileUpload(confirm.file, {
           sector: sec,
-          output,
+          output: escolha,
           title: clean,
           observacoes: obs,
         });
@@ -1022,6 +1034,7 @@ function NewMeetingModal({
           });
         }
       } else {
+        // Online, ou microfone cujo rascunho não pôde ser criado no início.
         await createMeeting(
           {
             title: clean,
@@ -1030,12 +1043,29 @@ function NewMeetingModal({
             participants: [],
             ...(obs ? { aiNotes: obs } : {}),
             send: confirm.send,
-            output,
+            // O padrão com a detalhada é para áudio. A online não mostra a
+            // lista, e gravar a escolha que ninguém viu contaria como pedido
+            // da detalhada — justo o número de adesão que motivou a #248.
+            output: temAudio ? escolha : normalizarEscolha([]),
             durationMin: confirm.durationMin,
             driveFileId: null,
             driveLink: null,
           },
           actorEmail,
+        );
+      }
+      if (confirm.recordingId) {
+        // Microfone: a sessão de upload abriu antes de o campo existir, então
+        // as observações — e a escolha, que abriu com o padrão — só chegam ao
+        // arquivo agora (ou quando o envio terminar, se ainda não terminou).
+        // Fora do if/else de propósito: quando o rascunho falhou no início
+        // da gravação, o caminho é o `createMeeting`, e dentro do primeiro
+        // ramo o áudio ficava com o título provisório e a escolha padrão.
+        await uploadManager.applyTitle(
+          confirm.recordingId,
+          clean,
+          obs,
+          escolha,
         );
       }
       onClose();
@@ -1060,7 +1090,10 @@ function NewMeetingModal({
   return (
     <OverlayPortal>
       <div className={styles.overlay} onClick={onClose}>
-        <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+        <div
+          className={`${styles.modal} ${styles.modalRegistrar}`}
+          onClick={(e) => e.stopPropagation()}
+        >
           <div className={styles.modalTitle}>Registrar reunião</div>
           <div className={styles.hint}>
             🎧 <b>{sendLabel}</b>
@@ -1069,8 +1102,13 @@ function NewMeetingModal({
               ? "O áudio já foi enviado ao Drive durante a gravação — se ainda faltar algum trecho, ele sobe sozinho em segundo plano."
               : confirm.file
                 ? "O envio ao Drive começa ao confirmar e continua em segundo plano, retomando sozinho se a rede cair."
-                : ""}{" "}
-            A ata automática por IA chega na <b>Fase 4</b>.
+                : ""}
+            {temAudio
+              ? // "Da lista", e não "marcados": os de cadeado não têm marca e
+                // também vêm. O hífen de e‑mail é o inseparável (U+2011), para
+                // a linha não quebrar em "e-" / "mail".
+                " Depois, a transcrição e os documentos da lista abaixo aparecem na reunião e chegam por e‑mail."
+              : ""}
           </div>
 
           <div className={styles.field}>
@@ -1114,6 +1152,66 @@ function NewMeetingModal({
               />
             </div>
           </div>
+
+          {temAudio && (
+            <div className={styles.field}>
+              <div className={styles.label} id="saidas-do-envio">
+                O que você vai receber
+              </div>
+              <div
+                className={styles.outOptions}
+                role="group"
+                aria-labelledby="saidas-do-envio"
+              >
+                {OUTPUT_OPTIONS.map((o) =>
+                  o.sempre ? (
+                    // Não é botão: não há o que alternar. Fica na lista porque
+                    // ela responde "o que vou receber?" (ver OUTPUT_OPTIONS).
+                    <div
+                      key={o.id}
+                      className={`${styles.outOption} ${styles.outLocked}`}
+                      role="checkbox"
+                      aria-checked="true"
+                      aria-disabled="true"
+                      title="Sempre vem"
+                    >
+                      <span className={styles.outCheck}>
+                        <Icon name="lock" size={12} />
+                      </span>
+                      <span className={styles.outText}>
+                        <span className={styles.outName}>{o.label}</span>
+                        <span className={styles.outDesc}>{o.desc}</span>
+                      </span>
+                    </div>
+                  ) : (
+                    <button
+                      key={o.id}
+                      type="button"
+                      role="checkbox"
+                      aria-checked={escolha.includes(o.id)}
+                      className={`${styles.outOption} ${escolha.includes(o.id) ? styles.on : ""}`}
+                      onClick={() => {
+                        // `o.sempre` falso estreita a união para `OutputKind`:
+                        // é o que faz o compilador recusar, no dia em que
+                        // alguém tornar alternável uma entrada de cadeado, um
+                        // `smGerar` com um valor que o motor não conhece.
+                        setEscolha((cur) => alternarAta(cur, o.id));
+                      }}
+                      disabled={saving}
+                    >
+                      <span className={styles.outCheck}>
+                        <Icon name="check" size={12} />
+                      </span>
+                      <span className={styles.outText}>
+                        <span className={styles.outName}>{o.label}</span>
+                        <span className={styles.outDesc}>{o.desc}</span>
+                      </span>
+                    </button>
+                  ),
+                )}
+              </div>
+            </div>
+          )}
 
           <div className={styles.field}>
             <label className={styles.label}>Observações para a IA (opcional)</label>
@@ -1281,9 +1379,13 @@ function MeetingModal({
 
           <div className={styles.hint}>
             🎧 Origem: <b>{SEND_LABEL[meeting.send ?? "file"]}</b>
-            {meeting.durationMin ? ` · ${meeting.durationMin} min` : ""}. A
-            transcrição e a ata automáticas chegam na <b>Fase 4</b> — por ora você
-            pode colá-las abaixo.
+            {meeting.durationMin ? ` · ${meeting.durationMin} min` : ""}.{" "}
+            {/* O "Fase 4" que estava aqui prometia um futuro que já chegou e
+                desmentia o modal de registro, que diz o que acontece hoje. A
+                online não tem áudio, então nada chega sozinho para ela. */}
+            {meeting.send === "online"
+              ? "Reunião online não tem áudio no Drive: se tiver a transcrição ou a ata, cole abaixo."
+              : "A transcrição e os documentos chegam depois e aparecem aqui quando ficam prontos; se precisar, cole abaixo."}
           </div>
 
           {meeting.driveLink && canSeeAudio && (

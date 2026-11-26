@@ -20,6 +20,7 @@ import {
   putChunkProxied,
   queryOffset,
   renameDriveFile,
+  ArquivoRecusadoError,
   CorsBlockedError,
   type ChunkOutcome,
 } from "../drive-upload";
@@ -32,6 +33,7 @@ import {
   listAll,
   patchRecording,
   readTail,
+  type PendingRename,
   type RecordingRecord,
 } from "./recording-db";
 
@@ -107,6 +109,8 @@ type Listener = (rec: RecordingRecord) => void;
 
 class UploadManagerImpl {
   private pumping = new Set<string>();
+  /** registros em `finalizePending` agora, nesta aba (ver o método) */
+  private finalizing = new Set<string>();
   private listeners = new Set<Listener>();
   private lastFirestoreWrite = new Map<string, number>();
   private booted = false;
@@ -172,6 +176,10 @@ class UploadManagerImpl {
         continue;
       }
       if (rec.status === "failed") {
+        // O servidor disse que o arquivo não é áudio (ou é grande demais):
+        // outra chance daria a mesma resposta, e reviver aqui repetia as 12
+        // tentativas a cada abertura do app. Fica parado até ser descartado.
+        if (rec.recusado) continue;
         // nova sessão do usuário = nova chance; o áudio continua no disco
         await patchRecording(rec.id, { status: "uploading", error: null });
       }
@@ -186,14 +194,43 @@ class UploadManagerImpl {
    * própria URL), mas não com o Firestore nem com as nossas rotas, que exigem o
    * token do Firebase. Então ele marca `done` e deixa o resto aqui: atualizar a
    * reunião, aplicar o título definitivo e só então descartar o registro.
+   *
+   * Com trava, porque agora isto fala com a rede (a pendência do título) e
+   * `resumeAll` roda várias vezes ao mesmo tempo — na abertura, 2,5 s depois,
+   * a cada aviso do worker, na volta da aba. Sem ela, todas viam a mesma
+   * pendência e cada uma a mandava ao Drive. O conjunto em memória barra a
+   * repetição nesta aba sem enfileirar; a trava do navegador, a de outra aba.
+   * Dentro dela o registro é relido, porque o que `resumeAll` leu pode já ter
+   * sido aplicado e apagado por quem segurava a trava antes.
    */
-  private async finalizePending(rec: RecordingRecord): Promise<void> {
-    await this.writeFirestore(rec, true);
-    await deleteChunks(rec.id);
-    // Ainda pode haver um formulário aberto esperando o título definitivo.
-    // Passado esse prazo consideramos abandonado e ficamos com o nome provisório.
-    const stale = Date.now() - rec.createdAt > TITLE_GRACE_MS;
-    if (rec.titleConfirmed || stale) await deleteRecording(rec.id);
+  private async finalizePending(lido: RecordingRecord): Promise<void> {
+    if (this.finalizing.has(lido.id)) return;
+    this.finalizing.add(lido.id);
+    try {
+      await withLock(`smartmeet-fin-${lido.id}`, async () => {
+        const rec = await getRecording(lido.id);
+        if (!rec || rec.status !== "done") return;
+        await this.writeFirestore(rec, true);
+        await deleteChunks(rec.id);
+        // O modal pode ter confirmado o título enquanto o worker enviava: a
+        // pendência vai ao Drive antes de o registro sumir, senão sumiria com ele.
+        const semPendencia = await this.applyPendingRename(rec);
+        // Ainda pode haver um formulário aberto esperando o título definitivo.
+        // Passado esse prazo consideramos abandonado e ficamos com o nome provisório.
+        const stale = Date.now() - rec.createdAt > TITLE_GRACE_MS;
+        if (stale && !semPendencia) {
+          console.error(
+            "Desistindo de levar o título ao Drive depois de 6 h de tentativas:",
+            rec.id,
+          );
+        }
+        if ((rec.titleConfirmed && semPendencia) || stale) {
+          await deleteRecording(rec.id);
+        }
+      });
+    } finally {
+      this.finalizing.delete(lido.id);
+    }
   }
 
   /**
@@ -259,6 +296,9 @@ class UploadManagerImpl {
       recordingId: rec.id,
       outputs: rec.output,
       observacoes: rec.observacoes,
+      // Só o arquivo escolhido tem total na abertura; na gravação ele é null
+      // e o servidor deixa de conferir o tamanho.
+      size: rec.totalBytes,
     });
     const next = await patchRecording(rec.id, {
       sessionUri: uploadUrl,
@@ -305,47 +345,96 @@ class UploadManagerImpl {
   }
 
   /**
-   * Registra o título definitivo. Se o arquivo já fechou no Drive, renomeia na
-   * hora; senão fica guardado e a renomeação acontece ao concluir.
+   * Registra o que o modal confirmou: título, observações e a escolha de
+   * documentos (`outputs`, que vira o `smGerar` do arquivo).
+   *
+   * Se o arquivo já fechou no Drive, aplica na hora. Senão, a pendência fica
+   * no registro e quem concluir o envio — `settle` nesta aba ou
+   * `finalizePending` depois do service worker — a aplica antes de apagá-lo.
+   * Antes desta pendência existir, o comentário daqui prometia "renomeia ao
+   * concluir" e ninguém renomeava: o título de quem fechava o modal antes do
+   * fim do envio nunca chegava ao Drive.
    */
   async applyTitle(
     recordingId: string,
     title: string,
     observacoes?: string,
+    outputs?: string[],
   ): Promise<void> {
+    const pendingRename: PendingRename = {
+      title,
+      ...(observacoes ? { observacoes } : {}),
+      ...(outputs ? { outputs } : {}),
+    };
     const rec = await patchRecording(recordingId, {
       title,
       titleConfirmed: true,
       ...(observacoes ? { observacoes } : {}),
+      ...(outputs ? { output: outputs } : {}),
+      pendingRename,
     });
     if (!rec) return;
-
-    if (rec.driveFileId) {
-      // preserva a extensão: o título não a carrega, o nome no Drive sim
-      const dot = rec.driveName.lastIndexOf(".");
-      const ext = dot > 0 ? rec.driveName.slice(dot) : "";
-      const nextName = `${title}${ext}`;
-      if (nextName !== rec.driveName) {
-        try {
-          const file = await renameDriveFile(
-            rec.driveFileId,
-            nextName,
-            rec.sector,
-            observacoes,
-          );
-          await patchRecording(recordingId, {
-            driveName: nextName,
-            driveLink: file.webViewLink ?? rec.driveLink,
-          });
-        } catch (e) {
-          // nome errado no Drive é cosmético — nunca deve derrubar o fluxo
-          console.warn("Falha ao renomear no Drive:", e);
-        }
-      }
-    }
+    // Sem arquivo fechado ainda: quem concluir o envio aplica.
+    if (rec.status !== "done") return;
 
     // o registro só existia para permitir esta renomeação
-    if (rec.status === "done") await deleteRecording(recordingId);
+    if (await this.applyPendingRename(rec)) await deleteRecording(recordingId);
+  }
+
+  /**
+   * Leva ao arquivo do Drive a pendência do modal. Devolve true quando não
+   * resta o que fazer com ela (aplicou, não havia nada, ou não há como).
+   *
+   * A chamada vai SEMPRE que há pendência, mesmo com o nome igual: antes ela
+   * só ia se o nome mudasse, e quem deixava o título sugerido perdia as
+   * observações — agora perderia também a escolha de documentos.
+   *
+   * Falhar aqui não derruba o envio (o áudio já está salvo no Drive), mas não
+   * pode sumir calado como antes, num `warn` de "cosmético": um título que não
+   * chega deixa o motor da nuvem esperando até 6 h pelo nome provisório, e uma
+   * escolha que não chega faz sair o documento errado. O erro vai ao console e
+   * a pendência FICA no registro, para a próxima retomada tentar de novo até
+   * TITLE_GRACE_MS.
+   */
+  private async applyPendingRename(rec: RecordingRecord): Promise<boolean> {
+    const pending = rec.pendingRename;
+    if (!pending) return true;
+    if (!rec.driveFileId) {
+      // O Drive fechou o arquivo sem devolver o id (ver `settle`). Com o
+      // registro em "done" nada mais reconcilia, então esperar não traz o id:
+      // fica registrado e seguimos, como já era antes desta pendência.
+      console.error(
+        "Arquivo fechou no Drive sem id; o título e a escolha de documentos não puderam ser aplicados:",
+        rec.id,
+      );
+      return true;
+    }
+    // preserva a extensão: o título não a carrega, o nome no Drive sim
+    const dot = rec.driveName.lastIndexOf(".");
+    const ext = dot > 0 ? rec.driveName.slice(dot) : "";
+    const nextName = `${pending.title}${ext}`;
+    try {
+      const file = await renameDriveFile(
+        rec.driveFileId,
+        nextName,
+        rec.sector,
+        pending.observacoes,
+        pending.outputs,
+      );
+      await patchRecording(rec.id, {
+        driveName: nextName,
+        driveLink: file.webViewLink ?? rec.driveLink,
+        pendingRename: null,
+      });
+      return true;
+    } catch (e) {
+      console.error(
+        "Falha ao levar o título e a escolha de documentos ao Drive; nova tentativa na próxima retomada:",
+        rec.id,
+        e,
+      );
+      return false;
+    }
   }
 
   /** Liga o doc do Firestore ao registro local (criado no início da gravação). */
@@ -398,6 +487,22 @@ class UploadManagerImpl {
         attempt = 0;
         directFailures = 0;
       } catch (e) {
+        // Recusa do servidor não é falha de rede: falha na hora, sem as 12
+        // tentativas, e a reunião passa a dizer "falha" em vez de esperar por
+        // um áudio que nunca vai chegar.
+        if (e instanceof ArquivoRecusadoError) {
+          const recusado = await patchRecording(recordingId, {
+            status: "failed",
+            error: e.message,
+            recusado: true,
+          });
+          if (recusado) {
+            this.emit(recusado);
+            await this.writeFirestore(recusado, true);
+          }
+          return;
+        }
+
         // Preflight barrado e queda de rede chegam iguais ao JavaScript. Se
         // estamos online e o envio direto falhou duas vezes seguidas, é CORS —
         // passamos a repassar os blocos pelo nosso servidor.
@@ -526,7 +631,12 @@ class UploadManagerImpl {
         // que a renomeação ainda seja possível — com envio em streaming o
         // arquivo costuma fechar antes de o usuário sair do formulário.
         await deleteChunks(updated.id);
-        if (updated.titleConfirmed) await deleteRecording(updated.id);
+        // E quando é o contrário — o modal fechou antes do fim do envio —, a
+        // pendência que ele deixou vai ao Drive aqui, antes de o registro sair.
+        const semPendencia = await this.applyPendingRename(updated);
+        if (updated.titleConfirmed && semPendencia) {
+          await deleteRecording(updated.id);
+        }
       }
       return true;
     }
