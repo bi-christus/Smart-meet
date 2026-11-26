@@ -28,6 +28,7 @@ import { syncDrive } from "@/lib/drive-upload";
 import { useRecording } from "@/lib/audio/recording-context";
 import { uploadManager } from "@/lib/audio/uploader";
 import { fmtBytes } from "@/lib/audio/recording-db";
+import { SeloSetor } from "@/components/selo-setor";
 import styles from "./reunioes.module.css";
 
 const MES = [
@@ -704,7 +705,9 @@ export default function ReunioesPage() {
                   <div className={styles.qMain}>
                     <div className={styles.qName}>{m.title}</div>
                     <div className={styles.qMeta}>
-                      {m.sector} · {fmtShortDate(m.date)}
+                      {/* O mesmo selo do acervo logo abaixo: o setor tem de
+                          ter a mesma cara nas duas metades da tela. */}
+                      <SeloSetor setor={m.sector} /> · {fmtShortDate(m.date)}
                       {m.durationMin ? ` · ${m.durationMin}min` : ""} · via{" "}
                       {SEND_LABEL[m.send ?? "file"]}
                     </div>
