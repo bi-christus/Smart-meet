@@ -134,7 +134,9 @@ export function RecoveryBanner() {
                   </div>
                 </div>
                 <div className={styles.actions}>
-                  {r.status === "failed" && (
+                  {/* Recusado pelo servidor (não é áudio): tentar de novo não
+                      faz nada, e o botão prometeria o contrário. */}
+                  {r.status === "failed" && !r.recusado && (
                     <button
                       className={styles.btn}
                       onClick={() => void uploadManager.resumeAll()}

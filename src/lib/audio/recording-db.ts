@@ -82,6 +82,36 @@ export type RecordingRecord = {
   proxyMode: boolean;
   /** caminho "file": referência ao arquivo original escolhido pelo usuário */
   file?: File;
+  /**
+   * O que o modal confirmou e ainda NÃO chegou ao arquivo no Drive: título,
+   * observações e a escolha de documentos (`smGerar`).
+   *
+   * Existe porque o modal costuma fechar antes de o envio terminar, e aí não
+   * há arquivo para renomear. Antes, nesse caso, o título simplesmente se
+   * perdia, e o motor da nuvem esperava até 6 h pelo nome provisório
+   * "Gravação — …". Fica no registro, e não na memória da aba, para sobreviver
+   * a uma recarga e ao service worker concluir o envio sozinho: quem fecha o
+   * ciclo (`settle` ou `finalizePending`) aplica a pendência ANTES de apagar o
+   * registro. O service worker não precisa conhecer este campo — ele só faz
+   * `Object.assign` sobre o registro, e o campo atravessa intacto.
+   */
+  pendingRename?: PendingRename | null;
+  /**
+   * true quando o servidor recusou o arquivo pelo que ele é (não é áudio, ou
+   * passa do limite). Distingue esta "falha" da falha de rede: a de rede volta
+   * a ser tentada a cada abertura do app, esta não — a resposta seria a mesma.
+   * O registro fica até a pessoa descartá-lo, para que a recusa apareça na
+   * faixa de recuperação em vez de sumir calada. O service worker não precisa
+   * conhecer o campo: ele só envia registros "uploading" com sessão aberta, e
+   * um recusado nunca teve sessão.
+   */
+  recusado?: boolean;
+};
+
+export type PendingRename = {
+  title: string;
+  observacoes?: string;
+  outputs?: string[];
 };
 
 type ChunkRecord = {

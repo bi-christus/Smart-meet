@@ -31,37 +31,15 @@
   border: 1px solid var(--line-soft);
   border-radius: var(--r-lg);
 }
+/* Coluna flexível, e a área do modo ocupa a sobra: sem a coluna lateral "O que
+   gerar" (que foi para o modal de registro), a esteira ao lado passou a ditar a
+   altura da linha da grade, e a captura terminava deixando uma faixa vazia
+   embaixo. Esticar a área de envio em vez de prender o painel no topo também
+   aumenta o alvo de arrastar. */
 .capPanel {
   padding: 18px 20px;
-}
-
-/* área de captura em 2 colunas: método (esq.) + o que gerar (dir.) */
-.capGrid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
-  gap: 22px;
-  align-items: start;
-}
-@media (max-width: 760px) {
-  .capGrid {
-    grid-template-columns: 1fr;
-    gap: 16px;
-  }
-}
-.capMain {
-  min-width: 0;
-}
-.capSide {
-  padding-left: 22px;
-  border-left: 1px solid var(--line-soft);
-}
-@media (max-width: 760px) {
-  .capSide {
-    padding-left: 0;
-    padding-top: 16px;
-    border-left: none;
-    border-top: 1px solid var(--line-soft);
-  }
+  display: flex;
+  flex-direction: column;
 }
 
 .capTop {
@@ -115,6 +93,9 @@
 }
 
 .capBody {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
   animation: fadeSlide 0.28s ease;
 }
 @keyframes fadeSlide {
@@ -130,6 +111,10 @@
 
 /* upload dropzone */
 .dropzone {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
   border: 1.5px dashed var(--brand-line);
   border-radius: 12px;
   padding: 40px 20px;
@@ -171,6 +156,7 @@
 
 /* microfone */
 .micBox {
+  flex: 1;
   border: 1.5px dashed var(--line);
   border-radius: 12px;
   padding: 32px 20px;
@@ -337,6 +323,7 @@
 
 /* online */
 .onlineBox {
+  flex: 1;
   border: 1.5px dashed var(--line);
   border-radius: 12px;
   padding: 30px 24px;
@@ -444,27 +431,38 @@
   gap: 10px;
 }
 
-.outLbl {
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  color: var(--tx-3);
-  margin: 0 0 10px;
-}
+/*
+ * "O que você vai receber", dentro do modal Registrar reunião. Duas colunas:
+ * a primeira linha são os dois que sempre vêm, a segunda as duas escolhas —
+ * a forma da grade já separa "incluído" de "decida", sem um título a mais. Em
+ * coluna única seriam quatro linhas, e o modal, que já cresceu com a lista,
+ * cresceria outro tanto.
+ *
+ * Marcar e desmarcar é interação de alta frequência (AGENTS.md §3): a cor
+ * troca em 0,12 s e o cartão afunda 1 px no clique, como os outros botões da
+ * tela — resposta ao toque, não animação. Nada cresce, desliza ou aparece.
+ */
 .outOptions {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+@media (max-width: 520px) {
+  .outOptions {
+    grid-template-columns: 1fr;
+  }
 }
 .outOption {
   display: flex;
-  gap: 11px;
+  gap: 10px;
   align-items: flex-start;
-  padding: 12px 13px;
+  padding: 10px 12px;
   border: 1px solid var(--line);
-  background: var(--s2);
-  border-radius: 11px;
+  /* o modal é --s2; o cartão desce para --s1, como os campos ao lado */
+  background: var(--s1);
+  border-radius: 10px;
+  color: inherit;
+  font-family: inherit;
   cursor: pointer;
   text-align: left;
   transition: border-color 0.12s, background 0.12s, transform 0.05s;
@@ -483,8 +481,25 @@
   opacity: 0.5;
   cursor: default;
 }
+/*
+ * O cadeado NÃO usa a cor da marca. Na lateral antiga ele vinha "marcado"
+ * igual às escolhas, e, com a Ata detalhada agora marcada por padrão, os três
+ * ficariam idênticos — e a pessoa não saberia qual dá para desmarcar.
+ */
 .outLocked {
   cursor: default;
+  border-color: var(--line-soft);
+}
+.outLocked:hover {
+  border-color: var(--line-soft);
+}
+.outLocked:active {
+  transform: none;
+}
+.outLocked .outCheck {
+  border-color: transparent;
+  background: var(--s3);
+  color: var(--tx-2);
 }
 .outCheck {
   width: 18px;
@@ -492,7 +507,10 @@
   flex: none;
   margin-top: 1px;
   border-radius: 6px;
-  border: 1.5px solid var(--line);
+  /* --tx-2, e não --line: a caixa vazia é o que diz "dá para marcar", e com
+     --line ela ficava em 1,2–1,3:1 sobre o cartão — abaixo dos 3:1 que um
+     controle precisa. --tx-3 passaria no escuro, mas não no claro. */
+  border: 1.5px solid var(--tx-2);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -519,6 +537,31 @@
   color: var(--tx-3);
   line-height: 1.4;
   margin-top: 2px;
+}
+
+/* Recusa do arquivo, dentro da própria área: é onde o olho está ao soltar. */
+.dropErr {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 7px;
+  max-width: 520px;
+  margin-top: 14px;
+  padding: 8px 12px;
+  border: 1px solid var(--danger);
+  border-radius: 9px;
+  /* Opaco: o --danger-bg é translúcido, e por baixo está o --brand-soft da
+     área de envio, que muda com o acento. Misturados, o texto caía para
+     4,1:1 no claro/café. Com o --s1 por baixo, o contraste deixa de depender
+     da cor da marca. */
+  background: linear-gradient(var(--danger-bg), var(--danger-bg)), var(--s1);
+  color: var(--danger-tx);
+  font-size: 12.5px;
+  line-height: 1.45;
+  text-align: left;
+}
+.dropErr svg {
+  flex: none;
+  margin-top: 1px;
 }
 
 .infoBanner {
@@ -847,6 +890,24 @@
   padding: 9px 12px;
   margin-bottom: 14px;
   line-height: 1.5;
+}
+/* O modal de registro cresceu (~490 → ~644 px) quando a escolha das atas
+   entrou nele, e numa janela de 1366×657 o "Registrar" ficava abaixo da dobra.
+   Rolagem interna com o rodapé preso, e não um modal mais baixo: cortar campo
+   esconderia justamente a escolha que veio para cá. Classe própria, e não na
+   .modal: o modal da reunião tem conteúdo que não pode ser recortado assim. */
+.modalRegistrar {
+  max-height: calc(100dvh - 96px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.modalRegistrar > .mactions {
+  position: sticky;
+  bottom: -22px;
+  margin: 20px -22px -22px;
+  padding: 14px 22px 22px;
+  background: var(--s2);
+  border-top: 1px solid var(--line-soft);
 }
 .mactions {
   display: flex;
