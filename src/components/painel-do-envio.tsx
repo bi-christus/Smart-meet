@@ -362,16 +362,26 @@ function noFundoDaCamada(e: React.MouseEvent<HTMLDivElement>): boolean {
 function engolirCliqueDuplo(e: React.MouseEvent) {
   if (e.detail < 1) return;
   const tipos = ["mousedown", "mouseup", "click", "dblclick"] as const;
+  const soltar = () => {
+    window.clearTimeout(prazo);
+    for (const tipo of tipos) window.removeEventListener(tipo, engolir, true);
+  };
   const engolir = (ev: MouseEvent) => {
+    // Um apertar com a contagem recomeçada é um clique NOVO: o 2º do clique
+    // duplo já não vem, e segurar os ouvintes engoliria o clique duplo de
+    // verdade que a pessoa desse logo depois em outro ponto da página (a
+    // palavra que ela quer selecionar, por exemplo).
+    if (ev.type === "mousedown" && ev.detail <= 1) {
+      soltar();
+      return;
+    }
     if (ev.detail > 1) {
       ev.preventDefault();
       ev.stopPropagation();
     }
   };
   for (const tipo of tipos) window.addEventListener(tipo, engolir, true);
-  window.setTimeout(() => {
-    for (const tipo of tipos) window.removeEventListener(tipo, engolir, true);
-  }, 500);
+  const prazo = window.setTimeout(soltar, 500);
 }
 
 /** Teclas que só modificam outra: sozinhas, não são navegação. */
