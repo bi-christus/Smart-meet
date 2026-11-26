@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
   useId,
   useLayoutEffect,
@@ -331,6 +332,23 @@ function Linha({ linha }: { linha: LinhaDoEnvio }) {
  * `tabindex` fixo, cada clique no fundo da página passaria a mover o foco para
  * ele. O atributo só existe enquanto o foco está lá.
  */
+/**
+ * O clique caiu no fundo da camada `.lugar`, e não num filho dela nem na
+ * barra de rolagem dela (`clientWidth`/`clientHeight` não contam a barra)?
+ */
+function noFundoDaCamada(e: React.MouseEvent<HTMLDivElement>): boolean {
+  if (e.target !== e.currentTarget) return false;
+  const camada = e.currentTarget;
+  const caixa = camada.getBoundingClientRect();
+  return (
+    e.clientX < caixa.left + camada.clientLeft + camada.clientWidth &&
+    e.clientY < caixa.top + camada.clientTop + camada.clientHeight
+  );
+}
+
+/** Teclas que só modificam outra: sozinhas, não são navegação. */
+const MODIFICADORAS = new Set(["Shift", "Control", "Alt", "AltGraph", "Meta", "OS", "CapsLock"]);
+
 function focarConteudo() {
   const main = document.querySelector<HTMLElement>("main");
   if (!main) return;
@@ -378,7 +396,12 @@ export function PainelDoEnvio() {
   // pílula davam `:focus-visible` no "Minimizar", e o painel deixava de
   // fechar sozinho para quem tinha acabado de usar o mouse.
   useEffect(() => {
-    const tecla = () => {
+    // Modificadora sozinha e atalho não são navegação pelo painel: o Ctrl do
+    // Ctrl+Tab que troca de aba marcava "teclado", e a volta da janela — que
+    // devolve o foco ao botão — passava a segurar a confirmação de quem usa
+    // o mouse. O Shift+Tab continua contando, pelo Tab.
+    const tecla = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.altKey || e.metaKey || MODIFICADORAS.has(e.key)) return;
       entrada.current = "teclado";
     };
     const ponteiro = () => {
@@ -411,7 +434,13 @@ export function PainelDoEnvio() {
     const antes = document.activeElement as HTMLElement | null;
     const el = ref.current;
     if (el && !el.contains(document.activeElement)) {
-      el.querySelector<HTMLElement>("[data-foco-inicial]")?.focus();
+      const alvo = el.querySelector<HTMLElement>("[data-foco-inicial]");
+      alvo?.focus();
+      // Rede para o `focus()` que falha calado (um botão ainda `hidden` no
+      // quadro em que o diálogo aparece — ver o movimento reduzido na folha):
+      // o próprio diálogo segura o foco, e é nele que moram o Escape e a
+      // trava do Tab. Sem isso o foco ficava no `<body>` com o painel aberto.
+      if (alvo && document.activeElement !== alvo) el.focus();
     }
     return () => {
       const agora = document.activeElement;
@@ -455,15 +484,29 @@ export function PainelDoEnvio() {
   const sair = todosConcluidos ? fecharAgora : minimizar;
   const alerta = resumo.fase === "falha" || resumo.fase === "recusado";
 
-  // O véu cobre a tela inteira, acima da doca, a partir do quadro em que o
-  // painel abre: o 2º clique de um clique duplo na pílula caía nele e
-  // minimizava de novo o painel que o 1º tinha acabado de abrir — quem clica
-  // duas vezes por hábito não conseguia abri-lo. Pelo mesmo motivo, o véu
-  // segura o clique nos 120 ms em que some depois do "Minimizar" (ver a
-  // folha), e esse clique não faz nada.
-  function aoClicarNoVeu(e: React.MouseEvent) {
+  // O clique fora é o clique no fundo da camada `.lugar` (que cobre a tela e
+  // rola com o painel aberto), e não num filho dela. A barra de rolagem é da
+  // camada: arrastá-la é rolar, e não "clicar fora" — sem a conta da caixa
+  // (`noFundoDaCamada`), quem rolava pela barra minimizava o painel.
+  //
+  // A camada cobre a tela a partir do quadro em que o painel abre: o 2º
+  // clique de um clique duplo na pílula caía nela e minimizava de novo o
+  // painel que o 1º tinha acabado de abrir — quem clica duas vezes por hábito
+  // não conseguia abri-lo. Pelo mesmo motivo, o véu segura o clique nos
+  // 120 ms em que some depois do "Minimizar" (ver a folha), e esse clique
+  // não faz nada.
+  function aoClicarFora(e: React.MouseEvent<HTMLDivElement>) {
+    if (!noFundoDaCamada(e)) return;
     if (!aberto || e.detail > 1 || Date.now() - abertoEm.current < 350) return;
     sair();
+  }
+
+  // O fundo da camada não é focável, e o clique nele levava o foco para o
+  // `<body>` — o clique IGNORADO (o 2º do clique duplo, o de logo depois de
+  // abrir) deixava o painel aberto sem Escape e sem trava do Tab até o
+  // próximo render. Segurar o padrão do `mousedown` mantém o foco onde estava.
+  function aoApertarFora(e: React.MouseEvent<HTMLDivElement>) {
+    if (noFundoDaCamada(e)) e.preventDefault();
   }
 
   function onKeyDown(e: React.KeyboardEvent) {
@@ -511,8 +554,13 @@ export function PainelDoEnvio() {
 
   return (
     <OverlayPortal>
-      <div className={styles.veu} data-estado={estado} onClick={aoClicarNoVeu} />
-      <div className={styles.lugar} data-estado={estado}>
+      <div className={styles.veu} data-estado={estado} />
+      <div
+        className={styles.lugar}
+        data-estado={estado}
+        onMouseDown={aoApertarFora}
+        onClick={aoClicarFora}
+      >
         <div
           ref={ref}
           role="dialog"
@@ -594,7 +642,20 @@ export function PainelDoEnvio() {
 export function PilulaDoEnvio() {
   const { resumo, minimizado, estourando, fechando, todosConcluidos, restaurar } =
     useEnvios();
-  const botao = useRef<HTMLButtonElement>(null);
+  const botao = useRef<HTMLButtonElement | null>(null);
+  // A pílula que SAI DA PÁGINA com o foco dentro levava o foco ao `<body>`:
+  // com movimento reduzido não existe "saindo" (o relógio finaliza direto, e
+  // ela desmonta sem passar pelo efeito abaixo). A limpeza do ref roda ANTES
+  // de o React tirar o botão da página, com o foco ainda nele; um efeito já
+  // rodaria depois, com o foco perdido e sem como saber de onde ele caiu.
+  const prenderBotao = useCallback((no: HTMLButtonElement | null) => {
+    botao.current = no;
+    if (!no) return;
+    return () => {
+      if (no.contains(document.activeElement)) focarConteudo();
+      botao.current = null;
+    };
+  }, []);
   const estado = !resumo || !minimizado
     ? "oculta"
     : estourando || fechando
@@ -618,7 +679,7 @@ export function PilulaDoEnvio() {
   return (
     <div className={styles.pilulaLugar} data-estado={estado}>
       <button
-        ref={botao}
+        ref={prenderBotao}
         type="button"
         className={styles.pilula}
         data-fase={resumo.fase}

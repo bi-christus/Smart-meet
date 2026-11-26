@@ -60,24 +60,32 @@
 
 /* ---------- o diálogo ---------- */
 
-/* Camada só de posição, acima do véu e transparente ao clique: o clique fora
-   do diálogo atravessa e chega ao véu, que minimiza.
+/* Camada de posição acima do véu. Com o painel ABERTO, é ela que recebe o
+   clique fora (no próprio fundo dela, ver `aoClicarFora`) e QUEM ROLA, e não
+   a lista: com a tela baixa (zoom de 200 a 400%), o diálogo preso à altura da
+   tela espremia a lista até zero e empurrava o "Minimizar" para fora dela
+   (WCAG 1.4.10). O `margin: auto` do diálogo centra quando cabe e encosta no
+   topo quando não cabe — com `align-items: center`, o que passasse do topo
+   ficaria fora do alcance da rolagem.
 
-   QUEM ROLA É ELA, e não a lista: com a tela baixa (zoom de 200 a 400%), o
-   diálogo preso à altura da tela espremia a lista até zero e empurrava o
-   "Minimizar" para fora dela (WCAG 1.4.10). O `margin: auto` do diálogo
-   centra quando cabe e encosta no topo quando não cabe — com
-   `align-items: center`, o que passasse do topo ficaria fora do alcance da
-   rolagem. */
+   Fora do aberto ela não rola nem pega clique: o diálogo minimizado continua
+   ocupando lugar (só fica `hidden`), e uma camada que rola desenhava, por
+   cima da página, uma barra de rolagem morta e no lugar errado. E aberta ela
+   PRECISA pegar o ponteiro: transparente ao clique, a barra que aparecia não
+   rolava — o arrasto atravessava até o véu e minimizava o painel. */
 .lugar {
   position: fixed;
   inset: 0;
   z-index: 81;
   display: flex;
   padding: 24px 16px;
-  overflow-y: auto;
+  overflow: hidden;
   overscroll-behavior: contain;
   pointer-events: none;
+}
+.lugar[data-estado="aberto"] {
+  overflow-y: auto;
+  pointer-events: auto;
 }
 
 .dialogo {
@@ -786,5 +794,20 @@
   .preenchimento,
   .anelValor {
     transition: none;
+  }
+  /* A rede global (globals.css) troca TODA transição por uma de 0,01 ms, e
+     quem não declara transição tem `transition-property: all`. Os botões
+     herdam o `visibility` do diálogo e da pílula, e a volta de hidden para
+     visible virava uma transição que COMEÇA em hidden: o `focus()` do mesmo
+     quadro falhava calado, e o painel restaurado ficava com o foco no
+     `<body>`, sem Escape e sem trava do Tab. Aqui não há o que esmaecer, então
+     não há transição nenhuma; o `!important` é o que vence o da rede. */
+  .dialogo *,
+  .dialogo *::before,
+  .dialogo *::after,
+  .pilulaLugar *,
+  .pilulaLugar *::before,
+  .pilulaLugar *::after {
+    transition: none !important;
   }
 }

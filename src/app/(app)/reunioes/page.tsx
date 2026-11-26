@@ -850,7 +850,14 @@ function UploadChip({ meeting }: { meeting: Meeting }) {
   return (
     <span
       className={`${styles.chip} ${s === "falha" ? styles.st_falha : styles.st_enviando}`}
-      title={meeting.uploadError ?? undefined}
+      // Só na falha: durante as novas tentativas o espelho também carrega o
+      // último erro (ver `settle` no uploader), e o "Enviando áudio 42%" com
+      // "Failed to fetch" por cima contava uma queda que já tinha passado.
+      title={
+        s === "falha"
+          ? (mensagemDoErro(meeting.uploadError ?? null) ?? undefined)
+          : undefined
+      }
     >
       {s === "gravando"
         ? "Gravando…"
