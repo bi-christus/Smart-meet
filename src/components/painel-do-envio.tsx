@@ -1,14 +1,22 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { Icon } from "@/components/icons";
 import { OverlayPortal } from "@/components/overlay-portal";
 import { SeloSetor } from "@/components/selo-setor";
 import { useEnvios, type LinhaDoEnvio } from "@/lib/audio/envio-context";
 import {
-  AVISO_RECUSADO,
+  avisoDoPainel,
   percentual,
-  type ResumoDosEnvios,
+  textoDaPilula,
+  tituloDoPainel,
 } from "@/lib/audio/envio-core";
 import styles from "./painel-do-envio.module.css";
 
@@ -127,104 +135,17 @@ function Anel({ fracao, parado }: { fracao: number | null; parado: boolean }) {
         strokeDashoffset={c * (1 - (fracao ?? 0))}
         transform="rotate(-90 9 9)"
       />
+      {/* O parado também muda a FORMA, e não só a cor do arco: em tela
+          estreita a pílula é só este anel, e a troca de laranja para cinza
+          era o único sinal de que o envio esperava (WCAG 1.4.1). */}
+      {parado && (
+        <g className={styles.anelPausa}>
+          <rect x={6.5} y={6.25} width={1.75} height={5.5} rx={0.5} />
+          <rect x={9.75} y={6.25} width={1.75} height={5.5} rx={0.5} />
+        </g>
+      )}
     </svg>
   );
-}
-
-function tituloDoPainel(resumo: ResumoDosEnvios): string {
-  const varios = resumo.quantos > 1;
-  switch (resumo.fase) {
-    case "concluido":
-      return varios ? "Áudios enviados!" : "Áudio enviado!";
-    case "falha":
-      return "O envio parou";
-    case "recusado":
-      return varios ? "Um arquivo não foi aceito" : "Este arquivo não foi aceito";
-    case "preparando":
-      return "Preparando o envio…";
-    default:
-      return resumo.subindo > 1
-        ? `Enviando ${resumo.subindo} áudios`
-        : "Enviando o áudio";
-  }
-}
-
-/**
- * O que a pessoa pode fazer com o site — a frase que importa no painel.
- *
- * "Pode continuar usando o sistema" vem junto do "não feche" de propósito: o
- * painel minimiza, e quem lê só "não feche" fica olhando a barra parada.
- * Na conclusão, o ✓ fala do ÁUDIO, e a frase diz que os documentos vêm
- * depois: na mesma tela, o verde é o chip "Processado" da esteira, e um ✓
- * sozinho seria lido como "ata pronta". "Os documentos que você escolheu", e
- * não "as atas": as duas atas são opcionais no registro, e quem não marcou
- * nenhuma receberia a promessa de algo que não vem.
- *
- * "Tentando de novo" não culpa a conexão: o mesmo estado vale para um bloco
- * que o Drive devolveu com erro 500, e "a conexão oscilou" mandaria a pessoa
- * conferir o Wi‑Fi à toa. Só o "sem-rede", que vem do navegador, fala de rede.
- */
-function avisoDoPainel(resumo: ResumoDosEnvios): string {
-  switch (resumo.fase) {
-    case "concluido":
-      return "Pode fechar o site. A transcrição com quem falou e os documentos que você escolheu chegam por e‑mail em até cerca de 1h30.";
-    case "falha":
-      return resumo.falhaSemCopia
-        ? "Este áudio não chegou ao Drive e não ficou cópia neste computador. Grave ou envie de novo."
-        : "O áudio continua salvo neste computador. Tente de novo ou baixe uma cópia — e não feche o site enquanto isso.";
-    case "recusado":
-      return AVISO_RECUSADO;
-    default:
-      if (resumo.parado === "sem-rede") {
-        return "Sem conexão. O envio continua sozinho quando a rede voltar — não feche o site.";
-      }
-      if (resumo.parado === "tentando") {
-        return "Um trecho não subiu, e o envio está tentando de novo sozinho. Não feche o site.";
-      }
-      return "Não feche o site até terminar — pode continuar usando o sistema.";
-  }
-}
-
-/** O texto curto da pílula, e a frase que ela anuncia ao leitor de tela. */
-function textoDaPilula(resumo: ResumoDosEnvios): { curto: string; anuncio: string } {
-  const pct = `${percentual(resumo.fracao)}%`;
-  switch (resumo.fase) {
-    case "concluido":
-      return {
-        curto: resumo.quantos > 1 ? "Áudios enviados" : "Áudio enviado",
-        anuncio: "Áudio enviado. Pode fechar o site; os documentos chegam por e-mail.",
-      };
-    case "falha":
-      return { curto: "O envio parou", anuncio: "O envio parou. Abra o painel para tentar de novo." };
-    case "recusado":
-      return { curto: "Arquivo recusado", anuncio: "Um arquivo não foi aceito. Abra o painel para descartá-lo." };
-    case "preparando":
-      return { curto: "Preparando…", anuncio: "Preparando o envio do áudio." };
-    default: {
-      // "Retomando", e não "Reconectando" (culpava a conexão por qualquer erro)
-      // nem "Tentando de novo": esse alarga a pílula até ela cobrir o
-      // "Salvar permissões" do Admin entre 680 e 800 px de largura.
-      const antes =
-        resumo.parado === "sem-rede"
-          ? "Sem rede"
-          : resumo.parado === "tentando"
-            ? "Retomando"
-            : resumo.subindo > 1
-              ? `${resumo.subindo} envios`
-              : "Enviando";
-      return {
-        curto: `${antes} · ${pct}`,
-        // O anúncio NÃO leva o percentual: ele muda a cada bloco de 8 MB, e uma
-        // região viva que fala a cada bloco vira ruído para quem usa leitor.
-        anuncio:
-          resumo.parado === "sem-rede"
-            ? "O envio está esperando a conexão."
-            : resumo.parado === "tentando"
-              ? "O envio está tentando de novo."
-              : "Enviando o áudio.",
-      };
-    }
-  }
 }
 
 function Linha({ linha }: { linha: LinhaDoEnvio }) {
@@ -233,8 +154,18 @@ function Linha({ linha }: { linha: LinhaDoEnvio }) {
   const [ocupado, setOcupado] = useState<"tentar" | "baixar" | "descartar" | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const pct = percentual(estado.fracao);
+  // Os botões repetem em cada linha ("Tentar de novo, Baixar cópia,
+  // Descartar"), e na lista de botões do leitor de tela viravam três nomes
+  // iguais por reunião. O nome da reunião vai como descrição, e não no rótulo,
+  // para o rótulo continuar sendo o que está escrito no botão.
+  const idDoNome = useId();
 
+  // `aria-disabled`, e não `disabled`, nos botões em ação: o `disabled` tira
+  // o foco do botão que a pessoa acabou de apertar e o joga no `<body>` — e o
+  // "Baixar cópia" pelo teclado perdia o lugar enquanto a cópia era montada.
+  // Por isso a guarda mora aqui.
   async function agir(qual: "tentar" | "baixar" | "descartar") {
+    if (ocupado !== null) return;
     // Na falha, descartar apaga a ÚNICA cópia (a gravação do microfone só
     // existe aqui): a mesma pergunta da faixa de recuperação. No recusado não
     // há o que perder — o original nunca saiu do computador da pessoa.
@@ -268,7 +199,7 @@ function Linha({ linha }: { linha: LinhaDoEnvio }) {
   return (
     <li className={styles.linha} data-fase={estado.fase}>
       <div className={styles.linhaTopo}>
-        <span className={styles.nome} title={titulo}>
+        <span id={idDoNome} className={styles.nome} title={titulo}>
           {titulo}
         </span>
         <span className={styles.setor}>
@@ -330,7 +261,8 @@ function Linha({ linha }: { linha: LinhaDoEnvio }) {
                 type="button"
                 className={styles.btn}
                 onClick={() => void agir("tentar")}
-                disabled={ocupado !== null}
+                aria-disabled={ocupado !== null}
+                aria-describedby={idDoNome}
               >
                 {ocupado === "tentar" ? "Retomando…" : "Tentar de novo"}
               </button>
@@ -338,15 +270,17 @@ function Linha({ linha }: { linha: LinhaDoEnvio }) {
                 type="button"
                 className={styles.btn}
                 onClick={() => void agir("baixar")}
-                disabled={ocupado !== null}
+                aria-disabled={ocupado !== null}
+                aria-describedby={idDoNome}
               >
-                {ocupado === "baixar" ? "Montando…" : "Baixar cópia"}
+                {ocupado === "baixar" ? "Preparando a cópia…" : "Baixar cópia"}
               </button>
               <button
                 type="button"
                 className={`${styles.btn} ${styles.btnPerigo}`}
                 onClick={() => void agir("descartar")}
-                disabled={ocupado !== null}
+                aria-disabled={ocupado !== null}
+                aria-describedby={idDoNome}
               >
                 {ocupado === "descartar" ? "Descartando…" : "Descartar"}
               </button>
@@ -359,6 +293,7 @@ function Linha({ linha }: { linha: LinhaDoEnvio }) {
                 type="button"
                 className={styles.btn}
                 onClick={() => dispensar(recordingId)}
+                aria-describedby={idDoNome}
               >
                 Dispensar
               </button>
@@ -377,7 +312,8 @@ function Linha({ linha }: { linha: LinhaDoEnvio }) {
               type="button"
               className={`${styles.btn} ${styles.btnPerigo}`}
               onClick={() => void agir("descartar")}
-              disabled={ocupado !== null}
+              aria-disabled={ocupado !== null}
+              aria-describedby={idDoNome}
             >
               {ocupado === "descartar" ? "Descartando…" : "Descartar"}
             </button>
@@ -425,26 +361,53 @@ export function PainelDoEnvio() {
     resumo,
     minimizado,
     estourando,
+    fechando,
     todosConcluidos,
     minimizar,
     fecharAgora,
     segurar,
   } = useEnvios();
   const ref = useRef<HTMLDivElement>(null);
-  const aberto = !!resumo && !minimizado && !estourando;
+  const abertoEm = useRef(0);
+  const entrada = useRef<"teclado" | "ponteiro" | null>(null);
+  const aberto = !!resumo && !minimizado && !estourando && !fechando;
+
+  // A última entrada da pessoa, para `aoFocar` saber se o foco é de teclado.
+  // O `:focus-visible` sozinho erra no foco posto por CÓDIGO depois de
+  // entradas misturadas: Escape no teclado e depois o clique de mouse na
+  // pílula davam `:focus-visible` no "Minimizar", e o painel deixava de
+  // fechar sozinho para quem tinha acabado de usar o mouse.
+  useEffect(() => {
+    const tecla = () => {
+      entrada.current = "teclado";
+    };
+    const ponteiro = () => {
+      entrada.current = "ponteiro";
+    };
+    window.addEventListener("keydown", tecla, true);
+    window.addEventListener("pointerdown", ponteiro, true);
+    return () => {
+      window.removeEventListener("keydown", tecla, true);
+      window.removeEventListener("pointerdown", ponteiro, true);
+    };
+  }, []);
 
   // Foco: entra no painel ao abrir e, ao sair, vai para onde faz sentido —
   // nunca para o `<body>`, que é onde o leitor de tela e o Tab recomeçam do
   // topo da página. Nesta ordem:
-  //  1. de onde ele veio, se ainda existe (a pílula, quando foi ela que
-  //     restaurou);
+  //  1. de onde ele veio, se ainda aceita o foco (a pílula, quando foi ela que
+  //     restaurou e o painel minimizou de novo);
   //  2. a pílula, quando o painel minimizou: de onde ele veio quase sempre
   //     sumiu (o "Registrar" do modal que fechou), e minimizar é um gesto da
   //     pessoa DENTRO do painel — mandá-la para a pílula não interrompe nada;
   //  3. o `<main>`, quando o painel fechou de vez.
+  // O 1 CONFERE se o foco pegou: a pílula de onde o painel veio fica `inert`
+  // quando ele fecha de vez (estouro, descarte), o `focus()` falha calado, e
+  // voltar logo depois deixava o foco no `<body>`.
   // Se a pessoa já levou o foco para outro lugar, ele fica lá.
   useEffect(() => {
     if (!aberto) return;
+    abertoEm.current = Date.now();
     const antes = document.activeElement as HTMLElement | null;
     const el = ref.current;
     if (el && !el.contains(document.activeElement)) {
@@ -457,7 +420,7 @@ export function PainelDoEnvio() {
       if (!perdido) return;
       if (antes && antes !== document.body && antes.isConnected) {
         antes.focus();
-        return;
+        if (document.activeElement === antes) return;
       }
       const pilula = document.querySelector<HTMLElement>(
         "[data-pilula-do-envio]:not([inert])",
@@ -467,12 +430,41 @@ export function PainelDoEnvio() {
     };
   }, [aberto]);
 
+  // O botão que some com o próprio clique ("Tentar de novo" vira barra de
+  // novo; "Descartar" e "Dispensar" levam a linha inteira) deixava o foco no
+  // `<body>` com o painel aberto — e o Escape e a trava do Tab moram no
+  // `onKeyDown` daqui, então paravam de funcionar. Elemento REMOVIDO não
+  // dispara `blur`, por isso a conferência é depois de cada render, e não no
+  // `onBlur`: com o painel aberto, foco no `<body>` é sempre foco perdido
+  // (o véu cobre o resto da tela), e ele volta para o próprio diálogo.
+  useEffect(() => {
+    if (aberto && document.activeElement === document.body) ref.current?.focus();
+  });
+
   if (!resumo) return null;
 
-  const estado = estourando ? (minimizado ? "fora" : "saindo") : minimizado ? "minimizado" : "aberto";
+  const saindo = estourando || fechando;
+  const estado = saindo
+    ? minimizado
+      ? "fora"
+      : "saindo"
+    : minimizado
+      ? "minimizado"
+      : "aberto";
   // Concluído não tem o que esperar: sair por qualquer caminho é fechar.
   const sair = todosConcluidos ? fecharAgora : minimizar;
   const alerta = resumo.fase === "falha" || resumo.fase === "recusado";
+
+  // O véu cobre a tela inteira, acima da doca, a partir do quadro em que o
+  // painel abre: o 2º clique de um clique duplo na pílula caía nele e
+  // minimizava de novo o painel que o 1º tinha acabado de abrir — quem clica
+  // duas vezes por hábito não conseguia abri-lo. Pelo mesmo motivo, o véu
+  // segura o clique nos 120 ms em que some depois do "Minimizar" (ver a
+  // folha), e esse clique não faz nada.
+  function aoClicarNoVeu(e: React.MouseEvent) {
+    if (!aberto || e.detail > 1 || Date.now() - abertoEm.current < 350) return;
+    sair();
+  }
 
   function onKeyDown(e: React.KeyboardEvent) {
     if (e.key === "Escape") {
@@ -487,7 +479,12 @@ export function PainelDoEnvio() {
     if (nos.length === 0) return;
     const primeiro = nos[0];
     const ultimo = nos[nos.length - 1];
-    if (e.shiftKey && document.activeElement === primeiro) {
+    // Com o foco no próprio diálogo (ver o efeito acima), o Shift+Tab saía
+    // dele para a página de trás: o diálogo não está na lista de focáveis.
+    if (document.activeElement === ref.current) {
+      e.preventDefault();
+      (e.shiftKey ? ultimo : primeiro).focus();
+    } else if (e.shiftKey && document.activeElement === primeiro) {
       e.preventDefault();
       ultimo.focus();
     } else if (!e.shiftKey && document.activeElement === ultimo) {
@@ -496,9 +493,25 @@ export function PainelDoEnvio() {
     }
   }
 
+  // Só o foco que chega pelo TECLADO segura a confirmação (ver o relógio no
+  // provedor). Antes da primeira entrada, quem decide é o `:focus-visible`.
+  function aoFocar(e: React.FocusEvent) {
+    const teclado =
+      entrada.current === null
+        ? (e.target as HTMLElement).matches(":focus-visible")
+        : entrada.current === "teclado";
+    if (teclado) segurar("foco", true);
+  }
+
+  function aoDesfocar(e: React.FocusEvent<HTMLDivElement>) {
+    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+      segurar("foco", false);
+    }
+  }
+
   return (
     <OverlayPortal>
-      <div className={styles.veu} data-estado={estado} onClick={sair} />
+      <div className={styles.veu} data-estado={estado} onClick={aoClicarNoVeu} />
       <div className={styles.lugar} data-estado={estado}>
         <div
           ref={ref}
@@ -509,9 +522,15 @@ export function PainelDoEnvio() {
           className={styles.dialogo}
           data-estado={estado}
           inert={!aberto}
+          // Focável por código e pelo clique no texto, fora do Tab: é o que
+          // mantém o foco DENTRO do diálogo quando a pessoa clica num pedaço
+          // sem botão — sem isso, o clique levava o foco para o `<body>`.
+          tabIndex={-1}
           onKeyDown={onKeyDown}
-          onPointerEnter={() => segurar(true)}
-          onPointerLeave={() => segurar(false)}
+          onFocus={aoFocar}
+          onBlur={aoDesfocar}
+          onPointerEnter={() => segurar("ponteiro", true)}
+          onPointerLeave={() => segurar("ponteiro", false)}
         >
           {/* O fundo é uma camada à parte, e não o próprio diálogo: no estouro
               ele e o texto saem em 120 ms enquanto a bolha, por cima, ainda
@@ -573,23 +592,40 @@ export function PainelDoEnvio() {
  * nascendo e morrendo a cada clique.
  */
 export function PilulaDoEnvio() {
-  const { resumo, minimizado, estourando, todosConcluidos, restaurar } = useEnvios();
+  const { resumo, minimizado, estourando, fechando, todosConcluidos, restaurar } =
+    useEnvios();
+  const botao = useRef<HTMLButtonElement>(null);
+  const estado = !resumo || !minimizado
+    ? "oculta"
+    : estourando || fechando
+      ? "saindo"
+      : "visivel";
+
+  // A pílula com o foco que começa a sair (estouro, descarte) vira `inert`, e
+  // o navegador joga o foco no `<body>` — onde o leitor de tela e o Tab
+  // recomeçam do topo. Antes disso, ele vai para o conteúdo. É efeito de
+  // LAYOUT de propósito: roda antes de o navegador aplicar o `inert` ao foco.
+  useLayoutEffect(() => {
+    if (estado !== "saindo") return;
+    if (botao.current?.contains(document.activeElement)) focarConteudo();
+  }, [estado]);
+
   if (!resumo) return null;
 
-  const estado = !minimizado ? "oculta" : estourando ? "saindo" : "visivel";
-  const { curto, anuncio } = textoDaPilula(resumo);
+  const { curto, nome, anuncio } = textoDaPilula(resumo);
   const alerta = resumo.fase === "falha" || resumo.fase === "recusado";
 
   return (
     <div className={styles.pilulaLugar} data-estado={estado}>
       <button
+        ref={botao}
         type="button"
         className={styles.pilula}
         data-fase={resumo.fase}
         data-pilula-do-envio
         onClick={restaurar}
         inert={estado !== "visivel"}
-        aria-label={`${curto}. Abrir o painel do envio`}
+        aria-label={`${nome}. Abrir o painel do envio`}
       >
         <span className={styles.pilulaFundo} aria-hidden="true" />
         <span className={styles.pilulaIcone}>
@@ -606,7 +642,7 @@ export function PilulaDoEnvio() {
       {/* Fora do botão: o nome do botão é lido quando ele recebe foco, e a
           região viva é lida quando MUDA — juntas, cada mudança seria lida duas
           vezes. Só fala com a pílula à vista. */}
-      <span className={styles.somenteLeitor} role="status">
+      <span className={styles.srOnly} role="status">
         {estado === "visivel" ? anuncio : ""}
       </span>
     </div>

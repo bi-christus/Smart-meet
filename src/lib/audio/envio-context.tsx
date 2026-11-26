@@ -14,7 +14,9 @@ import { baixarCopiaLocal } from "./baixar-copia";
 import {
   CONFIRMACAO_MS,
   ESTOURO_MS,
+  SAIDA_MS,
   estadoDoEnvio,
+  porGravidade,
   prendeOSite,
   restanteDepoisDe,
   resumirEnvios,
@@ -65,7 +67,19 @@ type Item = EnvioAcompanhado & {
   fase: FaseDoEnvio;
   /** Releituras seguidas sem registro (ver `LEITURAS_SEM_REGISTRO` no core). */
   semRegistro: number;
+  /** O último progresso lido com registro (ver `ultimo` no core). */
+  ultimo?: { enviados: number; total: number | null };
 };
+
+/** O que o painel mostrava quando o último envio saiu da lista (ver `tirar`). */
+type Retrato = {
+  linhas: LinhaDoEnvio[];
+  resumo: ResumoDosEnvios;
+  minimizado: boolean;
+};
+
+/** De onde vem o "segurar" da confirmação (ver o efeito do relógio). */
+export type OrigemDoSegurar = "ponteiro" | "foco";
 
 type Valor = {
   linhas: LinhaDoEnvio[];
@@ -73,6 +87,14 @@ type Valor = {
   minimizado: boolean;
   /** A bolha está estourando: os componentes trocam para a saída. */
   estourando: boolean;
+  /**
+   * O último envio acabou de ser descartado (ou dispensado): `linhas` e
+   * `resumo` são o retrato de antes, e os componentes fazem a saída de 120 ms
+   * sobre ele (`SAIDA_MS`).
+   */
+  fechando: boolean;
+  /** Sobe a cada descarte pelo painel: a faixa de recuperação relê com ele. */
+  descartes: number;
   todosConcluidos: boolean;
   acompanharEnvio: (e: EnvioAcompanhado) => void;
   /** A faixa de recuperação esconde o que o painel já mostra (menos as falhas). */
@@ -86,8 +108,8 @@ type Valor = {
   descartar: (recordingId: string) => Promise<void>;
   /** Tira da tela a falha sem cópia local, que não tem o que descartar. */
   dispensar: (recordingId: string) => void;
-  /** O ponteiro está sobre o painel: o relógio da confirmação para. */
-  segurar: (sim: boolean) => void;
+  /** O ponteiro ou o foco de teclado estão no painel: o relógio da confirmação para. */
+  segurar: (origem: OrigemDoSegurar, sim: boolean) => void;
 };
 
 const nada = async () => {};
@@ -102,6 +124,8 @@ const Ctx = createContext<Valor>({
   resumo: null,
   minimizado: false,
   estourando: false,
+  fechando: false,
+  descartes: 0,
   todosConcluidos: false,
   acompanharEnvio: () => {},
   acompanha: () => false,
@@ -160,12 +184,19 @@ function comLeitura(
         ? it.semRegistro + 1
         : 0
       : it.semRegistro;
-  const novo = { ...it, ...mudanca, semRegistro };
+  const ultimo = mudanca.registro
+    ? {
+        enviados: mudanca.registro.uploadedBytes,
+        total: mudanca.registro.totalBytes,
+      }
+    : it.ultimo;
+  const novo = { ...it, ...mudanca, semRegistro, ultimo };
   const e = estadoDoEnvio(
     {
       registro: novo.registro,
       reuniao: novo.reuniao,
       leiturasSemRegistro: semRegistro,
+      ultimo,
     },
     it.fase,
   );
@@ -176,6 +207,10 @@ export function EnvioProvider({ children }: { children: React.ReactNode }) {
   const [itens, setItens] = useState<Item[]>([]);
   const [minimizado, setMinimizado] = useState(false);
   const [estourandoPedido, setEstourando] = useState(false);
+  // O que o painel mostrava quando o último envio saiu da lista (ver `tirar`).
+  const [retrato, setRetrato] = useState<Retrato | null>(null);
+  // Sobe a cada descarte (ver `descartar`).
+  const [descartes, setDescartes] = useState(0);
   const online = useSyncExternalStore(
     assinarRede,
     () => navigator.onLine,
@@ -287,7 +322,7 @@ export function EnvioProvider({ children }: { children: React.ReactNode }) {
     return () => saidas.forEach((sair) => sair());
   }, [reunioesVivas, aplicarReuniao]);
 
-  const linhas: LinhaDoEnvio[] = [];
+  const chegada: LinhaDoEnvio[] = [];
   for (const it of itens) {
     const estado = estadoDoEnvio(
       {
@@ -295,11 +330,12 @@ export function EnvioProvider({ children }: { children: React.ReactNode }) {
         reuniao: it.reuniao,
         online,
         leiturasSemRegistro: it.semRegistro,
+        ultimo: it.ultimo,
       },
       it.fase,
     );
     if (estado) {
-      linhas.push({
+      chegada.push({
         recordingId: it.recordingId,
         meetingId: it.meetingId,
         titulo: it.titulo,
@@ -308,6 +344,7 @@ export function EnvioProvider({ children }: { children: React.ReactNode }) {
       });
     }
   }
+  const linhas = porGravidade(chegada);
   const resumo = resumirEnvios(linhas.map((l) => l.estado));
   const todosConcluidos = resumo?.fase === "concluido";
   // O pedido de estouro só vale enquanto tudo está concluído: um envio novo
@@ -330,11 +367,13 @@ export function EnvioProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("beforeunload", guarda);
   }, [prende]);
 
-  // O ponteiro sobre o painel, num ref e não num estado: o relógio da
+  // Ponteiro e foco no painel, num ref e não num estado: o relógio da
   // confirmação precisa PAUSAR e retomar de onde parou, e um estado nas
   // dependências do efeito o recriaria com os 2,2 s cheios a cada passada do
-  // mouse. `aoSegurar` é a ponte do efeito em curso para quem avisa.
-  const seguraRef = useRef(false);
+  // mouse. Dois campos, e não um: tirar o ponteiro de cima não pode soltar o
+  // que o foco de teclado segura, nem o contrário. `aoSegurar` é a ponte do
+  // efeito em curso para quem avisa.
+  const seguraRef = useRef({ ponteiro: false, foco: false });
   const aoSegurar = useRef<(() => void) | null>(null);
 
   const finalizar = useCallback(() => {
@@ -343,7 +382,7 @@ export function EnvioProvider({ children }: { children: React.ReactNode }) {
     setMinimizado(false);
     // O painel some sem `pointerleave`: sem zerar aqui, a próxima confirmação
     // nasceria segurada por um ponteiro que já não está lá.
-    seguraRef.current = false;
+    seguraRef.current = { ponteiro: false, foco: false };
   }, []);
 
   // A confirmação parada, e depois o estouro.
@@ -354,9 +393,12 @@ export function EnvioProvider({ children }: { children: React.ReactNode }) {
   // já se fechou sozinho enquanto ela não olhava. E para com o ponteiro sobre
   // o painel aberto: é quem está lendo a frase até o fim.
   //
-  // O FOCO NÃO SEGURA, embora seja o par natural do ponteiro: o painel abre
-  // com o foco no próprio botão (é diálogo), e segurar pelo foco seria nunca
-  // fechar sozinho — para ninguém.
+  // O FOCO SEGURA SÓ QUANDO É DE TECLADO (decidido no painel, pela última
+  // entrada da pessoa). O painel abre com o foco no próprio botão (é diálogo), e segurar
+  // por qualquer foco seria nunca fechar sozinho — para ninguém. Mas quem
+  // chegou pelo teclado muitas vezes ouve o painel num leitor de tela, e a
+  // troca de foco do estouro CORTA a fala no meio: o trecho do e‑mail e da
+  // 1h30 se perdia. Essa pessoa fecha com Escape ou com "Fechar".
   //
   // `minimizado` nas dependências recomeça a contagem a cada minimizar e
   // restaurar: quem clica na pílula "Áudio enviado" perto do fim dos 2,2 s
@@ -390,10 +432,11 @@ export function EnvioProvider({ children }: { children: React.ReactNode }) {
       restante = restanteDepoisDe(restante, inicio, Date.now());
     };
     // Minimizado, o painel não está à vista: o ponteiro "sobre ele" não conta.
-    const decidir = () =>
-      document.hidden || (seguraRef.current && !minimizado)
-        ? pausar()
-        : correr();
+    const decidir = () => {
+      const s = seguraRef.current;
+      if (document.hidden || ((s.ponteiro || s.foco) && !minimizado)) pausar();
+      else correr();
+    };
     aoSegurar.current = decidir;
     decidir();
     document.addEventListener("visibilitychange", decidir);
@@ -404,8 +447,8 @@ export function EnvioProvider({ children }: { children: React.ReactNode }) {
     };
   }, [todosConcluidos, estourando, finalizar, minimizado]);
 
-  const segurar = useCallback((sim: boolean) => {
-    seguraRef.current = sim;
+  const segurar = useCallback((origem: OrigemDoSegurar, sim: boolean) => {
+    seguraRef.current = { ...seguraRef.current, [origem]: sim };
     aoSegurar.current?.();
   }, []);
 
@@ -431,6 +474,7 @@ export function EnvioProvider({ children }: { children: React.ReactNode }) {
       // resposta ao clique em "Registrar" que a pessoa acabou de dar.
       setMinimizado(false);
       setEstourando(false);
+      setRetrato(null);
       void reler(e.recordingId);
     },
     [reler],
@@ -438,9 +482,10 @@ export function EnvioProvider({ children }: { children: React.ReactNode }) {
 
   const tentarDeNovo = useCallback(
     async (id: string) => {
-      // `resumeAll` é o mesmo "Tentar de novo" da faixa de recuperação: põe as
-      // falhas de rede de volta em "uploading" e liga a bomba de cada uma.
-      await uploadManager.resumeAll();
+      // Só o desta linha (`resume`), e não o `resumeAll` da faixa: o botão
+      // mora na linha, e retomar as outras falhas junto faria os botões delas
+      // sumirem sem a pessoa ter pedido.
+      await uploadManager.resume(id);
       await reler(id);
     },
     [reler],
@@ -452,23 +497,60 @@ export function EnvioProvider({ children }: { children: React.ReactNode }) {
     await baixarCopiaLocal(rec);
   }, []);
 
-  const descartar = useCallback(async (id: string) => {
-    await uploadManager.discard(id);
+  // A saída do painel quando o ÚLTIMO envio sai da lista por descarte ou
+  // dispensa. Tirado o item, `resumo` vira nulo e os componentes devolvem
+  // `null` — painel e véu sumiam no mesmo quadro do clique, a única saída do
+  // painel sem transição. O retrato do que estava na tela fica por
+  // `SAIDA_MS`, e os componentes fazem sobre ele a saída de 120 ms da casa.
+  //
+  // O que estava na tela vai num ref escrito DEPOIS de cada render (e não no
+  // render): é o `tirar`, chamado num clique, quem o lê.
+  const vistoRef = useRef<Retrato | null>(null);
+  useEffect(() => {
+    vistoRef.current = resumo ? { linhas, resumo, minimizado } : null;
+  });
+  useEffect(() => {
+    if (!retrato) return;
+    const t = window.setTimeout(() => setRetrato(null), SAIDA_MS);
+    return () => clearTimeout(t);
+  }, [retrato]);
+
+  const tirar = useCallback((id: string) => {
+    const visto = vistoRef.current;
+    // Com movimento reduzido não há saída a esperar, como no `finalizar`.
+    if (
+      visto &&
+      !reduzMovimento() &&
+      visto.linhas.every((l) => l.recordingId === id)
+    ) {
+      setRetrato(visto);
+    }
     setItens((lista) => lista.filter((i) => i.recordingId !== id));
   }, []);
 
-  const dispensar = useCallback((id: string) => {
-    setItens((lista) => lista.filter((i) => i.recordingId !== id));
-  }, []);
+  // A faixa de recuperação só relê no aviso do motor ou no tique de 5 s, e o
+  // descarte não avisa ninguém (`uploadManager.discard` só apaga): sem este
+  // contador, ela mostrava por até 5 s o áudio que acabou de ser apagado — com
+  // "Baixar cópia" dando erro e o aviso de saída ainda armado.
+  const descartar = useCallback(
+    async (id: string) => {
+      await uploadManager.discard(id);
+      tirar(id);
+      setDescartes((n) => n + 1);
+    },
+    [tirar],
+  );
 
-  // Minimizar e restaurar soltam o ponteiro: o painel troca de lugar com a
-  // pílula, e o `pointerleave` de um painel que ficou invisível pode não vir.
+  const dispensar = useCallback((id: string) => tirar(id), [tirar]);
+
+  // Minimizar e restaurar soltam ponteiro e foco: o painel troca de lugar com
+  // a pílula, e o `pointerleave` de um painel que ficou invisível pode não vir.
   const minimizar = useCallback(() => {
-    seguraRef.current = false;
+    seguraRef.current = { ponteiro: false, foco: false };
     setMinimizado(true);
   }, []);
   const restaurar = useCallback(() => {
-    seguraRef.current = false;
+    seguraRef.current = { ponteiro: false, foco: false };
     setMinimizado(false);
   }, []);
 
@@ -479,11 +561,17 @@ export function EnvioProvider({ children }: { children: React.ReactNode }) {
 
   const ids = new Set(itens.map((i) => i.recordingId));
 
+  // Um envio novo no meio da saída ganha da saída: o retrato só vale com a
+  // lista vazia.
+  const fechando = !resumo && retrato !== null;
+
   const valor: Valor = {
-    linhas,
-    resumo,
-    minimizado,
+    linhas: fechando ? retrato.linhas : linhas,
+    resumo: fechando ? retrato.resumo : resumo,
+    minimizado: fechando ? retrato.minimizado : minimizado,
     estourando,
+    fechando,
+    descartes,
     todosConcluidos,
     acompanharEnvio,
     acompanha: (id) => ids.has(id),

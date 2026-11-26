@@ -63,6 +63,13 @@ export type LeituraDoEnvio = {
    * `LEITURAS_SEM_REGISTRO`).
    */
   leiturasSemRegistro?: number;
+  /**
+   * O último progresso lido COM registro. Quando o registro some e a reunião
+   * ainda não confirmou, a barra segura este número: o espelho do Firestore
+   * anda de 15 em 15 s (ou nem chegou), e sem ele a barra recuava de 80% para
+   * 0% enquanto o painel decidia se o envio tinha concluído ou sido descartado.
+   */
+  ultimo?: { enviados: number; total: number | null };
 };
 
 /** Por que a barra não anda — e a animação do painel para junto. */
@@ -94,10 +101,10 @@ export type EstadoDoEnvio = {
  * Os ~2 s são o que a Issue #250 fixou, e dão para o título ("Áudio
  * enviado!") e o começo do aviso ("Pode fechar o site") — não para a frase
  * inteira, que fala da transcrição e do e‑mail. Por isso o relógio PARA em
- * dois casos (ver o provedor): com a aba escondida, porque quem saiu da aba é
- * justamente quem precisa ver a confirmação ao voltar; e com o ponteiro sobre
- * o painel, porque quem está lendo até o fim não pode ver o texto estourar no
- * meio da frase.
+ * três casos (ver o provedor): com a aba escondida, porque quem saiu da aba é
+ * justamente quem precisa ver a confirmação ao voltar; e com o ponteiro ou o
+ * foco de TECLADO no painel, porque quem está lendo (ou ouvindo) até o fim não
+ * pode ver o texto estourar no meio da frase.
  */
 export const CONFIRMACAO_MS = 2200;
 
@@ -125,8 +132,23 @@ export const LEITURAS_SEM_REGISTRO = 3;
  */
 export const ESTOURO_MS = 300;
 
+/**
+ * Duração da saída do painel quando o último envio é descartado (ou
+ * dispensado). PRECISA BATER COM O `sai` de `painel-do-envio.module.css`
+ * (120 ms, a saída da casa): o retrato do painel é tirado por `setTimeout`
+ * com este valor, pelo mesmo motivo do `ESTOURO_MS`. Sem ele, painel e véu
+ * sumiam no mesmo quadro do clique — a única saída do painel sem transição.
+ */
+export const SAIDA_MS = 120;
+
 const MB = 1024 * 1024;
 const KB = 1024;
+
+function emUnidade(n: number, usarMb: boolean): string {
+  return usarMb
+    ? `${(n / MB).toFixed(1).replace(".", ",")} MB`
+    : `${Math.round(n / KB)} KB`;
+}
 
 /**
  * "34,0 MB de 80,0 MB" — os dois números na MESMA unidade, escolhida pelo
@@ -139,11 +161,16 @@ const KB = 1024;
 export function textoDeBytes(enviados: number, total: number | null): string {
   if (total === null || total <= 0) return "";
   const usarMb = total >= MB;
-  const fmt = (n: number) =>
-    usarMb
-      ? `${(n / MB).toFixed(1).replace(".", ",")} MB`
-      : `${Math.round(n / KB)} KB`;
-  return `${fmt(Math.min(enviados, total))} de ${fmt(total)}`;
+  return `${emUnidade(Math.min(enviados, total), usarMb)} de ${emUnidade(total, usarMb)}`;
+}
+
+/**
+ * Um tamanho sozinho, no formato do painel. É o da faixa de recuperação, que
+ * aparece junto do painel com a mesma falha: lado a lado, "80.0 MB" ali e
+ * "80,0 MB" aqui pareciam dois arquivos diferentes.
+ */
+export function textoDeTamanho(n: number): string {
+  return emUnidade(n, n >= MB);
 }
 
 /**
@@ -257,10 +284,13 @@ export function estadoDoEnvio(
   ) {
     return null;
   }
-  // Ainda sem resposta: mantém o que já se mostrava, com o progresso que o
-  // espelho tiver (o do Firestore anda de 15 em 15 s, mas é melhor que nada).
-  const total = reuniao?.totalBytes || null;
-  const enviados = reuniao?.uploadedBytes ?? 0;
+  // Ainda sem resposta: mantém o que já se mostrava. O progresso é o maior
+  // entre o último lido do registro e o espelho (ver `ultimo`).
+  const total = leitura.ultimo?.total ?? (reuniao?.totalBytes || null);
+  const enviados = Math.max(
+    leitura.ultimo?.enviados ?? 0,
+    reuniao?.uploadedBytes ?? 0,
+  );
   const fase: FaseDoEnvio =
     anterior === "enviando" || anterior === "falha" || anterior === "recusado"
       ? anterior
@@ -302,26 +332,40 @@ function concluido(
  * O motor guarda a mensagem crua do navegador, e a queda de rede chega como
  * "Failed to fetch" (Chrome), "NetworkError when attempting to fetch
  * resource." (Firefox) ou "Load failed" (Safari): inglês, e sem dizer o que
- * aconteceu. As mensagens da casa (o arquivo sumiu do disco, o servidor
- * recusou) já são frases em português e passam inteiras.
+ * aconteceu. As mensagens da casa (o servidor recusou, a cópia local
+ * inconsistente) já são frases em português e passam inteiras.
+ *
+ * A exceção é a do arquivo que sumiu do disco: o motor manda "selecione-o
+ * novamente", e não existe tela para isso — o "Tentar de novo" refaz as 12
+ * tentativas e falha, e o "Baixar cópia" entrega o mesmo arquivo ilegível. A
+ * única saída que funciona é descartar e registrar de novo, e é ela que a
+ * frase diz.
  */
 export function mensagemDoErro(erro: string | null): string | null {
   if (!erro) return null;
   if (/failed to fetch|networkerror|load failed|network request failed/i.test(erro)) {
     return "A conexão caiu no meio do envio.";
   }
+  if (/não está mais acessível/i.test(erro)) {
+    return "O arquivo foi movido, renomeado ou apagado do computador. Descarte este envio e registre a reunião de novo com o arquivo.";
+  }
   return erro;
 }
 
 /**
- * O que fazer com um arquivo recusado — no painel e na faixa de recuperação,
- * que falam do mesmo arquivo e por isso dizem a mesma frase. "O sistema", e
+ * O que fazer com arquivo recusado — no painel e na faixa de recuperação, que
+ * falam dos mesmos arquivos e por isso dizem a mesma frase. "O sistema", e
  * não "o servidor"; e "veja o motivo", porque quem diz o que fazer é a
  * mensagem da recusa (dividir o áudio, trocar o formato), e uma segunda
- * instrução ao lado ("envie o áudio certo") a contradizia.
+ * instrução ao lado ("envie o áudio certo") a contradizia. No plural quando
+ * são vários: a faixa dizia "2 arquivos não foram aceitos" no título e "este
+ * arquivo" logo abaixo.
  */
-export const AVISO_RECUSADO =
-  "O sistema não aceitou este arquivo. Veja o motivo abaixo, descarte e envie de novo — o original continua no seu computador.";
+export function avisoRecusado(quantos: number): string {
+  return quantos > 1
+    ? "O sistema não aceitou estes arquivos. Veja o motivo de cada um abaixo, descarte e envie de novo — os originais continuam no seu computador."
+    : "O sistema não aceitou este arquivo. Veja o motivo abaixo, descarte e envie de novo — o original continua no seu computador.";
+}
 
 /**
  * Este envio ainda segura o site aberto (`beforeunload`)?
@@ -350,6 +394,8 @@ export type ResumoDosEnvios = {
    * sendo enviado, e contá-lo prometeria um envio que não existe.
    */
   subindo: number;
+  /** Quantos foram recusados — é a contagem do título e do aviso do recusado. */
+  recusados: number;
   parado: MotivoParado | null;
   /**
    * Há falha, e NENHUMA delas tem cópia local. Muda o aviso: "o áudio continua
@@ -417,9 +463,181 @@ export function resumirEnvios(estados: EstadoDoEnvio[]): ResumoDosEnvios | null 
     fracao,
     quantos: estados.length,
     subindo: parados.length,
+    recusados: fases.filter((f) => f === "recusado").length,
     parado,
     falhaSemCopia,
   };
+}
+
+const GRAVIDADE: Record<FaseDoEnvio, number> = {
+  falha: 0,
+  recusado: 1,
+  preparando: 2,
+  enviando: 2,
+  concluido: 2,
+};
+
+/**
+ * As linhas do painel com falha e recusado NA FRENTE, e o resto na ordem de
+ * chegada (o `sort` é estável). Com a tela baixa (zoom de 200 a 400%) só a
+ * lista rola, e a ordem de chegada podia deixar escondida justo a falha que dá
+ * nome ao título do painel.
+ */
+export function porGravidade<T extends { estado: EstadoDoEnvio }>(linhas: T[]): T[] {
+  return [...linhas].sort(
+    (a, b) => GRAVIDADE[a.estado.fase] - GRAVIDADE[b.estado.fase],
+  );
+}
+
+/*
+ * O TEXTO DE CADA ESTADO mora aqui, e não no componente, porque é a parte que
+ * a Issue #250 existe para acertar: a frase que manda (ou não) fechar o site.
+ * Trocar "não feche" por "pode fechar" num estado errado passa em tipo, em
+ * lint e na tela de quem testa com rede boa — só o `test-envio.mjs` pega.
+ */
+
+export function tituloDoPainel(resumo: ResumoDosEnvios): string {
+  switch (resumo.fase) {
+    case "concluido":
+      return resumo.quantos > 1 ? "Áudios enviados!" : "Áudio enviado!";
+    case "falha":
+      return "O envio parou";
+    case "recusado":
+      // Na fase "recusado" nada mais anda: o que não foi recusado concluiu.
+      return resumo.recusados > 1
+        ? `${resumo.recusados} arquivos não foram aceitos`
+        : resumo.quantos > 1
+          ? "Um arquivo não foi aceito"
+          : "Este arquivo não foi aceito";
+    case "preparando":
+      return "Preparando o envio…";
+    default:
+      return resumo.subindo > 1
+        ? `Enviando ${resumo.subindo} áudios`
+        : "Enviando o áudio";
+  }
+}
+
+/**
+ * O que a pessoa pode fazer com o site — a frase que importa no painel.
+ *
+ * "Pode continuar usando o sistema" vem junto do "não feche" de propósito: o
+ * painel minimiza, e quem lê só "não feche" fica olhando a barra parada.
+ * Na conclusão, o ✓ fala do ÁUDIO, e a frase diz que os documentos vêm
+ * depois: na mesma tela, o verde é o chip "Processado" da esteira, e um ✓
+ * sozinho seria lido como "ata pronta". "Os documentos que você escolheu", e
+ * não "as atas": as duas atas são opcionais no registro, e quem não marcou
+ * nenhuma receberia a promessa de algo que não vem.
+ *
+ * "Tentando de novo" não culpa a conexão: o mesmo estado vale para um bloco
+ * que o Drive devolveu com erro 500, e "a conexão oscilou" mandaria a pessoa
+ * conferir o Wi‑Fi à toa. Só o "sem-rede", que vem do navegador, fala de rede.
+ */
+export function avisoDoPainel(resumo: ResumoDosEnvios): string {
+  switch (resumo.fase) {
+    case "concluido":
+      return "Pode fechar o site. A transcrição com quem falou e os documentos que você escolheu chegam por e‑mail em até cerca de 1h30.";
+    case "falha":
+      return resumo.falhaSemCopia
+        ? "Este áudio não chegou ao Drive e não ficou cópia neste computador. Grave ou envie de novo."
+        : "O áudio continua salvo neste computador. Tente de novo ou baixe uma cópia — e não feche o site enquanto isso.";
+    case "recusado":
+      return avisoRecusado(resumo.recusados);
+    default:
+      if (resumo.parado === "sem-rede") {
+        return "Sem conexão. O envio continua sozinho quando a rede voltar — não feche o site.";
+      }
+      if (resumo.parado === "tentando") {
+        return "Um trecho não subiu, e o envio está tentando de novo sozinho. Não feche o site.";
+      }
+      return "Não feche o site até terminar — pode continuar usando o sistema.";
+  }
+}
+
+/**
+ * O que a pílula mostra (`curto`), o nome do botão dela (`nome`) e a frase
+ * que ela anuncia ao leitor de tela (`anuncio`).
+ *
+ * NEM O NOME NEM O ANÚNCIO LEVAM O PERCENTUAL, só o texto visível: o número
+ * muda a cada bloco de 8 MB, e o leitor de tela relê o nome do botão que tem
+ * o foco quando ele muda — e o foco vai para a pílula ao minimizar. Com o "·
+ * 42%" no nome, eram umas 25 falas num áudio de 200 MB, e a região viva diria
+ * o mesmo de novo a cada uma.
+ */
+export function textoDaPilula(resumo: ResumoDosEnvios): {
+  curto: string;
+  nome: string;
+  anuncio: string;
+} {
+  const pct = `${percentual(resumo.fracao)}%`;
+  switch (resumo.fase) {
+    case "concluido": {
+      const t = resumo.quantos > 1 ? "Áudios enviados" : "Áudio enviado";
+      return {
+        curto: t,
+        nome: t,
+        anuncio: "Áudio enviado. Pode fechar o site; os documentos chegam por e-mail.",
+      };
+    }
+    case "falha":
+      return {
+        curto: "O envio parou",
+        nome: "O envio parou",
+        anuncio: "O envio parou. Abra o painel para tentar de novo.",
+      };
+    case "recusado": {
+      const varios = resumo.recusados > 1;
+      // O texto visível sem "Arquivo(s)": "Arquivos não aceitos" alargava a
+      // pílula até cobrir o "Salvar permissões" do Admin de 660 a 740 px
+      // (medido no arreio). O ícone de alerta ao lado já diz do que se trata,
+      // e o nome do botão leva a frase inteira.
+      return {
+        curto: varios ? `${resumo.recusados} não aceitos` : "Não aceito",
+        nome: varios
+          ? `${resumo.recusados} arquivos não aceitos`
+          : "Arquivo não aceito",
+        anuncio: varios
+          ? `${resumo.recusados} arquivos não foram aceitos. Abra o painel para descartá-los.`
+          : "Um arquivo não foi aceito. Abra o painel para descartá-lo.",
+      };
+    }
+    case "preparando":
+      return {
+        curto: "Preparando…",
+        nome: "Preparando o envio",
+        anuncio: "Preparando o envio do áudio.",
+      };
+    default: {
+      // "Retomando", e não "Reconectando" (culpava a conexão por qualquer erro)
+      // nem "Tentando de novo": esse alarga a pílula até ela cobrir o
+      // "Salvar permissões" do Admin entre 680 e 800 px de largura.
+      const antes =
+        resumo.parado === "sem-rede"
+          ? "Sem rede"
+          : resumo.parado === "tentando"
+            ? "Retomando"
+            : resumo.subindo > 1
+              ? `${resumo.subindo} áudios`
+              : "Enviando";
+      return {
+        curto: `${antes} · ${pct}`,
+        nome:
+          resumo.parado === "sem-rede"
+            ? "Envio esperando a rede"
+            : resumo.parado === "tentando"
+              ? "Envio tentando de novo"
+              : resumo.subindo > 1
+                ? `Enviando ${resumo.subindo} áudios`
+                : "Enviando o áudio",
+        anuncio:
+          resumo.parado === "sem-rede"
+            ? "O envio está esperando a conexão."
+            : resumo.parado === "tentando"
+              ? "O envio está tentando de novo."
+              : "Enviando o áudio.",
+      };
+    }
+  }
 }
 
 /**

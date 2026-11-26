@@ -2,16 +2,16 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Icon } from "@/components/icons";
-import {
-  fmtBytes,
-  listUnfinished,
-  type RecordingRecord,
-} from "@/lib/audio/recording-db";
+import { listUnfinished, type RecordingRecord } from "@/lib/audio/recording-db";
 import { uploadManager } from "@/lib/audio/uploader";
 import { registerUploadWorker } from "@/lib/audio/sw-register";
 import { baixarCopiaLocal } from "@/lib/audio/baixar-copia";
 import { useEnvios } from "@/lib/audio/envio-context";
-import { AVISO_RECUSADO, mensagemDoErro } from "@/lib/audio/envio-core";
+import {
+  avisoRecusado,
+  mensagemDoErro,
+  textoDeTamanho,
+} from "@/lib/audio/envio-core";
 import styles from "./recovery-banner.module.css";
 
 /**
@@ -34,7 +34,7 @@ import styles from "./recovery-banner.module.css";
  * ficou parado de outra sessão.
  */
 export function RecoveryBanner() {
-  const { acompanha, descartar } = useEnvios();
+  const { acompanha, descartar, descartes } = useEnvios();
   const [items, setItems] = useState<RecordingRecord[]>([]);
   const [dismissed, setDismissed] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -61,6 +61,14 @@ export function RecoveryBanner() {
       clearInterval(timer);
     };
   }, [refresh]);
+
+  // O descarte feito no painel não avisa o motor nem esta faixa: sem reler
+  // aqui, ela mostrava por até 5 s o áudio que acabou de ser apagado.
+  useEffect(() => {
+    if (descartes === 0) return;
+    const t = window.setTimeout(() => void refresh(), 0);
+    return () => clearTimeout(t);
+  }, [descartes, refresh]);
 
   const pending = items.filter((r) => r.status !== "done");
 
@@ -141,7 +149,7 @@ export function RecoveryBanner() {
             áudio tinha chegado. */}
         <div className={styles.sub}>
           {naoChegaram === 0
-            ? AVISO_RECUSADO
+            ? avisoRecusado(recusados)
             : pararam
               ? "O envio parou. O áudio está salvo neste computador: clique em Tentar de novo ou baixe uma cópia."
               : "O áudio está salvo neste computador. Deixe o site aberto para o envio continuar — se fechar, ele retoma quando você voltar."}
@@ -160,7 +168,7 @@ export function RecoveryBanner() {
                       pelo `mensagemDoErro`, para dizer o mesmo que o painel
                       ao lado diz do mesmo envio, e não "Failed to fetch". */}
                   <span className={styles.itemMeta}>
-                    {fmtBytes(total)} ·{" "}
+                    {textoDeTamanho(total)} ·{" "}
                     {r.recusado
                       ? (r.error ?? "este arquivo não foi aceito")
                       : r.status === "failed"
@@ -190,7 +198,7 @@ export function RecoveryBanner() {
                     onClick={() => void download(r)}
                     disabled={busy === r.id}
                   >
-                    {busy === r.id ? "Montando…" : "Baixar cópia"}
+                    {busy === r.id ? "Preparando a cópia…" : "Baixar cópia"}
                   </button>
                   <button
                     className={`${styles.btn} ${styles.btnBad}`}

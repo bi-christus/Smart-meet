@@ -1,8 +1,14 @@
 /* Painel do envio (#250).
 
-   AS CURVAS E DURAÇÕES SÃO AS DA CASA, e nenhuma é nova: entrada 180 ms
-   cubic-bezier(0.32, 0.72, 0, 1), véu 240 ms ease-out, saída 120 ms
-   cubic-bezier(0.4, 0, 1, 1) (`modal.module.css` e os modais do Kanban).
+   ENTRAR, MINIMIZAR E FECHAR USAM AS CURVAS DA CASA (`modal.module.css` e os
+   modais do Kanban): entrada do diálogo e da pílula em 180 ms
+   cubic-bezier(0.32, 0.72, 0, 1); véu em 240 ms ease-out na entrada e 120 ms
+   LINEAR na saída (o `overlaySai` da casa — esmaecer um fundo não pede curva);
+   saída do diálogo e da pílula em 120 ms cubic-bezier(0.4, 0, 1, 1).
+
+   Três peças têm duração própria, e cada uma se explica na sua seção: o laço
+   das barrinhas (1,6 s), o estouro da bolha (300 ms no total) e a barra de
+   progresso (240 ms por degrau).
 
    MINIMIZAR E RESTAURAR SÃO TRANSIÇÃO, e não keyframe: a pessoa pode clicar
    nos dois em sequência, e uma transição se reverte de onde estiver, enquanto
@@ -36,6 +42,13 @@
     opacity 120ms linear,
     visibility 0s linear 120ms;
 }
+/* Minimizado, o véu ainda pega o clique nos 120 ms em que some (a
+   `visibility` só esconde no fim): o 2º clique de um clique duplo em
+   "Minimizar" cai nele, que não faz nada, em vez de apertar o que estivesse
+   atrás do botão na página. */
+.veu[data-estado="minimizado"] {
+  pointer-events: auto;
+}
 @keyframes veuEntra {
   from {
     opacity: 0;
@@ -48,22 +61,29 @@
 /* ---------- o diálogo ---------- */
 
 /* Camada só de posição, acima do véu e transparente ao clique: o clique fora
-   do diálogo atravessa e chega ao véu, que minimiza. */
+   do diálogo atravessa e chega ao véu, que minimiza.
+
+   QUEM ROLA É ELA, e não a lista: com a tela baixa (zoom de 200 a 400%), o
+   diálogo preso à altura da tela espremia a lista até zero e empurrava o
+   "Minimizar" para fora dela (WCAG 1.4.10). O `margin: auto` do diálogo
+   centra quando cabe e encosta no topo quando não cabe — com
+   `align-items: center`, o que passasse do topo ficaria fora do alcance da
+   rolagem. */
 .lugar {
   position: fixed;
   inset: 0;
   z-index: 81;
   display: flex;
-  align-items: center;
-  justify-content: center;
   padding: 24px 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   pointer-events: none;
 }
 
 .dialogo {
   position: relative;
   width: min(440px, 100%);
-  max-height: 100%;
+  margin: auto;
   display: flex;
   flex-direction: column;
   pointer-events: auto;
@@ -92,6 +112,12 @@
 .dialogo[data-estado="saindo"] {
   pointer-events: none;
 }
+/* O diálogo só recebe foco por código (o foco perdido que volta, no painel)
+   ou pelo clique num pedaço sem botão: o anel em volta do painel inteiro não
+   diria nada que o próprio painel aberto já não diga. */
+.dialogo:focus {
+  outline: none;
+}
 /* Sem `scale`: com a origem no canto inferior direito (a do minimizar), a
    borda esquerda andava ~13 px e a direita ficava parada — o painel nascia
    do canto, e não de baixo. Trocar a origem entre estados faria o minimizar
@@ -118,9 +144,15 @@
 
 /* No estouro, o fundo e o texto saem com a saída da casa enquanto a bolha
    estoura por cima. Sem `scale`: encolher o painel até a bolha borraria o
-   texto no meio do caminho — e quem está lendo a confirmação lê até o fim. */
+   texto no meio do caminho — e quem está lendo a confirmação lê até o fim.
+
+   O alerta e as barrinhas saem junto: são o palco do descarte do último envio
+   (o `SAIDA_MS` do `envio-core.ts`), em que não há bolha nenhuma — e sem eles
+   o ícone ficava sozinho na tela até o painel sumir de uma vez. */
 .dialogo[data-estado="saindo"] .fundo,
-.dialogo[data-estado="saindo"] .conteudo {
+.dialogo[data-estado="saindo"] .conteudo,
+.dialogo[data-estado="saindo"] .alerta,
+.dialogo[data-estado="saindo"] .subindo {
   animation: sai 120ms cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 @keyframes sai {
@@ -409,7 +441,9 @@
   flex-direction: column;
   gap: 8px;
   min-height: 0;
-  max-height: min(46vh, 380px);
+  /* Nunca abaixo de 120 px (uma linha e meia): na tela muito baixa, quem rola
+     é o painel inteiro, e a lista não some. */
+  max-height: max(120px, min(46vh, 380px));
   overflow-y: auto;
 }
 
@@ -527,17 +561,18 @@
   border-radius: var(--r-sm);
   cursor: pointer;
 }
-.btn:hover:not(:disabled) {
+.btn:hover:not([aria-disabled="true"]) {
   background: var(--s3);
 }
-.btn:disabled {
+/* `aria-disabled`, e não `:disabled`: ver `agir` no painel. */
+.btn[aria-disabled="true"] {
   opacity: 0.55;
   cursor: default;
 }
 .btnPerigo {
   color: var(--danger-tx);
 }
-.btnPerigo:hover:not(:disabled) {
+.btnPerigo:hover:not([aria-disabled="true"]) {
   background: var(--danger-bg);
   border-color: var(--danger);
 }
@@ -648,8 +683,12 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* O ícone de dentro só sai junto quando é `svg` (o anel e o alerta, no
+   descarte): a bolha é `span`, e esmaecê-la em 120 ms cortaria o estouro dela,
+   que leva 300. */
 .pilulaLugar[data-estado="saindo"] .pilulaFundo,
-.pilulaLugar[data-estado="saindo"] .pilulaTexto {
+.pilulaLugar[data-estado="saindo"] .pilulaTexto,
+.pilulaLugar[data-estado="saindo"] .pilulaIcone > svg {
   animation: sai 120ms cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 
@@ -692,9 +731,13 @@
 .anel[data-parado="true"] .anelValor {
   stroke: var(--tx-2);
 }
+.anelPausa {
+  fill: var(--tx-2);
+}
 
-/* Copiada de `skeleton.module.css` (via `perfil-modal.module.css`). */
-.somenteLeitor {
+/* Fora da tela, e não `display: none`: a região viva tem de existir na árvore
+   de acessibilidade para ser anunciada. */
+.srOnly {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -714,7 +757,8 @@
    - as barrinhas param na onda de repouso (o desenho continua dizendo "áudio");
    - o ✓ aparece sem crescer;
    - o estouro não acontece — e o JS nem pede, fecha direto depois da
-     confirmação (`envio-context.tsx`);
+     confirmação (`envio-context.tsx`); o descarte do último envio também
+     fecha direto, sem a saída de 120 ms;
    - minimizar, restaurar e a barra trocam de estado na hora. */
 @media (prefers-reduced-motion: reduce) {
   .onda,
@@ -726,8 +770,11 @@
   .dialogo,
   .dialogo[data-estado="saindo"] .fundo,
   .dialogo[data-estado="saindo"] .conteudo,
+  .dialogo[data-estado="saindo"] .alerta,
+  .dialogo[data-estado="saindo"] .subindo,
   .pilulaLugar[data-estado="saindo"] .pilulaFundo,
-  .pilulaLugar[data-estado="saindo"] .pilulaTexto {
+  .pilulaLugar[data-estado="saindo"] .pilulaTexto,
+  .pilulaLugar[data-estado="saindo"] .pilulaIcone > svg {
     animation: none;
   }
   .veu,

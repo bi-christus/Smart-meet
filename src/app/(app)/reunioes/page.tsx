@@ -1337,7 +1337,14 @@ function MeetingModal({
                   // caiu" no lugar do "Failed to fetch" cru do navegador. E o
                   // fim não promete "tentar de novo": o recusado também grava
                   // "falha", e para ele tentar de novo não existe.
-                  `O áudio não chegou ao Drive${uploadErro ? ` (${uploadErro.replace(/\.$/, "")})` : ""}, então nada será gerado dele. Se ele foi enviado deste computador, o aviso do envio (no canto de baixo ou no topo da tela) mostra o que fazer.`
+                  //
+                  // O motivo vem numa frase PRÓPRIA, e não entre parênteses:
+                  // os motivos são frases inteiras, com maiúscula e às vezes
+                  // duas orações, e no meio desta viravam "(“x.mp4” tem 612
+                  // MB, e o limite é 500 MB. Divida o áudio…), então…". E
+                  // "enquanto não chegar", e não "nada será gerado": uma falha
+                  // de rede ainda se resolve com "Tentar de novo".
+                  `O áudio não chegou ao Drive, e enquanto não chegar nada é gerado.${uploadErro ? ` Motivo: ${uploadErro}${/[.!?]$/.test(uploadErro) ? "" : "."}` : ""} Se ele foi enviado deste computador, o aviso do envio (no canto de baixo ou no topo da tela) mostra o que fazer.`
                 : meeting.status === "processado"
                   ? canSeeAudio && meeting.driveOutputs?.some((o) => o.link)
                     ? // "De quem enviou", e não "no seu": admin e gestor do

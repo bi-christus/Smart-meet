@@ -207,6 +207,10 @@
   --overlay: rgba(36, 26, 17, 0.42);
   --card: #fdf8ef;
   --field: #f5ecdf;
+  /* Só o TEXTO do verde muda aqui, não o `--ok`: o #15803d do claro fica em
+     4,29:1 sobre o --s1 bege (abaixo dos 4,5:1 de texto pequeno — o "✓
+     Enviado" do painel do envio mora nele). Este dá 6,1:1. */
+  --ok-tx: #166534;
 }
 
 /* ---------------------------------------------------------------------------
