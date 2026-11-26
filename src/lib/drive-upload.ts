@@ -71,6 +71,8 @@ export async function createUploadSession(params: {
    * fala com o Firestore.
    */
   observacoes?: string;
+  /** Tamanho em bytes, quando já se sabe — o servidor recusa acima do limite. */
+  size?: number | null;
 }): Promise<{ uploadUrl: string; folderId?: string }> {
   const res = await fetch("/api/drive/upload-url", {
     method: "POST",
@@ -182,11 +184,14 @@ export async function renameDriveFile(
   /** Gravação pelo microfone: a sessão de upload abriu antes de o usuário ter
    *  escrito as observações, então elas chegam ao arquivo neste momento. */
   observacoes?: string,
+  /** Pelo mesmo motivo, a escolha de documentos do modal do fim: a sessão
+   *  abriu com o padrão, e é aqui que o `smGerar` passa a valer o escolhido. */
+  outputs?: string[],
 ): Promise<DriveResult> {
   const res = await fetch("/api/drive/rename", {
     method: "POST",
     headers: { "Content-Type": "application/json", ...(await authHeader()) },
-    body: JSON.stringify({ fileId, name, sector, observacoes }),
+    body: JSON.stringify({ fileId, name, sector, observacoes, outputs }),
   });
   if (!res.ok) {
     const e = (await res.json().catch(() => ({}))) as { error?: string };

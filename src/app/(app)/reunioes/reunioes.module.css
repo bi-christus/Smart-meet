@@ -35,35 +35,6 @@
   padding: 18px 20px;
 }
 
-/* área de captura em 2 colunas: método (esq.) + o que gerar (dir.) */
-.capGrid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
-  gap: 22px;
-  align-items: start;
-}
-@media (max-width: 760px) {
-  .capGrid {
-    grid-template-columns: 1fr;
-    gap: 16px;
-  }
-}
-.capMain {
-  min-width: 0;
-}
-.capSide {
-  padding-left: 22px;
-  border-left: 1px solid var(--line-soft);
-}
-@media (max-width: 760px) {
-  .capSide {
-    padding-left: 0;
-    padding-top: 16px;
-    border-left: none;
-    border-top: 1px solid var(--line-soft);
-  }
-}
-
 .capTop {
   display: flex;
   align-items: center;
@@ -444,27 +415,38 @@
   gap: 10px;
 }
 
-.outLbl {
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  color: var(--tx-3);
-  margin: 0 0 10px;
-}
+/*
+ * "O que você vai receber", dentro do modal Registrar reunião. Duas colunas:
+ * a primeira linha são os dois que sempre vêm, a segunda as duas escolhas —
+ * a forma da grade já separa "incluído" de "decida", sem um título a mais. Em
+ * coluna única seriam quatro linhas, e o modal, que já cresceu com a lista,
+ * cresceria outro tanto.
+ *
+ * Marcar e desmarcar é interação de alta frequência (AGENTS.md §3): a cor
+ * troca em 0,12 s e o cartão afunda 1 px no clique, como os outros botões da
+ * tela — resposta ao toque, não animação. Nada cresce, desliza ou aparece.
+ */
 .outOptions {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+@media (max-width: 520px) {
+  .outOptions {
+    grid-template-columns: 1fr;
+  }
 }
 .outOption {
   display: flex;
-  gap: 11px;
+  gap: 10px;
   align-items: flex-start;
-  padding: 12px 13px;
+  padding: 10px 12px;
   border: 1px solid var(--line);
-  background: var(--s2);
-  border-radius: 11px;
+  /* o modal é --s2; o cartão desce para --s1, como os campos ao lado */
+  background: var(--s1);
+  border-radius: 10px;
+  color: inherit;
+  font-family: inherit;
   cursor: pointer;
   text-align: left;
   transition: border-color 0.12s, background 0.12s, transform 0.05s;
@@ -483,8 +465,25 @@
   opacity: 0.5;
   cursor: default;
 }
+/*
+ * O cadeado NÃO usa a cor da marca. Na lateral antiga ele vinha "marcado"
+ * igual às escolhas, e, com a Ata detalhada agora marcada por padrão, os três
+ * ficariam idênticos — e a pessoa não saberia qual dá para desmarcar.
+ */
 .outLocked {
   cursor: default;
+  border-color: var(--line-soft);
+}
+.outLocked:hover {
+  border-color: var(--line-soft);
+}
+.outLocked:active {
+  transform: none;
+}
+.outLocked .outCheck {
+  border-color: transparent;
+  background: var(--s3);
+  color: var(--tx-2);
 }
 .outCheck {
   width: 18px;
@@ -519,6 +518,27 @@
   color: var(--tx-3);
   line-height: 1.4;
   margin-top: 2px;
+}
+
+/* Recusa do arquivo, dentro da própria área: é onde o olho está ao soltar. */
+.dropErr {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 7px;
+  max-width: 520px;
+  margin-top: 14px;
+  padding: 8px 12px;
+  border: 1px solid var(--danger);
+  border-radius: 9px;
+  background: var(--danger-bg);
+  color: var(--danger-tx);
+  font-size: 12.5px;
+  line-height: 1.45;
+  text-align: left;
+}
+.dropErr svg {
+  flex: none;
+  margin-top: 1px;
 }
 
 .infoBanner {

@@ -448,11 +448,23 @@ export async function ensureFolder(
   return ((await cr.json()) as { id: string }).id;
 }
 
-/** Renomeia um arquivo já enviado (o áudio nasce com um nome provisório). */
+/**
+ * Renomeia um arquivo já enviado (o áudio nasce com um nome provisório) e, no
+ * MESMO pedido, grava etiquetas em `properties` — hoje, o `smGerar` escolhido
+ * no modal do fim da gravação.
+ *
+ * Um pedido só, e não um segundo PATCH depois: com dois, o primeiro podia
+ * passar e o segundo falhar. O nome definitivo é o sinal para o motor da
+ * nuvem parar de esperar, e ele processaria com a escolha velha — gerando o
+ * documento errado sem erro nenhum. Num pedido só, os dois entram ou nenhum.
+ * O Drive MESCLA `properties` num update — só as chaves enviadas mudam —,
+ * então isto não apaga etiqueta que outro processo tenha posto no arquivo.
+ */
 export async function renameFile(
   token: string,
   fileId: string,
   name: string,
+  properties?: Record<string, string>,
 ): Promise<{ id: string; name: string; webViewLink?: string }> {
   const r = await driveFetch(
     token,
@@ -460,10 +472,31 @@ export async function renameFile(
     {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, ...(properties ? { properties } : {}) }),
     },
   );
   return (await r.json()) as { id: string; name: string; webViewLink?: string };
+}
+
+/**
+ * Só as etiquetas, sem tocar no nome — para o arquivo que o motor já marcou
+ * como "Transcrito", cujo nome não pode mudar (ver a rota rename). Mesma
+ * mesclagem de `properties` que `renameFile`.
+ */
+export async function setFileProperties(
+  token: string,
+  fileId: string,
+  properties: Record<string, string>,
+): Promise<void> {
+  await driveFetch(
+    token,
+    `${API}/files/${fileId}?supportsAllDrives=true&fields=id`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ properties }),
+    },
+  );
 }
 
 export type Grant = { email: string; role: "reader" | "writer" };

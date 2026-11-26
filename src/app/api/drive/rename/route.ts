@@ -6,7 +6,9 @@ import {
   renameFile,
   requireUser,
   setFileDescription,
+  setFileProperties,
 } from "@/lib/server/drive-server";
+import { paraSmGerar } from "@/lib/atas-do-envio-core";
 
 export const runtime = "nodejs";
 
@@ -24,6 +26,7 @@ export async function POST(req: Request) {
       name?: string;
       sector?: string;
       observacoes?: string;
+      outputs?: unknown;
     };
     const fileId = (body.fileId || "").trim();
     const name = (body.name || "").trim();
@@ -32,6 +35,19 @@ export async function POST(req: Request) {
     // antes de o usuário escrever as observações. Elas chegam ao arquivo aqui.
     const observacoes = (body.observacoes || "").trim().slice(0, 4000);
     if (!fileId || !name) throw new HttpError(400, "Dados incompletos.");
+
+    // Pelo mesmo motivo, a escolha de documentos do modal do fim: a sessão
+    // abriu com o padrão. Ausente = não mexe na etiqueta (cliente antigo, ou
+    // nada a mudar). Presente, passa pela MESMA normalização da abertura da
+    // sessão — lista fechada, "resumo" sempre —, então o que chega ao Drive
+    // nunca é um valor que o motor da nuvem não conhece, venha a chamada da
+    // tela ou de qualquer outro lugar.
+    if (body.outputs !== undefined && !Array.isArray(body.outputs)) {
+      throw new HttpError(400, "Escolha de documentos inválida.");
+    }
+    const properties = Array.isArray(body.outputs)
+      ? { smGerar: paraSmGerar(body.outputs) }
+      : undefined;
 
     if (caller.role !== "admin" && sector && !caller.sectors.includes(sector)) {
       throw new HttpError(403, "Você não participa deste setor.");
@@ -49,10 +65,13 @@ export async function POST(req: Request) {
     }
 
     if (/transcrito/i.test(cur.name)) {
+      // A escolha também: chegou tarde para este processamento, mas é o que a
+      // pessoa pediu, e o Drive fica dizendo a mesma coisa que a reunião no app.
+      if (properties) await setFileProperties(token, fileId, properties);
       return NextResponse.json({ id: fileId, name: cur.name });
     }
 
-    const file = await renameFile(token, fileId, name);
+    const file = await renameFile(token, fileId, name, properties);
     return NextResponse.json(file);
   } catch (e) {
     const status = e instanceof HttpError ? e.status : 500;

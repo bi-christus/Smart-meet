@@ -7,6 +7,8 @@ import {
   sectorGrantees,
   syncReaders,
 } from "@/lib/server/drive-server";
+import { paraSmGerar } from "@/lib/atas-do-envio-core";
+import { recusaDoServidor } from "@/lib/audio/arquivo-de-audio-core";
 
 export const runtime = "nodejs";
 
@@ -18,8 +20,9 @@ export async function POST(req: Request) {
       name?: string;
       mimeType?: string;
       sector?: string;
-      outputs?: string[];
+      outputs?: unknown;
       observacoes?: string;
+      size?: unknown;
     };
     const name = (body.name || "").trim();
     const sector = (body.sector || "").trim();
@@ -39,16 +42,36 @@ export async function POST(req: Request) {
     // sempre; atas conforme o pedido). Usamos `properties` (PÚBLICO — legível por
     // qualquer cliente com acesso ao arquivo), e NÃO `appProperties`, que é
     // privado ao OAuth client que gravou (o Cowork leria null).
-    const outputs = Array.isArray(body.outputs)
-      ? body.outputs.filter((o): o is string => typeof o === "string" && !!o)
-      : [];
-    const properties = outputs.length
-      ? { smGerar: outputs.join(",") }
+    //
+    // A lista passa pela normalização da casa: só valores que o motor
+    // conhece, "resumo" sempre. Antes, qualquer texto entrava como veio. Sem
+    // lista nenhuma, a etiqueta não é gravada — e o motor gera tudo, que é o
+    // comportamento combinado para quem não disse o que quer.
+    const properties = Array.isArray(body.outputs)
+      ? { smGerar: paraSmGerar(body.outputs) }
       : undefined;
 
     // Só pode enviar para um setor do qual participa (admin pode em qualquer um).
     if (caller.role !== "admin" && !caller.sectors.includes(sector)) {
       throw new HttpError(403, "Você não participa deste setor.");
+    }
+
+    // O PORTÃO REAL do tipo de arquivo. A tela já confere antes de abrir o
+    // modal, mas abas antigas continuam abertas com o código velho, e esta
+    // rota pode ser chamada direto — foi assim que um PDF virou reunião.
+    // Aqui a régua é a frouxa (só recusa o que é claramente documento,
+    // imagem ou texto): a gravação do microfone também passa por esta rota e
+    // pode chegar como ".audio" sem MIME. Ver `arquivo-de-audio-core.ts`.
+    const veredito = recusaDoServidor({
+      nome: name,
+      tipo: body.mimeType,
+      bytes: typeof body.size === "number" ? body.size : null,
+    });
+    if (!veredito.ok) {
+      throw new HttpError(
+        veredito.motivo === "grande" ? 413 : 415,
+        veredito.mensagem,
+      );
     }
 
     const root = process.env.DRIVE_ROOT_FOLDER_ID;

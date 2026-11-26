@@ -10,15 +10,21 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import { db } from "./firebase";
+import type { AtaDoEnvio } from "./atas-do-envio-core";
 
 export type MeetingStatus = "aguardando" | "processando" | "processado";
 export type ReportStatus = "rascunho" | "a_validar" | "validada";
 export type SendMethod = "file" | "mic" | "online";
 /**
- * O que a IA gera a partir da transcrição (Fase 4). É uma multi-seleção: por
- * padrão vem só "resumo" (pontos importantes); as atas são opcionais.
+ * O que a pessoa pede que a nuvem gere a partir da transcrição. É uma
+ * multi-seleção; "resumo" (Pontos importantes) sai sempre e a Ata detalhada
+ * vem marcada por padrão (Issue #248).
+ *
+ * A lista mora em `atas-do-envio-core.ts`, e não aqui, porque as rotas do
+ * servidor a validam e o teste do `prebuild` a fixa — e este arquivo carrega o
+ * SDK do Firebase, que nenhum dos dois pode importar.
  */
-export type OutputKind = "resumo" | "detalhada" | "didatica";
+export type OutputKind = AtaDoEnvio;
 
 /**
  * Arquivos que o processador externo (Cowork) gera na pasta do Drive e que o

@@ -82,6 +82,26 @@ export type RecordingRecord = {
   proxyMode: boolean;
   /** caminho "file": referência ao arquivo original escolhido pelo usuário */
   file?: File;
+  /**
+   * O que o modal confirmou e ainda NÃO chegou ao arquivo no Drive: título,
+   * observações e a escolha de documentos (`smGerar`).
+   *
+   * Existe porque o modal costuma fechar antes de o envio terminar, e aí não
+   * há arquivo para renomear. Antes, nesse caso, o título simplesmente se
+   * perdia, e o motor da nuvem esperava até 6 h pelo nome provisório
+   * "Gravação — …". Fica no registro, e não na memória da aba, para sobreviver
+   * a uma recarga e ao service worker concluir o envio sozinho: quem fecha o
+   * ciclo (`settle` ou `finalizePending`) aplica a pendência ANTES de apagar o
+   * registro. O service worker não precisa conhecer este campo — ele só faz
+   * `Object.assign` sobre o registro, e o campo atravessa intacto.
+   */
+  pendingRename?: PendingRename | null;
+};
+
+export type PendingRename = {
+  title: string;
+  observacoes?: string;
+  outputs?: string[];
 };
 
 type ChunkRecord = {
