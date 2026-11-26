@@ -1,8 +1,9 @@
+/* Sem `position: fixed` próprio: ele mora na doca do shell
+   (`app-shell.module.css`), que empilha o mini player e a pílula do envio no
+   mesmo canto sem que um cubra o outro. O `pointer-events` volta aqui porque a
+   doca o desliga para a área vazia da pilha não engolir clique. */
 .wrap {
-  position: fixed;
-  bottom: 20px;
-  right: 20px;
-  z-index: 70;
+  pointer-events: auto;
   display: flex;
   align-items: center;
   gap: 6px;

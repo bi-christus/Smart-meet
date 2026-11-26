@@ -152,6 +152,42 @@ export function subscribeMeetings(
   );
 }
 
+/**
+ * O espelho do envio de UMA reunião, para o painel do envio (#250).
+ *
+ * Um documento só, e não `subscribeMeetings`: o painel mora no shell e vale em
+ * qualquer aba, onde ninguém assina a lista de reuniões — e ele só precisa de
+ * quatro campos de um id que já conhece. É a rede para o caso em que quem
+ * concluiu o envio não foi esta aba (o service worker, outra aba): aí o
+ * registro local some sem aviso, e "concluido" aqui é o que separa "terminou"
+ * de "foi descartado". `null` = o documento não existe mais.
+ */
+export function subscribeMeetingUpload(
+  id: string,
+  onData: (
+    m: Pick<Meeting, "uploadStatus" | "uploadError" | "uploadedBytes" | "totalBytes"> | null,
+  ) => void,
+  onError?: (e: Error) => void,
+): () => void {
+  return onSnapshot(
+    doc(db, "meetings", id),
+    (snap) => {
+      if (!snap.exists()) {
+        onData(null);
+        return;
+      }
+      const d = snap.data() as Partial<Meeting>;
+      onData({
+        uploadStatus: d.uploadStatus,
+        uploadError: d.uploadError ?? null,
+        uploadedBytes: d.uploadedBytes,
+        totalBytes: d.totalBytes,
+      });
+    },
+    (e) => onError?.(e),
+  );
+}
+
 export async function createMeeting(
   input: MeetingInput,
   createdBy: string,

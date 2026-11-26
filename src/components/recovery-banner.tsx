@@ -2,14 +2,16 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Icon } from "@/components/icons";
-import {
-  assembleBlob,
-  fmtBytes,
-  listUnfinished,
-  type RecordingRecord,
-} from "@/lib/audio/recording-db";
+import { listUnfinished, type RecordingRecord } from "@/lib/audio/recording-db";
 import { uploadManager } from "@/lib/audio/uploader";
 import { registerUploadWorker } from "@/lib/audio/sw-register";
+import { baixarCopiaLocal } from "@/lib/audio/baixar-copia";
+import { useEnvios } from "@/lib/audio/envio-context";
+import {
+  avisoRecusado,
+  mensagemDoErro,
+  textoDeTamanho,
+} from "@/lib/audio/envio-core";
 import styles from "./recovery-banner.module.css";
 
 /**
@@ -18,11 +20,21 @@ import styles from "./recovery-banner.module.css";
  * Fica montada no shell do app (não só na tela de reuniões) por três motivos:
  *  1. liga a bomba de envio, para o upload continuar mesmo se o usuário sair da
  *     tela de reuniões e for para o Kanban;
- *  2. registra o service worker, que segue enviando com a aba fechada;
+ *  2. registra o service worker, que segue enviando com a aba fechada (só no
+ *     Chrome e no Edge, e só com o navegador aberto — ver `public/sw.js`);
  *  3. mostra o que ficou pela metade — uma gravação interrompida nunca some em
  *     silêncio, e o usuário sempre tem como baixar uma cópia local.
+ *
+ * O envio que o painel do envio (#250) já mostra ANDANDO fica fora daqui: o
+ * mesmo áudio em dois lugares, um deles em amarelo de alerta, faria um envio
+ * que está andando parecer um problema. A FALHA volta, mesmo acompanhada: é a
+ * faixa que sobrevive à pílula minimizada e ao painel fechado, e é a saída
+ * (Descartar, Baixar cópia) de quem o "Tentar de novo" não resolve. Fora isso,
+ * sobra para a faixa o que o painel não conhece — as falhas antigas e o que
+ * ficou parado de outra sessão.
  */
 export function RecoveryBanner() {
+  const { acompanha, descartar, descartes } = useEnvios();
   const [items, setItems] = useState<RecordingRecord[]>([]);
   const [dismissed, setDismissed] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -50,29 +62,34 @@ export function RecoveryBanner() {
     };
   }, [refresh]);
 
+  // O descarte feito no painel não avisa o motor nem esta faixa: sem reler
+  // aqui, ela mostrava por até 5 s o áudio que acabou de ser apagado.
+  useEffect(() => {
+    if (descartes === 0) return;
+    const t = window.setTimeout(() => void refresh(), 0);
+    return () => clearTimeout(t);
+  }, [descartes, refresh]);
+
   const pending = items.filter((r) => r.status !== "done");
 
   // Aviso ao fechar a aba enquanto há áudio sem confirmação do Drive. Nada se
   // perde se o usuário insistir — mas quase sempre ele não quer.
+  //
+  // O RECUSADO NÃO CONTA: o servidor não vai aceitar aquele arquivo, e o
+  // aviso prenderia a pessoa no site por um envio que não vai acontecer —
+  // toda vez que ela tentasse sair, até lembrar de descartar.
+  const prendem = pending.filter((r) => !r.recusado).length;
   useEffect(() => {
-    if (!pending.length) return;
+    if (!prendem) return;
     const guard = (e: BeforeUnloadEvent) => e.preventDefault();
     window.addEventListener("beforeunload", guard);
     return () => window.removeEventListener("beforeunload", guard);
-  }, [pending.length]);
+  }, [prendem]);
 
   async function download(rec: RecordingRecord) {
     setBusy(rec.id);
     try {
-      const blob = await assembleBlob(rec);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = rec.driveName || `${rec.title}.webm`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 30000);
+      await baixarCopiaLocal(rec);
     } catch (e) {
       console.error(e);
       alert("Não foi possível montar o arquivo local.");
@@ -86,15 +103,29 @@ export function RecoveryBanner() {
       `Descartar "${rec.title}"? O áudio guardado neste computador será apagado e não poderá ser recuperado.`,
     );
     if (!ok) return;
-    await uploadManager.discard(rec.id);
+    // Acompanhado, o descarte passa pelo painel, que tira a linha junto: sem
+    // isso, a próxima releitura dele encontrava o registro sumido e a reunião
+    // em "falha", e mostrava de novo o envio que a pessoa acabou de descartar.
+    if (acompanha(rec.id)) await descartar(rec.id);
+    else await uploadManager.discard(rec.id);
     void refresh();
   }
 
   if (!pending.length || dismissed) return null;
 
   // gravações em andamento não são "pendências" — são o trabalho normal
-  const stalled = pending.filter((r) => r.status !== "recording");
+  const stalled = pending.filter(
+    (r) =>
+      r.status !== "recording" &&
+      !(acompanha(r.id) && r.status !== "failed"),
+  );
   if (!stalled.length) return null;
+
+  const recusados = stalled.filter((r) => r.recusado).length;
+  const naoChegaram = stalled.length - recusados;
+  // Falha que esgotou as tentativas não anda sozinha com a aba à vista: "deixe
+  // o site aberto para o envio continuar" mandaria esperar quem precisa clicar.
+  const pararam = stalled.some((r) => r.status === "failed" && !r.recusado);
 
   return (
     <div className={styles.wrap} role="status">
@@ -103,13 +134,25 @@ export function RecoveryBanner() {
       </div>
       <div className={styles.body}>
         <div className={styles.title}>
-          {stalled.length === 1
-            ? "1 gravação ainda não chegou inteira ao Drive"
-            : `${stalled.length} gravações ainda não chegaram inteiras ao Drive`}
+          {naoChegaram === 0
+            ? recusados === 1
+              ? "1 arquivo não foi aceito"
+              : `${recusados} arquivos não foram aceitos`
+            : naoChegaram === 1
+              ? "1 gravação ainda não chegou inteira ao Drive"
+              : `${naoChegaram} gravações ainda não chegaram inteiras ao Drive`}
         </div>
+        {/* A frase antiga — "o envio continua sozinho, você não precisa fazer
+            nada" — convidava a fechar o site, e fechar PARA o envio no Firefox
+            e no Safari (o service worker só segue no Chrome e no Edge, e só
+            com o navegador aberto). Quem lia aquilo e fechava achava que o
+            áudio tinha chegado. */}
         <div className={styles.sub}>
-          O áudio está salvo neste computador. O envio continua sozinho — você
-          não precisa fazer nada.
+          {naoChegaram === 0
+            ? avisoRecusado(recusados)
+            : pararam
+              ? "O envio parou. O áudio está salvo neste computador: clique em Tentar de novo ou baixe uma cópia."
+              : "O áudio está salvo neste computador. Deixe o site aberto para o envio continuar — se fechar, ele retoma quando você voltar."}
         </div>
 
         <ul className={styles.list}>
@@ -120,11 +163,17 @@ export function RecoveryBanner() {
               <li key={r.id} className={styles.item}>
                 <div className={styles.itemMain}>
                   <span className={styles.itemName}>{r.title}</span>
+                  {/* O motivo da recusa vai escrito, e não num `title`: o
+                      aviso acima manda "ver o motivo abaixo". E a falha passa
+                      pelo `mensagemDoErro`, para dizer o mesmo que o painel
+                      ao lado diz do mesmo envio, e não "Failed to fetch". */}
                   <span className={styles.itemMeta}>
-                    {fmtBytes(total)} ·{" "}
-                    {r.status === "failed"
-                      ? (r.error ?? "envio interrompido")
-                      : `${pct}% enviado`}
+                    {textoDeTamanho(total)} ·{" "}
+                    {r.recusado
+                      ? (r.error ?? "este arquivo não foi aceito")
+                      : r.status === "failed"
+                        ? (mensagemDoErro(r.error) ?? "envio interrompido")
+                        : `${pct}% enviado`}
                   </span>
                   <div className={styles.bar}>
                     <div
@@ -149,7 +198,7 @@ export function RecoveryBanner() {
                     onClick={() => void download(r)}
                     disabled={busy === r.id}
                   >
-                    {busy === r.id ? "Montando…" : "Baixar cópia"}
+                    {busy === r.id ? "Preparando a cópia…" : "Baixar cópia"}
                   </button>
                   <button
                     className={`${styles.btn} ${styles.btnBad}`}

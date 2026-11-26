@@ -27,7 +27,9 @@ import { useAsyncData } from "@/lib/use-async-data";
 import { syncDrive } from "@/lib/drive-upload";
 import { useRecording } from "@/lib/audio/recording-context";
 import { uploadManager } from "@/lib/audio/uploader";
-import { fmtBytes } from "@/lib/audio/recording-db";
+import { fmtBytes, getRecording } from "@/lib/audio/recording-db";
+import { useEnvios } from "@/lib/audio/envio-context";
+import { mensagemDoErro } from "@/lib/audio/envio-core";
 import {
   ACCEPT_DE_AUDIO,
   conferirArquivoDeAudio,
@@ -848,7 +850,14 @@ function UploadChip({ meeting }: { meeting: Meeting }) {
   return (
     <span
       className={`${styles.chip} ${s === "falha" ? styles.st_falha : styles.st_enviando}`}
-      title={meeting.uploadError ?? undefined}
+      // Só na falha: durante as novas tentativas o espelho também carrega o
+      // último erro (ver `settle` no uploader), e o "Enviando áudio 42%" com
+      // "Failed to fetch" por cima contava uma queda que já tinha passado.
+      title={
+        s === "falha"
+          ? (mensagemDoErro(meeting.uploadError ?? null) ?? undefined)
+          : undefined
+      }
     >
       {s === "gravando"
         ? "Gravando…"
@@ -895,6 +904,7 @@ function NewMeetingModal({
   );
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const { acompanharEnvio } = useEnvios();
 
   // A gravação já está indo para /{setor}/{e-mail} no Drive — trocar o setor
   // aqui deixaria o arquivo numa pasta e o registro em outra.
@@ -932,12 +942,17 @@ function NewMeetingModal({
       } else if (confirm.file) {
         // Arquivo: o envio começa agora e segue em segundo plano, retomável.
         // A escolha vai na abertura da sessão, que grava o `smGerar`.
-        const { meetingId } = await startFileUpload(confirm.file, {
+        const { recordingId, meetingId } = await startFileUpload(confirm.file, {
           sector: sec,
           output: escolha,
           title: clean,
           observacoes: obs,
         });
+        // O painel do envio abre AGORA, antes do `updateMeeting` e antes de
+        // este modal fechar: é ele que arma o aviso de não fechar o site, e
+        // cada instante entre "Registrar" e o aviso é um instante em que a
+        // pessoa fecha a aba achando que o áudio já foi (#250).
+        acompanharEnvio({ recordingId, meetingId, titulo: clean, setor: sec });
         if (meetingId) {
           await updateMeeting(meetingId, {
             date,
@@ -966,6 +981,11 @@ function NewMeetingModal({
         );
       }
       if (confirm.recordingId) {
+        // Lido ANTES do `applyTitle`, que apaga o registro de um envio já
+        // concluído: depois dele, "não existe" não diria se o áudio chegou.
+        const antes = await getRecording(confirm.recordingId).catch(
+          () => undefined,
+        );
         // Microfone: a sessão de upload abriu antes de o campo existir, então
         // as observações — e a escolha, que abriu com o padrão — só chegam ao
         // arquivo agora (ou quando o envio terminar, se ainda não terminou).
@@ -978,6 +998,21 @@ function NewMeetingModal({
           obs,
           escolha,
         );
+        // Quase sempre o áudio do microfone já chegou durante a gravação e só
+        // falta a cauda (menos de 256 KB): o painel abre só se ainda falta,
+        // e aí costuma confirmar em segundos. Abrir para um envio que já
+        // terminou seria uma confirmação de nada. E nunca para uma gravação
+        // de 0 byte (microfone mudo ou negado): não há áudio a enviar, e o
+        // painel ofereceria "Tentar de novo" e "Baixar cópia" de nada — ou,
+        // pior, diria "Áudio enviado!" se o Drive aceitasse fechar o vazio.
+        if (antes && antes.status !== "done" && antes.bytesWritten > 0) {
+          acompanharEnvio({
+            recordingId: confirm.recordingId,
+            meetingId: antes.meetingId ?? confirm.meetingId ?? null,
+            titulo: clean,
+            setor: antes.sector || sec,
+          });
+        }
       }
       onClose();
     } catch (e) {
@@ -1009,10 +1044,13 @@ function NewMeetingModal({
           <div className={styles.hint}>
             🎧 <b>{sendLabel}</b>
             {confirm.durationMin ? ` · ${confirm.durationMin} min` : ""}.{" "}
+            {/* "Em segundo plano" se lia como "posso sair", segundos antes de
+                o painel do envio dizer "Não feche o site" (#250): quem fecha
+                no Firefox ou no Safari para o envio até voltar. */}
             {confirm.recordingId
-              ? "O áudio já foi enviado ao Drive durante a gravação — se ainda faltar algum trecho, ele sobe sozinho em segundo plano."
+              ? "O áudio já foi enviado ao Drive durante a gravação — se ainda faltar algum trecho, ele termina de subir em instantes; deixe o site aberto até lá."
               : confirm.file
-                ? "O envio ao Drive começa ao confirmar e continua em segundo plano, retomando sozinho se a rede cair."
+                ? "O envio começa ao confirmar. Deixe o site aberto até ele terminar — se a rede cair, ele retoma sozinho."
                 : ""}
             {temAudio
               ? // "Da lista", e não "marcados": os de cadeado não têm marca e
@@ -1187,6 +1225,7 @@ function MeetingModal({
   const avail = activeUsers.filter(
     (u) => u.sectors?.includes(sector) || u.role === "admin",
   );
+  const uploadErro = mensagemDoErro(meeting.uploadError ?? null);
 
   function toggleP(email: string) {
     setParticipants((cur) =>
@@ -1294,9 +1333,33 @@ function MeetingModal({
             {/* O "Fase 4" que estava aqui prometia um futuro que já chegou e
                 desmentia o modal de registro, que diz o que acontece hoje. A
                 online não tem áudio, então nada chega sozinho para ela. */}
+            {/* "Chegam depois" só é verdade para quem ainda espera: com o envio
+                parado nada vai chegar, e com a reunião processada já chegou.
+                Dizer o mesmo nos três casos mandava esperar quem precisava
+                agir (#250). */}
             {meeting.send === "online"
               ? "Reunião online não tem áudio no Drive: se tiver a transcrição ou a ata, cole abaixo."
-              : "A transcrição e os documentos chegam depois e aparecem aqui quando ficam prontos; se precisar, cole abaixo."}
+              : meeting.uploadStatus === "falha"
+                ? // O motivo passa pelo `mensagemDoErro`, que diz "a conexão
+                  // caiu" no lugar do "Failed to fetch" cru do navegador. E o
+                  // fim não promete "tentar de novo": o recusado também grava
+                  // "falha", e para ele tentar de novo não existe.
+                  //
+                  // O motivo vem numa frase PRÓPRIA, e não entre parênteses:
+                  // os motivos são frases inteiras, com maiúscula e às vezes
+                  // duas orações, e no meio desta viravam "(“x.mp4” tem 612
+                  // MB, e o limite é 500 MB. Divida o áudio…), então…". E
+                  // "enquanto não chegar", e não "nada será gerado": uma falha
+                  // de rede ainda se resolve com "Tentar de novo".
+                  `O áudio não chegou ao Drive, e enquanto não chegar nada é gerado.${uploadErro ? ` Motivo: ${uploadErro}${/[.!?]$/.test(uploadErro) ? "" : "."}` : ""} Se ele foi enviado deste computador, o aviso do envio (no canto de baixo ou no topo da tela) mostra o que fazer.`
+                : meeting.status === "processado"
+                  ? canSeeAudio && meeting.driveOutputs?.some((o) => o.link)
+                    ? // "De quem enviou", e não "no seu": admin e gestor do
+                      // setor também veem estes botões, e o e‑mail da rotina
+                      // segue a pasta do Drive (/{setor}/{e‑mail} de quem enviou).
+                      "Esta reunião já foi processada: a transcrição e os documentos estão nos botões abaixo e no e‑mail de quem enviou."
+                    : "Esta reunião já foi processada. Se precisar, cole a transcrição ou a ata abaixo."
+                  : "A transcrição e os documentos chegam depois e aparecem aqui quando ficam prontos; se precisar, cole abaixo."}
           </div>
 
           {meeting.driveLink && canSeeAudio && (

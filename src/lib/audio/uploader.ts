@@ -181,10 +181,33 @@ class UploadManagerImpl {
         // tentativas a cada abertura do app. Fica parado até ser descartado.
         if (rec.recusado) continue;
         // nova sessão do usuário = nova chance; o áudio continua no disco
-        await patchRecording(rec.id, { status: "uploading", error: null });
+        const revivido = await patchRecording(rec.id, {
+          status: "uploading",
+          error: null,
+        });
+        // Avisa: é o "Tentar de novo" do painel do envio (#250), e sem o aviso
+        // ele seguia dizendo "O envio parou" até a próxima releitura.
+        if (revivido) this.emit(revivido);
       }
       void this.pump(rec.id);
     }
+  }
+
+  /**
+   * Retoma UM envio que parou: o "Tentar de novo" de uma linha do painel do
+   * envio (#250). O `resumeAll` revivia todas as falhas, e com duas linhas
+   * paradas o botão de uma sumia junto com o da outra, sem a pessoa ter
+   * pedido. O recusado fica parado pelo mesmo motivo de lá.
+   */
+  async resume(recordingId: string): Promise<void> {
+    const rec = await getRecording(recordingId);
+    if (!rec || rec.recusado || rec.status !== "failed") return;
+    const revivido = await patchRecording(rec.id, {
+      status: "uploading",
+      error: null,
+    });
+    if (revivido) this.emit(revivido);
+    void this.pump(rec.id);
   }
 
   /**
@@ -210,6 +233,10 @@ class UploadManagerImpl {
       await withLock(`smartmeet-fin-${lido.id}`, async () => {
         const rec = await getRecording(lido.id);
         if (!rec || rec.status !== "done") return;
+        // Quem concluiu foi o service worker, que não avisa ninguém. Sem este
+        // aviso, o painel do envio (#250) só saberia pela releitura — e o
+        // registro some logo abaixo, o que se confunde com "descartado".
+        this.emit(rec);
         await this.writeFirestore(rec, true);
         await deleteChunks(rec.id);
         // O modal pode ter confirmado o título enquanto o worker enviava: a
@@ -335,12 +362,15 @@ class UploadManagerImpl {
       return;
     }
 
-    await patchRecording(recordingId, {
+    const encerrada = await patchRecording(recordingId, {
       status: "uploading",
       stoppedAt: Date.now(),
       durationMs,
       totalBytes: rec.bytesWritten,
     });
+    // O total só passa a existir aqui; o painel do envio (#250) precisa dele
+    // para mostrar quanto falta da cauda da gravação.
+    if (encerrada) this.emit(encerrada);
     void this.pump(recordingId);
   }
 
@@ -529,10 +559,24 @@ class UploadManagerImpl {
           }
           return;
         }
-        await patchRecording(recordingId, { error: message });
-
-        // antes de reenviar, pergunta ao Google onde ele parou de verdade
-        await this.reconcile(recordingId);
+        // Antes de reenviar, pergunta ao Google onde ele parou de verdade — e
+        // a consulta grava o erro JUNTO do progresso, num patch e num aviso
+        // só. O painel do envio (#250) diz "tentando de novo" e para a
+        // animação por este campo: gravado antes da consulta, ele era apagado
+        // por ela (o "incompleto" do `settle`); gravado depois, o painel
+        // piscava "Enviando" entre dois "tentando de novo". O erro só some
+        // quando um bloco é aceito, no `settle` do `step`.
+        const consultou = await this.reconcile(recordingId, message);
+        // Sem consulta (a sessão ainda não abriu, ou nem ela passou), o erro
+        // vai sozinho. Só com o envio de pé: o registro pode ter sido
+        // descartado no meio.
+        if (!consultou) {
+          const atual = await getRecording(recordingId);
+          if (atual?.status === "uploading") {
+            const comErro = await patchRecording(recordingId, { error: message });
+            if (comErro) this.emit(comErro);
+          }
+        }
         await sleep(backoffMs(attempt - 1));
       }
     }
@@ -600,11 +644,18 @@ class UploadManagerImpl {
       : "sent";
   }
 
-  /** Aplica o resultado de um bloco. Devolve true quando o envio acabou. */
+  /**
+   * Aplica o resultado de um bloco. Devolve true quando o envio acabou.
+   *
+   * `manterErro` é o erro da tentativa que falhou, quando quem chama é a
+   * consulta de antes de reenviar (`reconcile`): o arquivo não fechou, então
+   * o envio continua "tentando de novo", e não "andando".
+   */
   private async settle(
     rec: RecordingRecord,
     outcome: ChunkOutcome,
     optimisticBytes?: number,
+    manterErro: string | null = null,
   ): Promise<boolean> {
     if (outcome.state === "complete") {
       if (!outcome.file.id) {
@@ -647,7 +698,7 @@ class UploadManagerImpl {
       const reset = await patchRecording(rec.id, {
         sessionUri: null,
         uploadedBytes: 0,
-        error: null,
+        error: manterErro,
       });
       if (reset) this.emit(reset);
       return false;
@@ -656,7 +707,7 @@ class UploadManagerImpl {
     const confirmed = Math.max(outcome.confirmedBytes, optimisticBytes ?? 0);
     const updated = await patchRecording(rec.id, {
       uploadedBytes: confirmed,
-      error: null,
+      error: manterErro,
     });
     if (updated) {
       this.emit(updated);
@@ -665,15 +716,20 @@ class UploadManagerImpl {
     return false;
   }
 
-  /** Alinha `uploadedBytes` com o que o Google diz ter recebido. */
-  private async reconcile(recordingId: string): Promise<void> {
+  /**
+   * Alinha `uploadedBytes` com o que o Google diz ter recebido, gravando junto
+   * o `erro` da tentativa (ver `settle`). Devolve se a consulta foi aplicada.
+   */
+  private async reconcile(recordingId: string, erro: string): Promise<boolean> {
     const rec = await getRecording(recordingId);
-    if (!rec?.sessionUri) return;
+    if (!rec?.sessionUri) return false;
     try {
       const outcome = await queryOffset(rec.sessionUri, rec.totalBytes);
-      await this.settle(rec, outcome);
+      await this.settle(rec, outcome, undefined, erro);
+      return true;
     } catch {
       // se nem a consulta passa, a rede está fora — o backoff cuida disso
+      return false;
     }
   }
 
