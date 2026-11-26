@@ -73,11 +73,16 @@ export function casaBusca(r: ReuniaoNaTela, termo: string): boolean {
  * manhã de comitês), e sem ele a ordem delas passa a ser a que o Firestore
  * devolveu — que muda entre uma carga e outra. Uma lista que se reordena sozinha
  * a cada F5 faz quem estava procurando perder o lugar.
+ *
+ * O `?? ""` é para documento antigo SEM o campo: o tipo promete `string`, mas o
+ * Firestore devolve o que foi gravado, e `undefined.localeCompare` derrubaria a
+ * tela inteira por causa de uma reunião. Sem data, ela vai para o fim.
  */
 export function ordenarRecentes<T extends ReuniaoNaTela>(itens: T[]): T[] {
   return [...itens].sort(
     (a, b) =>
-      b.date.localeCompare(a.date) || a.title.localeCompare(b.title, "pt-BR"),
+      (b.date ?? "").localeCompare(a.date ?? "") ||
+      (a.title ?? "").localeCompare(b.title ?? "", "pt-BR"),
   );
 }
 

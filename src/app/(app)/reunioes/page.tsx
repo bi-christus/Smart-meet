@@ -29,6 +29,7 @@ import { useRecording } from "@/lib/audio/recording-context";
 import { uploadManager } from "@/lib/audio/uploader";
 import { fmtBytes } from "@/lib/audio/recording-db";
 import { SeloSetor } from "@/components/selo-setor";
+import { Acervo } from "./acervo";
 import styles from "./reunioes.module.css";
 
 const MES = [
@@ -167,7 +168,6 @@ export default function ReunioesPage() {
   /** Vale para a esteira e para o acervo, pela mesma razão. */
   const carregando = fMeetings.data === undefined && !fMeetings.erro;
 
-  const [filter, setFilter] = useState("todas");
   const [view, setView] = useState<Meeting | null>(null);
   const [confirm, setConfirm] = useState<Confirm>(null);
   const [onlineLink, setOnlineLink] = useState("");
@@ -258,11 +258,6 @@ export default function ReunioesPage() {
   );
   const aguard = queue.filter((m) => m.status === "aguardando").length;
   const proc = queue.filter((m) => m.status === "processando").length;
-
-  const acervo =
-    filter === "todas"
-      ? meetings
-      : meetings.filter((m) => m.sector === filter);
 
   async function startRecording() {
     setMicError(null);
@@ -734,104 +729,17 @@ export default function ReunioesPage() {
       </div>
 
       {/* ---------- acervo ---------- */}
-      <div className={styles.acervo}>
-        <div className={styles.acervoHead}>
-          <h2>Acervo de reuniões</h2>
-          <div className={styles.filters}>
-            <button
-              className={`${styles.filterBtn} ${filter === "todas" ? styles.on : ""}`}
-              onClick={() => setFilter("todas")}
-            >
-              Todas
-            </button>
-            {sectors.map((s) => (
-              <button
-                key={s}
-                className={`${styles.filterBtn} ${filter === s ? styles.on : ""}`}
-                onClick={() => setFilter(s)}
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Mesma fonte da esteira, então o mesmo `carregando`: as duas saem do
-            esqueleto no mesmo instante, porque é uma assinatura só. */}
-        {fMeetings.erro ? (
-          <ErrorState
-            error={fMeetings.erro}
-            onRetry={fMeetings.tentarDeNovo}
-          />
-        ) : carregando ? (
-          <SkeletonRow rows={4} texto="Carregando o acervo de reuniões…" />
-        ) : acervo.length === 0 ? (
-          <EmptyState
-            icon="reunioes"
-            title={
-              filter === "todas"
-                ? "Nenhuma reunião ainda"
-                : `Nenhuma reunião em ${filter}`
-            }
-            description={
-              filter === "todas"
-                ? "Envie um áudio acima para registrar a primeira. O Cowork transcreve e a ata volta para cá."
-                : "Este setor ainda não tem reunião registrada. Troque o filtro acima para ver as dos outros."
-            }
-          />
-        ) : (
-          <div className={styles.list}>
-            {acervo.map((m) => (
-              <div
-                key={m.id}
-                className={styles.item}
-                onClick={() => setView(m)}
-              >
-                <div className={styles.itemIcon}>
-                  <Icon name="reunioes" size={19} />
-                </div>
-                <div className={styles.itemMain}>
-                  <div className={styles.itemTitle}>{m.title}</div>
-                  <div className={styles.itemMeta}>
-                    <span>{fmtDate(m.date)}</span>
-                    <span>· {m.sector}</span>
-                    <span>· via {SEND_LABEL[m.send ?? "file"]}</span>
-                    {/* só quando alguém marcou presença no modal da reunião —
-                        o registro inicial não pede mais participantes */}
-                    {(m.participants?.length ?? 0) > 0 && (
-                      <span>· {m.participants!.length} participante(s)</span>
-                    )}
-                    {m.driveLink && canSeeAudio(m) && (
-                      <a
-                        href={m.driveLink}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className={styles.driveLink}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        · Áudio no Drive
-                      </a>
-                    )}
-                  </div>
-                </div>
-                <span className={`${styles.badge} ${STATUS_CLASS[m.status]}`}>
-                  {MEETING_STATUS_LABEL[m.status]}
-                </span>
-                <button
-                  className={styles.delBtn}
-                  title="Apagar gravação"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setDelMeeting(m);
-                  }}
-                >
-                  <Icon name="trash" size={16} />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      {/* Mesma fonte da esteira, então o mesmo `carregando`: as duas saem do
+          esqueleto no mesmo instante, porque é uma assinatura só. */}
+      <Acervo
+        meetings={meetings}
+        carregando={carregando}
+        erro={fMeetings.erro}
+        onTentarDeNovo={fMeetings.tentarDeNovo}
+        onOpen={setView}
+        onDelete={setDelMeeting}
+        canSeeAudio={canSeeAudio}
+      />
 
       {confirm && (
         <NewMeetingModal
