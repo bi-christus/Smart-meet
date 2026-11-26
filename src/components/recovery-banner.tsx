@@ -11,6 +11,7 @@ import { uploadManager } from "@/lib/audio/uploader";
 import { registerUploadWorker } from "@/lib/audio/sw-register";
 import { baixarCopiaLocal } from "@/lib/audio/baixar-copia";
 import { useEnvios } from "@/lib/audio/envio-context";
+import { AVISO_RECUSADO, mensagemDoErro } from "@/lib/audio/envio-core";
 import styles from "./recovery-banner.module.css";
 
 /**
@@ -24,13 +25,16 @@ import styles from "./recovery-banner.module.css";
  *  3. mostra o que ficou pela metade — uma gravação interrompida nunca some em
  *     silêncio, e o usuário sempre tem como baixar uma cópia local.
  *
- * O que o painel do envio (#250) já mostra fica FORA daqui: o mesmo áudio em
- * dois lugares, um deles em amarelo de alerta, faria um envio que está
- * andando parecer um problema. Sobra para a faixa o que o painel não conhece —
- * as falhas antigas e o que ficou parado de outra sessão.
+ * O envio que o painel do envio (#250) já mostra ANDANDO fica fora daqui: o
+ * mesmo áudio em dois lugares, um deles em amarelo de alerta, faria um envio
+ * que está andando parecer um problema. A FALHA volta, mesmo acompanhada: é a
+ * faixa que sobrevive à pílula minimizada e ao painel fechado, e é a saída
+ * (Descartar, Baixar cópia) de quem o "Tentar de novo" não resolve. Fora isso,
+ * sobra para a faixa o que o painel não conhece — as falhas antigas e o que
+ * ficou parado de outra sessão.
  */
 export function RecoveryBanner() {
-  const { acompanha } = useEnvios();
+  const { acompanha, descartar } = useEnvios();
   const [items, setItems] = useState<RecordingRecord[]>([]);
   const [dismissed, setDismissed] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -91,7 +95,11 @@ export function RecoveryBanner() {
       `Descartar "${rec.title}"? O áudio guardado neste computador será apagado e não poderá ser recuperado.`,
     );
     if (!ok) return;
-    await uploadManager.discard(rec.id);
+    // Acompanhado, o descarte passa pelo painel, que tira a linha junto: sem
+    // isso, a próxima releitura dele encontrava o registro sumido e a reunião
+    // em "falha", e mostrava de novo o envio que a pessoa acabou de descartar.
+    if (acompanha(rec.id)) await descartar(rec.id);
+    else await uploadManager.discard(rec.id);
     void refresh();
   }
 
@@ -99,12 +107,17 @@ export function RecoveryBanner() {
 
   // gravações em andamento não são "pendências" — são o trabalho normal
   const stalled = pending.filter(
-    (r) => r.status !== "recording" && !acompanha(r.id),
+    (r) =>
+      r.status !== "recording" &&
+      !(acompanha(r.id) && r.status !== "failed"),
   );
   if (!stalled.length) return null;
 
   const recusados = stalled.filter((r) => r.recusado).length;
   const naoChegaram = stalled.length - recusados;
+  // Falha que esgotou as tentativas não anda sozinha com a aba à vista: "deixe
+  // o site aberto para o envio continuar" mandaria esperar quem precisa clicar.
+  const pararam = stalled.some((r) => r.status === "failed" && !r.recusado);
 
   return (
     <div className={styles.wrap} role="status">
@@ -128,8 +141,10 @@ export function RecoveryBanner() {
             áudio tinha chegado. */}
         <div className={styles.sub}>
           {naoChegaram === 0
-            ? "O servidor recusou o arquivo pelo que ele é. Descarte e envie o áudio certo — o original continua no seu computador."
-            : "O áudio está salvo neste computador. Deixe o site aberto para o envio continuar — se fechar, ele retoma quando você voltar."}
+            ? AVISO_RECUSADO
+            : pararam
+              ? "O envio parou. O áudio está salvo neste computador: clique em Tentar de novo ou baixe uma cópia."
+              : "O áudio está salvo neste computador. Deixe o site aberto para o envio continuar — se fechar, ele retoma quando você voltar."}
         </div>
 
         <ul className={styles.list}>
@@ -140,12 +155,16 @@ export function RecoveryBanner() {
               <li key={r.id} className={styles.item}>
                 <div className={styles.itemMain}>
                   <span className={styles.itemName}>{r.title}</span>
-                  <span className={styles.itemMeta} title={r.recusado ? (r.error ?? undefined) : undefined}>
+                  {/* O motivo da recusa vai escrito, e não num `title`: o
+                      aviso acima manda "ver o motivo abaixo". E a falha passa
+                      pelo `mensagemDoErro`, para dizer o mesmo que o painel
+                      ao lado diz do mesmo envio, e não "Failed to fetch". */}
+                  <span className={styles.itemMeta}>
                     {fmtBytes(total)} ·{" "}
                     {r.recusado
-                      ? "este arquivo não foi aceito: descarte e envie o áudio certo"
+                      ? (r.error ?? "este arquivo não foi aceito")
                       : r.status === "failed"
-                        ? (r.error ?? "envio interrompido")
+                        ? (mensagemDoErro(r.error) ?? "envio interrompido")
                         : `${pct}% enviado`}
                   </span>
                   <div className={styles.bar}>

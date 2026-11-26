@@ -57,6 +57,12 @@ export type LeituraDoEnvio = {
   reuniao: ReuniaoLida | null | undefined;
   /** `navigator.onLine`; ausente vale como conectado. */
   online?: boolean;
+  /**
+   * Quantas releituras SEGUIDAS do IndexedDB vieram sem registro. Ausente vale
+   * zero. É o que tira da tela o envio descartado em OUTRA aba (ver
+   * `LEITURAS_SEM_REGISTRO`).
+   */
+  leiturasSemRegistro?: number;
 };
 
 /** Por que a barra não anda — e a animação do painel para junto. */
@@ -84,13 +90,30 @@ export type EstadoDoEnvio = {
  * Quanto tempo a confirmação fica parada antes de o painel se fechar.
  *
  * PRECISA BATER COM O CSS no sentido de que nada no CSS pode durar mais do que
- * isto antes do estouro: a troca para o ✓ leva 180 ms, e o resto é leitura. Dois
- * segundos e pouco é o tempo de ler "Áudio enviado! Pode fechar o site" sem
- * pressa; mais que isso, o painel vira um obstáculo para quem quer continuar.
- * O relógio PARA com a aba escondida (ver o provedor): quem saiu da aba é
- * justamente quem precisa ver a confirmação ao voltar.
+ * isto antes do estouro: a troca para o ✓ leva 180 ms, e o resto é leitura.
+ * Os ~2 s são o que a Issue #250 fixou, e dão para o título ("Áudio
+ * enviado!") e o começo do aviso ("Pode fechar o site") — não para a frase
+ * inteira, que fala da transcrição e do e‑mail. Por isso o relógio PARA em
+ * dois casos (ver o provedor): com a aba escondida, porque quem saiu da aba é
+ * justamente quem precisa ver a confirmação ao voltar; e com o ponteiro sobre
+ * o painel, porque quem está lendo até o fim não pode ver o texto estourar no
+ * meio da frase.
  */
 export const CONFIRMACAO_MS = 2200;
+
+/**
+ * Releituras seguidas sem registro (2,5 s cada, só com a aba à vista) até o
+ * painel desistir de um envio que a reunião ainda diz "enviando".
+ *
+ * Sem este teto, o envio DESCARTADO EM OUTRA ABA ficava aqui para sempre: o
+ * descarte só apaga o registro, a reunião segue dizendo "enviando", e o painel
+ * mantinha "Não feche o site" e o aviso de saída armado sem prazo. Três
+ * leituras (~7,5 s) sobram para o caso em que o registro some porque o envio
+ * CONCLUIU: quem conclui grava "concluido" na reunião ANTES de apagar o
+ * registro (`settle` e `finalizePending` no `uploader.ts`), e o Firestore
+ * entrega isso em fração de segundo.
+ */
+export const LEITURAS_SEM_REGISTRO = 3;
 
 /**
  * Duração do estouro da bolha. PRECISA BATER COM O CSS de
@@ -101,9 +124,6 @@ export const CONFIRMACAO_MS = 2200;
  * tem nenhum ouvinte desses (é o que a deixa ser agressiva).
  */
 export const ESTOURO_MS = 300;
-
-/** Duração da saída da casa (`modal.module.css`), que o painel usa ao minimizar. */
-export const SAIDA_MS = 120;
 
 const MB = 1024 * 1024;
 const KB = 1024;
@@ -152,8 +172,10 @@ function fracaoDe(enviados: number, total: number | null): number | null {
  *    que mostrava em vez de pular para "preparando".
  *
  * Devolve `null` quando o envio deixou de existir sem ter concluído (registro
- * apagado e reunião apagada, ou sem reunião para conferir): foi descartado, e
- * o painel tira a linha em vez de esperar para sempre.
+ * apagado e reunião apagada, ou sem reunião para conferir; ou o registro
+ * sumido por `LEITURAS_SEM_REGISTRO` leituras sem a reunião dizer
+ * "concluido"): foi descartado, e o painel tira a linha em vez de esperar
+ * para sempre.
  */
 export function estadoDoEnvio(
   leitura: LeituraDoEnvio,
@@ -227,6 +249,14 @@ export function estadoDoEnvio(
     // Um recusado descartado some do mesmo jeito; nos dois casos sai da tela.
     return null;
   }
+  // Depois da falha de propósito: a falha que só o Firestore conhece tem
+  // texto e botão próprios, e sumir com ela esconderia que o áudio não chegou.
+  if (
+    registro === null &&
+    (leitura.leiturasSemRegistro ?? 0) >= LEITURAS_SEM_REGISTRO
+  ) {
+    return null;
+  }
   // Ainda sem resposta: mantém o que já se mostrava, com o progresso que o
   // espelho tiver (o do Firestore anda de 15 em 15 s, mas é melhor que nada).
   const total = reuniao?.totalBytes || null;
@@ -284,14 +314,28 @@ export function mensagemDoErro(erro: string | null): string | null {
 }
 
 /**
+ * O que fazer com um arquivo recusado — no painel e na faixa de recuperação,
+ * que falam do mesmo arquivo e por isso dizem a mesma frase. "O sistema", e
+ * não "o servidor"; e "veja o motivo", porque quem diz o que fazer é a
+ * mensagem da recusa (dividir o áudio, trocar o formato), e uma segunda
+ * instrução ao lado ("envie o áudio certo") a contradizia.
+ */
+export const AVISO_RECUSADO =
+  "O sistema não aceitou este arquivo. Veja o motivo abaixo, descarte e envie de novo — o original continua no seu computador.";
+
+/**
  * Este envio ainda segura o site aberto (`beforeunload`)?
  *
  * Falha CONTA: o áudio não chegou ao Drive, e a cópia mora só neste
  * computador. Recusado NÃO conta: o servidor não vai aceitar aquele arquivo de
  * jeito nenhum, e pedir para a pessoa ficar no site por ele é prendê-la por
  * nada — a cópia original continua no computador dela.
+ *
+ * Falha SEM cópia local também não conta: é a que só o Firestore conhece
+ * (o registro foi apagado), e ficar no site não salva nada que não exista.
  */
-export function prendeOSite(fase: FaseDoEnvio): boolean {
+export function prendeOSite(fase: FaseDoEnvio, temCopiaLocal = true): boolean {
+  if (fase === "falha") return temCopiaLocal;
   return fase !== "concluido" && fase !== "recusado";
 }
 
@@ -307,6 +351,12 @@ export type ResumoDosEnvios = {
    */
   subindo: number;
   parado: MotivoParado | null;
+  /**
+   * Há falha, e NENHUMA delas tem cópia local. Muda o aviso: "o áudio continua
+   * salvo neste computador, tente de novo" seria mentira sem registro, e a
+   * linha nem tem os botões que a frase manda apertar.
+   */
+  falhaSemCopia: boolean;
 };
 
 /**
@@ -358,7 +408,18 @@ export function resumirEnvios(estados: EstadoDoEnvio[]): ResumoDosEnvios | null 
       ? (parados.find((e) => e.parado === "sem-rede")?.parado ?? "tentando")
       : null;
 
-  return { fase, fracao, quantos: estados.length, subindo: parados.length, parado };
+  const falhas = estados.filter((e) => e.fase === "falha");
+  const falhaSemCopia =
+    falhas.length > 0 && falhas.every((e) => !e.temCopiaLocal);
+
+  return {
+    fase,
+    fracao,
+    quantos: estados.length,
+    subindo: parados.length,
+    parado,
+    falhaSemCopia,
+  };
 }
 
 /**

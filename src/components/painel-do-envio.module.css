@@ -68,7 +68,9 @@
   flex-direction: column;
   pointer-events: auto;
   /* Minimizado, ele sai na direção da pílula, que mora no canto inferior
-     direito: a origem do movimento aponta para onde o painel foi parar. */
+     direito: a origem do movimento aponta para onde o painel foi parar. É só
+     para isso — a ENTRADA não escala (ver `dialogoEntra`), justamente para não
+     herdar esta origem e nascer do canto. */
   transform-origin: bottom right;
   animation: dialogoEntra 180ms cubic-bezier(0.32, 0.72, 0, 1) backwards;
   transition:
@@ -90,10 +92,14 @@
 .dialogo[data-estado="saindo"] {
   pointer-events: none;
 }
+/* Sem `scale`: com a origem no canto inferior direito (a do minimizar), a
+   borda esquerda andava ~13 px e a direita ficava parada — o painel nascia
+   do canto, e não de baixo. Trocar a origem entre estados faria o minimizar
+   pular no meio de uma reversão; tirar a escala da entrada resolve sem isso. */
 @keyframes dialogoEntra {
   from {
     opacity: 0;
-    transform: translateY(18px) scale(0.97);
+    transform: translateY(18px);
   }
   to {
     opacity: 1;
@@ -251,8 +257,9 @@
 /* ---------- a bolha do ✓ e o estouro ----------
 
    O ✓ fala do ÁUDIO: entra com opacity + scale(.8 → 1) em 180 ms, a troca de
-   ícone da skill (cookbook §5), sem bounce. O bounce é o estouro, depois de a
-   confirmação ficar parada ~2,2 s — o único lugar em que a skill aceita
+   ícone da skill (cookbook §5), sem bounce. A celebração é o estouro, e
+   também sem ultrapassagem (nenhuma curva aqui passa do alvo e volta), depois
+   de a confirmação ficar parada ~2,2 s — o único lugar em que a skill aceita
    celebração numa ferramenta de trabalho, e a pedido do Ítalo ("animação fofa
    de bolha estourando").
 
@@ -438,7 +445,9 @@
   display: flex;
   max-width: 45%;
   font-size: 12px;
-  color: var(--tx-3);
+  /* --tx-2, e não o --tx-3 de meta-texto da casa: o --tx-3 fica em 2,65:1 no
+     tema claro, abaixo dos 4,5:1 de texto pequeno, e aqui é texto de ler. */
+  color: var(--tx-2);
 }
 
 .trilho {
@@ -470,7 +479,8 @@
   gap: 10px;
   margin-top: 7px;
   font-size: 12px;
-  color: var(--tx-3);
+  /* "34,0 MB de 80,0 MB" é quanto falta: --tx-2 pelo mesmo motivo de `.setor`. */
+  color: var(--tx-2);
   font-variant-numeric: tabular-nums;
 }
 .linhaBaixo:empty {
@@ -643,9 +653,30 @@
   animation: sai 120ms cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 
+/* Em tela estreita, só o anel. Inteira, a pílula cobria o "Salvar permissões"
+   da barra fixa do Admin (`admin.module.css`, `.permBarra`) de 360 a 600 px de
+   largura — medido no arreio, 26/11/2026 —; com 40 px, nenhuma largura dessa
+   faixa encosta no botão. O texto não se perde: ele está no `aria-label` do
+   botão, e o painel abre com um toque. Subir a barra do Admin também
+   resolveria, mas mudaria para todo mundo uma tela que não tem nada a ver com
+   o envio. */
+@media (max-width: 640px) {
+  .pilula {
+    width: 40px;
+    padding: 0;
+    justify-content: center;
+  }
+  .pilulaTexto {
+    display: none;
+  }
+}
+
+/* O trilho é o --s3 da barra do painel, e não o --line: no tema contraste o
+   --line é um cinza médio (#8c8c8c) que fica a ~1,2:1 do laranja da marca, e o
+   anel deixava de mostrar onde o valor termina. */
 .anelTrilho {
   fill: none;
-  stroke: var(--line);
+  stroke: var(--s3);
   stroke-width: 2.25;
 }
 /* `stroke-dashoffset` não é transform nem opacity, e é de propósito: é o único
@@ -659,7 +690,7 @@
   transition: stroke-dashoffset 240ms cubic-bezier(0.2, 0, 0, 1);
 }
 .anel[data-parado="true"] .anelValor {
-  stroke: var(--tx-3);
+  stroke: var(--tx-2);
 }
 
 /* Copiada de `skeleton.module.css` (via `perfil-modal.module.css`). */

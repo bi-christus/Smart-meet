@@ -5,7 +5,11 @@ import { Icon } from "@/components/icons";
 import { OverlayPortal } from "@/components/overlay-portal";
 import { SeloSetor } from "@/components/selo-setor";
 import { useEnvios, type LinhaDoEnvio } from "@/lib/audio/envio-context";
-import { percentual, type ResumoDosEnvios } from "@/lib/audio/envio-core";
+import {
+  AVISO_RECUSADO,
+  percentual,
+  type ResumoDosEnvios,
+} from "@/lib/audio/envio-core";
 import styles from "./painel-do-envio.module.css";
 
 const FOCAVEL =
@@ -74,7 +78,7 @@ function Bolha({
  *  - por isso ele PARA quando o envio para (`data-parado`: sem rede, ou
  *    esperando nova tentativa) — um laço que continua com o envio parado
  *    mentiria, e é exatamente o indicador pulsando que a skill chama de slop;
- *  - linear, lento (1,6 s), 12 px de curso, um elemento só na tela;
+ *  - linear, lento (1,6 s), 6 px de curso, um elemento só na tela;
  *  - some com movimento reduzido e quando o painel está minimizado.
  */
 function Subindo({ parado }: { parado: boolean }) {
@@ -150,24 +154,32 @@ function tituloDoPainel(resumo: ResumoDosEnvios): string {
  *
  * "Pode continuar usando o sistema" vem junto do "não feche" de propósito: o
  * painel minimiza, e quem lê só "não feche" fica olhando a barra parada.
- * Na conclusão, o ✓ fala do ÁUDIO, e a frase diz que as atas vêm depois: na
- * mesma tela, o verde é o chip "Processado" da esteira, e um ✓ sozinho seria
- * lido como "ata pronta".
+ * Na conclusão, o ✓ fala do ÁUDIO, e a frase diz que os documentos vêm
+ * depois: na mesma tela, o verde é o chip "Processado" da esteira, e um ✓
+ * sozinho seria lido como "ata pronta". "Os documentos que você escolheu", e
+ * não "as atas": as duas atas são opcionais no registro, e quem não marcou
+ * nenhuma receberia a promessa de algo que não vem.
+ *
+ * "Tentando de novo" não culpa a conexão: o mesmo estado vale para um bloco
+ * que o Drive devolveu com erro 500, e "a conexão oscilou" mandaria a pessoa
+ * conferir o Wi‑Fi à toa. Só o "sem-rede", que vem do navegador, fala de rede.
  */
 function avisoDoPainel(resumo: ResumoDosEnvios): string {
   switch (resumo.fase) {
     case "concluido":
-      return "Pode fechar o site. A transcrição com quem falou e as atas chegam por e‑mail em até cerca de 1h30.";
+      return "Pode fechar o site. A transcrição com quem falou e os documentos que você escolheu chegam por e‑mail em até cerca de 1h30.";
     case "falha":
-      return "O áudio continua salvo neste computador. Tente de novo ou baixe uma cópia — e não feche o site enquanto isso.";
+      return resumo.falhaSemCopia
+        ? "Este áudio não chegou ao Drive e não ficou cópia neste computador. Grave ou envie de novo."
+        : "O áudio continua salvo neste computador. Tente de novo ou baixe uma cópia — e não feche o site enquanto isso.";
     case "recusado":
-      return "O servidor recusou o arquivo. Descarte-o e envie o áudio certo — o original continua no seu computador.";
+      return AVISO_RECUSADO;
     default:
       if (resumo.parado === "sem-rede") {
         return "Sem conexão. O envio continua sozinho quando a rede voltar — não feche o site.";
       }
       if (resumo.parado === "tentando") {
-        return "A conexão oscilou e o envio está tentando de novo sozinho. Não feche o site.";
+        return "Um trecho não subiu, e o envio está tentando de novo sozinho. Não feche o site.";
       }
       return "Não feche o site até terminar — pode continuar usando o sistema.";
   }
@@ -180,7 +192,7 @@ function textoDaPilula(resumo: ResumoDosEnvios): { curto: string; anuncio: strin
     case "concluido":
       return {
         curto: resumo.quantos > 1 ? "Áudios enviados" : "Áudio enviado",
-        anuncio: "Áudio enviado. Pode fechar o site; as atas chegam por e-mail.",
+        anuncio: "Áudio enviado. Pode fechar o site; os documentos chegam por e-mail.",
       };
     case "falha":
       return { curto: "O envio parou", anuncio: "O envio parou. Abra o painel para tentar de novo." };
@@ -189,11 +201,14 @@ function textoDaPilula(resumo: ResumoDosEnvios): { curto: string; anuncio: strin
     case "preparando":
       return { curto: "Preparando…", anuncio: "Preparando o envio do áudio." };
     default: {
+      // "Retomando", e não "Reconectando" (culpava a conexão por qualquer erro)
+      // nem "Tentando de novo": esse alarga a pílula até ela cobrir o
+      // "Salvar permissões" do Admin entre 680 e 800 px de largura.
       const antes =
         resumo.parado === "sem-rede"
           ? "Sem rede"
           : resumo.parado === "tentando"
-            ? "Reconectando"
+            ? "Retomando"
             : resumo.subindo > 1
               ? `${resumo.subindo} envios`
               : "Enviando";
@@ -201,20 +216,37 @@ function textoDaPilula(resumo: ResumoDosEnvios): { curto: string; anuncio: strin
         curto: `${antes} · ${pct}`,
         // O anúncio NÃO leva o percentual: ele muda a cada bloco de 8 MB, e uma
         // região viva que fala a cada bloco vira ruído para quem usa leitor.
-        anuncio: resumo.parado ? "O envio está esperando a conexão." : "Enviando o áudio.",
+        anuncio:
+          resumo.parado === "sem-rede"
+            ? "O envio está esperando a conexão."
+            : resumo.parado === "tentando"
+              ? "O envio está tentando de novo."
+              : "Enviando o áudio.",
       };
     }
   }
 }
 
 function Linha({ linha }: { linha: LinhaDoEnvio }) {
-  const { tentarDeNovo, baixarCopia, descartar } = useEnvios();
+  const { tentarDeNovo, baixarCopia, descartar, dispensar } = useEnvios();
   const { estado, titulo, setor, recordingId } = linha;
   const [ocupado, setOcupado] = useState<"tentar" | "baixar" | "descartar" | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const pct = percentual(estado.fracao);
 
   async function agir(qual: "tentar" | "baixar" | "descartar") {
+    // Na falha, descartar apaga a ÚNICA cópia (a gravação do microfone só
+    // existe aqui): a mesma pergunta da faixa de recuperação. No recusado não
+    // há o que perder — o original nunca saiu do computador da pessoa.
+    if (
+      qual === "descartar" &&
+      estado.fase === "falha" &&
+      !window.confirm(
+        `Descartar "${titulo}"? O áudio guardado neste computador será apagado e não poderá ser recuperado.`,
+      )
+    ) {
+      return;
+    }
     setOcupado(qual);
     setErro(null);
     try {
@@ -288,7 +320,11 @@ function Linha({ linha }: { linha: LinhaDoEnvio }) {
       {estado.fase === "falha" && (
         <>
           {estado.erro && <p className={styles.erro}>{estado.erro}</p>}
-          {estado.temCopiaLocal && (
+          {/* Descartar mora aqui também, e não só na faixa: quando o "Tentar
+              de novo" não resolve (arquivo que sumiu do disco, cópia local
+              inconsistente), sem ele a linha ficava na tela e prendendo o
+              site até alguém recarregar a página. */}
+          {estado.temCopiaLocal ? (
             <div className={styles.botoesLinha}>
               <button
                 type="button"
@@ -306,6 +342,26 @@ function Linha({ linha }: { linha: LinhaDoEnvio }) {
               >
                 {ocupado === "baixar" ? "Montando…" : "Baixar cópia"}
               </button>
+              <button
+                type="button"
+                className={`${styles.btn} ${styles.btnPerigo}`}
+                onClick={() => void agir("descartar")}
+                disabled={ocupado !== null}
+              >
+                {ocupado === "descartar" ? "Descartando…" : "Descartar"}
+              </button>
+            </div>
+          ) : (
+            // Sem registro não há o que descartar nem retomar: o botão só
+            // tira a linha da tela, por isso não pergunta nada.
+            <div className={styles.botoesLinha}>
+              <button
+                type="button"
+                className={styles.btn}
+                onClick={() => dispensar(recordingId)}
+              >
+                Dispensar
+              </button>
             </div>
           )}
         </>
@@ -314,7 +370,7 @@ function Linha({ linha }: { linha: LinhaDoEnvio }) {
       {estado.fase === "recusado" && (
         <>
           <p className={styles.erro}>
-            {estado.erro ? `${estado.erro} ` : ""}Descarte e envie o áudio certo.
+            {estado.erro ?? "Este arquivo não foi aceito."}
           </p>
           <div className={styles.botoesLinha}>
             <button
@@ -335,6 +391,23 @@ function Linha({ linha }: { linha: LinhaDoEnvio }) {
 }
 
 /**
+ * Põe o foco no `<main>` do shell sem deixá-lo focável para sempre: com
+ * `tabindex` fixo, cada clique no fundo da página passaria a mover o foco para
+ * ele. O atributo só existe enquanto o foco está lá.
+ */
+function focarConteudo() {
+  const main = document.querySelector<HTMLElement>("main");
+  if (!main) return;
+  if (!main.hasAttribute("tabindex")) {
+    main.setAttribute("tabindex", "-1");
+    main.addEventListener("blur", () => main.removeAttribute("tabindex"), {
+      once: true,
+    });
+  }
+  main.focus({ preventScroll: true });
+}
+
+/**
  * O painel do envio (#250): abre depois de "Registrar", mostra o áudio subindo
  * e se fecha sozinho com a bolha quando o Drive confirma.
  *
@@ -347,14 +420,29 @@ function Linha({ linha }: { linha: LinhaDoEnvio }) {
  * keyframe.
  */
 export function PainelDoEnvio() {
-  const { linhas, resumo, minimizado, estourando, todosConcluidos, minimizar, fecharAgora } =
-    useEnvios();
+  const {
+    linhas,
+    resumo,
+    minimizado,
+    estourando,
+    todosConcluidos,
+    minimizar,
+    fecharAgora,
+    segurar,
+  } = useEnvios();
   const ref = useRef<HTMLDivElement>(null);
   const aberto = !!resumo && !minimizado && !estourando;
 
-  // Foco: entra no painel ao abrir e volta para onde estava ao minimizar. Se
-  // de onde ele veio sumiu (o botão "Registrar" do modal que fechou), fica no
-  // documento — a pílula não puxa o foco, para não interromper quem digita.
+  // Foco: entra no painel ao abrir e, ao sair, vai para onde faz sentido —
+  // nunca para o `<body>`, que é onde o leitor de tela e o Tab recomeçam do
+  // topo da página. Nesta ordem:
+  //  1. de onde ele veio, se ainda existe (a pílula, quando foi ela que
+  //     restaurou);
+  //  2. a pílula, quando o painel minimizou: de onde ele veio quase sempre
+  //     sumiu (o "Registrar" do modal que fechou), e minimizar é um gesto da
+  //     pessoa DENTRO do painel — mandá-la para a pílula não interrompe nada;
+  //  3. o `<main>`, quando o painel fechou de vez.
+  // Se a pessoa já levou o foco para outro lugar, ele fica lá.
   useEffect(() => {
     if (!aberto) return;
     const antes = document.activeElement as HTMLElement | null;
@@ -363,7 +451,19 @@ export function PainelDoEnvio() {
       el.querySelector<HTMLElement>("[data-foco-inicial]")?.focus();
     }
     return () => {
-      if (antes && antes !== document.body && antes.isConnected) antes.focus();
+      const agora = document.activeElement;
+      const perdido =
+        !agora || agora === document.body || !!el?.contains(agora);
+      if (!perdido) return;
+      if (antes && antes !== document.body && antes.isConnected) {
+        antes.focus();
+        return;
+      }
+      const pilula = document.querySelector<HTMLElement>(
+        "[data-pilula-do-envio]:not([inert])",
+      );
+      if (pilula) pilula.focus();
+      else focarConteudo();
     };
   }, [aberto]);
 
@@ -405,10 +505,13 @@ export function PainelDoEnvio() {
           role="dialog"
           aria-modal={aberto}
           aria-labelledby="painel-do-envio-titulo"
+          aria-describedby="painel-do-envio-aviso"
           className={styles.dialogo}
           data-estado={estado}
           inert={!aberto}
           onKeyDown={onKeyDown}
+          onPointerEnter={() => segurar(true)}
+          onPointerLeave={() => segurar(false)}
         >
           {/* O fundo é uma camada à parte, e não o próprio diálogo: no estouro
               ele e o texto saem em 120 ms enquanto a bolha, por cima, ainda
@@ -430,7 +533,11 @@ export function PainelDoEnvio() {
             <h2 id="painel-do-envio-titulo" className={styles.titulo}>
               {tituloDoPainel(resumo)}
             </h2>
-            <p className={styles.aviso} role="status">
+            {/* `role="status"` fala quando a frase MUDA; o `aria-describedby`
+                do diálogo é o que a lê ao abrir — região viva que nasce já
+                com texto não é anunciada com confiança, e esta é a frase que
+                é a razão de o painel existir. */}
+            <p id="painel-do-envio-aviso" className={styles.aviso} role="status">
               {avisoDoPainel(resumo)}
             </p>
             <ul className={styles.linhas}>
@@ -459,7 +566,8 @@ export function PainelDoEnvio() {
  * O painel minimizado: uma pílula no canto, dentro da doca do shell (junto do
  * mini player, que nunca a cobre).
  *
- * É REGIÃO DE STATUS, e não diálogo: não prende o foco nem o pede. Fica
+ * É REGIÃO DE STATUS, e não diálogo: não prende o foco nem o puxa sozinha
+ * (quem o entrega a ela é o painel, ao minimizar — ver o efeito de foco). Fica
  * montada enquanto houver envio, oculta com o painel aberto, para que
  * minimizar e restaurar sejam transições que se revertem — e não uma pílula
  * nascendo e morrendo a cada clique.
@@ -478,6 +586,7 @@ export function PilulaDoEnvio() {
         type="button"
         className={styles.pilula}
         data-fase={resumo.fase}
+        data-pilula-do-envio
         onClick={restaurar}
         inert={estado !== "visivel"}
         aria-label={`${curto}. Abrir o painel do envio`}

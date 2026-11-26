@@ -542,13 +542,21 @@ class UploadManagerImpl {
           }
           return;
         }
-        const comErro = await patchRecording(recordingId, { error: message });
-        // É o que faz o painel do envio (#250) dizer "tentando de novo" e
-        // parar a animação: progresso que não anda não pode parecer andando.
-        if (comErro) this.emit(comErro);
-
         // antes de reenviar, pergunta ao Google onde ele parou de verdade
         await this.reconcile(recordingId);
+
+        // O erro é gravado DEPOIS da consulta, e não antes: quando o Google
+        // responde "incompleto", o `settle` dela grava `error: null` — e o
+        // painel do envio (#250), que diz "tentando de novo" e para a animação
+        // por este campo, mostrava o aviso por ~50 ms e passava a espera
+        // inteira (até 30 s) dizendo que o envio andava. Só grava com o envio
+        // ainda de pé: a consulta pode ter fechado o arquivo, e o registro pode
+        // ter sido descartado. O próximo bloco aceito limpa o erro no `settle`.
+        const atual = await getRecording(recordingId);
+        if (atual?.status === "uploading") {
+          const comErro = await patchRecording(recordingId, { error: message });
+          if (comErro) this.emit(comErro);
+        }
         await sleep(backoffMs(attempt - 1));
       }
     }

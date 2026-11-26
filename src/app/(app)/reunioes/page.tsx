@@ -29,6 +29,7 @@ import { useRecording } from "@/lib/audio/recording-context";
 import { uploadManager } from "@/lib/audio/uploader";
 import { fmtBytes, getRecording } from "@/lib/audio/recording-db";
 import { useEnvios } from "@/lib/audio/envio-context";
+import { mensagemDoErro } from "@/lib/audio/envio-core";
 import {
   ACCEPT_DE_AUDIO,
   conferirArquivoDeAudio,
@@ -993,8 +994,11 @@ function NewMeetingModal({
         // Quase sempre o áudio do microfone já chegou durante a gravação e só
         // falta a cauda (menos de 256 KB): o painel abre só se ainda falta,
         // e aí costuma confirmar em segundos. Abrir para um envio que já
-        // terminou seria uma confirmação de nada.
-        if (antes && antes.status !== "done") {
+        // terminou seria uma confirmação de nada. E nunca para uma gravação
+        // de 0 byte (microfone mudo ou negado): não há áudio a enviar, e o
+        // painel ofereceria "Tentar de novo" e "Baixar cópia" de nada — ou,
+        // pior, diria "Áudio enviado!" se o Drive aceitasse fechar o vazio.
+        if (antes && antes.status !== "done" && antes.bytesWritten > 0) {
           acompanharEnvio({
             recordingId: confirm.recordingId,
             meetingId: antes.meetingId ?? confirm.meetingId ?? null,
@@ -1033,10 +1037,13 @@ function NewMeetingModal({
           <div className={styles.hint}>
             🎧 <b>{sendLabel}</b>
             {confirm.durationMin ? ` · ${confirm.durationMin} min` : ""}.{" "}
+            {/* "Em segundo plano" se lia como "posso sair", segundos antes de
+                o painel do envio dizer "Não feche o site" (#250): quem fecha
+                no Firefox ou no Safari para o envio até voltar. */}
             {confirm.recordingId
-              ? "O áudio já foi enviado ao Drive durante a gravação — se ainda faltar algum trecho, ele sobe sozinho em segundo plano."
+              ? "O áudio já foi enviado ao Drive durante a gravação — se ainda faltar algum trecho, ele termina de subir em instantes; deixe o site aberto até lá."
               : confirm.file
-                ? "O envio ao Drive começa ao confirmar e continua em segundo plano, retomando sozinho se a rede cair."
+                ? "O envio começa ao confirmar. Deixe o site aberto até ele terminar — se a rede cair, ele retoma sozinho."
                 : ""}
             {temAudio
               ? // "Da lista", e não "marcados": os de cadeado não têm marca e
@@ -1211,6 +1218,7 @@ function MeetingModal({
   const avail = activeUsers.filter(
     (u) => u.sectors?.includes(sector) || u.role === "admin",
   );
+  const uploadErro = mensagemDoErro(meeting.uploadError ?? null);
 
   function toggleP(email: string) {
     setParticipants((cur) =>
@@ -1325,10 +1333,17 @@ function MeetingModal({
             {meeting.send === "online"
               ? "Reunião online não tem áudio no Drive: se tiver a transcrição ou a ata, cole abaixo."
               : meeting.uploadStatus === "falha"
-                ? `O áudio não chegou ao Drive${meeting.uploadError ? ` (${meeting.uploadError.replace(/\.$/, "")})` : ""}, então nada será gerado dele. Se ele foi enviado deste computador, a faixa no topo da tela permite tentar de novo ou baixar uma cópia.`
+                ? // O motivo passa pelo `mensagemDoErro`, que diz "a conexão
+                  // caiu" no lugar do "Failed to fetch" cru do navegador. E o
+                  // fim não promete "tentar de novo": o recusado também grava
+                  // "falha", e para ele tentar de novo não existe.
+                  `O áudio não chegou ao Drive${uploadErro ? ` (${uploadErro.replace(/\.$/, "")})` : ""}, então nada será gerado dele. Se ele foi enviado deste computador, o aviso do envio (no canto de baixo ou no topo da tela) mostra o que fazer.`
                 : meeting.status === "processado"
                   ? canSeeAudio && meeting.driveOutputs?.some((o) => o.link)
-                    ? "Esta reunião já foi processada: a transcrição e os documentos estão nos botões abaixo e no seu e‑mail."
+                    ? // "De quem enviou", e não "no seu": admin e gestor do
+                      // setor também veem estes botões, e o e‑mail da rotina
+                      // segue a pasta do Drive (/{setor}/{e‑mail} de quem enviou).
+                      "Esta reunião já foi processada: a transcrição e os documentos estão nos botões abaixo e no e‑mail de quem enviou."
                     : "Esta reunião já foi processada. Se precisar, cole a transcrição ou a ata abaixo."
                   : "A transcrição e os documentos chegam depois e aparecem aqui quando ficam prontos; se precisar, cole abaixo."}
           </div>

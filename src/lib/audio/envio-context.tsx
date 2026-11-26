@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   useSyncExternalStore,
 } from "react";
@@ -62,6 +63,8 @@ type Item = EnvioAcompanhado & {
   reuniao: ReuniaoLida | null | undefined;
   /** A última fase calculada — é ela que torna "concluido" final (ver o core). */
   fase: FaseDoEnvio;
+  /** Releituras seguidas sem registro (ver `LEITURAS_SEM_REGISTRO` no core). */
+  semRegistro: number;
 };
 
 type Valor = {
@@ -72,7 +75,7 @@ type Valor = {
   estourando: boolean;
   todosConcluidos: boolean;
   acompanharEnvio: (e: EnvioAcompanhado) => void;
-  /** A faixa de recuperação esconde o que o painel já mostra. */
+  /** A faixa de recuperação esconde o que o painel já mostra (menos as falhas). */
   acompanha: (recordingId: string) => boolean;
   minimizar: () => void;
   restaurar: () => void;
@@ -81,6 +84,10 @@ type Valor = {
   tentarDeNovo: (recordingId: string) => Promise<void>;
   baixarCopia: (recordingId: string) => Promise<void>;
   descartar: (recordingId: string) => Promise<void>;
+  /** Tira da tela a falha sem cópia local, que não tem o que descartar. */
+  dispensar: (recordingId: string) => void;
+  /** O ponteiro está sobre o painel: o relógio da confirmação para. */
+  segurar: (sim: boolean) => void;
 };
 
 const nada = async () => {};
@@ -104,6 +111,8 @@ const Ctx = createContext<Valor>({
   tentarDeNovo: nada,
   baixarCopia: nada,
   descartar: nada,
+  dispensar: () => {},
+  segurar: () => {},
 });
 
 function lerRegistro(r: RecordingRecord | undefined): RegistroLido | null {
@@ -143,9 +152,21 @@ function comLeitura(
   it: Item,
   mudanca: Partial<Pick<Item, "registro" | "reuniao">>,
 ): Item | null {
-  const novo = { ...it, ...mudanca };
+  // Só a leitura do REGISTRO mexe na contagem: um aviso do Firestore no meio
+  // não diz nada sobre o registro ter voltado.
+  const semRegistro =
+    "registro" in mudanca
+      ? mudanca.registro === null
+        ? it.semRegistro + 1
+        : 0
+      : it.semRegistro;
+  const novo = { ...it, ...mudanca, semRegistro };
   const e = estadoDoEnvio(
-    { registro: novo.registro, reuniao: novo.reuniao },
+    {
+      registro: novo.registro,
+      reuniao: novo.reuniao,
+      leiturasSemRegistro: semRegistro,
+    },
     it.fase,
   );
   return e ? { ...novo, fase: e.fase } : null;
@@ -266,21 +287,15 @@ export function EnvioProvider({ children }: { children: React.ReactNode }) {
     return () => saidas.forEach((sair) => sair());
   }, [reunioesVivas, aplicarReuniao]);
 
-  // `beforeunload` armado no INSTANTE em que o envio é acompanhado — e não no
-  // tique de 5 s da faixa de recuperação, que deixava uma janela em que fechar
-  // a aba saía sem aviso nenhum logo depois de "Registrar".
-  const prende = itens.some((i) => prendeOSite(i.fase));
-  useEffect(() => {
-    if (!prende) return;
-    const guarda = (e: BeforeUnloadEvent) => e.preventDefault();
-    window.addEventListener("beforeunload", guarda);
-    return () => window.removeEventListener("beforeunload", guarda);
-  }, [prende]);
-
   const linhas: LinhaDoEnvio[] = [];
   for (const it of itens) {
     const estado = estadoDoEnvio(
-      { registro: it.registro, reuniao: it.reuniao, online },
+      {
+        registro: it.registro,
+        reuniao: it.reuniao,
+        online,
+        leiturasSemRegistro: it.semRegistro,
+      },
       it.fase,
     );
     if (estado) {
@@ -300,10 +315,35 @@ export function EnvioProvider({ children }: { children: React.ReactNode }) {
   // de um efeito para desligar a bandeira.
   const estourando = estourandoPedido && todosConcluidos;
 
+  // `beforeunload` armado no INSTANTE em que o envio é acompanhado — e não no
+  // tique de 5 s da faixa de recuperação, que deixava uma janela em que fechar
+  // a aba saía sem aviso nenhum logo depois de "Registrar". Decidido pela
+  // linha, e não pela fase guardada no item: é a linha que sabe se uma falha
+  // ainda tem cópia local a proteger.
+  const prende = linhas.some((l) =>
+    prendeOSite(l.estado.fase, l.estado.temCopiaLocal),
+  );
+  useEffect(() => {
+    if (!prende) return;
+    const guarda = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", guarda);
+    return () => window.removeEventListener("beforeunload", guarda);
+  }, [prende]);
+
+  // O ponteiro sobre o painel, num ref e não num estado: o relógio da
+  // confirmação precisa PAUSAR e retomar de onde parou, e um estado nas
+  // dependências do efeito o recriaria com os 2,2 s cheios a cada passada do
+  // mouse. `aoSegurar` é a ponte do efeito em curso para quem avisa.
+  const seguraRef = useRef(false);
+  const aoSegurar = useRef<(() => void) | null>(null);
+
   const finalizar = useCallback(() => {
     setItens((lista) => lista.filter((i) => i.fase !== "concluido"));
     setEstourando(false);
     setMinimizado(false);
+    // O painel some sem `pointerleave`: sem zerar aqui, a próxima confirmação
+    // nasceria segurada por um ponteiro que já não está lá.
+    seguraRef.current = false;
   }, []);
 
   // A confirmação parada, e depois o estouro.
@@ -311,7 +351,16 @@ export function EnvioProvider({ children }: { children: React.ReactNode }) {
   // O relógio PARA com a aba escondida: o caso que o painel existe para
   // resolver é justamente o de quem saiu da aba esperando o envio, e essa
   // pessoa precisa ver o "Pode fechar o site" ao voltar — e não um painel que
-  // já se fechou sozinho enquanto ela não olhava.
+  // já se fechou sozinho enquanto ela não olhava. E para com o ponteiro sobre
+  // o painel aberto: é quem está lendo a frase até o fim.
+  //
+  // O FOCO NÃO SEGURA, embora seja o par natural do ponteiro: o painel abre
+  // com o foco no próprio botão (é diálogo), e segurar pelo foco seria nunca
+  // fechar sozinho — para ninguém.
+  //
+  // `minimizado` nas dependências recomeça a contagem a cada minimizar e
+  // restaurar: quem clica na pílula "Áudio enviado" perto do fim dos 2,2 s
+  // via o painel entrar e já estourar.
   //
   // Com movimento reduzido não há estouro: a rede global corta a animação para
   // 0,01 ms, e esperar os 300 ms dela seria segurar um painel parado por nada.
@@ -340,14 +389,25 @@ export function EnvioProvider({ children }: { children: React.ReactNode }) {
       t = undefined;
       restante = restanteDepoisDe(restante, inicio, Date.now());
     };
-    const aoMudarAba = () => (document.hidden ? pausar() : correr());
-    if (!document.hidden) correr();
-    document.addEventListener("visibilitychange", aoMudarAba);
+    // Minimizado, o painel não está à vista: o ponteiro "sobre ele" não conta.
+    const decidir = () =>
+      document.hidden || (seguraRef.current && !minimizado)
+        ? pausar()
+        : correr();
+    aoSegurar.current = decidir;
+    decidir();
+    document.addEventListener("visibilitychange", decidir);
     return () => {
+      aoSegurar.current = null;
       pausar();
-      document.removeEventListener("visibilitychange", aoMudarAba);
+      document.removeEventListener("visibilitychange", decidir);
     };
-  }, [todosConcluidos, estourando, finalizar]);
+  }, [todosConcluidos, estourando, finalizar, minimizado]);
+
+  const segurar = useCallback((sim: boolean) => {
+    seguraRef.current = sim;
+    aoSegurar.current?.();
+  }, []);
 
   const acompanharEnvio = useCallback(
     (e: EnvioAcompanhado) => {
@@ -363,6 +423,7 @@ export function EnvioProvider({ children }: { children: React.ReactNode }) {
                 // do Firestore: o "concluido" vem só do aviso do motor.
                 reuniao: e.meetingId ? undefined : null,
                 fase: "preparando",
+                semRegistro: 0,
               },
             ],
       );
@@ -396,6 +457,21 @@ export function EnvioProvider({ children }: { children: React.ReactNode }) {
     setItens((lista) => lista.filter((i) => i.recordingId !== id));
   }, []);
 
+  const dispensar = useCallback((id: string) => {
+    setItens((lista) => lista.filter((i) => i.recordingId !== id));
+  }, []);
+
+  // Minimizar e restaurar soltam o ponteiro: o painel troca de lugar com a
+  // pílula, e o `pointerleave` de um painel que ficou invisível pode não vir.
+  const minimizar = useCallback(() => {
+    seguraRef.current = false;
+    setMinimizado(true);
+  }, []);
+  const restaurar = useCallback(() => {
+    seguraRef.current = false;
+    setMinimizado(false);
+  }, []);
+
   const fecharAgora = useCallback(() => {
     if (reduzMovimento()) finalizar();
     else setEstourando(true);
@@ -411,14 +487,16 @@ export function EnvioProvider({ children }: { children: React.ReactNode }) {
     todosConcluidos,
     acompanharEnvio,
     acompanha: (id) => ids.has(id),
-    minimizar: () => setMinimizado(true),
-    restaurar: () => setMinimizado(false),
+    minimizar,
+    restaurar,
     fecharAgora: () => {
       if (todosConcluidos) fecharAgora();
     },
     tentarDeNovo,
     baixarCopia,
     descartar,
+    dispensar,
+    segurar,
   };
 
   return <Ctx.Provider value={valor}>{children}</Ctx.Provider>;
