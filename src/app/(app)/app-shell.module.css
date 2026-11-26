@@ -479,6 +479,22 @@
   z-index: 1;
 }
 
+/* A doca do canto (mini player + pílula do envio). Os 20 px e o z 70 são os
+   que o mini player tinha sozinho, para ele não mudar de lugar. Transparente
+   ao clique, porque cobre a área da pilha inteira: quem recebe clique são as
+   peças, que ligam o `pointer-events` de volta. */
+.doca {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  pointer-events: none;
+}
+
 /* ---------- passagem de abas ---------- */
 
 /* Só opacidade, e 120ms.

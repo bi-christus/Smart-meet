@@ -181,7 +181,13 @@ class UploadManagerImpl {
         // tentativas a cada abertura do app. Fica parado até ser descartado.
         if (rec.recusado) continue;
         // nova sessão do usuário = nova chance; o áudio continua no disco
-        await patchRecording(rec.id, { status: "uploading", error: null });
+        const revivido = await patchRecording(rec.id, {
+          status: "uploading",
+          error: null,
+        });
+        // Avisa: é o "Tentar de novo" do painel do envio (#250), e sem o aviso
+        // ele seguia dizendo "O envio parou" até a próxima releitura.
+        if (revivido) this.emit(revivido);
       }
       void this.pump(rec.id);
     }
@@ -210,6 +216,10 @@ class UploadManagerImpl {
       await withLock(`smartmeet-fin-${lido.id}`, async () => {
         const rec = await getRecording(lido.id);
         if (!rec || rec.status !== "done") return;
+        // Quem concluiu foi o service worker, que não avisa ninguém. Sem este
+        // aviso, o painel do envio (#250) só saberia pela releitura — e o
+        // registro some logo abaixo, o que se confunde com "descartado".
+        this.emit(rec);
         await this.writeFirestore(rec, true);
         await deleteChunks(rec.id);
         // O modal pode ter confirmado o título enquanto o worker enviava: a
@@ -335,12 +345,15 @@ class UploadManagerImpl {
       return;
     }
 
-    await patchRecording(recordingId, {
+    const encerrada = await patchRecording(recordingId, {
       status: "uploading",
       stoppedAt: Date.now(),
       durationMs,
       totalBytes: rec.bytesWritten,
     });
+    // O total só passa a existir aqui; o painel do envio (#250) precisa dele
+    // para mostrar quanto falta da cauda da gravação.
+    if (encerrada) this.emit(encerrada);
     void this.pump(recordingId);
   }
 
@@ -529,7 +542,10 @@ class UploadManagerImpl {
           }
           return;
         }
-        await patchRecording(recordingId, { error: message });
+        const comErro = await patchRecording(recordingId, { error: message });
+        // É o que faz o painel do envio (#250) dizer "tentando de novo" e
+        // parar a animação: progresso que não anda não pode parecer andando.
+        if (comErro) this.emit(comErro);
 
         // antes de reenviar, pergunta ao Google onde ele parou de verdade
         await this.reconcile(recordingId);

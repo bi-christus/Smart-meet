@@ -27,7 +27,8 @@ import { useAsyncData } from "@/lib/use-async-data";
 import { syncDrive } from "@/lib/drive-upload";
 import { useRecording } from "@/lib/audio/recording-context";
 import { uploadManager } from "@/lib/audio/uploader";
-import { fmtBytes } from "@/lib/audio/recording-db";
+import { fmtBytes, getRecording } from "@/lib/audio/recording-db";
+import { useEnvios } from "@/lib/audio/envio-context";
 import {
   ACCEPT_DE_AUDIO,
   conferirArquivoDeAudio,
@@ -895,6 +896,7 @@ function NewMeetingModal({
   );
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const { acompanharEnvio } = useEnvios();
 
   // A gravação já está indo para /{setor}/{e-mail} no Drive — trocar o setor
   // aqui deixaria o arquivo numa pasta e o registro em outra.
@@ -932,12 +934,17 @@ function NewMeetingModal({
       } else if (confirm.file) {
         // Arquivo: o envio começa agora e segue em segundo plano, retomável.
         // A escolha vai na abertura da sessão, que grava o `smGerar`.
-        const { meetingId } = await startFileUpload(confirm.file, {
+        const { recordingId, meetingId } = await startFileUpload(confirm.file, {
           sector: sec,
           output: escolha,
           title: clean,
           observacoes: obs,
         });
+        // O painel do envio abre AGORA, antes do `updateMeeting` e antes de
+        // este modal fechar: é ele que arma o aviso de não fechar o site, e
+        // cada instante entre "Registrar" e o aviso é um instante em que a
+        // pessoa fecha a aba achando que o áudio já foi (#250).
+        acompanharEnvio({ recordingId, meetingId, titulo: clean, setor: sec });
         if (meetingId) {
           await updateMeeting(meetingId, {
             date,
@@ -966,6 +973,11 @@ function NewMeetingModal({
         );
       }
       if (confirm.recordingId) {
+        // Lido ANTES do `applyTitle`, que apaga o registro de um envio já
+        // concluído: depois dele, "não existe" não diria se o áudio chegou.
+        const antes = await getRecording(confirm.recordingId).catch(
+          () => undefined,
+        );
         // Microfone: a sessão de upload abriu antes de o campo existir, então
         // as observações — e a escolha, que abriu com o padrão — só chegam ao
         // arquivo agora (ou quando o envio terminar, se ainda não terminou).
@@ -978,6 +990,18 @@ function NewMeetingModal({
           obs,
           escolha,
         );
+        // Quase sempre o áudio do microfone já chegou durante a gravação e só
+        // falta a cauda (menos de 256 KB): o painel abre só se ainda falta,
+        // e aí costuma confirmar em segundos. Abrir para um envio que já
+        // terminou seria uma confirmação de nada.
+        if (antes && antes.status !== "done") {
+          acompanharEnvio({
+            recordingId: confirm.recordingId,
+            meetingId: antes.meetingId ?? confirm.meetingId ?? null,
+            titulo: clean,
+            setor: antes.sector || sec,
+          });
+        }
       }
       onClose();
     } catch (e) {

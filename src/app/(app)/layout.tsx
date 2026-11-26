@@ -16,7 +16,9 @@ import { PerfilModal } from "@/components/perfil-modal";
 import { Notificacoes } from "@/components/notificacoes";
 import { RecoveryBanner } from "@/components/recovery-banner";
 import { RecordingProvider } from "@/lib/audio/recording-context";
+import { EnvioProvider } from "@/lib/audio/envio-context";
 import { MiniPlayer } from "@/components/mini-player";
+import { PainelDoEnvio, PilulaDoEnvio } from "@/components/painel-do-envio";
 import { Waveform } from "@/components/waveform";
 import styles from "./app-shell.module.css";
 
@@ -134,6 +136,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <RecordingProvider ownerEmail={profile.email}>
+      {/* O painel do envio (#250) mora aqui pelo mesmo motivo da gravação: tem
+          de sobreviver à troca de aba. Por fora de tudo, porque a faixa de
+          recuperação, lá dentro do `<main>`, pergunta a ele o que esconder. */}
+      <EnvioProvider>
       <div className={styles.shell}>
       {/* uma instância só para o app inteiro — é fixa e atravessa as abas.
           Desligada no menu do perfil (#214), ela nem monta: o canvas deixa de
@@ -368,7 +374,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </main>
       </div>
       </div>
-      <MiniPlayer />
+      {/* A DOCA do canto inferior direito: um contêiner só para tudo o que
+          flutua ali, empilhado em coluna. Antes o mini player era fixo por
+          conta própria, e a pílula do envio, fixa no mesmo canto, nasceria em
+          cima dele no dia em que alguém gravasse com um arquivo subindo. A
+          pílula vem primeiro para ficar ACIMA: assim o mini player nunca sai
+          do lugar onde sempre esteve. */}
+      <div className={styles.doca}>
+        <PilulaDoEnvio />
+        <MiniPlayer />
+      </div>
+      <PainelDoEnvio />
       {perfilAberto && (
         <PerfilModal
           modo="eu"
@@ -378,6 +394,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           onClose={() => setPerfilAberto(false)}
         />
       )}
+      </EnvioProvider>
     </RecordingProvider>
   );
 }
