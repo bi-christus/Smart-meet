@@ -279,7 +279,10 @@ function Linha({ linha }: { linha: LinhaDoEnvio }) {
               <button
                 type="button"
                 className={`${styles.btn} ${styles.btnPerigo}`}
-                onClick={() => void agir("descartar")}
+                onClick={(e) => {
+                  engolirCliqueDuplo(e);
+                  void agir("descartar");
+                }}
                 aria-disabled={ocupado !== null}
                 aria-describedby={idDoNome}
               >
@@ -293,7 +296,10 @@ function Linha({ linha }: { linha: LinhaDoEnvio }) {
               <button
                 type="button"
                 className={styles.btn}
-                onClick={() => dispensar(recordingId)}
+                onClick={(e) => {
+                  engolirCliqueDuplo(e);
+                  dispensar(recordingId);
+                }}
                 aria-describedby={idDoNome}
               >
                 Dispensar
@@ -312,7 +318,10 @@ function Linha({ linha }: { linha: LinhaDoEnvio }) {
             <button
               type="button"
               className={`${styles.btn} ${styles.btnPerigo}`}
-              onClick={() => void agir("descartar")}
+              onClick={(e) => {
+                engolirCliqueDuplo(e);
+                void agir("descartar");
+              }}
               aria-disabled={ocupado !== null}
               aria-describedby={idDoNome}
             >
@@ -328,12 +337,7 @@ function Linha({ linha }: { linha: LinhaDoEnvio }) {
 }
 
 /**
- * Põe o foco no `<main>` do shell sem deixá-lo focável para sempre: com
- * `tabindex` fixo, cada clique no fundo da página passaria a mover o foco para
- * ele. O atributo só existe enquanto o foco está lá.
- */
-/**
- * O clique caiu no fundo da camada `.lugar`, e não num filho dela nem na
+ * O ponteiro está no fundo da camada `.lugar`, e não num filho dela nem na
  * barra de rolagem dela (`clientWidth`/`clientHeight` não contam a barra)?
  */
 function noFundoDaCamada(e: React.MouseEvent<HTMLDivElement>): boolean {
@@ -346,9 +350,38 @@ function noFundoDaCamada(e: React.MouseEvent<HTMLDivElement>): boolean {
   );
 }
 
+/**
+ * Engole, por meio segundo, o 2º clique de um clique duplo que começou num
+ * botão que tira o painel da página. Na saída animada quem segura esse clique
+ * é o véu (ver a folha), mas com movimento reduzido o "Fechar", o "Descartar" e
+ * o "Dispensar" do último envio tiram o painel e o véu no mesmo quadro — e o
+ * 2º clique apertava o que estivesse atrás, na página. Só o clique com
+ * `detail > 1`: um clique novo, de verdade, passa. Pelo teclado (`detail` 0)
+ * não há 2º clique a engolir.
+ */
+function engolirCliqueDuplo(e: React.MouseEvent) {
+  if (e.detail < 1) return;
+  const tipos = ["mousedown", "mouseup", "click", "dblclick"] as const;
+  const engolir = (ev: MouseEvent) => {
+    if (ev.detail > 1) {
+      ev.preventDefault();
+      ev.stopPropagation();
+    }
+  };
+  for (const tipo of tipos) window.addEventListener(tipo, engolir, true);
+  window.setTimeout(() => {
+    for (const tipo of tipos) window.removeEventListener(tipo, engolir, true);
+  }, 500);
+}
+
 /** Teclas que só modificam outra: sozinhas, não são navegação. */
 const MODIFICADORAS = new Set(["Shift", "Control", "Alt", "AltGraph", "Meta", "OS", "CapsLock"]);
 
+/**
+ * Põe o foco no `<main>` do shell sem deixá-lo focável para sempre: com
+ * `tabindex` fixo, cada clique no fundo da página passaria a mover o foco para
+ * ele. O atributo só existe enquanto o foco está lá.
+ */
 function focarConteudo() {
   const main = document.querySelector<HTMLElement>("main");
   if (!main) return;
@@ -388,6 +421,8 @@ export function PainelDoEnvio() {
   const ref = useRef<HTMLDivElement>(null);
   const abertoEm = useRef(0);
   const entrada = useRef<"teclado" | "ponteiro" | null>(null);
+  const apertouNoFundo = useRef(false);
+  const soltouNoFundo = useRef(false);
   const aberto = !!resumo && !minimizado && !estourando && !fechando;
 
   // A última entrada da pessoa, para `aoFocar` saber se o foco é de teclado.
@@ -495,8 +530,16 @@ export function PainelDoEnvio() {
   // não conseguia abri-lo. Pelo mesmo motivo, o véu segura o clique nos
   // 120 ms em que some depois do "Minimizar" (ver a folha), e esse clique
   // não faz nada.
+  //
+  // O botão tem de DESCER e SUBIR no fundo. Quando ele desce num elemento e
+  // sobe em outro, o navegador manda o `click` ao ancestral comum — e esse
+  // ancestral é a camada: selecionar o texto do aviso e soltar fora, ou
+  // apertar "Descartar" e desistir arrastando para fora, minimizavam o painel.
   function aoClicarFora(e: React.MouseEvent<HTMLDivElement>) {
-    if (!noFundoDaCamada(e)) return;
+    const veio = apertouNoFundo.current && soltouNoFundo.current;
+    apertouNoFundo.current = false;
+    soltouNoFundo.current = false;
+    if (!veio || !noFundoDaCamada(e)) return;
     if (!aberto || e.detail > 1 || Date.now() - abertoEm.current < 350) return;
     sair();
   }
@@ -506,7 +549,12 @@ export function PainelDoEnvio() {
   // abrir) deixava o painel aberto sem Escape e sem trava do Tab até o
   // próximo render. Segurar o padrão do `mousedown` mantém o foco onde estava.
   function aoApertarFora(e: React.MouseEvent<HTMLDivElement>) {
-    if (noFundoDaCamada(e)) e.preventDefault();
+    apertouNoFundo.current = noFundoDaCamada(e);
+    if (apertouNoFundo.current) e.preventDefault();
+  }
+
+  function aoSoltarFora(e: React.MouseEvent<HTMLDivElement>) {
+    soltouNoFundo.current = noFundoDaCamada(e);
   }
 
   function onKeyDown(e: React.KeyboardEvent) {
@@ -554,11 +602,19 @@ export function PainelDoEnvio() {
 
   return (
     <OverlayPortal>
-      <div className={styles.veu} data-estado={estado} />
+      {/* O véu só pega clique quando o painel já está saindo (o 2º clique de
+          um clique duplo em "Minimizar" ou "Fechar"), e esse clique não faz
+          nada — nem tirar o foco da pílula, para onde o painel o mandou. */}
+      <div
+        className={styles.veu}
+        data-estado={estado}
+        onMouseDown={(e) => e.preventDefault()}
+      />
       <div
         className={styles.lugar}
         data-estado={estado}
         onMouseDown={aoApertarFora}
+        onMouseUp={aoSoltarFora}
         onClick={aoClicarFora}
       >
         <div
@@ -616,7 +672,10 @@ export function PainelDoEnvio() {
               <button
                 type="button"
                 className={styles.btnPrincipal}
-                onClick={sair}
+                onClick={(e) => {
+                  engolirCliqueDuplo(e);
+                  sair();
+                }}
                 data-foco-inicial
               >
                 {todosConcluidos ? "Fechar" : "Minimizar"}

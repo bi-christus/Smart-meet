@@ -42,11 +42,14 @@
     opacity 120ms linear,
     visibility 0s linear 120ms;
 }
-/* Minimizado, o véu ainda pega o clique nos 120 ms em que some (a
-   `visibility` só esconde no fim): o 2º clique de um clique duplo em
-   "Minimizar" cai nele, que não faz nada, em vez de apertar o que estivesse
-   atrás do botão na página. */
-.veu[data-estado="minimizado"] {
+/* Saindo, o véu ainda pega o clique nos 120 ms em que some (a `visibility` só
+   esconde no fim): o 2º clique de um clique duplo em "Minimizar" ou em
+   "Fechar" cai nele, que não faz nada, em vez de apertar o que estivesse atrás
+   do botão na página. Com movimento reduzido também (ver o fim da folha): lá o
+   véu some de uma vez, mas a `visibility` mantém o atraso. "fora" não entra:
+   é o estouro da pílula, e o véu já estava escondido. */
+.veu[data-estado="minimizado"],
+.veu[data-estado="saindo"] {
   pointer-events: auto;
 }
 @keyframes veuEntra {
@@ -86,6 +89,18 @@
 .lugar[data-estado="aberto"] {
   overflow-y: auto;
   pointer-events: auto;
+}
+/* Saindo e minimizando, o diálogo ainda está à vista (o estouro, os 120 ms do
+   esmaecer): a barra que some no primeiro quadro da saída fazia o diálogo
+   pular de lado, e na tela estreita alargar e rearrumar o texto. No estouro
+   ela fica até o fim; ao minimizar, some quando o diálogo já sumiu — onde
+   `allow-discrete` não existe, some de uma vez, como antes. */
+.lugar[data-estado="saindo"] {
+  overflow-y: auto;
+}
+.lugar[data-estado="minimizado"] {
+  transition: overflow-y 0s linear 120ms;
+  transition-behavior: allow-discrete;
 }
 
 .dialogo {
@@ -787,6 +802,7 @@
   }
   .veu,
   .veu[data-estado],
+  .lugar[data-estado],
   .dialogo,
   .dialogo[data-estado],
   .pilula,
@@ -794,6 +810,13 @@
   .preenchimento,
   .anelValor {
     transition: none;
+  }
+  /* O véu some de uma vez, mas continua pegando o 2º clique do clique duplo
+     nos 120 ms seguintes (ver `.veu[data-estado="saindo"]`): é atraso, e não
+     movimento. */
+  .veu[data-estado="minimizado"],
+  .veu[data-estado="saindo"] {
+    transition: visibility 0s linear 120ms;
   }
   /* A rede global (globals.css) troca TODA transição por uma de 0,01 ms, e
      quem não declara transição tem `transition-property: all`. Os botões
