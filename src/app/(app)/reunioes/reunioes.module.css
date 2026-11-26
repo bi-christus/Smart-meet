@@ -31,8 +31,15 @@
   border: 1px solid var(--line-soft);
   border-radius: var(--r-lg);
 }
+/* Coluna flexível, e a área do modo ocupa a sobra: sem a coluna lateral "O que
+   gerar" (que foi para o modal de registro), a esteira ao lado passou a ditar a
+   altura da linha da grade, e a captura terminava deixando uma faixa vazia
+   embaixo. Esticar a área de envio em vez de prender o painel no topo também
+   aumenta o alvo de arrastar. */
 .capPanel {
   padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
 }
 
 .capTop {
@@ -86,6 +93,9 @@
 }
 
 .capBody {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
   animation: fadeSlide 0.28s ease;
 }
 @keyframes fadeSlide {
@@ -101,6 +111,10 @@
 
 /* upload dropzone */
 .dropzone {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
   border: 1.5px dashed var(--brand-line);
   border-radius: 12px;
   padding: 40px 20px;
@@ -142,6 +156,7 @@
 
 /* microfone */
 .micBox {
+  flex: 1;
   border: 1.5px dashed var(--line);
   border-radius: 12px;
   padding: 32px 20px;
@@ -308,6 +323,7 @@
 
 /* online */
 .onlineBox {
+  flex: 1;
   border: 1.5px dashed var(--line);
   border-radius: 12px;
   padding: 30px 24px;
@@ -980,6 +996,24 @@
   padding: 9px 12px;
   margin-bottom: 14px;
   line-height: 1.5;
+}
+/* O modal de registro cresceu (~490 → ~644 px) quando a escolha das atas
+   entrou nele, e numa janela de 1366×657 o "Registrar" ficava abaixo da dobra.
+   Rolagem interna com o rodapé preso, e não um modal mais baixo: cortar campo
+   esconderia justamente a escolha que veio para cá. Classe própria, e não na
+   .modal: o modal da reunião tem conteúdo que não pode ser recortado assim. */
+.modalRegistrar {
+  max-height: calc(100dvh - 96px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.modalRegistrar > .mactions {
+  position: sticky;
+  bottom: -22px;
+  margin: 20px -22px -22px;
+  padding: 14px 22px 22px;
+  background: var(--s2);
+  border-top: 1px solid var(--line-soft);
 }
 .mactions {
   display: flex;
